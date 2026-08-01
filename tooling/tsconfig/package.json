@@ -1,0 +1,16 @@
+{
+  "name": "@reforce/tooling-tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./base.json": "./base.json"
+  },
+  "scripts": {
+    "check": "node_modules/.bin/biome check .",
+    "check:write": "node_modules/.bin/biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:"
+  }
+}

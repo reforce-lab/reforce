@@ -1,0 +1,14 @@
+# worktree 需要的 gitignored 本地文件清单(gitignore 语法)。
+# 两个消费方:Claude Code 原生 worktree(-w / subagent / 桌面并行)自动复制;
+# /workflow:idea 用裸 git worktree add 建 worktree 时照此清单手动复制。
+# 本地机密与工具配置(apm 无法重建)
+.env
+.env.*
+.lsp.json
+.mcp.json
+# AI 规则生成物:复制仅为会话启动即可用;权威做法仍是 worktree 内
+# apm install && apm compile --clean 从 .apm/ 真源重建(会覆盖这些副本)
+.claude/
+.agents/
+.codex/
+AGENTS.md

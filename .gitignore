@@ -1,0 +1,38 @@
+# deps
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# turbo
+.turbo/
+
+# test / coverage
+coverage/
+
+# logs
+*.log
+
+# os
+.DS_Store
+
+# ide
+.idea/
+.vscode/
+!.vscode/settings.json
+
+# env
+.env
+.env.*
+!.env.example
+
+# apm —— 真相源头是 apm.yml + .apm/，以下为编译/安装产物
+# （以 / 开头只匹配根目录；apm.lock.yaml 同 bun.lock 一样需要提交，不在此列）
+/AGENTS.md
+/CLAUDE.md
+.worktrees
+.agents
+.claude
+.codex
+apm_modules/

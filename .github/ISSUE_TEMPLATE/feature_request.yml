@@ -1,0 +1,44 @@
+name: ✨ 功能需求
+description: 提出一个可执行的需求（将进入 backlog 排序）
+title: "[Feature] "
+labels: ["type: feature", "status: needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 用第一性原理描述问题本身，而不是你想要的实现。Spring 里对应的概念是什么？为什么 JS 生态现有方案不够？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提议方案（可粗粒度）
+      description: 有想法就写，没有就空着由设计讨论补齐。
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的替代方案
+      description: 包括"用现成库"为什么不可行。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及领域
+      options:
+        - core（IoC / 上下文）
+        - config（配置抽象）
+        - aop（切面 / 拦截）
+        - starter（自动装配）
+        - testing（测试支持）
+        - cli（脚手架）
+        - tooling（基建）
+        - docs（文档 / Wiki）
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我搜索过现有 Issues / Wiki，没有重复需求
+          required: true

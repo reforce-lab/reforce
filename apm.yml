@@ -1,0 +1,28 @@
+name: reforce
+version: 1.0.0
+description: APM project for reforce
+author: Ives
+
+# 只管理 AGENTS.md（需要 claude/copilot 等目标时再追加）
+targets:
+  - codex
+  - claude
+
+dependencies:
+  apm: [ ]
+  mcp: [ ]
+  lsp:
+    - name: tsgo
+      command: node_modules/.bin/tsc
+      args:
+        - --lsp
+        - --stdio
+      extensionToLanguage:
+        ".ts": typescript
+        ".tsx": typescriptreact
+        ".mts": typescript
+        ".cts": typescript
+        ".js": javascript
+        ".jsx": javascriptreact
+includes: auto
+scripts: { }

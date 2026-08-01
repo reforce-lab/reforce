@@ -1,0 +1,33 @@
+{
+  "name": "@reforce/platform-fastify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": {
+      "type": "./src/*.ts",
+      "development": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc",
+    "test": "bun test",
+    "check": "biome check ",
+    "check:write": "biome check --write "
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@types/bun": "catalog:",
+    "type-fest": "catalog:",
+    "typescript": "catalog:"
+  }
+}

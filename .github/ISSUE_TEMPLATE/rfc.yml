@@ -1,0 +1,33 @@
+name: 📐 RFC / 设计提案
+description: 影响架构走向的设计讨论；结论沉淀在本 issue 顶楼
+title: "[RFC] "
+labels: ["type: rfc", "status: needs-design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RFC 用于**有多个可行路线、且选错代价高**的问题。小问题请用功能需求模板。
+        规则：引用外部事实必须注明来源与核实日期；结论被接受后编辑到**本 issue 顶楼**（顶楼 = 正式文档，评论 = 决策过程），改打 `type: adr` 标签并登记 Wiki ADR 索引。
+  - type: textarea
+    id: question
+    attributes:
+      label: 待决策的问题
+      description: 一句话说清要决策什么。
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: 候选路线对比
+      description: 每条路线给出原理、代价、先例（附来源与日期）。
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: 倾向与理由
+  - type: textarea
+    id: consequences
+    attributes:
+      label: 影响面
+      description: 对已有包、工具链、后续路线图的影响。

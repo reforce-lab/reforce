@@ -1,0 +1,14 @@
+{
+  "tsgo": {
+    "command": "node_modules/.bin/tsc",
+    "args": ["--lsp", "--stdio"],
+    "extensionToLanguage": {
+      ".ts": "typescript",
+      ".tsx": "typescriptreact",
+      ".mts": "typescript",
+      ".cts": "typescript",
+      ".js": "javascript",
+      ".jsx": "javascriptreact"
+    }
+  }
+}

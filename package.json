@@ -1,0 +1,44 @@
+{
+  "name": "reforce",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "A Spring-like application framework ecosystem for the Node.js / Bun era.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reforce-lab/reforce"
+  },
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "bun": ">=1.3.14",
+    "node": ">=24.12.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "platforms/*",
+    "tooling/*"
+  ],
+  "catalog": {
+    "@biomejs/biome": "^2.5.6",
+    "@types/bun": "^1.3.14",
+    "type-fest": "^5.8.0",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "turbo run check",
+    "check:write": "turbo run check:write",
+    "prepare": "lefthook install && apm install && apm compile --clean"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "lefthook": "^2.1.10",
+    "turbo": "^2.10.8",
+    "typescript": "catalog:"
+  }
+}

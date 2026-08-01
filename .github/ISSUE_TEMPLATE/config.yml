@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Reforce Wiki
+    url: https://github.com/reforce-lab/reforce/wiki
+    about: 架构全貌、ADR 索引、术语表等长期知识在这里维护
+  - name: 🗺️ Roadmap Project
+    url: https://github.com/orgs/reforce-lab/projects
+    about: 查看当前迭代规划与 backlog 排序

@@ -1,0 +1,75 @@
+lockfile_version: '1'
+generated_at: '2026-08-01T05:49:14.893129+00:00'
+dependencies: []
+deployments:
+- kind: project-relative
+  target: agents
+  value: .agents/skills/apm
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: project-relative
+  target: agents
+  value: .agents/skills/apm/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
+- kind: project-relative
+  target: claude
+  value: .claude/rules/overview.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:5f46523bad67745160fe369c6c15d0b24fa87de7607a3b5e866bedc7099e1f8b
+- kind: project-relative
+  target: claude
+  value: .claude/skills/apm
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: null
+- kind: project-relative
+  target: claude
+  value: .claude/skills/apm/SKILL.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
+lsp_servers:
+- tsgo
+lsp_configs:
+  tsgo:
+    name: tsgo
+    command: node_modules/.bin/tsc
+    args:
+    - --lsp
+    - --stdio
+    extensionToLanguage:
+      .ts: typescript
+      .tsx: typescriptreact
+      .mts: typescript
+      .cts: typescript
+      .js: javascript
+      .jsx: javascriptreact
+local_deployed_files:
+- .agents/skills/apm
+- .agents/skills/apm/SKILL.md
+- .claude/rules/overview.md
+- .claude/skills/apm
+- .claude/skills/apm/SKILL.md
+local_deployed_file_hashes:
+  .agents/skills/apm/SKILL.md: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
+  .claude/rules/overview.md: sha256:5f46523bad67745160fe369c6c15d0b24fa87de7607a3b5e866bedc7099e1f8b
+  .claude/skills/apm/SKILL.md: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
