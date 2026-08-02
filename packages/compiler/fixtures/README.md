@@ -8,5 +8,5 @@ Expected behavior is asserted directly in the test that consumes the fixture. Th
 diagnostic, manifest field, generated invariant, or runtime observation visible at the assertion site
 instead of duplicating the complete Source IR and generated tree in snapshots.
 
-Yuku adapter behavior that needs only one source unit stays inline in
-`packages/compiler-yuku/src/frontend.spec.ts`; it does not need an application fixture here.
+Yuku parser-to-IR behavior that needs only one source unit stays inline in
+`packages/compiler/src/parser/parse-source.spec.ts`; it does not need an application fixture here.

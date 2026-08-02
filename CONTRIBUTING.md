@@ -44,7 +44,7 @@ bun run build
 
 CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Bun 1.3.14 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Bun 进程证据支持。
 
-Compiler 只维护 Yuku frontend。Adapter 测试直接断言 Source IR、span 与 parser diagnostic 的相关字段；完整项目行为由 Compiler 集成测试和生成物执行测试负责，不提交整棵 Source IR 或 generated output 快照。
+Compiler 内置唯一的 Yuku parser。Parser-to-IR 测试只断言 Source IR、span 与 parser diagnostic 的必要字段；完整项目行为由 Compiler 集成测试和生成物执行测试负责，不提交整棵 Source IR 或 generated output 快照。
 
 ## 运行一个应用
 
