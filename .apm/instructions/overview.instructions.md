@@ -47,6 +47,10 @@ bun run build --filter=<pkg>
   - 从对话和相关 diff 可确认任务延续当前未提交工作时，直接在当前工作区继续，不另建 worktree；仅在关联不明或可能覆盖冲突改动时询问
     owner。
   - 指定 PR、分支或 commit 时以指定引用为基线；全新任务默认基于 `main`。
+  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `bun install`；根 `prepare` 会执行 `apm install && apm compile --clean`，生成
+    `AGENTS.md` 及运行时配置。不要把未初始化 worktree 直接交给独立 agent。
+  - 在主工作区运行 `apm compile --clean` 前，先用 `--dry-run` 确认不会删除其他已注册 worktree 的产物；若会删除，改用不带
+    `--clean` 的编译。`--clean` 会递归清理被视为 orphan 的生成 `AGENTS.md`。
 - 全仓库使用 TS7 (tsgo)：
   - 类型安全第一
   - 能使用类型推导的，优先利用类型推导，而非到处声明类型

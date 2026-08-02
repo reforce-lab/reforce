@@ -35,7 +35,7 @@ apm doctor           # 环境诊断
 ## 修改流程
 
 1. 改 `.apm/` 或 `apm.yml`
-2. `apm install && apm compile --clean`
+2. `apm install`，再先运行 `apm compile --clean --dry-run`：若不会删除其他已注册 worktree 的产物，运行 `apm compile --clean`；否则运行不带 `--clean` 的 `apm compile`
 3. 检查产物 diff（`AGENTS.md`、`.lsp.json` 等）符合预期后一并提交
 
 ## 注意事项

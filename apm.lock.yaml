@@ -19,7 +19,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
+  content_hash: sha256:e3dbe06a8c0e3f7943503288f1cfe829cf31099e8dabde3322683cfb5eab8c86
 - kind: project-relative
   target: claude
   value: .claude/rules/overview.md
@@ -28,7 +28,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:55545f99a905af593108d36ab7f943880b9037dfce1e56f18a6c4249ba0430d3
+  content_hash: sha256:64aee2963e435bddf0315738d3d11758fad93312b79757d170f5abe437b5cc8f
 - kind: project-relative
   target: claude
   value: .claude/skills/apm
@@ -46,7 +46,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
+  content_hash: sha256:e3dbe06a8c0e3f7943503288f1cfe829cf31099e8dabde3322683cfb5eab8c86
 lsp_servers:
 - tsgo
 lsp_configs:
@@ -70,6 +70,6 @@ local_deployed_files:
 - .claude/skills/apm
 - .claude/skills/apm/SKILL.md
 local_deployed_file_hashes:
-  .agents/skills/apm/SKILL.md: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
-  .claude/rules/overview.md: sha256:55545f99a905af593108d36ab7f943880b9037dfce1e56f18a6c4249ba0430d3
-  .claude/skills/apm/SKILL.md: sha256:2168f5cf7e383a002585b2936b0e818a5d924f650c29bab33f60ed505acf3ab4
+  .agents/skills/apm/SKILL.md: sha256:e3dbe06a8c0e3f7943503288f1cfe829cf31099e8dabde3322683cfb5eab8c86
+  .claude/rules/overview.md: sha256:64aee2963e435bddf0315738d3d11758fad93312b79757d170f5abe437b5cc8f
+  .claude/skills/apm/SKILL.md: sha256:e3dbe06a8c0e3f7943503288f1cfe829cf31099e8dabde3322683cfb5eab8c86
