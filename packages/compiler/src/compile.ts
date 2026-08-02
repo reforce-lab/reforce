@@ -1,19 +1,14 @@
 import type { LRUCache } from "lru-cache";
 import { analyzeProject } from "./analysis/analyze-project";
-import { sortNativePaths } from "./determinism";
+import type { CompileRequest, CompileResult, CompilerDiagnostic, CompilerWatchInputs } from "./api";
 import { diagnostic, orderDiagnostics } from "./diagnostics";
-import { renderGeneratedFiles } from "./emission/render-generated";
-import { createLinker } from "./linking/module-graph";
-import type { SourceUnit } from "./parser/source-ir";
-import { snapshotStillMatches } from "./project/config";
+import { generateFiles } from "./emission/generate-files";
+import { createProjectLinker } from "./linking/project-linker";
+import type { SourceFileIr } from "./parser/source-ir";
+import type { ProjectState } from "./project/project-config";
+import { snapshotStillMatches } from "./project/project-snapshot";
 import { parseProjectSources } from "./project/source-files";
-import type {
-  CompileRequest,
-  CompileResult,
-  CompilerDiagnostic,
-  CompilerWatchInputs,
-  ProjectState,
-} from "./types";
+import { createWatchInputs, mergeWatchInputs } from "./project/watch-inputs";
 
 function failure(
   diagnostics: readonly CompilerDiagnostic[],
@@ -31,30 +26,10 @@ function failure(
   };
 }
 
-function mergeWatchInputs(
-  current: CompilerWatchInputs,
-  additional: CompilerWatchInputs,
-): CompilerWatchInputs {
-  return Object.freeze({
-    fileDependencies: sortNativePaths([
-      ...current.fileDependencies,
-      ...additional.fileDependencies,
-    ]),
-    contextDependencies: sortNativePaths([
-      ...current.contextDependencies,
-      ...additional.contextDependencies,
-    ]),
-    missingDependencies: sortNativePaths([
-      ...current.missingDependencies,
-      ...additional.missingDependencies,
-    ]),
-  });
-}
-
-export async function compileProject(
+export async function compile(
   request: CompileRequest,
   state: ProjectState | undefined,
-  cache: LRUCache<string, SourceUnit>,
+  cache: LRUCache<string, SourceFileIr>,
 ): Promise<CompileResult> {
   if (state === undefined || !(await snapshotStillMatches(state.snapshot))) {
     return failure(
@@ -65,11 +40,7 @@ export async function compileProject(
           help: "Resolve the project again before compiling; do not reuse a project from another Compiler instance.",
         }),
       ],
-      state?.watchInputs ?? {
-        fileDependencies: Object.freeze([]),
-        contextDependencies: Object.freeze([]),
-        missingDependencies: Object.freeze([]),
-      },
+      state?.watchInputs ?? createWatchInputs(),
     );
   }
 
@@ -77,7 +48,7 @@ export async function compileProject(
   if (parsed.status === "failure") {
     return failure(parsed.diagnostics, parsed.watchInputs);
   }
-  const linker = await createLinker(
+  const linker = await createProjectLinker(
     parsed.sources,
     request.project,
     cache,
@@ -91,7 +62,7 @@ export async function compileProject(
   return {
     status: "success",
     diagnostics: [],
-    files: renderGeneratedFiles(request.project, analysis.providers, analysis.plans),
+    files: generateFiles(request.project, analysis.providers, analysis.plans),
     watchInputs,
   };
 }

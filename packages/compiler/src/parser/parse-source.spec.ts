@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { type ParseSourceInput, parseSource } from "./parse-source";
-import type { SourceKind, SourceUnit } from "./source-ir";
+import type { SourceFileIr, SourceKind } from "./source-ir";
 import type { CanonicalFileId } from "./source-location";
 
 function canonicalFileId(filename: string): CanonicalFileId {
-  return filename as CanonicalFileId; // The adapter receives this opaque identity from Compiler in production.
+  return filename as CanonicalFileId; // Production parsing receives this opaque identity from project resolution.
 }
 
-function parseUnit(sourceText: string, sourceKind: SourceKind = "ts"): SourceUnit {
+function parseFile(sourceText: string, sourceKind: SourceKind = "ts"): SourceFileIr {
   const result = parseSource({
     file: canonicalFileId(`source.${sourceKind}`),
     sourceKind,
@@ -32,12 +32,12 @@ test("lowers a directly exported injectable class", () => {
   if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics));
   }
-  expect(result.unit.classes[0]?.name?.text).toBe("Service");
+  expect(result.unit.classes[0]?.name).toBe("Service");
   expect(result.unit.classes[0]?.export.kind).toBe("named");
 });
 
 test("classifies supported import and export forms", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     [
       'import DefaultValue, * as namespaceValue from "package-a";',
       'import type { Input as LocalInput } from "package-b";',
@@ -54,17 +54,16 @@ test("classifies supported import and export forms", () => {
     unit.imports.flatMap((declaration) =>
       declaration.kind === "import"
         ? declaration.bindings.map((binding) => [
-            declaration.moduleSpecifier.text,
+            declaration.moduleSpecifier,
             binding.kind,
-            binding.local.text,
-            binding.typeOnly,
+            binding.local,
           ])
         : [],
     ),
   ).toEqual([
-    ["package-a", "default", "DefaultValue", false],
-    ["package-a", "namespace", "namespaceValue", false],
-    ["package-b", "named", "LocalInput", true],
+    ["package-a", "default", "DefaultValue"],
+    ["package-a", "namespace", "namespaceValue"],
+    ["package-b", "named", "LocalInput"],
   ]);
   expect(unit.exports.map((declaration) => declaration.kind)).toEqual([
     "local-named",
@@ -76,7 +75,7 @@ test("classifies supported import and export forms", () => {
 });
 
 test("lowers interface and namespace declaration structure", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     [
       "export interface Port<T> extends Base<T> {}",
       "export namespace Tokens {",
@@ -88,26 +87,26 @@ test("lowers interface and namespace declaration structure", () => {
 
   expect(
     unit.interfaces.map((declaration) => ({
-      name: declaration.name?.text,
+      name: declaration.name,
       topLevel: declaration.topLevel,
-      typeParameters: declaration.typeParameters.map((parameter) => parameter.name.text),
+      generic: declaration.generic,
       extends: declaration.extends.map((type) => type.kind),
     })),
   ).toEqual([
-    { name: "Port", topLevel: true, typeParameters: ["T"], extends: ["reference"] },
-    { name: "Key", topLevel: false, typeParameters: [], extends: [] },
+    { name: "Port", topLevel: true, generic: true, extends: ["reference"] },
+    { name: "Key", topLevel: false, generic: false, extends: [] },
   ]);
   expect(
     unit.namespaces.map((declaration) => ({
-      name: declaration.name.text,
+      name: declaration.name,
       topLevel: declaration.topLevel,
-      members: declaration.exportedMembers.map((member) => [member.kind, member.name.text]),
+      members: declaration.exportedMembers.map((member) => [member.kind, member.name]),
     })),
   ).toEqual([{ name: "Tokens", topLevel: true, members: [["type", "Key"]] }]);
 });
 
 test("lowers standard class decorators and ordinary constructor parameters", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     [
       '@Qualifier("primary")',
       "@Primary()",
@@ -123,7 +122,7 @@ test("lowers standard class decorators and ordinary constructor parameters", () 
   expect(
     declaration?.decorators.map((decorator) => ({
       callee:
-        decorator.callee.kind === "identifier" ? decorator.callee.name.text : decorator.callee.kind,
+        decorator.callee.kind === "identifier" ? decorator.callee.name : decorator.callee.kind,
       called: decorator.called,
       arguments: decorator.arguments.map((argument) =>
         argument.kind === "string-literal"
@@ -144,15 +143,15 @@ test("lowers standard class decorators and ordinary constructor parameters", () 
     })),
   ).toEqual([
     { type: "reference", decorators: 0, hasInitializer: false },
-    { type: "primitive", decorators: 0, hasInitializer: true },
+    { type: "unsupported", decorators: 0, hasInitializer: true },
   ]);
-  expect(declaration?.methods.map((method) => [method.name.kind, method.async])).toEqual([
-    ["identifier", true],
-  ]);
+  expect(
+    declaration?.methods.map((method) => [method.name.kind, method.async, method.parameterCount]),
+  ).toEqual([["identifier", true, 0]]);
 });
 
 test("lowers supported defineBean options", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     [
       "export const resource = defineBean<Resource>({",
       "  create: () => new Resource(),",
@@ -164,7 +163,7 @@ test("lowers supported defineBean options", () => {
   );
   const declaration = unit.beanFactories[0];
 
-  expect(declaration?.name?.text).toBe("resource");
+  expect(declaration?.name).toBe("resource");
   expect(declaration?.typeArguments.map((type) => type.kind)).toEqual(["reference"]);
   expect(declaration?.options.kind).toBe("object");
   if (declaration?.options.kind !== "object") {
@@ -181,10 +180,24 @@ test("lowers supported defineBean options", () => {
     ["primary", "boolean-literal"],
     ["qualifier", "string-literal"],
   ]);
+  expect(
+    declaration.options.properties.flatMap((property) => {
+      if (
+        (property.kind !== "create" && property.kind !== "dispose") ||
+        (property.value.kind !== "arrow" && property.value.kind !== "function")
+      ) {
+        return [];
+      }
+      return [[property.kind, property.value.parameterCount]];
+    }),
+  ).toEqual([
+    ["create", 0],
+    ["dispose", 1],
+  ]);
 });
 
 test("lowers ambient declaration signatures without inventing implementations", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     [
       "export interface ExternalPort<T> extends Iterable<T> {}",
       "export declare abstract class ExternalBase<T> implements ExternalPort<T> {",
@@ -196,36 +209,36 @@ test("lowers ambient declaration signatures without inventing implementations", 
   );
   const declaration = unit.classes[0];
 
-  expect(unit.sourceKind).toBe("d.ts");
   expect(declaration?.abstract).toBe(true);
+  expect(declaration?.generic).toBe(true);
   expect(declaration?.constructors[0]?.accessibility).toBe("protected");
   expect(declaration?.constructors[0]?.implementation).toBe(false);
   expect(declaration?.methods[0]?.implementation).toBe(false);
 });
 
 test("reports logical lines while retaining UTF-16 offsets for every line terminator", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     "export class A {}\r\nexport class B {}\rexport class C {}\nexport class D {}\u2028export class E {}\u2029export class F {}",
   );
 
-  expect(unit.classes.map((declaration) => declaration.name?.span.start)).toEqual([
-    { offset: 13, line: 0, character: 13 },
-    { offset: 32, line: 1, character: 13 },
-    { offset: 50, line: 2, character: 13 },
-    { offset: 68, line: 3, character: 13 },
-    { offset: 86, line: 4, character: 13 },
-    { offset: 104, line: 5, character: 13 },
+  expect(unit.classes.map((declaration) => declaration.span.start)).toEqual([
+    { offset: 7, line: 0, character: 7 },
+    { offset: 26, line: 1, character: 7 },
+    { offset: 44, line: 2, character: 7 },
+    { offset: 62, line: 3, character: 7 },
+    { offset: 80, line: 4, character: 7 },
+    { offset: 98, line: 5, character: 7 },
   ]);
 });
 
 test("counts astral Unicode characters as two UTF-16 code units", () => {
-  const unit = parseUnit('const marker = "😀";\nexport class Unicode {}');
+  const unit = parseFile('const marker = "😀";\nexport class Unicode {}');
 
-  expect(unit.classes[0]?.name?.span.start).toEqual({ offset: 34, line: 1, character: 13 });
+  expect(unit.classes[0]?.span.start).toEqual({ offset: 28, line: 1, character: 7 });
 });
 
 test("classifies unsupported syntax for Compiler diagnostics", () => {
-  const unit = parseUnit(
+  const unit = parseFile(
     [
       'import Alias = require("package-a");',
       'export type Choice<T> = T extends string ? "yes" : "no";',
@@ -247,7 +260,7 @@ test("classifies unsupported syntax for Compiler diagnostics", () => {
   ]);
 });
 
-test("rejects a source unit when syntax is incomplete", () => {
+test("rejects a source file when syntax is incomplete", () => {
   const input = {
     file: canonicalFileId("src/broken.ts"),
     sourceKind: "ts",

@@ -1,8 +1,8 @@
-import type { LinkedSymbol } from "../linking/module-graph";
+import type { LinkedSymbol, LinkedType } from "../linking/project-linker";
 import type { SourceSpan } from "../parser/source-location";
 import type { ParsedSource } from "../project/source-files";
 
-export interface GeneratedSourcePositionModel {
+interface GeneratedSourcePositionModel {
   readonly offset: number;
   readonly line: number;
   readonly character: number;
@@ -14,7 +14,7 @@ export interface GeneratedSourceReferenceModel {
   readonly end: GeneratedSourcePositionModel;
 }
 
-export type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
+type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
 
 export interface DependencyModel {
   readonly parameterIndex: number;
@@ -39,18 +39,29 @@ interface ProviderBase {
   readonly dependencies: DependencyModel[];
 }
 
-export interface ClassProviderModel extends ProviderBase {
+interface ClassProviderModel extends ProviderBase {
   readonly kind: "class";
   readonly startHook: boolean;
   readonly closeHook: boolean;
 }
 
-export interface FactoryProviderModel extends ProviderBase {
+interface FactoryProviderModel extends ProviderBase {
   readonly kind: "factory";
   readonly dispose: boolean;
 }
 
 export type ProviderModel = ClassProviderModel | FactoryProviderModel;
+
+export interface PendingDependency {
+  readonly index: number;
+  readonly linkedType: LinkedType;
+  readonly sourceSpan: SourceSpan;
+}
+
+export interface ProviderDraft {
+  readonly provider: ProviderModel;
+  readonly pendingDependencies: readonly PendingDependency[];
+}
 
 export interface ExecutionPlansModel {
   readonly constructionOrder: readonly string[];

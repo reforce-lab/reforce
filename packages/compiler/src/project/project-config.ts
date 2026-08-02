@@ -1,22 +1,28 @@
-import { createHash } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseTsconfig, type TsConfigJsonResolved } from "get-tsconfig";
 import { glob } from "tinyglobby";
-import { compareUtf16CodeUnits, sortNativePaths } from "../determinism";
+import type { CompilerDiagnostic, CompilerWatchInputs } from "../api";
+import { sortNativePaths } from "../determinism";
 import { diagnostic } from "../diagnostics";
-import type {
-  CompilerDiagnostic,
-  CompilerWatchInputs,
-  EffectiveProjectConfig,
-  ProjectSnapshotEntry,
-  ProjectState,
-} from "../types";
 import { isPathContained, toPortablePath } from "./path-identity";
+import { createProjectSnapshot, type ProjectSnapshotEntry } from "./project-snapshot";
+import { createWatchInputs } from "./watch-inputs";
 
 const sourceSuffixPattern = /\.(?:ts|tsx|mts|cts)$/u;
 const declarationSuffixPattern = /\.d\.(?:ts|mts|cts)$/u;
+
+export interface EffectiveProjectConfig {
+  readonly config: TsConfigJsonResolved;
+  readonly fileNames: readonly string[];
+}
+
+export interface ProjectState {
+  readonly parsedConfig: EffectiveProjectConfig;
+  readonly snapshot: readonly ProjectSnapshotEntry[];
+  readonly watchInputs: CompilerWatchInputs;
+}
 
 interface LoadedConfig {
   readonly parsed: EffectiveProjectConfig;
@@ -35,22 +41,22 @@ interface RawConfig {
   readonly references: unknown;
 }
 
-export interface ConfigCandidateSuccess {
+interface ConfigCandidateSuccess {
   readonly status: "success";
   readonly projectRoot: string;
   readonly tsconfigPath: string;
   readonly state: ProjectState;
 }
 
-export interface ConfigCandidateFailure {
+interface ConfigCandidateFailure {
   readonly status: "failure";
   readonly diagnostics: readonly CompilerDiagnostic[];
   readonly watchInputs: CompilerWatchInputs;
 }
 
-export type ConfigCandidateResult = ConfigCandidateSuccess | ConfigCandidateFailure;
+type ConfigCandidateResult = ConfigCandidateSuccess | ConfigCandidateFailure;
 
-export interface ConfigCandidateIdentityPaths {
+interface ConfigCandidateIdentityPaths {
   readonly selectionBoundary: string;
   readonly config: string;
 }
@@ -336,32 +342,6 @@ function generatedDeclarationsAreIncluded(config: TsConfigJsonResolved): boolean
   return config.files === undefined;
 }
 
-async function snapshotFile(file: string): Promise<ProjectSnapshotEntry> {
-  const canonicalPath = await realpath(file);
-  const [metadata, bytes] = await Promise.all([
-    stat(canonicalPath, { bigint: true }),
-    readFile(canonicalPath),
-  ]);
-  return Object.freeze({
-    path: file,
-    realpath: canonicalPath,
-    dev: metadata.dev,
-    ino: metadata.ino,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-  });
-}
-
-async function snapshotDirectory(directory: string): Promise<ProjectSnapshotEntry> {
-  const canonicalPath = await realpath(directory);
-  const metadata = await stat(canonicalPath, { bigint: true });
-  return Object.freeze({
-    path: directory,
-    realpath: canonicalPath,
-    dev: metadata.dev,
-    ino: metadata.ino,
-  });
-}
-
 function failedConfigLoadWatchInputs(
   canonicalConfig: string | undefined,
   observation: ConfigGraphObservation,
@@ -371,12 +351,11 @@ function failedConfigLoadWatchInputs(
     observation.configPaths.length === 0 && canonicalConfig !== undefined
       ? [canonicalConfig]
       : observation.configPaths;
-  return {
-    fileDependencies: sortNativePaths(observedConfigs),
-    contextDependencies:
-      projectRoot === undefined ? Object.freeze([]) : Object.freeze([projectRoot]),
-    missingDependencies: sortNativePaths(observation.missingPaths),
-  };
+  return createWatchInputs({
+    fileDependencies: observedConfigs,
+    contextDependencies: projectRoot === undefined ? [] : [projectRoot],
+    missingDependencies: observation.missingPaths,
+  });
 }
 
 async function loadConfigCandidate(
@@ -415,11 +394,10 @@ async function validateApplicationSources(
   projectRoot: string,
   applicationSources: readonly string[],
 ): Promise<ConfigCandidateFailure | undefined> {
-  const watchInputs: CompilerWatchInputs = {
-    fileDependencies: sortNativePaths([...loaded.configPaths, ...applicationSources]),
-    contextDependencies: Object.freeze([projectRoot]),
-    missingDependencies: Object.freeze([]),
-  };
+  const watchInputs = createWatchInputs({
+    fileDependencies: [...loaded.configPaths, ...applicationSources],
+    contextDependencies: [projectRoot],
+  });
   for (const source of applicationSources) {
     let canonicalSource: string;
     try {
@@ -455,7 +433,7 @@ async function validateApplicationSources(
   return undefined;
 }
 
-export async function inspectConfigCandidate(
+export async function inspectProjectConfigCandidate(
   selectionBoundary: string,
   candidate: string,
   identityPaths: ConfigCandidateIdentityPaths = {
@@ -486,11 +464,10 @@ export async function inspectConfigCandidate(
           help: "Select a leaf application tsconfig that includes application source files.",
         }),
       ],
-      watchInputs: {
-        fileDependencies: sortNativePaths(loaded.configPaths),
-        contextDependencies: Object.freeze([projectRoot]),
-        missingDependencies: Object.freeze([]),
-      },
+      watchInputs: createWatchInputs({
+        fileDependencies: loaded.configPaths,
+        contextDependencies: [projectRoot],
+      }),
     };
   }
 
@@ -505,11 +482,10 @@ export async function inspectConfigCandidate(
           help: "Set compilerOptions.moduleResolution to Bundler or NodeNext.",
         }),
       ],
-      watchInputs: {
-        fileDependencies: sortNativePaths(loaded.configPaths),
-        contextDependencies: Object.freeze([projectRoot]),
-        missingDependencies: Object.freeze([]),
-      },
+      watchInputs: createWatchInputs({
+        fileDependencies: loaded.configPaths,
+        contextDependencies: [projectRoot],
+      }),
     };
   }
 
@@ -523,13 +499,11 @@ export async function inspectConfigCandidate(
           help: "Add .reforce/generated/**/*.d.ts to the leaf tsconfig include set.",
         }),
       ],
-      watchInputs: {
-        fileDependencies: sortNativePaths(loaded.configPaths),
-        contextDependencies: Object.freeze([projectRoot]),
-        missingDependencies: Object.freeze([
-          path.join(projectRoot, ".reforce", "generated", "qualifiers.d.ts"),
-        ]),
-      },
+      watchInputs: createWatchInputs({
+        fileDependencies: loaded.configPaths,
+        contextDependencies: [projectRoot],
+        missingDependencies: [path.join(projectRoot, ".reforce", "generated", "qualifiers.d.ts")],
+      }),
     };
   }
 
@@ -538,18 +512,16 @@ export async function inspectConfigCandidate(
     return sourceFailure;
   }
 
-  const snapshot = await Promise.all([
-    snapshotDirectory(identityPaths.selectionBoundary),
-    ...(identityPaths.selectionBoundary === projectRoot ? [] : [snapshotDirectory(projectRoot)]),
-    ...(identityPaths.config === canonicalConfig ? [] : [snapshotFile(identityPaths.config)]),
-    ...loaded.configPaths.map(snapshotFile),
-  ]);
-  const watchInputs: CompilerWatchInputs = Object.freeze({
-    fileDependencies: sortNativePaths([...loaded.configPaths, ...loaded.parsed.fileNames]),
-    contextDependencies: Object.freeze([projectRoot]),
-    missingDependencies: Object.freeze([
-      path.join(projectRoot, ".reforce", "generated", "qualifiers.d.ts"),
-    ]),
+  const snapshot = await createProjectSnapshot(
+    identityPaths,
+    projectRoot,
+    canonicalConfig,
+    loaded.configPaths,
+  );
+  const watchInputs = createWatchInputs({
+    fileDependencies: [...loaded.configPaths, ...loaded.parsed.fileNames],
+    contextDependencies: [projectRoot],
+    missingDependencies: [path.join(projectRoot, ".reforce", "generated", "qualifiers.d.ts")],
   });
   return {
     status: "success",
@@ -557,37 +529,8 @@ export async function inspectConfigCandidate(
     tsconfigPath: canonicalConfig,
     state: Object.freeze({
       parsedConfig: loaded.parsed,
-      snapshot: Object.freeze(snapshot),
+      snapshot,
       watchInputs,
     }),
   };
-}
-
-export async function snapshotStillMatches(
-  entries: readonly ProjectSnapshotEntry[],
-): Promise<boolean> {
-  for (const expected of entries) {
-    let actual: ProjectSnapshotEntry;
-    try {
-      actual =
-        expected.sha256 === undefined
-          ? await snapshotDirectory(expected.path)
-          : await snapshotFile(expected.path);
-    } catch {
-      return false;
-    }
-    if (
-      actual.realpath !== expected.realpath ||
-      actual.dev !== expected.dev ||
-      actual.ino !== expected.ino ||
-      actual.sha256 !== expected.sha256
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-export function candidateDisplayOrder(candidates: readonly string[]): readonly string[] {
-  return Object.freeze([...candidates].sort(compareUtf16CodeUnits));
 }

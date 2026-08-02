@@ -5,10 +5,37 @@ import type {
   GeneratedSourceReferenceModel,
   ProviderModel,
 } from "../analysis/model";
+import type { GeneratedFile, ResolvedApplicationProject } from "../api";
 import { compareUtf16CodeUnits } from "../determinism";
-import type { LinkedSymbol } from "../linking/module-graph";
-import type { GeneratedFile, ResolvedApplicationProject } from "../types";
-import { renderRuntimeSpecifier } from "./runtime-specifier";
+import type { LinkedSymbol } from "../linking/project-linker";
+
+function runtimeSuffix(file: string): string {
+  if (file.endsWith(".d.mts")) {
+    return `${file.slice(0, -6)}.mjs`;
+  }
+  if (file.endsWith(".d.cts")) {
+    return `${file.slice(0, -6)}.cjs`;
+  }
+  if (file.endsWith(".d.ts")) {
+    return `${file.slice(0, -5)}.js`;
+  }
+  if (file.endsWith(".mts")) {
+    return `${file.slice(0, -4)}.mjs`;
+  }
+  if (file.endsWith(".cts")) {
+    return `${file.slice(0, -4)}.cjs`;
+  }
+  if (file.endsWith(".tsx")) {
+    return `${file.slice(0, -4)}.js`;
+  }
+  return file.endsWith(".ts") ? `${file.slice(0, -3)}.js` : file;
+}
+
+function runtimeSpecifier(generatedDirectory: string, sourceFile: string): string {
+  const relative = path.relative(generatedDirectory, sourceFile).split(path.sep).join("/");
+  const withPrefix = relative.startsWith(".") ? relative : `./${relative}`;
+  return runtimeSuffix(withPrefix);
+}
 
 function json(value: unknown): string {
   const rendered = stableStringify(value, { space: 2 });
@@ -52,7 +79,7 @@ function symbolReference(
   const moduleSpecifier =
     symbol.source === undefined
       ? symbol.moduleSpecifier
-      : renderRuntimeSpecifier(generatedDirectory, symbol.source.absolutePath);
+      : runtimeSpecifier(generatedDirectory, symbol.source.absolutePath);
   const declaration = sourceReferenceForSymbol(symbol);
   return {
     displayName: symbol.name,
@@ -91,7 +118,7 @@ function renderBeans(
   generatedDirectory: string,
 ): string {
   const imports = providers.map((provider, index) => {
-    const specifier = renderRuntimeSpecifier(generatedDirectory, provider.source.absolutePath);
+    const specifier = runtimeSpecifier(generatedDirectory, provider.source.absolutePath);
     return `import { ${provider.exportName} as beanTarget${index} } from ${JSON.stringify(specifier)};`;
   });
   const registrations = providers.map(registrationExpression);
@@ -155,7 +182,7 @@ function qualifierGroups(
           const member = compareUtf16CodeUnits(left.member, right.member);
           return member === 0 ? compareUtf16CodeUnits(left.beanId, right.beanId) : member;
         }),
-        specifier: renderRuntimeSpecifier(generatedDirectory, source.absolutePath),
+        specifier: runtimeSpecifier(generatedDirectory, source.absolutePath),
       };
     })
     .toSorted((left, right) => {
@@ -220,7 +247,7 @@ function renderManifest(
     kind: provider.kind,
     source: provider.declarationSource,
     runtimeExport: {
-      moduleSpecifier: renderRuntimeSpecifier(generatedDirectory, provider.source.absolutePath),
+      moduleSpecifier: runtimeSpecifier(generatedDirectory, provider.source.absolutePath),
       exportName: provider.exportName,
     },
     provides: provider.provides.map((symbol) => symbolReference(symbol, generatedDirectory)),
@@ -243,7 +270,7 @@ function renderBootstrap(): string {
   return `import { createApplicationContext } from "@reforce/context/generated-runtime";\nimport { applicationDefinition } from "./beans.js";\n\nexport async function bootstrap() {\n  const application = createApplicationContext(applicationDefinition);\n  await application.start();\n  return application;\n}\n`;
 }
 
-export function renderGeneratedFiles(
+export function generateFiles(
   project: ResolvedApplicationProject,
   providers: readonly ProviderModel[],
   plans: ExecutionPlansModel,

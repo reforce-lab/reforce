@@ -1,11 +1,27 @@
-import {
-  type AstNode,
-  booleanProperty,
-  isAstNode,
-  nodeArrayProperty,
-  nodeProperty,
-  stringProperty,
-} from "./ast";
+import type {
+  BaseNode,
+  Class,
+  Declaration,
+  ImportDeclarationSpecifier,
+  MethodDefinition,
+  ModuleDeclaration,
+  ModuleExportName,
+  Node,
+  NodeOfType,
+  ObjectPropertyKind,
+  ExportAllDeclaration as ParserExportAllDeclaration,
+  ExportDefaultDeclaration as ParserExportDefaultDeclaration,
+  ExportNamedDeclaration as ParserExportNamedDeclaration,
+  ExportSpecifier as ParserExportSpecifier,
+  ImportDeclaration as ParserImportDeclaration,
+  Program,
+  ProgramStatement,
+  StringLiteral,
+  TSAbstractMethodDefinition,
+  TSModuleDeclaration,
+  VariableDeclaration,
+  VariableDeclarator,
+} from "yuku-parser";
 import {
   constructorParametersOf,
   decoratorsOf,
@@ -13,14 +29,12 @@ import {
   expressionKindOf,
   expressionValueOf,
   functionDescriptorOf,
-  functionParametersOf,
-  identifierOf,
+  identifierTextOf,
   type LoweringContext,
   sourceKeywordSpan,
   spanOf,
   typeNodeOf,
   typeParameterNamesOf,
-  typeParametersOf,
 } from "./lower-values";
 import { normalizeSpanned } from "./normalize";
 import type {
@@ -40,8 +54,7 @@ import type {
   NamespaceDeclaration,
   NamespaceExportedMember,
   NamespaceMemberKind,
-  SourceKind,
-  SourceUnit,
+  SourceFileIr,
   UnsupportedNamedDeclaration,
   UnsupportedNamedDeclarationKind,
 } from "./source-ir";
@@ -50,8 +63,8 @@ import { createSourceMapper } from "./source-location";
 
 type ExportMode =
   | { readonly kind: "none" }
-  | { readonly kind: "named"; readonly owner: AstNode }
-  | { readonly kind: "default-only"; readonly owner: AstNode };
+  | { readonly kind: "named"; readonly owner: BaseNode }
+  | { readonly kind: "default-only"; readonly owner: BaseNode };
 
 interface Collector {
   readonly imports: ImportDeclaration[];
@@ -63,20 +76,17 @@ interface Collector {
   readonly unsupportedDeclarations: UnsupportedNamedDeclaration[];
 }
 
-function createCollector(): Collector {
-  return {
-    imports: [],
-    exports: [],
-    interfaces: [],
-    namespaces: [],
-    classes: [],
-    beanFactories: [],
-    unsupportedDeclarations: [],
-  };
-}
+type ClassMethod = MethodDefinition | TSAbstractMethodDefinition;
+type UnsupportedDeclaration = NodeOfType<
+  | "FunctionDeclaration"
+  | "TSDeclareFunction"
+  | "TSEnumDeclaration"
+  | "TSImportEqualsDeclaration"
+  | "TSTypeAliasDeclaration"
+>;
 
 function declarationExportOf(
-  node: AstNode,
+  name: Node | null | undefined,
   mode: ExportMode,
   context: LoweringContext,
 ): DeclarationExport {
@@ -86,51 +96,48 @@ function declarationExportOf(
   if (mode.kind === "default-only") {
     return { kind: "default-only", span: spanOf(mode.owner, context) };
   }
-  const name = identifierOf(nodeProperty(node, "id"), context);
-  if (name === undefined) {
+  const exportedName = identifierTextOf(name);
+  if (exportedName === undefined) {
     return { kind: "none" };
   }
-  return { kind: "named", exportedName: name, span: spanOf(mode.owner, context) };
+  return { kind: "named", exportedName, span: spanOf(mode.owner, context) };
 }
 
-function moduleSpecifierOf(node: AstNode | undefined, context: LoweringContext) {
-  if (node === undefined || typeof node.value !== "string") {
-    return undefined;
+function moduleSpecifierOf(source: StringLiteral): string {
+  return source.value;
+}
+
+function moduleExportNameOf(node: ModuleExportName): string {
+  if (node.type === "Identifier") {
+    return node.name;
   }
-  return { text: node.value, span: spanOf(node, context) };
+  return node.value;
 }
 
 function importBindingOf(
-  specifier: AstNode,
-  declarationTypeOnly: boolean,
+  specifier: ImportDeclarationSpecifier,
   context: LoweringContext,
-): ImportBinding | undefined {
-  const local = identifierOf(nodeProperty(specifier, "local"), context);
-  if (local === undefined) {
-    return undefined;
-  }
-  const typeOnly = declarationTypeOnly || stringProperty(specifier, "importKind") === "type";
+): ImportBinding {
+  const local = specifier.local.name;
   if (specifier.type === "ImportDefaultSpecifier") {
-    return { kind: "default", local, typeOnly, span: spanOf(specifier, context) };
+    return { kind: "default", local, span: spanOf(specifier, context) };
   }
   if (specifier.type === "ImportNamespaceSpecifier") {
-    return { kind: "namespace", local, typeOnly, span: spanOf(specifier, context) };
+    return { kind: "namespace", local, span: spanOf(specifier, context) };
   }
-  if (specifier.type !== "ImportSpecifier") {
-    return undefined;
-  }
-  const importedNode = nodeProperty(specifier, "imported");
-  const imported =
-    identifierOf(importedNode, context) ??
-    (importedNode && typeof importedNode.value === "string"
-      ? { text: importedNode.value, span: spanOf(importedNode, context) }
-      : undefined);
-  return imported === undefined
-    ? undefined
-    : { kind: "named", imported, local, typeOnly, span: spanOf(specifier, context) };
+  return {
+    kind: "named",
+    imported: moduleExportNameOf(specifier.imported),
+    local,
+    span: spanOf(specifier, context),
+  };
 }
 
-function lowerImport(node: AstNode, collector: Collector, context: LoweringContext): void {
+function lowerImport(
+  node: ParserImportDeclaration | NodeOfType<"TSImportEqualsDeclaration">,
+  collector: Collector,
+  context: LoweringContext,
+): void {
   if (node.type === "TSImportEqualsDeclaration") {
     collector.imports.push({
       kind: "unsupported-import",
@@ -139,10 +146,7 @@ function lowerImport(node: AstNode, collector: Collector, context: LoweringConte
     });
     return;
   }
-  if (node.type !== "ImportDeclaration") {
-    return;
-  }
-  if (hasImportAttributes(node)) {
+  if (node.attributes.length > 0) {
     collector.imports.push({
       kind: "unsupported-import",
       syntaxKind: "attributes",
@@ -150,71 +154,30 @@ function lowerImport(node: AstNode, collector: Collector, context: LoweringConte
     });
     return;
   }
-  const moduleSpecifier = moduleSpecifierOf(nodeProperty(node, "source"), context);
-  if (moduleSpecifier === undefined) {
-    collector.imports.push({
-      kind: "unsupported-import",
-      syntaxKind: "other",
-      span: spanOf(node, context),
-    });
-    return;
-  }
-  const typeOnly = stringProperty(node, "importKind") === "type";
   collector.imports.push({
     kind: "import",
-    moduleSpecifier,
-    typeOnly,
+    moduleSpecifier: moduleSpecifierOf(node.source),
     bindings: normalizeSpanned(
-      nodeArrayProperty(node, "specifiers").flatMap((specifier) => {
-        const binding = importBindingOf(specifier, typeOnly, context);
-        return binding === undefined ? [] : [binding];
-      }),
+      node.specifiers.map((specifier) => importBindingOf(specifier, context)),
     ),
     span: spanOf(node, context),
   });
 }
 
-function hasImportAttributes(node: AstNode): boolean {
-  const attributes = node.attributes;
-  const assertions = node.assertions;
-  return (
-    (Array.isArray(attributes) && attributes.length > 0) ||
-    (Array.isArray(assertions) && assertions.length > 0)
-  );
-}
-
-function exportedIdentifier(node: AstNode | undefined, context: LoweringContext) {
-  return (
-    identifierOf(node, context) ??
-    (node && typeof node.value === "string"
-      ? { text: node.value, span: spanOf(node, context) }
-      : undefined)
-  );
-}
-
-function exportSpecifierOf(
-  node: AstNode,
-  declarationTypeOnly: boolean,
-  context: LoweringContext,
-): ExportSpecifier | undefined {
-  if (node.type !== "ExportSpecifier") {
-    return undefined;
-  }
-  const local = exportedIdentifier(nodeProperty(node, "local"), context);
-  const exported = exportedIdentifier(nodeProperty(node, "exported"), context);
-  if (local === undefined || exported === undefined) {
-    return undefined;
-  }
+function exportSpecifierOf(node: ParserExportSpecifier, context: LoweringContext): ExportSpecifier {
   return {
-    local,
-    exported,
-    typeOnly: declarationTypeOnly || stringProperty(node, "exportKind") === "type",
+    local: moduleExportNameOf(node.local),
+    exported: moduleExportNameOf(node.exported),
     span: spanOf(node, context),
   };
 }
 
-function lowerNamedExport(node: AstNode, collector: Collector, context: LoweringContext): void {
-  if (hasImportAttributes(node)) {
+function lowerNamedExport(
+  node: ParserExportNamedDeclaration,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  if (node.attributes.length > 0) {
     collector.exports.push({
       kind: "unsupported-export",
       syntaxKind: "attributes",
@@ -222,32 +185,10 @@ function lowerNamedExport(node: AstNode, collector: Collector, context: Lowering
     });
     return;
   }
-  const typeOnly = stringProperty(node, "exportKind") === "type";
-  const source = moduleSpecifierOf(nodeProperty(node, "source"), context);
-  const namespace = nodeArrayProperty(node, "specifiers").find(
-    (specifier) => specifier.type === "ExportNamespaceSpecifier",
-  );
-  if (source !== undefined && namespace !== undefined) {
-    const exported = exportedIdentifier(nodeProperty(namespace, "exported"), context);
-    if (exported !== undefined) {
-      collector.exports.push({
-        kind: "namespace",
-        moduleSpecifier: source,
-        exported,
-        typeOnly,
-        span: spanOf(node, context),
-      });
-      return;
-    }
-  }
-  const specifiers = nodeArrayProperty(node, "specifiers").flatMap((specifier) => {
-    const lowered = exportSpecifierOf(specifier, typeOnly, context);
-    return lowered === undefined ? [] : [lowered];
-  });
-  if (source === undefined) {
+  const specifiers = node.specifiers.map((specifier) => exportSpecifierOf(specifier, context));
+  if (node.source === null) {
     collector.exports.push({
       kind: "local-named",
-      typeOnly,
       specifiers,
       span: spanOf(node, context),
     });
@@ -255,118 +196,102 @@ function lowerNamedExport(node: AstNode, collector: Collector, context: Lowering
   }
   collector.exports.push({
     kind: "reexport-named",
-    moduleSpecifier: source,
-    typeOnly,
+    moduleSpecifier: moduleSpecifierOf(node.source),
     specifiers,
     span: spanOf(node, context),
   });
 }
 
-function lowerExport(node: AstNode, collector: Collector, context: LoweringContext): void {
-  if (node.type === "ExportNamedDeclaration") {
-    if (nodeProperty(node, "declaration") === undefined) {
-      lowerNamedExport(node, collector, context);
-    }
-    return;
-  }
-  if (node.type === "ExportAllDeclaration") {
-    lowerExportAll(node, collector, context);
-    return;
-  }
-  if (node.type === "ExportDefaultDeclaration") {
-    const declaration = nodeProperty(node, "declaration");
-    const local = identifierOf(declaration, context);
-    collector.exports.push(
-      local === undefined
-        ? {
-            kind: "default-expression",
-            expressionKind: declaration ? expressionKindOf(declaration) : "other",
-            span: spanOf(node, context),
-          }
-        : { kind: "default-local", local, span: spanOf(node, context) },
-    );
-    return;
-  }
-  if (node.type === "TSExportAssignment") {
+function lowerExportAll(
+  node: ParserExportAllDeclaration,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  if (node.attributes.length > 0) {
     collector.exports.push({
       kind: "unsupported-export",
-      syntaxKind: "export-assignment",
+      syntaxKind: "attributes",
       span: spanOf(node, context),
     });
-  }
-}
-
-function lowerExportAll(node: AstNode, collector: Collector, context: LoweringContext): void {
-  const source = moduleSpecifierOf(nodeProperty(node, "source"), context);
-  if (source === undefined) {
     return;
   }
-  const exported = exportedIdentifier(nodeProperty(node, "exported"), context);
-  collector.exports.push(
-    exported === undefined
-      ? {
-          kind: "reexport-all",
-          moduleSpecifier: source,
-          typeOnly: stringProperty(node, "exportKind") === "type",
-          span: spanOf(node, context),
-        }
-      : {
-          kind: "namespace",
-          moduleSpecifier: source,
-          exported,
-          typeOnly: stringProperty(node, "exportKind") === "type",
-          span: spanOf(node, context),
-        },
-  );
+  const moduleSpecifier = moduleSpecifierOf(node.source);
+  if (node.exported === null) {
+    collector.exports.push({
+      kind: "reexport-all",
+      moduleSpecifier,
+      span: spanOf(node, context),
+    });
+    return;
+  }
+  collector.exports.push({
+    kind: "namespace",
+    moduleSpecifier,
+    exported: moduleExportNameOf(node.exported),
+    span: spanOf(node, context),
+  });
 }
 
-function classMethodNameOf(method: AstNode, context: LoweringContext): ClassMethodName {
-  const key = nodeProperty(method, "key");
-  if (key === undefined || booleanProperty(method, "computed")) {
-    return { kind: "computed", span: spanOf(key ?? method, context) };
+function lowerDefaultExport(
+  node: ParserExportDefaultDeclaration,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  const local = identifierTextOf(node.declaration);
+  if (local !== undefined) {
+    collector.exports.push({ kind: "default-local", local, span: spanOf(node, context) });
+    return;
   }
-  const identifier = identifierOf(key, context);
+  collector.exports.push({
+    kind: "default-expression",
+    expressionKind: expressionKindOf(node.declaration),
+    span: spanOf(node, context),
+  });
+}
+
+function classMethodNameOf(method: ClassMethod, context: LoweringContext): ClassMethodName {
+  if (method.computed) {
+    return { kind: "computed", span: spanOf(method.key, context) };
+  }
+  const identifier = identifierTextOf(method.key);
   if (identifier !== undefined) {
     return { kind: "identifier", name: identifier };
   }
-  if (typeof key.value === "string") {
-    return { kind: "string-literal", value: key.value, span: spanOf(key, context) };
+  if (method.key.type === "Literal" && typeof method.key.value === "string") {
+    return {
+      kind: "string-literal",
+      value: method.key.value,
+      span: spanOf(method.key, context),
+    };
   }
-  return { kind: "computed", span: spanOf(key, context) };
+  return { kind: "computed", span: spanOf(method.key, context) };
 }
 
-function accessibilityOf(node: AstNode): "public" | "protected" | "private" {
-  const accessibility = stringProperty(node, "accessibility");
-  return accessibility === "protected" || accessibility === "private" ? accessibility : "public";
+function accessibilityOf(method: ClassMethod): "public" | "protected" | "private" {
+  return method.accessibility ?? "public";
 }
 
 function classMethodOf(
-  method: AstNode,
+  method: ClassMethod,
   context: LoweringContext,
   classTypeParameters: ReadonlySet<string>,
 ): ClassMethodDeclaration | undefined {
-  if (stringProperty(method, "kind") !== "method") {
+  if (method.kind !== "method") {
     return undefined;
   }
-  const value = nodeProperty(method, "value") ?? method;
-  if (value === undefined) {
-    return undefined;
-  }
+  const value = method.value;
   const methodTypeParameters = new Set([...classTypeParameters, ...typeParameterNamesOf(value)]);
-  const returnAnnotation = nodeProperty(value, "returnType") ?? nodeProperty(method, "returnType");
-  const returnType = returnAnnotation
-    ? (nodeProperty(returnAnnotation, "typeAnnotation") ?? returnAnnotation)
-    : undefined;
+  const returnType = value.returnType?.typeAnnotation;
   return {
     kind: "method",
     name: classMethodNameOf(method, context),
-    static: booleanProperty(method, "static"),
+    static: method.static,
     accessibility: accessibilityOf(method),
-    async: booleanProperty(value, "async"),
-    generator: booleanProperty(value, "generator"),
-    optional: booleanProperty(method, "optional") || booleanProperty(value, "optional"),
-    implementation: nodeProperty(value, "body")?.type === "BlockStatement",
-    parameters: functionParametersOf(value, context, methodTypeParameters),
+    async: value.async,
+    generator: value.generator,
+    optional: method.optional ?? false,
+    implementation: value.body?.type === "BlockStatement",
+    parameterCount: value.params.length,
     ...(returnType === undefined
       ? {}
       : { returnType: typeNodeOf(returnType, context, methodTypeParameters) }),
@@ -375,69 +300,66 @@ function classMethodOf(
 }
 
 function constructorOf(
-  method: AstNode,
+  method: ClassMethod,
   context: LoweringContext,
   typeParameters: ReadonlySet<string>,
 ): ConstructorDeclaration | undefined {
-  if (stringProperty(method, "kind") !== "constructor") {
-    return undefined;
-  }
-  const value = nodeProperty(method, "value") ?? method;
-  if (value === undefined) {
+  if (method.kind !== "constructor") {
     return undefined;
   }
   return {
     kind: "constructor",
     accessibility: accessibilityOf(method),
-    implementation: nodeProperty(value, "body")?.type === "BlockStatement",
-    parameters: constructorParametersOf(value, context, typeParameters),
+    implementation: method.value.body?.type === "BlockStatement",
+    parameters: constructorParametersOf(method.value, context, typeParameters),
     span: spanOf(method, context),
   };
 }
 
 function lowerClass(
-  node: AstNode,
+  node: Class,
   topLevel: boolean,
   mode: ExportMode,
   collector: Collector,
   context: LoweringContext,
 ): void {
   const typeParameters = typeParameterNamesOf(node);
-  const body = nodeProperty(node, "body");
-  const members = body === undefined ? [] : nodeArrayProperty(body, "body");
+  const methods = node.body.body.filter(
+    (member): member is ClassMethod =>
+      member.type === "MethodDefinition" || member.type === "TSAbstractMethodDefinition",
+  );
+  const name = identifierTextOf(node.id);
   collector.classes.push({
     kind: "class",
     topLevel,
-    abstract: booleanProperty(node, "abstract"),
-    ...(identifierOf(nodeProperty(node, "id"), context) === undefined
-      ? {}
-      : { name: identifierOf(nodeProperty(node, "id"), context) }),
-    export: declarationExportOf(node, mode, context),
-    typeParameters: typeParametersOf(node, context),
-    decorators: decoratorsOf(node, context),
+    abstract: node.abstract ?? false,
+    ...(name === undefined ? {} : { name }),
+    export: declarationExportOf(node.id, mode, context),
+    generic: typeParameters.size > 0,
+    decorators: decoratorsOf(node.decorators, context),
     implements: normalizeSpanned(
-      nodeArrayProperty(node, "implements").map((implemented) =>
+      (node.implements ?? []).map((implemented) =>
         typeNodeOf(implemented, context, typeParameters),
       ),
     ),
     constructors: normalizeSpanned(
-      members.flatMap((member) => {
-        const declaration = constructorOf(member, context, typeParameters);
+      methods.flatMap((method) => {
+        const declaration = constructorOf(method, context, typeParameters);
         return declaration === undefined ? [] : [declaration];
       }),
     ),
     methods: normalizeSpanned(
-      members.flatMap((member) => {
-        const method = classMethodOf(member, context, typeParameters);
-        return method === undefined ? [] : [method];
+      methods.flatMap((method) => {
+        const declaration = classMethodOf(method, context, typeParameters);
+        return declaration === undefined ? [] : [declaration];
       }),
     ),
-    span: sourceKeywordSpan(node, "class", context),
+    span: sourceKeywordSpan(node, node.id, "class", context),
   });
 }
 
 function lowerInterface(
-  node: AstNode,
+  node: NodeOfType<"TSInterfaceDeclaration">,
   topLevel: boolean,
   mode: ExportMode,
   collector: Collector,
@@ -447,67 +369,83 @@ function lowerInterface(
   collector.interfaces.push({
     kind: "interface",
     topLevel,
-    ...(identifierOf(nodeProperty(node, "id"), context) === undefined
-      ? {}
-      : { name: identifierOf(nodeProperty(node, "id"), context) }),
-    export: declarationExportOf(node, mode, context),
-    typeParameters: typeParametersOf(node, context),
+    name: node.id.name,
+    export: declarationExportOf(node.id, mode, context),
+    generic: typeParameters.size > 0,
     extends: normalizeSpanned(
-      nodeArrayProperty(node, "extends").map((extended) =>
-        typeNodeOf(extended, context, typeParameters),
-      ),
+      node.extends.map((extended) => typeNodeOf(extended, context, typeParameters)),
     ),
-    span: sourceKeywordSpan(node, "interface", context),
+    span: sourceKeywordSpan(node, node.id, "interface", context),
   });
 }
 
-function namespaceMemberKind(node: AstNode): NamespaceMemberKind {
+function declarationNameOf(declaration: Declaration): string | undefined {
+  switch (declaration.type) {
+    case "ClassDeclaration":
+    case "FunctionDeclaration":
+    case "TSDeclareFunction":
+      return identifierTextOf(declaration.id);
+    case "TSEnumDeclaration":
+    case "TSImportEqualsDeclaration":
+    case "TSInterfaceDeclaration":
+    case "TSTypeAliasDeclaration":
+      return identifierTextOf(declaration.id);
+    case "TSModuleDeclaration":
+      return identifierTextOf(declaration.id);
+    default:
+      return undefined;
+  }
+}
+
+function namespaceMemberKind(declaration: Declaration): NamespaceMemberKind {
   if (
-    node.type === "TSInterfaceDeclaration" ||
-    node.type === "TSTypeAliasDeclaration" ||
-    stringProperty(node, "importKind") === "type"
+    declaration.type === "TSInterfaceDeclaration" ||
+    declaration.type === "TSTypeAliasDeclaration" ||
+    (declaration.type === "TSImportEqualsDeclaration" && declaration.importKind === "type")
   ) {
     return "type";
   }
-  return node.type === "TSModuleDeclaration" ? "namespace" : "value";
+  return declaration.type === "TSModuleDeclaration" ? "namespace" : "value";
 }
 
 function namespaceMembersOf(
-  node: AstNode,
+  node: TSModuleDeclaration,
   context: LoweringContext,
 ): readonly NamespaceExportedMember[] {
-  const body = nodeProperty(node, "body");
-  const statements = body?.type === "TSModuleBlock" ? nodeArrayProperty(body, "body") : [];
   return normalizeSpanned(
-    statements.flatMap((statement) => {
+    (node.body?.body ?? []).flatMap((statement) => {
       if (statement.type !== "ExportNamedDeclaration") {
         return [];
       }
-      const declaration = nodeProperty(statement, "declaration");
-      if (declaration !== undefined) {
-        const name = identifierOf(nodeProperty(declaration, "id"), context);
+      if (statement.declaration !== null) {
+        const name = declarationNameOf(statement.declaration);
         return name === undefined
           ? []
-          : [{ kind: namespaceMemberKind(declaration), name, span: spanOf(statement, context) }];
+          : [
+              {
+                kind: namespaceMemberKind(statement.declaration),
+                name,
+                span: spanOf(statement, context),
+              },
+            ];
       }
-      return nodeArrayProperty(statement, "specifiers").flatMap((specifier) => {
-        const name = exportedIdentifier(nodeProperty(specifier, "exported"), context);
-        return name === undefined
-          ? []
-          : [{ kind: "value", name, span: spanOf(specifier, context) }];
-      });
+      return statement.specifiers.map((specifier) => ({
+        kind: "value" as const,
+        name: moduleExportNameOf(specifier.exported),
+        span: spanOf(specifier, context),
+      }));
     }),
   );
 }
 
 function lowerNamespace(
-  node: AstNode,
+  node: TSModuleDeclaration,
   topLevel: boolean,
   mode: ExportMode,
   collector: Collector,
   context: LoweringContext,
 ): void {
-  const name = identifierOf(nodeProperty(node, "id"), context);
+  const name = identifierTextOf(node.id);
   if (name === undefined) {
     lowerUnsupported(node, "module-augmentation", topLevel, mode, collector, context);
     return;
@@ -516,21 +454,16 @@ function lowerNamespace(
     kind: "namespace",
     topLevel,
     name,
-    export: declarationExportOf(node, mode, context),
+    export: declarationExportOf(node.id, mode, context),
     exportedMembers: namespaceMembersOf(node, context),
-    span: sourceKeywordSpan(node, "namespace", context),
+    span: sourceKeywordSpan(node, node.id, "namespace", context),
   });
-  const body = nodeProperty(node, "body");
-  if (body?.type === "TSModuleBlock") {
-    for (const statement of nodeArrayProperty(body, "body")) {
-      visitStatement(statement, false, { kind: "none" }, collector, context);
-    }
-  } else if (body?.type === "TSModuleDeclaration") {
-    lowerNamespace(body, false, { kind: "none" }, collector, context);
+  for (const statement of node.body?.body ?? []) {
+    visitStatement(statement, false, { kind: "none" }, collector, context);
   }
 }
 
-function defineBeanOptionsOf(node: AstNode, context: LoweringContext): DefineBeanOptions {
+function defineBeanOptionsOf(node: Node, context: LoweringContext): DefineBeanOptions {
   if (node.type !== "ObjectExpression") {
     return {
       kind: "unsupported",
@@ -540,59 +473,59 @@ function defineBeanOptionsOf(node: AstNode, context: LoweringContext): DefineBea
   }
   return {
     kind: "object",
-    properties: nodeArrayProperty(node, "properties").map((property) =>
-      defineBeanOptionOf(property, context),
-    ),
+    properties: node.properties.map((property) => defineBeanOptionOf(property, context)),
     span: spanOf(node, context),
   };
 }
 
-function defineBeanOptionOf(property: AstNode, context: LoweringContext): DefineBeanOptionProperty {
-  if (property.type === "SpreadElement" || property.type === "SpreadProperty") {
+function defineBeanOptionOf(
+  property: ObjectPropertyKind,
+  context: LoweringContext,
+): DefineBeanOptionProperty {
+  if (property.type === "SpreadElement") {
     return {
       kind: "unsupported-property",
       propertyKind: "spread",
       span: spanOf(property, context),
     };
   }
-  if (booleanProperty(property, "computed")) {
+  if (property.computed) {
     return {
       kind: "unsupported-property",
       propertyKind: "computed",
       span: spanOf(property, context),
     };
   }
-  if (property.type === "ObjectMethod" || booleanProperty(property, "method")) {
+  if (property.method) {
     return {
       kind: "unsupported-property",
       propertyKind: "method",
       span: spanOf(property, context),
     };
   }
-  const key = nodeProperty(property, "key");
-  const value = nodeProperty(property, "value");
   const keyName =
-    identifierOf(key, context)?.text ?? (typeof key?.value === "string" ? key.value : undefined);
-  if (key === undefined || value === undefined || !isDefineBeanKey(keyName)) {
+    identifierTextOf(property.key) ??
+    (property.key.type === "Literal" && typeof property.key.value === "string"
+      ? property.key.value
+      : undefined);
+  if (!isDefineBeanKey(keyName)) {
     return {
       kind: "unsupported-property",
       propertyKind: "unknown-key",
       span: spanOf(property, context),
     };
   }
-  const keySpan = spanOf(key, context);
   if (keyName === "create" || keyName === "dispose") {
     return {
       kind: keyName,
-      keySpan,
-      value: functionDescriptorOf(value, context) ?? expressionValueOf(value, context),
+      value:
+        functionDescriptorOf(property.value, context) ?? expressionValueOf(property.value, context),
       span: spanOf(property, context),
     };
   }
   return {
     kind: keyName,
-    keySpan,
-    value: expressionValueOf(value, context),
+    value: expressionValueOf(property.value, context),
     span: spanOf(property, context),
   };
 }
@@ -607,36 +540,37 @@ function entityTail(entity: ReturnType<typeof entityNameOf>): string | undefined
   if (entity === undefined) {
     return undefined;
   }
-  return entity.kind === "identifier" ? entity.name.text : entity.right.text;
+  return entity.kind === "identifier" ? entity.name : entity.right;
 }
 
 function lowerBeanFactory(
-  declaration: AstNode,
-  declarator: AstNode,
+  declaration: VariableDeclaration,
+  declarator: VariableDeclarator,
   topLevel: boolean,
   mode: ExportMode,
   collector: Collector,
   context: LoweringContext,
 ): void {
-  const call = nodeProperty(declarator, "init");
-  if (call?.type !== "CallExpression" && call?.type !== "OptionalCallExpression") {
+  const call = declarator.init;
+  if (call?.type !== "CallExpression") {
     return;
   }
-  const callee = entityNameOf(nodeProperty(call, "callee"), context);
+  const callee = entityNameOf(call.callee, context);
   if (callee === undefined || entityTail(callee) !== "defineBean") {
     return;
   }
-  const options = nodeArrayProperty(call, "arguments")[0];
+  const options = call.arguments[0];
+  const name = identifierTextOf(declarator.id);
   collector.beanFactories.push({
     kind: "define-bean",
     topLevel,
     declarationKind: variableDeclarationKind(declaration),
-    ...(identifierOf(nodeProperty(declarator, "id"), context) === undefined
-      ? {}
-      : { name: identifierOf(nodeProperty(declarator, "id"), context) }),
-    export: declarationExportOf(declarator, mode, context),
+    ...(name === undefined ? {} : { name }),
+    export: declarationExportOf(declarator.id, mode, context),
     callee,
-    typeArguments: callTypeArguments(call).map((argument) => typeNodeOf(argument, context)),
+    typeArguments: (call.typeArguments?.params ?? []).map((argument) =>
+      typeNodeOf(argument, context),
+    ),
     options:
       options === undefined
         ? { kind: "unsupported", expressionKind: "other", span: spanOf(call, context) }
@@ -645,81 +579,131 @@ function lowerBeanFactory(
   });
 }
 
-function variableDeclarationKind(node: AstNode): "const" | "let" | "var" {
-  const kind = stringProperty(node, "kind");
-  return kind === "let" || kind === "var" ? kind : "const";
-}
-
-function callTypeArguments(node: AstNode): readonly AstNode[] {
-  const owner = nodeProperty(node, "typeArguments") ?? nodeProperty(node, "typeParameters");
-  return owner === undefined ? [] : nodeArrayProperty(owner, "params");
+function variableDeclarationKind(node: VariableDeclaration): "const" | "let" | "var" {
+  return node.kind === "let" || node.kind === "var" ? node.kind : "const";
 }
 
 function lowerUnsupported(
-  node: AstNode,
+  node: UnsupportedDeclaration | TSModuleDeclaration,
   declarationKind: UnsupportedNamedDeclarationKind,
   topLevel: boolean,
   mode: ExportMode,
   collector: Collector,
   context: LoweringContext,
 ): void {
+  const name = declarationNameOf(node);
   collector.unsupportedDeclarations.push({
     kind: "unsupported-named-declaration",
     declarationKind,
     topLevel,
-    ...(identifierOf(nodeProperty(node, "id"), context) === undefined
-      ? {}
-      : { name: identifierOf(nodeProperty(node, "id"), context) }),
-    export: declarationExportOf(node, mode, context),
-    typeParameters: typeParametersOf(node, context),
+    ...(name === undefined ? {} : { name }),
+    export: declarationExportOf(node.id, mode, context),
+    generic: typeParameterNamesOf(node).size > 0,
     span: spanOf(node, context),
   });
 }
 
-function unsupportedKind(node: AstNode): UnsupportedNamedDeclarationKind | undefined {
-  const kinds: Readonly<Record<string, UnsupportedNamedDeclarationKind>> = {
-    TSTypeAliasDeclaration: "type-alias",
-    TSEnumDeclaration: "enum",
-    FunctionDeclaration: "function",
-    TSDeclareFunction: "function",
-    TSImportEqualsDeclaration: "import-alias",
-  };
-  return kinds[node.type];
+function unsupportedKind(node: UnsupportedDeclaration): UnsupportedNamedDeclarationKind {
+  switch (node.type) {
+    case "TSTypeAliasDeclaration":
+      return "type-alias";
+    case "TSEnumDeclaration":
+      return "enum";
+    case "FunctionDeclaration":
+    case "TSDeclareFunction":
+      return "function";
+    case "TSImportEqualsDeclaration":
+      return "import-alias";
+  }
 }
 
-function visitWrappedExport(
-  node: AstNode,
+function isUnsupportedDeclaration(node: Node): node is UnsupportedDeclaration {
+  return (
+    node.type === "TSTypeAliasDeclaration" ||
+    node.type === "TSEnumDeclaration" ||
+    node.type === "FunctionDeclaration" ||
+    node.type === "TSDeclareFunction" ||
+    node.type === "TSImportEqualsDeclaration"
+  );
+}
+
+function visitDefaultDeclaration(
+  node: ParserExportDefaultDeclaration,
   topLevel: boolean,
   collector: Collector,
   context: LoweringContext,
-): boolean {
-  if (node.type !== "ExportNamedDeclaration" && node.type !== "ExportDefaultDeclaration") {
-    return false;
+): void {
+  const mode = { kind: "default-only", owner: node } as const;
+  const declaration = node.declaration;
+  if (declaration.type === "ClassDeclaration" || declaration.type === "ClassExpression") {
+    lowerClass(declaration, topLevel, mode, collector, context);
+    return;
   }
-  const declaration = nodeProperty(node, "declaration");
-  if (declaration === undefined) {
-    return false;
+  if (declaration.type === "TSInterfaceDeclaration") {
+    lowerInterface(declaration, topLevel, mode, collector, context);
+    return;
   }
-  visitStatement(
-    declaration,
-    topLevel,
-    { kind: node.type === "ExportNamedDeclaration" ? "named" : "default-only", owner: node },
-    collector,
-    context,
+  if (isUnsupportedDeclaration(declaration)) {
+    lowerUnsupported(declaration, unsupportedKind(declaration), topLevel, mode, collector, context);
+  }
+}
+
+function isModuleDeclaration(node: ProgramStatement): node is ModuleDeclaration {
+  return (
+    node.type === "ImportDeclaration" ||
+    node.type === "ExportNamedDeclaration" ||
+    node.type === "ExportAllDeclaration" ||
+    node.type === "ExportDefaultDeclaration" ||
+    node.type === "TSExportAssignment" ||
+    node.type === "TSNamespaceExportDeclaration"
   );
-  return true;
+}
+
+function visitModuleDeclaration(
+  node: ModuleDeclaration,
+  topLevel: boolean,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  if (node.type === "ImportDeclaration") {
+    lowerImport(node, collector, context);
+    return;
+  }
+  if (node.type === "ExportNamedDeclaration") {
+    if (node.declaration === null) {
+      lowerNamedExport(node, collector, context);
+      return;
+    }
+    visitStatement(node.declaration, topLevel, { kind: "named", owner: node }, collector, context);
+    return;
+  }
+  if (node.type === "ExportAllDeclaration") {
+    lowerExportAll(node, collector, context);
+    return;
+  }
+  if (node.type === "ExportDefaultDeclaration") {
+    lowerDefaultExport(node, collector, context);
+    visitDefaultDeclaration(node, topLevel, collector, context);
+    return;
+  }
+  if (node.type === "TSExportAssignment") {
+    collector.exports.push({
+      kind: "unsupported-export",
+      syntaxKind: "export-assignment",
+      span: spanOf(node, context),
+    });
+  }
 }
 
 function visitStatement(
-  node: AstNode,
+  node: ProgramStatement,
   topLevel: boolean,
   mode: ExportMode,
   collector: Collector,
   context: LoweringContext,
 ): void {
-  lowerImport(node, collector, context);
-  lowerExport(node, collector, context);
-  if (visitWrappedExport(node, topLevel, collector, context)) {
+  if (isModuleDeclaration(node)) {
+    visitModuleDeclaration(node, topLevel, collector, context);
     return;
   }
   if (node.type === "ClassDeclaration") {
@@ -735,59 +719,90 @@ function visitStatement(
     return;
   }
   if (node.type === "VariableDeclaration") {
-    for (const declarator of nodeArrayProperty(node, "declarations")) {
+    for (const declarator of node.declarations) {
       lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
     }
     return;
   }
-  const kind = unsupportedKind(node);
-  if (kind !== undefined) {
-    lowerUnsupported(node, kind, topLevel, mode, collector, context);
+  if (isUnsupportedDeclaration(node)) {
+    if (node.type === "TSImportEqualsDeclaration") {
+      lowerImport(node, collector, context);
+    }
+    lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
     return;
   }
   visitNestedStatements(node, collector, context);
 }
 
 function visitNestedStatements(
-  node: AstNode,
+  node: ProgramStatement,
   collector: Collector,
   context: LoweringContext,
 ): void {
-  const statementKeys = ["body", "consequent", "alternate"];
-  for (const key of statementKeys) {
-    const value = node[key];
-    if (isAstNode(value)) {
-      visitStatement(value, false, { kind: "none" }, collector, context);
-      continue;
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (isAstNode(item)) {
-          visitStatement(item, false, { kind: "none" }, collector, context);
+  const visit = (statement: ProgramStatement): void => {
+    visitStatement(statement, false, { kind: "none" }, collector, context);
+  };
+  switch (node.type) {
+    case "BlockStatement":
+      for (const statement of node.body) {
+        visit(statement);
+      }
+      return;
+    case "IfStatement":
+      visit(node.consequent);
+      if (node.alternate !== null) {
+        visit(node.alternate);
+      }
+      return;
+    case "ForStatement":
+    case "ForInStatement":
+    case "ForOfStatement":
+    case "WhileStatement":
+    case "DoWhileStatement":
+    case "LabeledStatement":
+    case "WithStatement":
+      visit(node.body);
+      return;
+    case "SwitchStatement":
+      for (const switchCase of node.cases) {
+        for (const statement of switchCase.consequent) {
+          visit(statement);
         }
       }
-    }
+      return;
+    case "TryStatement":
+      visit(node.block);
+      if (node.handler !== null) {
+        visit(node.handler.body);
+      }
+      if (node.finalizer !== null) {
+        visit(node.finalizer);
+      }
+      return;
+    default:
+      return;
   }
 }
 
-export function lowerSourceUnit(
+export function lowerSource(
   file: CanonicalFileId,
-  sourceKind: SourceKind,
   sourceText: string,
-  program: unknown,
-): SourceUnit {
-  if (!isAstNode(program) || program.type !== "Program") {
-    throw new TypeError("Parser did not return a Program node.");
-  }
-  const collector = createCollector();
+  program: Program,
+): SourceFileIr {
+  const collector: Collector = {
+    imports: [],
+    exports: [],
+    interfaces: [],
+    namespaces: [],
+    classes: [],
+    beanFactories: [],
+    unsupportedDeclarations: [],
+  };
   const context = { mapper: createSourceMapper(file, sourceText), sourceText };
-  for (const statement of nodeArrayProperty(program, "body")) {
+  for (const statement of program.body) {
     visitStatement(statement, true, { kind: "none" }, collector, context);
   }
   return {
-    kind: "source-unit",
-    file,
-    sourceKind,
     imports: normalizeSpanned(collector.imports),
     exports: normalizeSpanned(collector.exports),
     interfaces: normalizeSpanned(collector.interfaces),

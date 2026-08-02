@@ -1,22 +1,22 @@
 import { LRUCache } from "lru-cache";
-import { compileProject } from "./compile-project";
-import type { SourceUnit } from "./parser/source-ir";
-import { resolveProject } from "./project/resolve-project";
 import type {
   CompileRequest,
   CompileResult,
   ProjectResolutionResult,
-  ProjectState,
   ResolvedApplicationProject,
   ResolveProjectRequest,
-} from "./types";
+} from "./api";
+import { compile } from "./compile";
+import type { SourceFileIr } from "./parser/source-ir";
+import type { ProjectState } from "./project/project-config";
+import { resolveProject } from "./project/resolve-project";
 
 export function createCompiler(): Readonly<{
   resolveProject(request: ResolveProjectRequest): Promise<ProjectResolutionResult>;
   compile(request: CompileRequest): Promise<CompileResult>;
 }> {
   const projects = new WeakMap<ResolvedApplicationProject, ProjectState>();
-  const parseCache = new LRUCache<string, SourceUnit>({ max: 512 });
+  const parseCache = new LRUCache<string, SourceFileIr>({ max: 512 });
   return Object.freeze({
     resolveProject(request: ResolveProjectRequest) {
       return resolveProject(request, ({ project, state }) => {
@@ -24,7 +24,7 @@ export function createCompiler(): Readonly<{
       });
     },
     compile(request: CompileRequest) {
-      return compileProject(request, projects.get(request.project), parseCache);
+      return compile(request, projects.get(request.project), parseCache);
     },
   });
 }

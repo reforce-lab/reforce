@@ -1,24 +1,22 @@
-import { createHash } from "node:crypto";
 import * as nodeFileSystem from "node:fs";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import enhancedResolve from "enhanced-resolve";
 import type { LRUCache } from "lru-cache";
+import type { CompilerDiagnostic, ResolvedApplicationProject } from "../api";
 import { compareUtf16CodeUnits } from "../determinism";
 import { diagnostic } from "../diagnostics";
-import { parseSource } from "../parser/parse-source";
 import type {
   ClassDeclaration,
   EntityName,
   InterfaceDeclaration,
-  SourceUnit,
+  SourceFileIr,
   TypeNode,
 } from "../parser/source-ir";
-import type { CanonicalFileId, SourceSpan } from "../parser/source-location";
-import { type ParsedSource, sourceKindOf } from "../project/source-files";
-import type { CompilerDiagnostic, ResolvedApplicationProject } from "../types";
+import type { SourceSpan } from "../parser/source-location";
+import type { ParsedSource } from "../project/source-files";
+import { type ExternalDeclaration, readExternalDeclarations } from "./external-declarations";
 
-export type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
+type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
 
 export interface LinkedSymbol {
   readonly key: string;
@@ -55,7 +53,7 @@ interface ResolvedModule {
   readonly record?: ModuleRecord;
 }
 
-export interface Linker {
+export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
   readonly fileDependencies: readonly string[];
   readonly contextDependencies: readonly string[];
@@ -69,9 +67,7 @@ export interface Linker {
 }
 
 function entityText(entity: EntityName): string {
-  return entity.kind === "identifier"
-    ? entity.name.text
-    : `${entityText(entity.left)}.${entity.right.text}`;
+  return entity.kind === "identifier" ? entity.name : `${entityText(entity.left)}.${entity.right}`;
 }
 
 function moduleKey(file: string): string {
@@ -86,7 +82,7 @@ function createLocalSymbol(
   source: ParsedSource,
   declaration: ClassDeclaration | InterfaceDeclaration,
 ): LinkedSymbol | undefined {
-  const name = declaration.name?.text;
+  const name = declaration.name;
   if (name === undefined) {
     return undefined;
   }
@@ -97,7 +93,7 @@ function createLocalSymbol(
     moduleSpecifier: source.fileId,
     source,
     declaration,
-    generic: declaration.typeParameters.length > 0,
+    generic: declaration.generic,
   });
 }
 
@@ -110,7 +106,7 @@ function localSymbolsFor(source: ParsedSource): ReadonlyMap<string, LinkedSymbol
     }
   }
   for (const declaration of source.unit.unsupportedDeclarations) {
-    const name = declaration.name?.text;
+    const name = declaration.name;
     if (name !== undefined) {
       localSymbols.set(
         name,
@@ -120,7 +116,7 @@ function localSymbolsFor(source: ParsedSource): ReadonlyMap<string, LinkedSymbol
           name,
           moduleSpecifier: source.fileId,
           source,
-          generic: declaration.typeParameters.length > 0,
+          generic: declaration.generic,
         }),
       );
     }
@@ -136,24 +132,24 @@ function importReferencesFor(source: ParsedSource): ReadonlyMap<string, ImportRe
     }
     for (const binding of declaration.bindings) {
       if (binding.kind === "default") {
-        imports.set(binding.local.text, {
-          moduleSpecifier: declaration.moduleSpecifier.text,
+        imports.set(binding.local, {
+          moduleSpecifier: declaration.moduleSpecifier,
           imported: "default",
           namespace: false,
         });
         continue;
       }
       if (binding.kind === "namespace") {
-        imports.set(binding.local.text, {
-          moduleSpecifier: declaration.moduleSpecifier.text,
+        imports.set(binding.local, {
+          moduleSpecifier: declaration.moduleSpecifier,
           imported: "*",
           namespace: true,
         });
         continue;
       }
-      imports.set(binding.local.text, {
-        moduleSpecifier: declaration.moduleSpecifier.text,
-        imported: binding.imported.text,
+      imports.set(binding.local, {
+        moduleSpecifier: declaration.moduleSpecifier,
+        imported: binding.imported,
         namespace: false,
       });
     }
@@ -169,147 +165,11 @@ function createModuleRecord(source: ParsedSource): ModuleRecord {
   };
 }
 
-interface ExternalExport {
-  readonly kind: "class" | "interface";
-  readonly generic: boolean;
-}
-
-interface ExternalExportCandidate extends ExternalExport {
-  readonly identity: string;
-}
-
-function addExternalExportCandidate(
-  candidates: Map<string, Map<string, ExternalExportCandidate>>,
-  exportedName: string,
-  candidate: ExternalExportCandidate,
-): void {
-  const byIdentity = candidates.get(exportedName) ?? new Map<string, ExternalExportCandidate>();
-  const existing = byIdentity.get(candidate.identity);
-  byIdentity.set(candidate.identity, {
-    identity: candidate.identity,
-    kind: candidate.kind,
-    generic: existing?.generic === true || candidate.generic,
-  });
-  candidates.set(exportedName, byIdentity);
-}
-
-function declarationExportName(
-  declaration: ClassDeclaration | InterfaceDeclaration,
-): string | undefined {
-  if (declaration.export.kind === "named") {
-    return declaration.export.exportedName.text;
-  }
-  return declaration.export.kind === "default-only" ? "default" : undefined;
-}
-
-function collectExternalDeclarations(
-  unit: SourceUnit,
-  candidates: Map<string, Map<string, ExternalExportCandidate>>,
-): ReadonlyMap<string, ExternalExportCandidate> {
-  const locals = new Map<string, ExternalExportCandidate>();
-  for (const declaration of [...unit.interfaces, ...unit.classes]) {
-    const name = declaration.name?.text;
-    const generic = declaration.typeParameters.length > 0;
-    const identity =
-      name === undefined
-        ? `${declaration.kind}:${declaration.span.start.offset}`
-        : `${declaration.kind}:${name}`;
-    const candidate = { identity, kind: declaration.kind, generic };
-    if (name !== undefined) {
-      const existing = locals.get(name);
-      locals.set(name, {
-        identity,
-        kind: declaration.kind,
-        generic: existing?.generic === true || generic,
-      });
-    }
-    const exportedName = declarationExportName(declaration);
-    if (exportedName !== undefined) {
-      addExternalExportCandidate(candidates, exportedName, candidate);
-    }
-  }
-  return locals;
-}
-
-function localExportCandidates(
-  declaration: SourceUnit["exports"][number],
-  locals: ReadonlyMap<string, ExternalExportCandidate>,
-): readonly (readonly [string, ExternalExportCandidate])[] {
-  if (declaration.kind === "local-named") {
-    return declaration.specifiers.flatMap((specifier) => {
-      const local = locals.get(specifier.local.text);
-      return local === undefined ? [] : [[specifier.exported.text, local] as const];
-    });
-  }
-  if (declaration.kind !== "default-local") {
-    return [];
-  }
-  const local = locals.get(declaration.local.text);
-  return local === undefined ? [] : [["default", local] as const];
-}
-
-function directExternalExports(unit: SourceUnit): ReadonlyMap<string, ExternalExport> {
-  const candidates = new Map<string, Map<string, ExternalExportCandidate>>();
-  const locals = collectExternalDeclarations(unit, candidates);
-  for (const declaration of unit.exports) {
-    for (const [exportedName, candidate] of localExportCandidates(declaration, locals)) {
-      addExternalExportCandidate(candidates, exportedName, candidate);
-    }
-  }
-  return new Map(
-    [...candidates].flatMap(([exportedName, byIdentity]) => {
-      const candidate = byIdentity.size === 1 ? [...byIdentity.values()][0] : undefined;
-      return candidate === undefined
-        ? []
-        : [[exportedName, { kind: candidate.kind, generic: candidate.generic }] as const];
-    }),
-  );
-}
-
-function externalParserFileId(physicalPath: string): CanonicalFileId {
-  const digest = createHash("sha256").update(physicalPath, "utf8").digest("hex");
-  return `external/${digest}.ts` as CanonicalFileId; // The fixed prefix and hex digest satisfy the canonical relative path grammar.
-}
-
-async function readExternalExports(
-  physicalPath: string,
-  cache: LRUCache<string, SourceUnit>,
-): Promise<ReadonlyMap<string, ExternalExport> | undefined> {
-  const sourceKind = sourceKindOf(physicalPath);
-  if (sourceKind === undefined) {
-    return undefined;
-  }
-  let sourceText: string;
-  try {
-    sourceText = await readFile(physicalPath, "utf8");
-  } catch {
-    return undefined;
-  }
-  const sourceHash = createHash("sha256").update(sourceText, "utf8").digest("hex");
-  const cacheKey = JSON.stringify(["external-declaration", physicalPath, sourceHash, sourceKind]);
-  const cached = cache.get(cacheKey);
-  const parsed =
-    cached === undefined
-      ? parseSource({ file: externalParserFileId(physicalPath), sourceKind, sourceText })
-      : undefined;
-  if (parsed?.status === "failure") {
-    return undefined;
-  }
-  const unit = cached ?? parsed?.unit;
-  if (unit === undefined) {
-    return undefined;
-  }
-  if (cached === undefined) {
-    cache.set(cacheKey, unit);
-  }
-  return directExternalExports(unit);
-}
-
 function referencedModuleSpecifiers(source: ParsedSource): readonly string[] {
   const specifiers = new Set<string>();
   for (const declaration of source.unit.imports) {
     if (declaration.kind === "import") {
-      specifiers.add(declaration.moduleSpecifier.text);
+      specifiers.add(declaration.moduleSpecifier);
     }
   }
   for (const declaration of source.unit.exports) {
@@ -318,7 +178,7 @@ function referencedModuleSpecifiers(source: ParsedSource): readonly string[] {
       declaration.kind === "reexport-all" ||
       declaration.kind === "namespace"
     ) {
-      specifiers.add(declaration.moduleSpecifier.text);
+      specifiers.add(declaration.moduleSpecifier);
     }
   }
   return [...specifiers];
@@ -330,11 +190,11 @@ type ModuleResolver = (
   reportFailure?: boolean,
 ) => ResolvedModule | undefined;
 
-async function loadExternalExports(
+async function loadExternalDeclarations(
   sources: readonly ParsedSource[],
   resolveModule: ModuleResolver,
-  cache: LRUCache<string, SourceUnit>,
-): Promise<ReadonlyMap<string, ReadonlyMap<string, ExternalExport> | undefined>> {
+  cache: LRUCache<string, SourceFileIr>,
+): Promise<ReadonlyMap<string, ReadonlyMap<string, ExternalDeclaration> | undefined>> {
   const externalPaths = new Set<string>();
   for (const source of sources) {
     for (const specifier of referencedModuleSpecifiers(source)) {
@@ -345,9 +205,9 @@ async function loadExternalExports(
       }
     }
   }
-  const result = new Map<string, ReadonlyMap<string, ExternalExport> | undefined>();
+  const result = new Map<string, ReadonlyMap<string, ExternalDeclaration> | undefined>();
   for (const physicalPath of [...externalPaths].sort(compareUtf16CodeUnits)) {
-    result.set(physicalPath, await readExternalExports(physicalPath, cache));
+    result.set(physicalPath, await readExternalDeclarations(physicalPath, cache));
   }
   return result;
 }
@@ -370,12 +230,12 @@ function classifyResolverDependencies(
   }
 }
 
-export async function createLinker(
+export async function createProjectLinker(
   sources: readonly ParsedSource[],
   project: ResolvedApplicationProject,
-  cache: LRUCache<string, SourceUnit>,
+  cache: LRUCache<string, SourceFileIr>,
   customConditions: readonly string[] = [],
-): Promise<Linker> {
+): Promise<ProjectLinker> {
   const records = new Map<string, ModuleRecord>();
   const recordsByFileId = new Map<string, ModuleRecord>();
   const diagnostics: CompilerDiagnostic[] = [];
@@ -480,7 +340,7 @@ export async function createLinker(
     return result;
   }
 
-  const externalExports = await loadExternalExports(sources, resolveModule, cache);
+  const externalDeclarations = await loadExternalDeclarations(sources, resolveModule, cache);
   classifyResolverDependencies(
     resolverFileDependencies,
     fileDependencies,
@@ -520,9 +380,9 @@ export async function createLinker(
       if (declaration.kind !== "local-named") {
         continue;
       }
-      const specifier = declaration.specifiers.find((item) => item.exported.text === exportedName);
+      const specifier = declaration.specifiers.find((item) => item.exported === exportedName);
       if (specifier !== undefined) {
-        const symbol = resolveLocal(record, specifier.local.text, visited);
+        const symbol = resolveLocal(record, specifier.local, visited);
         return symbol === undefined ? { matched: true } : { matched: true, symbol };
       }
     }
@@ -551,12 +411,12 @@ export async function createLinker(
       if (declaration.kind !== "reexport-named") {
         continue;
       }
-      const specifier = declaration.specifiers.find((item) => item.exported.text === exportedName);
+      const specifier = declaration.specifiers.find((item) => item.exported === exportedName);
       if (specifier !== undefined) {
         const symbol = resolveExportFromModule(
           record,
-          declaration.moduleSpecifier.text,
-          specifier.local.text,
+          declaration.moduleSpecifier,
+          specifier.local,
           visited,
         );
         return symbol === undefined ? { matched: true } : { matched: true, symbol };
@@ -570,18 +430,18 @@ export async function createLinker(
     exportedName: string,
   ): NamedExportResolution {
     const declaration = record.source.unit.exports.find(
-      (item) => item.kind === "namespace" && item.exported.text === exportedName,
+      (item) => item.kind === "namespace" && item.exported === exportedName,
     );
     if (declaration?.kind !== "namespace") {
       return { matched: false };
     }
-    const target = resolveModule(record.source, declaration.moduleSpecifier.text);
+    const target = resolveModule(record.source, declaration.moduleSpecifier);
     if (target === undefined) {
       return { matched: true };
     }
     const key = `namespace:${record.source.fileId}#${exportedName}:${declaration.span.start.offset}`;
     namespaceTargets.set(key, {
-      moduleSpecifier: declaration.moduleSpecifier.text,
+      moduleSpecifier: declaration.moduleSpecifier,
       target,
     });
     return {
@@ -623,13 +483,13 @@ export async function createLinker(
       if (declaration.kind !== "reexport-all") {
         continue;
       }
-      const target = resolveModule(record.source, declaration.moduleSpecifier.text);
+      const target = resolveModule(record.source, declaration.moduleSpecifier);
       if (target === undefined) {
         continue;
       }
       const candidate = resolveModuleExport(
         target,
-        declaration.moduleSpecifier.text,
+        declaration.moduleSpecifier,
         exportedName,
         new Set(visited),
       );
@@ -681,7 +541,7 @@ export async function createLinker(
     imported: string,
     physicalPath: string,
   ): LinkedSymbol | undefined {
-    const directExport = externalExports.get(physicalPath)?.get(imported);
+    const directExport = externalDeclarations.get(physicalPath)?.get(imported);
     if (directExport === undefined) {
       return undefined;
     }
@@ -748,12 +608,12 @@ export async function createLinker(
   function resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined {
     const record = recordFor(source);
     if (entity.kind === "identifier") {
-      return resolveLocal(record, entity.name.text);
+      return resolveLocal(record, entity.name);
     }
     if (entity.left.kind === "identifier") {
-      const namespace = record.imports.get(entity.left.name.text);
+      const namespace = record.imports.get(entity.left.name);
       if (namespace?.namespace === true) {
-        return resolveImport(record, namespace, entity.right.text);
+        return resolveImport(record, namespace, entity.right);
       }
     }
     const namespace = resolveEntity(source, entity.left);
@@ -763,7 +623,7 @@ export async function createLinker(
     const target = namespaceTargets.get(namespace.key);
     return target === undefined
       ? undefined
-      : resolveModuleExport(target.target, target.moduleSpecifier, entity.right.text, new Set());
+      : resolveModuleExport(target.target, target.moduleSpecifier, entity.right, new Set());
   }
 
   function resolveLazyType(
@@ -805,7 +665,7 @@ export async function createLinker(
           symbol,
           typeArguments: type.typeArguments,
           lazy: false,
-          qualifierMember: type.name.right.text,
+          qualifierMember: type.name.right,
           span: type.span,
         }
       : undefined;
@@ -846,7 +706,7 @@ export async function createLinker(
     source: ParsedSource,
     declaration: ClassDeclaration | InterfaceDeclaration,
   ): LinkedSymbol | undefined {
-    const name = declaration.name?.text;
+    const name = declaration.name;
     return name === undefined ? undefined : recordFor(source).localSymbols.get(name);
   }
 

@@ -1,13 +1,11 @@
+import type { CompilerDiagnostic, CompilerDiagnosticCode } from "./api";
 import { compareUtf16CodeUnits, stableStructuralKey } from "./determinism";
 import type { SourceSpan } from "./parser/source-location";
-import type {
-  CompilerDiagnostic,
-  CompilerDiagnosticCode,
-  DiagnosticCause,
-  DiagnosticRelatedInformation,
-} from "./types";
 
-export interface DiagnosticInput {
+type DiagnosticCause = NonNullable<CompilerDiagnostic["cause"]>;
+type DiagnosticRelatedInformation = CompilerDiagnostic["related"][number];
+
+interface DiagnosticInput {
   readonly code: CompilerDiagnosticCode;
   readonly message: string;
   readonly sourceSpan?: SourceSpan;

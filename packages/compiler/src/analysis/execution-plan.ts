@@ -8,7 +8,6 @@ interface PlanProviderBase {
   readonly id: string;
   readonly dependencies: readonly PlanDependency[];
 }
-
 type PlanProvider =
   | (PlanProviderBase & {
       readonly kind: "class";

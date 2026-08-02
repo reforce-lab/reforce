@@ -1,8 +1,8 @@
 import { parse, type SourceLang, type SourceType } from "yuku-parser";
+import type { CompilerDiagnostic } from "../api";
 import { diagnostic } from "../diagnostics";
-import type { CompilerDiagnostic } from "../types";
-import { lowerSourceUnit } from "./lower-source";
-import type { SourceKind, SourceUnit } from "./source-ir";
+import { lowerSource } from "./lower-source";
+import type { SourceFileIr, SourceKind } from "./source-ir";
 import { type CanonicalFileId, createSourceMapper } from "./source-location";
 
 export interface ParseSourceInput {
@@ -12,7 +12,7 @@ export interface ParseSourceInput {
 }
 
 export type ParseSourceResult =
-  | { readonly status: "success"; readonly unit: SourceUnit }
+  | { readonly status: "success"; readonly unit: SourceFileIr }
   | {
       readonly status: "failure";
       readonly diagnostics: readonly [CompilerDiagnostic, ...CompilerDiagnostic[]];
@@ -59,7 +59,7 @@ export function parseSource(input: ParseSourceInput): ParseSourceResult {
     }
     return {
       status: "success",
-      unit: lowerSourceUnit(input.file, input.sourceKind, input.sourceText, parsed.program),
+      unit: lowerSource(input.file, input.sourceText, parsed.program),
     };
   } catch {
     return syntaxFailure(input, 0, 0);

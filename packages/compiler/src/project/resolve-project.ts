@@ -1,27 +1,25 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import {
+  type ProjectResolutionResult,
+  type ResolvedApplicationProject,
+  type ResolveProjectRequest,
+  resolvedApplicationProjectBrand,
+} from "../api";
 import { sortNativePaths } from "../determinism";
 import { diagnostic } from "../diagnostics";
-import type {
-  ProjectResolutionResult,
-  ProjectState,
-  ResolvedApplicationProject,
-  ResolveProjectRequest,
-} from "../types";
-import { createResolvedApplicationProject } from "../types";
-import {
-  type ConfigCandidateResult,
-  candidateDisplayOrder,
-  inspectConfigCandidate,
-} from "./config";
 import { isPathContained } from "./path-identity";
+import { inspectProjectConfigCandidate, type ProjectState } from "./project-config";
+import { createWatchInputs } from "./watch-inputs";
 
-export interface ResolvedProjectRecord {
+interface ResolvedProjectRecord {
   readonly project: ResolvedApplicationProject;
   readonly state: ProjectState;
 }
 
-export type RememberProject = (record: ResolvedProjectRecord) => void;
+type RememberProject = (record: ResolvedProjectRecord) => void;
+
+type ConfigCandidateResult = Awaited<ReturnType<typeof inspectProjectConfigCandidate>>;
 
 interface SelectionBoundary {
   readonly canonicalPath: string;
@@ -44,11 +42,7 @@ function failure(
   return {
     status: "failure",
     diagnostics: [item],
-    watchInputs: {
-      fileDependencies: sortNativePaths(dependencies.fileDependencies ?? []),
-      contextDependencies: sortNativePaths(dependencies.contextDependencies ?? []),
-      missingDependencies: sortNativePaths(dependencies.missingDependencies ?? []),
-    },
+    watchInputs: createWatchInputs(dependencies),
   };
 }
 
@@ -124,7 +118,7 @@ async function selectCandidates(
     .map((entry) => path.join(boundary, entry.name));
   return {
     status: "success",
-    candidates: candidateDisplayOrder(candidates).map((candidate) => ({
+    candidates: sortNativePaths(candidates).map((candidate) => ({
       canonicalPath: candidate,
       identityPath: candidate,
     })),
@@ -141,17 +135,16 @@ function ambiguousSelectionFailure(
       diagnostic({
         code: "UNSUPPORTED_PROJECT_CONFIG",
         message: `Multiple leaf application tsconfigs exist directly in ${boundary}.`,
-        related: candidateDisplayOrder(candidates).map((candidate) => ({
+        related: sortNativePaths(candidates).map((candidate) => ({
           message: candidate,
         })),
         help: "Pass --tsconfig to select one application config.",
       }),
     ],
-    watchInputs: {
-      fileDependencies: sortNativePaths(candidates),
-      contextDependencies: Object.freeze([boundary]),
-      missingDependencies: Object.freeze([]),
-    },
+    watchInputs: createWatchInputs({
+      fileDependencies: candidates,
+      contextDependencies: [boundary],
+    }),
   };
 }
 
@@ -254,7 +247,7 @@ export async function resolveProject(
 
   const inspected = await Promise.all(
     selection.candidates.map((candidate) =>
-      inspectConfigCandidate(boundary, candidate.canonicalPath, {
+      inspectProjectConfigCandidate(boundary, candidate.canonicalPath, {
         selectionBoundary: resolvedBoundary.identityPath,
         config: candidate.identityPath,
       }),
@@ -275,9 +268,10 @@ export async function resolveProject(
       : explicitSelectionFailure(candidatePaths, inspected);
   }
 
-  const project = createResolvedApplicationProject({
+  const project: ResolvedApplicationProject = Object.freeze({
     projectRoot: selected.projectRoot,
     tsconfigPath: selected.tsconfigPath,
+    [resolvedApplicationProjectBrand]: true as const,
   });
   remember({ project, state: selected.state });
   return {

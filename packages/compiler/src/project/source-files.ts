@@ -2,40 +2,36 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { LRUCache } from "lru-cache";
-import { compareUtf16CodeUnits, sortNativePaths } from "../determinism";
+import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "../api";
+import { compareUtf16CodeUnits } from "../determinism";
 import { diagnostic } from "../diagnostics";
 import { parseSource } from "../parser/parse-source";
-import type { SourceKind, SourceUnit } from "../parser/source-ir";
+import type { SourceFileIr, SourceKind } from "../parser/source-ir";
 import type { CanonicalFileId } from "../parser/source-location";
-import type {
-  CompilerDiagnostic,
-  CompilerWatchInputs,
-  ProjectState,
-  ResolvedApplicationProject,
-} from "../types";
 import { isPathContained, toPortablePath } from "./path-identity";
-import { type PortableSourceIdentity, registerPortableSourceIdentity } from "./source-identity";
+import type { ProjectState } from "./project-config";
+import { createWatchInputs, mergeWatchInputs } from "./watch-inputs";
 
 export interface ParsedSource {
   readonly absolutePath: string;
   readonly fileId: CanonicalFileId;
   readonly sourceKind: SourceKind;
-  readonly unit: SourceUnit;
+  readonly unit: SourceFileIr;
 }
 
-export interface ParseProjectSuccess {
+interface ParseProjectSuccess {
   readonly status: "success";
   readonly sources: readonly ParsedSource[];
   readonly watchInputs: CompilerWatchInputs;
 }
 
-export interface ParseProjectFailure {
+interface ParseProjectFailure {
   readonly status: "failure";
   readonly diagnostics: readonly [CompilerDiagnostic, ...CompilerDiagnostic[]];
   readonly watchInputs: CompilerWatchInputs;
 }
 
-export type ParseProjectResult = ParseProjectSuccess | ParseProjectFailure;
+type ParseProjectResult = ParseProjectSuccess | ParseProjectFailure;
 
 export function sourceKindOf(file: string): SourceKind | undefined {
   if (file.endsWith(".d.mts")) {
@@ -63,15 +59,22 @@ function canonicalFileId(value: string): CanonicalFileId {
   return value as CanonicalFileId; // The opaque brand records the validation performed by source discovery.
 }
 
-function mergeWatchInputs(
-  base: CompilerWatchInputs,
-  files: readonly string[],
-): CompilerWatchInputs {
-  return Object.freeze({
-    fileDependencies: sortNativePaths([...base.fileDependencies, ...files]),
-    contextDependencies: sortNativePaths(base.contextDependencies),
-    missingDependencies: sortNativePaths(base.missingDependencies),
-  });
+interface PortableSourceIdentity {
+  readonly realpath: string;
+  readonly id: string;
+}
+
+function registerPortableSourceIdentity(
+  identities: Map<string, PortableSourceIdentity>,
+  candidate: PortableSourceIdentity,
+): PortableSourceIdentity | undefined {
+  const key = candidate.id.toLowerCase();
+  const existing = identities.get(key);
+  if (existing === undefined) {
+    identities.set(key, candidate);
+    return undefined;
+  }
+  return existing.realpath === candidate.realpath ? undefined : existing;
 }
 
 interface PhysicalSourceCandidate {
@@ -188,7 +191,10 @@ async function discoverPhysicalSources(
   return {
     physicalSources,
     diagnostics,
-    watchInputs: mergeWatchInputs(state.watchInputs, [...physicalSources.keys()]),
+    watchInputs: mergeWatchInputs(
+      state.watchInputs,
+      createWatchInputs({ fileDependencies: physicalSources.keys() }),
+    ),
   };
 }
 
@@ -205,7 +211,7 @@ interface ParsedPhysicalSourceFailure {
 async function parsePhysicalSource(
   absolutePath: string,
   file: string,
-  cache: LRUCache<string, SourceUnit>,
+  cache: LRUCache<string, SourceFileIr>,
 ): Promise<ParsedPhysicalSourceSuccess | ParsedPhysicalSourceFailure> {
   const kind = sourceKindOf(absolutePath);
   if (kind === undefined) {
@@ -214,24 +220,20 @@ async function parsePhysicalSource(
   const sourceText = await readFile(absolutePath, "utf8");
   const fileId = canonicalFileId(file);
   const cacheKey = JSON.stringify([
-    file,
-    createHash("sha256").update(sourceText, "utf8").digest("hex"),
+    fileId,
     kind,
+    createHash("sha256").update(sourceText, "utf8").digest("hex"),
   ]);
-  const cached = cache.get(cacheKey);
-  const result =
-    cached === undefined ? parseSource({ file: fileId, sourceText, sourceKind: kind }) : undefined;
-  if (result?.status === "failure") {
-    return {
-      status: "failure",
-      diagnostics: result.diagnostics,
-    };
-  }
-  const unit = cached ?? result?.unit;
+  let unit = cache.get(cacheKey);
   if (unit === undefined) {
-    throw new Error("Parser did not produce a source unit.");
-  }
-  if (cached === undefined) {
+    const result = parseSource({ file: fileId, sourceText, sourceKind: kind });
+    if (result.status === "failure") {
+      return {
+        status: "failure",
+        diagnostics: result.diagnostics,
+      };
+    }
+    unit = result.unit;
     cache.set(cacheKey, unit);
   }
   return {
@@ -248,16 +250,14 @@ async function parsePhysicalSource(
 export async function parseProjectSources(
   project: ResolvedApplicationProject,
   state: ProjectState,
-  cache: LRUCache<string, SourceUnit>,
+  cache: LRUCache<string, SourceFileIr>,
 ): Promise<ParseProjectResult> {
   const discovered = await discoverPhysicalSources(project, state);
-  if (discovered.diagnostics.length > 0) {
+  const [firstDiagnostic, ...remainingDiagnostics] = discovered.diagnostics;
+  if (firstDiagnostic !== undefined) {
     return {
       status: "failure",
-      diagnostics: [
-        discovered.diagnostics[0] as CompilerDiagnostic,
-        ...discovered.diagnostics.slice(1),
-      ], // Length was checked before constructing the non-empty tuple.
+      diagnostics: [firstDiagnostic, ...remainingDiagnostics],
       watchInputs: discovered.watchInputs,
     };
   }

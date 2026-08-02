@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
-import { createExecutionPlans } from "./graph-plan";
+import { createExecutionPlans } from "./execution-plan";
 import type { DependencyModel } from "./model";
 
 type TestDependency = Pick<DependencyModel, "mode" | "parameterIndex" | "targetId">;
