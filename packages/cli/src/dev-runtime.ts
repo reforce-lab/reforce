@@ -1,42 +1,41 @@
-import {
-  createDevChildLeaseEndpoint,
-  type DevChildLeaseEndpoint,
-} from "#internal/dev-child-liveness";
-import { DevEntryController } from "#internal/dev-entry";
-import type { NodeHmrRuntime } from "#internal/dev-hmr-manager";
+import { requireBunExecutable } from "./bun-runtime";
+import { createDevChildLeaseEndpoint, type DevChildLeaseEndpoint } from "./dev-child-liveness";
+import { DevEntryController } from "./dev-entry";
+import type { RspackHmrRuntime } from "./dev-hmr-manager";
 import {
   isDevChildLeaseParticipantAcknowledgement,
   writerLeaseTokenEnvironmentVariable,
-} from "#internal/dev-ipc";
-import { PlainTextReporter, reportShutdownFailure } from "#internal/reporter";
-import type { ShutdownResult } from "#internal/shutdown-controller";
+} from "./dev-ipc";
+import { PlainTextReporter, reportShutdownFailure } from "./reporter";
+import type { ShutdownResult } from "./shutdown-controller";
 
 export interface DevelopmentBootstrapModule {
   bootstrap(): Promise<{ close(): Promise<void> }>;
 }
 
 export interface RunDevelopmentApplicationOptions {
-  readonly hot: NodeHmrRuntime;
+  readonly hot: RspackHmrRuntime;
   readonly loadBootstrap: () => Promise<DevelopmentBootstrapModule>;
   readonly ipcTimeoutMilliseconds?: number;
 }
 
 function isMissingHotUpdateManifest(error: unknown): boolean {
-  if (!(error instanceof Error) || Reflect.get(error, "code") !== "ERR_MODULE_NOT_FOUND") {
+  if (typeof error !== "object" || error === null) {
     return false;
   }
-  const url = Reflect.get(error, "url");
-  if (typeof url !== "string") {
-    return false;
-  }
-  try {
-    return /\/updates\/[^/]+\.hot-update\.json$/u.test(new URL(url).pathname);
-  } catch {
-    return false;
-  }
+  const locations = [
+    Reflect.get(error, "url"),
+    Reflect.get(error, "path"),
+    Reflect.get(error, "message"),
+  ];
+  return locations.some(
+    (location) =>
+      typeof location === "string" &&
+      /(?:^|\/)updates\/[^/]+\.hot-update\.json(?:\b|["'])/u.test(location.replaceAll("\\", "/")),
+  );
 }
 
-export function createRspackNodeHmrRuntime(hot: NodeHmrRuntime): NodeHmrRuntime {
+export function createRspackHmrRuntime(hot: RspackHmrRuntime): RspackHmrRuntime {
   return {
     accept(specifier) {
       hot.accept(specifier);
@@ -73,7 +72,7 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
 function sendToParent(message: object): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     if (!process.send) {
-      reject(new Error("Development child requires a Node IPC channel."));
+      reject(new Error("Development child requires a Bun process IPC channel."));
       return;
     }
     process.send(message, (error) => {
@@ -122,6 +121,7 @@ function waitForParticipantAcknowledgement(
 export async function runDevelopmentApplication(
   options: RunDevelopmentApplicationOptions,
 ): Promise<0 | 1> {
+  requireBunExecutable();
   const reporter = new PlainTextReporter();
   const leaseToken = process.env[writerLeaseTokenEnvironmentVariable];
   let endpoint: DevChildLeaseEndpoint | undefined;

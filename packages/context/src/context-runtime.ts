@@ -1,20 +1,20 @@
-import { BeanResolver } from "#internal/bean-resolver";
+import { BeanResolver } from "./bean-resolver";
 import {
   ApplicationCleanupError,
   ApplicationContextStateError,
   ApplicationStartError,
   type CleanupActionError,
   InvalidGeneratedDefinitionError,
-} from "#internal/errors";
-import type { GeneratedApplicationDefinition } from "#internal/generated-contracts";
-import { LifecycleRunner } from "#internal/lifecycle-runner";
+} from "./errors";
+import type { GeneratedApplicationDefinition } from "./generated-contracts";
+import { LifecycleRunner } from "./lifecycle-runner";
 import type {
   ApplicationContext,
   BeanClass,
   BeanDefinition,
   ContextOperation,
-} from "#internal/public-types";
-import { ResolutionState } from "#internal/resolution-state";
+} from "./public-types";
+import { ResolutionState } from "./resolution-state";
 
 export class RuntimeApplicationContext implements ApplicationContext {
   readonly #state: ResolutionState;

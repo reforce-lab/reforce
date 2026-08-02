@@ -6,7 +6,7 @@ import type {
   GeneratedFile,
   ResolvedApplicationProject,
 } from "@reforce/compiler";
-import { compareUtf16CodeUnits } from "#internal/determinism";
+import { compareUtf16CodeUnits } from "./determinism";
 
 type CompilerFrontend = Parameters<Compiler["compile"]>[0]["frontend"];
 

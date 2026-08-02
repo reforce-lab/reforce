@@ -3,7 +3,7 @@ export {
   Injectable,
   Primary,
   Qualifier,
-} from "#internal/bean-declaration";
+} from "./bean-declaration";
 export {
   ApplicationCleanupError,
   ApplicationContextStateError,
@@ -16,7 +16,7 @@ export {
   ReforceRuntimeError,
   type RuntimeErrorCode,
   UnregisteredBeanTargetError,
-} from "#internal/errors";
+} from "./errors";
 export type {
   ApplicationContext,
   BeanClass,
@@ -25,4 +25,4 @@ export type {
   OnContextClose,
   OnContextStart,
   QualifiedBean,
-} from "#internal/public-types";
+} from "./public-types";

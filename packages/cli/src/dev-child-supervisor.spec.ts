@@ -3,7 +3,7 @@ import {
   type DevChildExit,
   DevChildSupervisor,
   type ManagedDevChild,
-} from "#internal/dev-child-supervisor";
+} from "./dev-child-supervisor";
 
 class ManualChild implements ManagedDevChild {
   readonly #exit = Promise.withResolvers<DevChildExit>();

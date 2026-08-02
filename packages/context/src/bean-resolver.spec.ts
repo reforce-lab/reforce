@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { classBean, createApplicationContext } from "#internal/generated-runtime";
+import { testDefinition, testDependency, testSource } from "../test-support/test-definition";
+import { classBean, createApplicationContext } from "./generated-runtime";
 import {
   ApplicationContextStateError,
   ApplicationStartError,
@@ -7,8 +8,7 @@ import {
   EarlyBeanAccessError,
   InvalidGeneratedDefinitionError,
   UnregisteredBeanTargetError,
-} from "#internal/index";
-import { testDefinition, testDependency, testSource } from "#test-support/test-definition";
+} from "./index";
 
 async function rejection(promise: Promise<unknown>): Promise<Error> {
   let reason: unknown;

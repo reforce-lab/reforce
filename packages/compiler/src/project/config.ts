@@ -5,16 +5,16 @@ import path from "node:path";
 import { parseTsconfig, type TsConfigJsonResolved } from "get-tsconfig";
 import { isObject } from "radashi";
 import { glob } from "tinyglobby";
-import { compareUtf16CodeUnits, sortNativePaths } from "#internal/determinism";
-import { diagnostic } from "#internal/diagnostics";
-import { isPathContained, toPortablePath } from "#internal/project/path-identity";
+import { compareUtf16CodeUnits, sortNativePaths } from "../determinism";
+import { diagnostic } from "../diagnostics";
 import type {
   CompilerDiagnostic,
   CompilerWatchInputs,
   EffectiveProjectConfig,
   ProjectSnapshotEntry,
   ProjectState,
-} from "#internal/types";
+} from "../types";
+import { isPathContained, toPortablePath } from "./path-identity";
 
 const sourceSuffixPattern = /\.(?:ts|tsx|mts|cts)$/u;
 const declarationSuffixPattern = /\.d\.(?:ts|mts|cts)$/u;

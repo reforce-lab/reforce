@@ -3,9 +3,9 @@ import { join, relative, sep } from "node:path";
 import type { ResolvedApplicationProject } from "@reforce/compiler";
 import { type BuildResult, createRsbuild, rspack } from "@rsbuild/core";
 import { isObject } from "radashi";
-import { compareUtf16CodeUnits } from "#internal/determinism";
-import { renderProductionEntry } from "#internal/production-entry";
-import { resolveCliSupportModule } from "#internal/runtime-module-path";
+import { compareUtf16CodeUnits } from "./determinism";
+import { renderProductionEntry } from "./production-entry";
+import { resolveCliSupportModule } from "./runtime-module-path";
 
 function toPortablePath(path: string): string {
   return path.split(sep).join("/");

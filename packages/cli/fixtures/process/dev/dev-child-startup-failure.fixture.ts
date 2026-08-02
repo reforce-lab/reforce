@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { createDevChildLeaseEndpoint } from "#internal/dev-child-liveness";
+import { createDevChildLeaseEndpoint } from "../../../src/dev-child-liveness";
 
 const mode = process.argv[2];
 const observationPath = process.argv[3];

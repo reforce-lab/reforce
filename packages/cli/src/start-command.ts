@@ -3,14 +3,15 @@ import { lstat, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { execa } from "execa";
 import { isObject } from "radashi";
-import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "#internal/reporter";
+import { requireBunExecutable } from "./bun-runtime";
+import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "./project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
 
 export interface StartCommandOptions {
   readonly cwd: string;
   readonly projectDirectory: string;
   readonly reporter: Reporter;
-  readonly nodeExecutable?: string;
+  readonly bunExecutable?: string;
 }
 
 export interface StartCommandDependencies {
@@ -351,7 +352,7 @@ async function startProductionChild(input: {
   input.state.lease = lease;
   const entryPath = await resolveProductionEntry(projectRoot);
   const child = input.dependencies.spawnChild({
-    executable: input.options.nodeExecutable ?? process.execPath,
+    executable: input.options.bunExecutable ?? requireBunExecutable(),
     entryPath,
     projectRoot,
     leaseToken: lease.leaseToken,

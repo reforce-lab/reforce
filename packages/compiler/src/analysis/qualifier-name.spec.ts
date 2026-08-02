@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { validQualifierName } from "#internal/analysis/qualifier-name";
+import { validQualifierName } from "./qualifier-name";
 
 test("rejects identifiers reserved in strict TypeScript modules", () => {
   // Arrange

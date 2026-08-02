@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  type PortableSourceIdentity,
-  registerPortableSourceIdentity,
-} from "#internal/project/source-identity";
+import { type PortableSourceIdentity, registerPortableSourceIdentity } from "./source-identity";
 
 test("reports case-only source identities backed by different physical files", () => {
   // Arrange

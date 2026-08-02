@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { DevEntryController } from "#internal/dev-entry";
+import { DevEntryController } from "./dev-entry";
 import {
   applicationBootstrapSpecifier,
   DevHmrManager,
   type DevTimerScheduler,
-  type NodeHmrRuntime,
-} from "#internal/dev-hmr-manager";
-import type { CliReporterEvent, Reporter } from "#internal/reporter";
+  type RspackHmrRuntime,
+} from "./dev-hmr-manager";
+import type { CliReporterEvent, Reporter } from "./reporter";
 
 function recordingScheduler(): DevTimerScheduler & {
   readonly callbacks: Array<() => void>;
@@ -52,7 +52,7 @@ describe("development HMR manager", () => {
     const events: string[] = [];
     const scheduler = recordingScheduler();
     let generation = 1;
-    const hot: NodeHmrRuntime = {
+    const hot: RspackHmrRuntime = {
       accept(specifier) {
         events.push(`accept:${specifier}`);
       },
@@ -99,7 +99,7 @@ describe("development HMR manager", () => {
     let activeChecks = 0;
     let maximumActiveChecks = 0;
     let checkCount = 0;
-    const hot: NodeHmrRuntime = {
+    const hot: RspackHmrRuntime = {
       accept() {},
       async check() {
         checkCount += 1;

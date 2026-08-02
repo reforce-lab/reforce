@@ -1,21 +1,21 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { isObject } from "radashi";
-import type { DevChildExit, ManagedDevChild } from "#internal/dev-child-supervisor";
+import type { DevChildExit, ManagedDevChild } from "./dev-child-supervisor";
 import {
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
   isDevChildLeaseParticipantMessage,
   isDevChildReadyMessage,
-} from "#internal/dev-ipc";
-import type { LeaseParticipant } from "#internal/project-lease";
-import type { ShutdownAckMessage } from "#internal/shutdown-controller";
+} from "./dev-ipc";
+import type { LeaseParticipant } from "./project-lease";
+import type { ShutdownAckMessage } from "./shutdown-controller";
 
 export interface SpawnDevChildOptions {
   readonly entryPath: string;
   readonly cwd: string;
-  readonly nodeExecutable?: string;
-  readonly nodeArguments?: readonly string[];
+  readonly bunExecutable?: string;
+  readonly bunArguments?: readonly string[];
   readonly applicationArguments?: readonly string[];
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly platform?: NodeJS.Platform;
@@ -98,8 +98,8 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     }
   };
   const child = spawn(
-    options.nodeExecutable ?? process.execPath,
-    [...(options.nodeArguments ?? []), options.entryPath, ...(options.applicationArguments ?? [])],
+    options.bunExecutable ?? process.execPath,
+    [...(options.bunArguments ?? []), options.entryPath, ...(options.applicationArguments ?? [])],
     {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },

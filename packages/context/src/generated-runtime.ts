@@ -1,17 +1,17 @@
-import { readBeanDefinitionOptions } from "#internal/bean-declaration";
-import { createApplicationContext as createRuntimeApplicationContext } from "#internal/create-application-context";
+import { readBeanDefinitionOptions } from "./bean-declaration";
+import { createApplicationContext as createRuntimeApplicationContext } from "./create-application-context";
 import type {
   GeneratedApplicationDefinition,
   GeneratedClassRegistration,
   GeneratedFactoryBeanInput,
   GeneratedFactoryRegistration,
-} from "#internal/generated-contracts";
+} from "./generated-contracts";
 import {
   snapshotApplicationDefinition,
   snapshotClassRegistration,
   snapshotFactoryRegistration,
-} from "#internal/generated-validation";
-import type { ApplicationContext } from "#internal/public-types";
+} from "./generated-validation";
+import type { ApplicationContext } from "./public-types";
 
 export type {
   GeneratedApplicationDefinition,
@@ -27,7 +27,7 @@ export type {
   GeneratedResolver,
   GeneratedSourcePosition,
   GeneratedSourceReference,
-} from "#internal/generated-contracts";
+} from "./generated-contracts";
 
 export function classBean<T extends object>(
   input: Omit<GeneratedClassRegistration<T>, "kind">,

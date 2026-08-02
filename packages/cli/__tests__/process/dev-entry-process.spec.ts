@@ -2,26 +2,26 @@ import { afterEach, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { resolveNodeExecutable, runCommand } from "@reforce/tooling-testing";
+import { resolveBunExecutable, runCommand } from "@reforce/tooling-testing";
 import {
   isDevChildLeaseParticipantMessage,
   isDevChildReadyMessage,
   writerLeaseTokenEnvironmentVariable,
-} from "#internal/dev-ipc";
+} from "../../src/dev-ipc";
 
 const fixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-entry.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-entry.fixture.js", import.meta.url),
 );
 const bootstrapFailureFixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-runtime-bootstrap.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-runtime-bootstrap.fixture.js", import.meta.url),
 );
 const handshakeFixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-runtime-handshake.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-runtime-handshake.fixture.js", import.meta.url),
 );
 const windowsSignalFixturePath = fileURLToPath(
-  new URL("../../fixtures/process/windows-signal.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/windows-signal.fixture.js", import.meta.url),
 );
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 const subprocesses: Array<{
   readonly child: ChildProcess;
   readonly completion: Promise<number | null>;
@@ -95,7 +95,7 @@ function spawnObservedDevelopmentFixture(
   const barriers = new Map<string, () => void>();
   const counts = new Map<string, number>();
   const child = spawn(
-    nodeExecutable,
+    bunExecutable,
     [
       "--conditions=development",
       ...(useWindowsSignalHarness
@@ -199,9 +199,9 @@ function fixtureObservation(result: {
   return parseObservation(output);
 }
 
-test("a real Node process closes the old Context before applying updated ESM binding", async () => {
+test("a real Bun process closes the old Context before applying updated ESM binding", async () => {
   const result = await runCommand(
-    nodeExecutable,
+    bunExecutable,
     ["--conditions=development", fixturePath, "strict-order"],
     { timeout: 10_000 },
   );
@@ -223,9 +223,9 @@ test("a real Node process closes the old Context before applying updated ESM bin
   expect(Reflect.get(observation, "listenerDelta")).toBe(0);
 });
 
-test("a real Node process keeps HMR fatal primary and exits nonzero after cleanup", async () => {
+test("a real Bun process keeps HMR fatal primary and exits nonzero after cleanup", async () => {
   const result = await runCommand(
-    nodeExecutable,
+    bunExecutable,
     ["--conditions=development", fixturePath, "fatal"],
     { timeout: 10_000 },
   );
@@ -246,7 +246,7 @@ test("a real Node process keeps HMR fatal primary and exits nonzero after cleanu
 test("a failed bootstrap exits after cleanup without reporting child readiness", async () => {
   const messages: unknown[] = [];
   const subprocess = spawn(
-    nodeExecutable,
+    bunExecutable,
     ["--conditions=development", bootstrapFailureFixturePath],
     {
       env: {

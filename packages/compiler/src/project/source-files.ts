@@ -9,20 +9,17 @@ import type {
   SourceUnit,
 } from "@reforce/compiler-spi";
 import type { LRUCache } from "lru-cache";
-import { compareUtf16CodeUnits, sortNativePaths } from "#internal/determinism";
-import { diagnostic } from "#internal/diagnostics";
-import type { CachedParse } from "#internal/incremental/parse-cache";
-import { isPathContained, toPortablePath } from "#internal/project/path-identity";
-import {
-  type PortableSourceIdentity,
-  registerPortableSourceIdentity,
-} from "#internal/project/source-identity";
+import { compareUtf16CodeUnits, sortNativePaths } from "../determinism";
+import { diagnostic } from "../diagnostics";
+import type { CachedParse } from "../incremental/parse-cache";
 import type {
   CompilerDiagnostic,
   CompilerWatchInputs,
   ProjectState,
   ResolvedApplicationProject,
-} from "#internal/types";
+} from "../types";
+import { isPathContained, toPortablePath } from "./path-identity";
+import { type PortableSourceIdentity, registerPortableSourceIdentity } from "./source-identity";
 
 export interface ParsedSource {
   readonly absolutePath: string;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { yukuFrontend } from "@reforce/compiler-yuku";
 import { writeFixtureTree } from "@reforce/tooling-testing";
-import { createCompiler } from "#internal/index";
+import { createCompiler } from "../src/index";
 
 const temporaryDirectories: string[] = [];
 

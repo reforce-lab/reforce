@@ -1,5 +1,8 @@
-import type { Reporter } from "#internal/reporter";
-import { installProcessShutdownHandlers, ShutdownController } from "#internal/shutdown-controller";
+import type { Reporter } from "../../../src/reporter";
+import {
+  installProcessShutdownHandlers,
+  ShutdownController,
+} from "../../../src/shutdown-controller";
 
 const reporter: Reporter = {
   report() {},

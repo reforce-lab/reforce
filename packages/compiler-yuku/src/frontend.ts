@@ -5,8 +5,8 @@ import type {
   FrontendResult,
 } from "@reforce/compiler-spi";
 import { parse, type SourceLang, type SourceType } from "yuku-parser";
-import { lowerSourceUnit } from "#internal/lower-ir";
-import { createSourceMapper } from "#internal/source-map";
+import { lowerSourceUnit } from "./lower-ir";
+import { createSourceMapper } from "./source-map";
 
 function sourceLanguage(input: FrontendInput): SourceLang {
   if (input.sourceKind.startsWith("d.")) {

@@ -28,7 +28,7 @@ import {
   nodeArrayProperty,
   nodeProperty,
   stringProperty,
-} from "#internal/ast";
+} from "./ast";
 import {
   constructorParametersOf,
   decoratorsOf,
@@ -44,9 +44,9 @@ import {
   typeNodeOf,
   typeParameterNamesOf,
   typeParametersOf,
-} from "#internal/lower-values";
-import { normalizeSpanned } from "#internal/normalize";
-import { createSourceMapper } from "#internal/source-map";
+} from "./lower-values";
+import { normalizeSpanned } from "./normalize";
+import { createSourceMapper } from "./source-map";
 
 type ExportMode =
   | { readonly kind: "none" }

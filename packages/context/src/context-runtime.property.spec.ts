@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
-import { classBean, createApplicationContext } from "#internal/generated-runtime";
-import { testDefinition, testSource } from "#test-support/test-definition";
+import { testDefinition, testSource } from "../test-support/test-definition";
+import { classBean, createApplicationContext } from "./generated-runtime";
 
 test("concurrent shutdown callers share one result and one cleanup", async () => {
   await fc.assert(

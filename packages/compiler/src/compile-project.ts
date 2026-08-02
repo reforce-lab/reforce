@@ -1,19 +1,19 @@
 import type { LRUCache } from "lru-cache";
-import { analyzeProject } from "#internal/analysis/analyze-project";
-import { sortNativePaths } from "#internal/determinism";
-import { diagnostic, orderDiagnostics } from "#internal/diagnostics";
-import { renderGeneratedFiles } from "#internal/emission/render-generated";
-import type { CachedParse } from "#internal/incremental/parse-cache";
-import { createLinker } from "#internal/linking/module-graph";
-import { snapshotStillMatches } from "#internal/project/config";
-import { parseProjectSources } from "#internal/project/source-files";
+import { analyzeProject } from "./analysis/analyze-project";
+import { sortNativePaths } from "./determinism";
+import { diagnostic, orderDiagnostics } from "./diagnostics";
+import { renderGeneratedFiles } from "./emission/render-generated";
+import type { CachedParse } from "./incremental/parse-cache";
+import { createLinker } from "./linking/module-graph";
+import { snapshotStillMatches } from "./project/config";
+import { parseProjectSources } from "./project/source-files";
 import type {
   CompileRequest,
   CompileResult,
   CompilerDiagnostic,
   CompilerWatchInputs,
   ProjectState,
-} from "#internal/types";
+} from "./types";
 
 function failure(
   diagnostics: readonly CompilerDiagnostic[],

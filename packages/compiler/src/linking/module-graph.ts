@@ -14,11 +14,11 @@ import type {
 } from "@reforce/compiler-spi";
 import enhancedResolve from "enhanced-resolve";
 import type { LRUCache } from "lru-cache";
-import { compareUtf16CodeUnits } from "#internal/determinism";
-import { diagnostic } from "#internal/diagnostics";
-import type { CachedParse } from "#internal/incremental/parse-cache";
-import { frontendSourceKind, type ParsedSource } from "#internal/project/source-files";
-import type { CompilerDiagnostic, ResolvedApplicationProject } from "#internal/types";
+import { compareUtf16CodeUnits } from "../determinism";
+import { diagnostic } from "../diagnostics";
+import type { CachedParse } from "../incremental/parse-cache";
+import { frontendSourceKind, type ParsedSource } from "../project/source-files";
+import type { CompilerDiagnostic, ResolvedApplicationProject } from "../types";
 
 export type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
 

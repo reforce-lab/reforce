@@ -7,7 +7,7 @@ import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   copyFixtureTree,
   createTemporaryProject,
-  resolveNodeExecutable,
+  resolveBunExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
@@ -20,7 +20,7 @@ const commandTimeout = 120_000;
 let temporaryProject: TemporaryProject | undefined;
 let builtWorkerEntry: string | undefined;
 let workerHarness: string | undefined;
-let nodeExecutable: string | undefined;
+let bunExecutable: string | undefined;
 
 function commandFailure(result: { readonly stderr?: unknown; readonly stdout?: unknown }): string {
   return `stdout:\n${String(result.stdout)}\nstderr:\n${String(result.stderr)}`;
@@ -42,11 +42,11 @@ async function runBuiltWorkers(): Promise<unknown> {
     temporaryProject === undefined ||
     builtWorkerEntry === undefined ||
     workerHarness === undefined ||
-    nodeExecutable === undefined
+    bunExecutable === undefined
   ) {
     throw new Error("Generated application Worker fixture has not been built.");
   }
-  const result = await runCommand(nodeExecutable, [workerHarness, builtWorkerEntry], {
+  const result = await runCommand(bunExecutable, [workerHarness, builtWorkerEntry], {
     cwd: temporaryProject.projectRoot,
     timeout: commandTimeout,
   });
@@ -87,7 +87,7 @@ beforeAll(async () => {
 
   builtWorkerEntry = join(temporaryProject.projectRoot, "dist", "worker-entry.mjs");
   workerHarness = join(temporaryProject.projectRoot, "worker-harness.mjs");
-  nodeExecutable = await resolveNodeExecutable();
+  bunExecutable = await resolveBunExecutable();
   const build = await runCommand(
     process.execPath,
     [
@@ -109,7 +109,7 @@ afterAll(async () => {
   await temporaryProject?.cleanup();
 });
 
-test("keeps generated singleton state isolated in each Node Worker", async () => {
+test("keeps generated singleton state isolated in each Bun Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -118,7 +118,7 @@ test("keeps generated singleton state isolated in each Node Worker", async () =>
   ]);
 });
 
-test("keeps generated cycle proxy state isolated in each Node Worker", async () => {
+test("keeps generated cycle proxy state isolated in each Bun Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -127,7 +127,7 @@ test("keeps generated cycle proxy state isolated in each Node Worker", async () 
   ]);
 });
 
-test("keeps generated Lazy state isolated in each Node Worker", async () => {
+test("keeps generated Lazy state isolated in each Bun Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -146,7 +146,7 @@ test("keeps generated Lazy state isolated in each Node Worker", async () => {
   ]);
 });
 
-test("runs generated lifecycle and disposer cleanup once per Node Worker", async () => {
+test("runs generated lifecycle and disposer cleanup once per Bun Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([

@@ -1,19 +1,15 @@
-import {
-  DevHmrManager,
-  type DevTimerScheduler,
-  type NodeHmrRuntime,
-} from "#internal/dev-hmr-manager";
-import type { Reporter } from "#internal/reporter";
+import { DevHmrManager, type DevTimerScheduler, type RspackHmrRuntime } from "./dev-hmr-manager";
+import type { Reporter } from "./reporter";
 import {
   installProcessShutdownHandlers,
   ShutdownController,
   type ShutdownFailure,
   type ShutdownResult,
   type ShutdownState,
-} from "#internal/shutdown-controller";
+} from "./shutdown-controller";
 
 export interface DevEntryOptions {
-  readonly hot: NodeHmrRuntime;
+  readonly hot: RspackHmrRuntime;
   readonly bootstrap: () => Promise<{ close(): Promise<void> }>;
   readonly reporter: Reporter;
   readonly scheduler?: DevTimerScheduler;

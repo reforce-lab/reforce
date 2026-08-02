@@ -1,3 +1,3 @@
-export type * from "#internal/frontend";
-export type * from "#internal/source-ir";
-export type * from "#internal/source-location";
+export type * from "./frontend";
+export type * from "./source-ir";
+export type * from "./source-location";

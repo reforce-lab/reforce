@@ -1,13 +1,13 @@
-import { compileProject } from "#internal/compile-project";
-import { createParseCache } from "#internal/incremental/parse-cache";
-import { resolveProject } from "#internal/project/resolve-project";
+import { compileProject } from "./compile-project";
+import { createParseCache } from "./incremental/parse-cache";
+import { resolveProject } from "./project/resolve-project";
 import type {
   CompileRequest,
   Compiler,
   ProjectState,
   ResolvedApplicationProject,
   ResolveProjectRequest,
-} from "#internal/types";
+} from "./types";
 
 export function createCompiler(): Compiler {
   const projects = new WeakMap<ResolvedApplicationProject, ProjectState>();

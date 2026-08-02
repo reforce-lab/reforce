@@ -8,7 +8,7 @@ import {
   type ResolvedApplicationProject,
 } from "@reforce/compiler";
 import { yukuFrontend } from "@reforce/compiler-yuku";
-import { DevCompilerGate } from "#internal/dev-compiler-gate";
+import { DevCompilerGate } from "../../src/dev-compiler-gate";
 
 const standaloneProject = resolve("../compiler/fixtures/standalone-application/project");
 

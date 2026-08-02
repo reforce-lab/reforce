@@ -6,15 +6,15 @@ import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   copyFixtureTree,
   createTemporaryProject,
-  resolveNodeExecutable,
+  resolveBunExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import { createCompiler, type GeneratedFile } from "#internal/index";
+import { createCompiler, type GeneratedFile } from "../../src/index";
 
 const fixtureDirectory = fileURLToPath(new URL("../../fixtures/", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 const temporaryProjects: TemporaryProject[] = [];
 
 afterEach(async () => {
@@ -114,7 +114,7 @@ test("typechecks and executes the generated application definition", async () =>
   expect(typecheck.stderr).toBe("");
   expect(build.exitCode).toBe(0);
   const execution = await runCommand(
-    nodeExecutable,
+    bunExecutable,
     [path.join(fixture.projectRoot, "dist", "integration.js")],
     { cwd: fixture.projectRoot },
   );
@@ -173,7 +173,7 @@ test("executes generated Primary, qualified, and unique provider selections", as
   expect(typecheck.stderr).toBe("");
   expect(build.exitCode).toBe(0);
   const execution = await runCommand(
-    nodeExecutable,
+    bunExecutable,
     [path.join(fixture.projectRoot, "dist", "integration.js")],
     { cwd: fixture.projectRoot },
   );

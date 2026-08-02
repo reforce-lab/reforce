@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ApplicationStartError, InvalidGeneratedDefinitionError } from "@reforce/context";
-import type { CliReporterEvent, Reporter } from "#internal/reporter";
-import { type ShutdownAckMessage, ShutdownController } from "#internal/shutdown-controller";
+import type { CliReporterEvent, Reporter } from "./reporter";
+import { type ShutdownAckMessage, ShutdownController } from "./shutdown-controller";
 
 class RecordingReporter implements Reporter {
   readonly events: CliReporterEvent[] = [];
@@ -114,7 +114,7 @@ describe("shutdown controller", () => {
     expect(Object.is(event.sourceSpan, sourceSpan)).toBe(true);
   });
 
-  test("uses the CLI fallback for a Node filesystem error code", async () => {
+  test("uses the CLI fallback for a filesystem error code", async () => {
     const reporter = new RecordingReporter();
     const ordinaryError = Object.assign(new Error("ordinary bootstrap failed"), {
       code: "ENOENT",

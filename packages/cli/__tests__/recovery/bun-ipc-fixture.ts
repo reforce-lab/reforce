@@ -1,14 +1,14 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { resolveNodeExecutable } from "@reforce/tooling-testing";
+import { resolveBunExecutable } from "@reforce/tooling-testing";
 
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 
 export interface IpcProcessOutcome {
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
 }
 
-export interface NodeIpcFixture {
+export interface BunIpcFixture {
   readonly child: ChildProcess;
   readonly output: () => { readonly stderr: string; readonly stdout: string };
   readonly sendMessage: (message: object) => Promise<void>;
@@ -16,11 +16,11 @@ export interface NodeIpcFixture {
   readonly waitForMessage: (message: string) => Promise<unknown>;
 }
 
-export function spawnNodeIpcFixture(
+export function spawnBunIpcFixture(
   fixturePath: string,
   arguments_: readonly string[],
-): NodeIpcFixture {
-  const child = spawn(nodeExecutable, ["--conditions=development", fixturePath, ...arguments_], {
+): BunIpcFixture {
+  const child = spawn(bunExecutable, ["--conditions=development", fixturePath, ...arguments_], {
     shell: false,
     stdio: ["ignore", "pipe", "pipe", "ipc"],
     windowsHide: true,
@@ -63,7 +63,7 @@ export function spawnNodeIpcFixture(
     child.once("exit", (exitCode, signal) => {
       closeWith(
         new Error(
-          `Node fixture exited before the expected message (code ${exitCode ?? "null"}, signal ${signal ?? "none"}).\n${stdout}\n${stderr}`,
+          `Bun fixture exited before the expected message (code ${exitCode ?? "null"}, signal ${signal ?? "none"}).\n${stdout}\n${stderr}`,
         ),
       );
       resolve({ exitCode, signal });
@@ -74,7 +74,7 @@ export function spawnNodeIpcFixture(
     output: () => ({ stderr, stdout }),
     async sendMessage(message) {
       if (!child.connected) {
-        throw new Error("Node fixture IPC channel is disconnected.");
+        throw new Error("Bun fixture IPC channel is disconnected.");
       }
       await new Promise<void>((resolve, reject) => {
         child.send(message, (error) => {

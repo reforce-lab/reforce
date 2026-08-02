@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { classBean, createApplicationContext, factoryBean } from "#internal/generated-runtime";
-import { ApplicationCleanupError, defineBean } from "#internal/index";
-import { testDefinition, testDependency, testSource } from "#test-support/test-definition";
+import { testDefinition, testDependency, testSource } from "../test-support/test-definition";
+import { classBean, createApplicationContext, factoryBean } from "./generated-runtime";
+import { ApplicationCleanupError, defineBean } from "./index";
 
 async function rejection(promise: Promise<unknown>): Promise<Error> {
   let reason: unknown;

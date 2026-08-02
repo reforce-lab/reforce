@@ -3,8 +3,8 @@ import { readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import { spawnNodeIpcFixture } from "#test/node-ipc-fixture";
+import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "../../src/project-lease";
+import { spawnBunIpcFixture } from "./bun-ipc-fixture";
 
 const leases: ProjectLease[] = [];
 const projects: TemporaryProject[] = [];
@@ -26,9 +26,9 @@ async function temporaryProject(): Promise<TemporaryProject> {
 
 async function spawnLeaseHolder(projectRoot: string, mode: "reader" | "writer") {
   const fixturePath = fileURLToPath(
-    new URL("../../fixtures/process/lease/project-lease.fixture.ts", import.meta.url),
+    new URL("../../fixtures/dist/process/lease/project-lease.fixture.js", import.meta.url),
   );
-  const subprocess = spawnNodeIpcFixture(fixturePath, [projectRoot, mode]);
+  const subprocess = spawnBunIpcFixture(fixturePath, [projectRoot, mode]);
   let message: unknown;
   try {
     message = await subprocess.waitForMessage("Lease holder did not publish readiness.");
@@ -245,9 +245,12 @@ describe("project lease", () => {
     const project = await temporaryProject();
     const holder = await spawnLeaseHolder(project.projectRoot, "writer");
     const participantFixturePath = fileURLToPath(
-      new URL("../../fixtures/process/lease/project-lease-participant.fixture.ts", import.meta.url),
+      new URL(
+        "../../fixtures/dist/process/lease/project-lease-participant.fixture.js",
+        import.meta.url,
+      ),
     );
-    const participantProcess = spawnNodeIpcFixture(participantFixturePath, [holder.leaseToken]);
+    const participantProcess = spawnBunIpcFixture(participantFixturePath, [holder.leaseToken]);
     let participantClosed = false;
     let holderClosed = false;
     try {

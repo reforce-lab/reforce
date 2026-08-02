@@ -4,8 +4,8 @@ import { isObject } from "radashi";
 import {
   DirectoryTransactions,
   type GeneratedTransactionFile,
-} from "#internal/directory-transaction";
-import { type LeaseParticipant, ProjectLease } from "#internal/project-lease";
+} from "../../../src/directory-transaction";
+import { type LeaseParticipant, ProjectLease } from "../../../src/project-lease";
 
 const projectRootArgument = process.argv[2];
 const modeArgument = process.argv[3];

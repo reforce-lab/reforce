@@ -4,8 +4,8 @@ import {
   BeanLifecycleError,
   type CleanupActionError,
   InvalidGeneratedDefinitionError,
-} from "#internal/errors";
-import type { CleanupAction, ResolutionState } from "#internal/resolution-state";
+} from "./errors";
+import type { CleanupAction, ResolutionState } from "./resolution-state";
 
 function invokeGeneratedInstanceAction(action: unknown, instance: object): unknown {
   if (typeof action !== "function") {

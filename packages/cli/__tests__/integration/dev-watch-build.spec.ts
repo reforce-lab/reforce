@@ -4,11 +4,11 @@ import { join, resolve } from "node:path";
 import { createCompiler } from "@reforce/compiler";
 import { yukuFrontend } from "@reforce/compiler-yuku";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { DevCompilerGate } from "#internal/dev-compiler-gate";
-import { startDevWatchBuild } from "#internal/dev-watch-build";
-import type { DevCompilation } from "#internal/dev-watch-coordinator";
-import { DirectoryTransactions } from "#internal/directory-transaction";
-import { ProjectLease } from "#internal/project-lease";
+import { DevCompilerGate } from "../../src/dev-compiler-gate";
+import { startDevWatchBuild } from "../../src/dev-watch-build";
+import type { DevCompilation } from "../../src/dev-watch-coordinator";
+import { DirectoryTransactions } from "../../src/directory-transaction";
+import { ProjectLease } from "../../src/project-lease";
 
 const workspaceRoot = resolve("../..");
 const contextSourceRoot = join(workspaceRoot, "packages", "context", "src");
@@ -102,7 +102,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   }
 }
 
-test("Rsbuild watch emits a Node ESM entry after the compiler gate commits generated output", async () => {
+test("Rsbuild watch emits a Bun ESM entry after the compiler gate commits generated output", async () => {
   const compiled = Promise.withResolvers<DevCompilation>();
   const project = await setupWatch(async (compilation) => compiled.resolve(compilation));
 
@@ -129,7 +129,7 @@ test("keeps the development entry source inside the build graph", async () => {
   ]);
 });
 
-test("Rsbuild watch emits source maps for the Node ESM entry", async () => {
+test("Rsbuild watch emits source maps for the Bun ESM entry", async () => {
   const compiled = Promise.withResolvers<DevCompilation>();
   const project = await setupWatch(async (compilation) => compiled.resolve(compilation));
 

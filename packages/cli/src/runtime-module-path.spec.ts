@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { resolveCliSupportModule } from "#internal/runtime-module-path";
+import { resolveCliSupportModule } from "./runtime-module-path";
 
 let temporaryProject: TemporaryProject | undefined;
 

@@ -2,12 +2,12 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import type { ResolvedApplicationProject } from "@reforce/compiler";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
-import { compareUtf16CodeUnits } from "#internal/determinism";
-import { createDevBuildId, type DevBuildAsset } from "#internal/dev-build-id";
-import type { DevWatchBuild } from "#internal/dev-command";
-import type { DevCompilerGate, DevCompilerGateResult } from "#internal/dev-compiler-gate";
-import type { DevCompilation } from "#internal/dev-watch-coordinator";
-import { resolveCliSupportModule } from "#internal/runtime-module-path";
+import { compareUtf16CodeUnits } from "./determinism";
+import { createDevBuildId, type DevBuildAsset } from "./dev-build-id";
+import type { DevWatchBuild } from "./dev-command";
+import type { DevCompilerGate, DevCompilerGateResult } from "./dev-compiler-gate";
+import type { DevCompilation } from "./dev-watch-coordinator";
+import { resolveCliSupportModule } from "./runtime-module-path";
 
 export interface StartDevWatchBuildOptions {
   readonly project: ResolvedApplicationProject;
@@ -56,7 +56,7 @@ async function waitForRspackWatcher(
 }
 
 export function renderDevelopmentEntry(): string {
-  return `import { createRspackNodeHmrRuntime, runDevelopmentApplication } from "#reforce-dev-runtime";
+  return `import { createRspackHmrRuntime, runDevelopmentApplication } from "#reforce-dev-runtime";
 
 const hot = import.meta.webpackHot;
 if (!hot) {
@@ -64,7 +64,7 @@ if (!hot) {
 }
 
 process.exitCode = await runDevelopmentApplication({
-  hot: createRspackNodeHmrRuntime(hot),
+  hot: createRspackHmrRuntime(hot),
   loadBootstrap: () => import("reforce:application-bootstrap"),
 });
 `;

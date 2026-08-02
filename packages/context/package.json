@@ -3,40 +3,40 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "imports": {
-    "#internal/*": {
-      "types": "./src/*.ts",
-      "development": "./src/*.ts",
-      "default": "./dist/*.js"
-    },
-    "#test-support/*": {
-      "types": "./test-support/*.ts",
-      "development": "./test-support/*.ts"
-    }
-  },
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./generated-runtime": {
-      "types": "./src/generated-runtime.ts",
-      "default": "./src/generated-runtime.ts"
+      "development": {
+        "types": "./src/generated-runtime.ts",
+        "default": "./src/generated-runtime.ts"
+      },
+      "types": "./dist/generated-runtime.d.ts",
+      "default": "./dist/generated-runtime.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rslib build",
     "typecheck": "tsc",
     "test": "bun --conditions=development test src __tests__",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
   "dependencies": {
+    "@swc/helpers": "catalog:",
     "radashi": "^12.9.1"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
     "@reforce/tooling-tsconfig": "workspace:*",
+    "@rslib/core": "catalog:",
     "@types/bun": "catalog:",
     "fast-check": "^4.9.0",
     "typescript": "catalog:"

@@ -40,7 +40,9 @@ bun run test
 bun run build
 ```
 
-CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 24.12.0 与 Bun 1.3.14 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery，以及同一 production artifact 的 Node/Bun smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实进程证据支持。
+有 JS 产物的 package 统一使用 Rslib：SWC 生成 Bun 可执行的服务端 ESM，TSGo 生成 bundled d.ts，`@swc/helpers` 作为声明过的运行时依赖复用 helper。`bun run typecheck` 仍是独立的 TSGo no-emit 校验。源码内部 import 写相对路径且不带扩展名；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。
+
+CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Bun 1.3.14 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Bun 进程证据支持。
 
 Compiler 只维护 Yuku frontend。Adapter 测试直接断言 Source IR、span 与 parser diagnostic 的相关字段；完整项目行为由 Compiler 集成测试和生成物执行测试负责，不提交整棵 Source IR 或 generated output 快照。
 

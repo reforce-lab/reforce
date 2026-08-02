@@ -1,7 +1,7 @@
 # 🌱 Reforce
 
-> 面向 Node.js / Bun 时代的「Spring 式」应用框架生态。
-> A Spring-like application framework ecosystem for the Node.js / Bun era.
+> 面向 Bun 时代的「Spring 式」应用框架生态。
+> A Spring-like application framework ecosystem for the Bun era.
 
 Reforce 是一个**长期项目**，目标是把 Spring 生态中被验证过的核心理念——IoC 容器、声明式装配、配置抽象、生命周期管理、自动装配（starter）、测试支持——用现代 TypeScript 工具链重新实现，而不是照搬 Java 的形制。
 
@@ -15,11 +15,12 @@ Reforce 是一个**长期项目**，目标是把 Spring 生态中被验证过的
 
 | 领域 | 选型 | 版本 |
 | --- | --- | --- |
-| 包管理 / 运行时 | Bun | 1.3.14 |
-| CLI runtime / production smoke | Node.js | 24.12.0 |
+| 包管理 / CLI / 应用运行时 | Bun | 1.3.14 |
 | 任务编排 / 缓存 | Turborepo | 2.10.8 |
 | 语言 | TypeScript（Go 原生编译器，2026-07-08 GA） | 7.0.2 |
 | Compiler frontend | Yuku Parser | 0.8.3 |
+| Package 构建 | Rslib（SWC + TSGo d.ts） | 0.23.2 |
+| SWC 运行时 helpers | @swc/helpers | 0.5.23 |
 | 测试 | Bun test（内置 runner，与运行时同引擎） | 随 bun 1.3.14 |
 | Lint / Format | Biome | 2.5.6 |
 | 提交规范 | commitlint（Conventional Commits） | 21.2.1 |
@@ -63,8 +64,10 @@ bun run check
 bun run typecheck
 bun run test
 bun run build
-node packages/cli/dist/reforce.js --help
+bun packages/cli/dist/reforce.js --help
 ```
+
+所有有 JS 产物的 workspace package 都由 Rslib 构建 Bun 可执行的服务端 ESM 和 bundled d.ts，并统一外置 SWC helpers。TSGo 的独立职责是 `typecheck`；package 内部源码使用无扩展名的相对 import，Rslib 负责生成产物中的 `.js` module specifier。
 
 应用只需使用仓库统一的标准 decorators 配置；不启用旧 decorators，也不生成 runtime metadata：
 

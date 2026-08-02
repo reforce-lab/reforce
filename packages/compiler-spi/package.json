@@ -3,29 +3,31 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "imports": {
-    "#internal/*": {
-      "types": "./src/*.ts",
-      "development": "./src/*.ts",
-      "default": "./dist/*.js"
-    }
-  },
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rslib build",
     "typecheck": "tsc",
     "test": "bun --conditions=development test",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
+  "dependencies": {
+    "@swc/helpers": "catalog:"
+  },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
     "@reforce/tooling-tsconfig": "workspace:*",
+    "@rslib/core": "catalog:",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

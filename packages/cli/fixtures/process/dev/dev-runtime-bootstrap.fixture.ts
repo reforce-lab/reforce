@@ -1,7 +1,7 @@
-import type { NodeHmrRuntime } from "#internal/dev-hmr-manager";
-import { runDevelopmentApplication } from "#internal/dev-runtime";
+import type { RspackHmrRuntime } from "../../../src/dev-hmr-manager";
+import { runDevelopmentApplication } from "../../../src/dev-runtime";
 
-const hot: NodeHmrRuntime = {
+const hot: RspackHmrRuntime = {
   accept() {},
   async check() {
     return null;

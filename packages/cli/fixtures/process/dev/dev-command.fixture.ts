@@ -1,5 +1,5 @@
-import { runDevCommand } from "#internal/dev-command";
-import { PlainTextReporter } from "#internal/reporter";
+import { runDevCommand } from "../../../src/dev-command";
+import { PlainTextReporter } from "../../../src/reporter";
 
 const cwd = process.argv[2];
 const projectDirectory = process.argv[3];

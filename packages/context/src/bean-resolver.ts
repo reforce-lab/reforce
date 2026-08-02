@@ -1,5 +1,5 @@
 import { isPrimitive, isPromise } from "radashi";
-import { createCycleProxy } from "#internal/cycle-proxy-factory";
+import { createCycleProxy } from "./cycle-proxy-factory";
 import {
   ApplicationContextStateError,
   BeanCreationError,
@@ -7,15 +7,15 @@ import {
   InvalidGeneratedDefinitionError,
   ReforceRuntimeError,
   UnregisteredBeanTargetError,
-} from "#internal/errors";
+} from "./errors";
 import type {
   GeneratedClassRegistration,
   GeneratedDependency,
   GeneratedResolver,
-} from "#internal/generated-contracts";
-import { createLazyHandle } from "#internal/lazy-handle-factory";
-import type { BeanClass, BeanDefinition, Lazy } from "#internal/public-types";
-import type { ResolutionState } from "#internal/resolution-state";
+} from "./generated-contracts";
+import { createLazyHandle } from "./lazy-handle-factory";
+import type { BeanClass, BeanDefinition, Lazy } from "./public-types";
+import type { ResolutionState } from "./resolution-state";
 
 export class BeanResolver {
   readonly #state: ResolutionState;

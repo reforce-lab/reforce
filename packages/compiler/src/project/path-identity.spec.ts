@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
-import { isPathContained } from "#internal/project/path-identity";
+import { isPathContained } from "./path-identity";
 
 describe("path containment", () => {
   test("uses native path semantics by default for spaces and Unicode", () => {

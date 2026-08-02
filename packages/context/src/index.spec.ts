@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
-import * as generatedRuntime from "#internal/generated-runtime";
-import * as publicContext from "#internal/index";
+import * as generatedRuntime from "./generated-runtime";
+import * as publicContext from "./index";
 
 test("the root entry exposes only the public programming model", () => {
   expect(Object.keys(publicContext).sort()).toEqual([

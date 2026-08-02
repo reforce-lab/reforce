@@ -3,19 +3,19 @@ import { constants } from "node:fs";
 import { access, lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { isObject, sleep } from "radashi";
-import { compareUtf16CodeUnits } from "#internal/determinism";
+import { compareUtf16CodeUnits } from "./determinism";
 import {
   type LeaseParticipant,
   type LeaseProbeResult,
   LivenessEndpoint,
   probeLeaseEndpoint,
-} from "#internal/lease-endpoint";
+} from "./lease-endpoint";
 import {
   publishMissingDestinationWithWindowsRetry,
   renameWithWindowsRetry,
-} from "#internal/windows-rename-retry";
+} from "./windows-rename-retry";
 
-export { createChildLeaseParticipant, type LeaseParticipant } from "#internal/lease-endpoint";
+export { createChildLeaseParticipant, type LeaseParticipant } from "./lease-endpoint";
 
 export type ProjectLeaseMode = "writer" | "reader";
 

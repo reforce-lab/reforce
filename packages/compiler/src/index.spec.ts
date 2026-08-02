@@ -3,7 +3,7 @@ import { realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CompilerFrontend, FrontendInput, SourceUnit } from "@reforce/compiler-spi";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { createCompiler } from "#internal/index";
+import { createCompiler } from "./index";
 
 const projects: TemporaryProject[] = [];
 
@@ -63,7 +63,7 @@ const frontend: CompilerFrontend = {
 };
 
 test("the root entry exposes only the Compiler factory at runtime", async () => {
-  const publicApi = await import("#internal/index");
+  const publicApi = await import("./index");
 
   expect(Object.keys(publicApi)).toEqual(["createCompiler"]);
 });

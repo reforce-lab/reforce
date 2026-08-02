@@ -1,6 +1,6 @@
 import { isObject } from "radashi";
-import { InvalidGeneratedDefinitionError } from "#internal/errors";
-import { type BeanClass, type BeanDefinition, beanDefinitionBrand } from "#internal/public-types";
+import { InvalidGeneratedDefinitionError } from "./errors";
+import { type BeanClass, type BeanDefinition, beanDefinitionBrand } from "./public-types";
 
 export interface DefineBeanOptions<T extends object> {
   readonly create: () => T;

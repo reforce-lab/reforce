@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   publishMissingDestinationWithWindowsRetry,
   renameWithWindowsRetry,
-} from "#internal/windows-rename-retry";
+} from "./windows-rename-retry";
 
 function filesystemError(code: string): Error & { readonly code: string } {
   return Object.assign(new Error(code), { code });

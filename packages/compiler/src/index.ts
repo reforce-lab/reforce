@@ -1,4 +1,4 @@
-export { createCompiler } from "#internal/create-compiler";
+export { createCompiler } from "./create-compiler";
 export type {
   CompileFailure,
   CompileRequest,
@@ -17,4 +17,4 @@ export type {
   ResolveProjectFailure,
   ResolveProjectRequest,
   ResolveProjectSuccess,
-} from "#internal/types";
+} from "./types";

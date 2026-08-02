@@ -4,7 +4,7 @@ import type {
   GeneratedDependency,
   GeneratedDependencyMode,
   GeneratedSourceReference,
-} from "#internal/generated-runtime";
+} from "../src/generated-runtime";
 
 export function testSource(name: string): GeneratedSourceReference {
   return {

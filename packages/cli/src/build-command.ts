@@ -5,10 +5,10 @@ import {
   type ResolvedApplicationProject,
 } from "@reforce/compiler";
 import { yukuFrontend } from "@reforce/compiler-yuku";
-import { DirectoryTransactionError, DirectoryTransactions } from "#internal/directory-transaction";
-import { buildProductionDist } from "#internal/production-build";
-import { ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "#internal/reporter";
+import { DirectoryTransactionError, DirectoryTransactions } from "./directory-transaction";
+import { buildProductionDist } from "./production-build";
+import { ProjectBusyError, ProjectLease } from "./project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
 
 export interface BuildCommandOptions {
   readonly cwd: string;

@@ -5,18 +5,18 @@ import { fileURLToPath } from "node:url";
 import {
   createTemporaryProject,
   type FixtureTree,
-  resolveNodeExecutable,
+  resolveBunExecutable,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
 import { execa, type ResultPromise } from "execa";
 
 const fixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-command.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-command.fixture.js", import.meta.url),
 );
 const windowsSignalFixturePath = fileURLToPath(
-  new URL("../../fixtures/process/windows-signal.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/windows-signal.fixture.js", import.meta.url),
 );
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 const workspaceRoot = resolve("../..");
 const contextSourceRoot = join(workspaceRoot, "packages", "context", "src");
 const projects: TemporaryProject[] = [];
@@ -25,7 +25,7 @@ const processes: ResultPromise[] = [];
 function spawnDevCommandFixture(arguments_: readonly string[]): ResultPromise {
   const fixtureArguments = [fixturePath, ...arguments_];
   return execa(
-    nodeExecutable,
+    bunExecutable,
     [
       "--conditions=development",
       ...(process.platform === "win32"
@@ -253,7 +253,7 @@ describe("development command", () => {
     expect(await exists(join(project.projectRoot, ".reforce"))).toBe(false);
   }, 30_000);
 
-  test("applies a real Node ESM hot update only after the previous Context closes", async () => {
+  test("applies a real Bun ESM hot update only after the previous Context closes", async () => {
     const tree = applicationProjectTree();
     const src = tree.src;
     if (typeof src === "string" || src instanceof Uint8Array) {

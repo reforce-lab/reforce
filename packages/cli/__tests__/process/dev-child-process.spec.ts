@@ -4,20 +4,20 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createTemporaryProject,
-  resolveNodeExecutable,
+  resolveBunExecutable,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import { spawnDevChild } from "#internal/dev-child-process";
-import { probeLeaseEndpoint } from "#internal/lease-endpoint";
-import type { LeaseParticipant } from "#internal/project-lease";
+import { spawnDevChild } from "../../src/dev-child-process";
+import { probeLeaseEndpoint } from "../../src/lease-endpoint";
+import type { LeaseParticipant } from "../../src/project-lease";
 
 const fixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-child-shutdown.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-child-shutdown.fixture.js", import.meta.url),
 );
 const startupFailureFixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-child-startup-failure.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-child-startup-failure.fixture.js", import.meta.url),
 );
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 const projects: TemporaryProject[] = [];
 
 afterEach(async () => {
@@ -88,8 +88,8 @@ test("Windows-style child shutdown uses IPC acknowledgement", async () => {
   const child = await spawnDevChild({
     entryPath: fixturePath,
     cwd: process.cwd(),
-    nodeExecutable,
-    nodeArguments: ["--conditions=development"],
+    bunExecutable,
+    bunArguments: ["--conditions=development"],
     platform: "win32",
     waitForReady: true,
   });
@@ -106,8 +106,8 @@ test.skipIf(process.platform === "win32")(
     const child = await spawnDevChild({
       entryPath: fixturePath,
       cwd: process.cwd(),
-      nodeExecutable,
-      nodeArguments: ["--conditions=development"],
+      bunExecutable,
+      bunArguments: ["--conditions=development"],
       waitForReady: true,
     });
 
@@ -126,8 +126,8 @@ test("a participant handshake timeout terminates the real child and closes its e
   const failure = spawnDevChild({
     entryPath: startupFailureFixturePath,
     cwd: project.projectRoot,
-    nodeExecutable,
-    nodeArguments: ["--conditions=development"],
+    bunExecutable,
+    bunArguments: ["--conditions=development"],
     applicationArguments: ["silent", observationPath],
     ipcTimeoutMilliseconds: 1_000,
     leaseParticipant: {
@@ -150,8 +150,8 @@ test("a readiness timeout terminates the child before removing its participant",
   const failure = spawnDevChild({
     entryPath: startupFailureFixturePath,
     cwd: project.projectRoot,
-    nodeExecutable,
-    nodeArguments: ["--conditions=development"],
+    bunExecutable,
+    bunArguments: ["--conditions=development"],
     applicationArguments: ["participant", observationPath],
     ipcTimeoutMilliseconds: 1_000,
     waitForReady: true,
@@ -183,8 +183,8 @@ test("a participant cleanup error is appended without replacing the readiness fa
   const failure = spawnDevChild({
     entryPath: startupFailureFixturePath,
     cwd: project.projectRoot,
-    nodeExecutable,
-    nodeArguments: ["--conditions=development"],
+    bunExecutable,
+    bunArguments: ["--conditions=development"],
     applicationArguments: ["participant", observationPath],
     ipcTimeoutMilliseconds: 1_000,
     waitForReady: true,

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import fc from "fast-check";
-import { classBean, createApplicationContext } from "#internal/generated-runtime";
-import { ApplicationStartError } from "#internal/index";
-import { testDefinition, testSource } from "#test-support/test-definition";
+import { testDefinition, testSource } from "../test-support/test-definition";
+import { classBean, createApplicationContext } from "./generated-runtime";
+import { ApplicationStartError } from "./index";
 
 test("every successfully created resource is cleaned once after a construction failure", async () => {
   await fc.assert(

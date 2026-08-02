@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
-import type { LeaseParticipant } from "#internal/project-lease";
+import type { LeaseParticipant } from "./project-lease";
 
 function randomToken(): string {
   return randomBytes(32).toString("hex");

@@ -7,7 +7,7 @@ import {
   type FixtureTree,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import { type CompileResult, createCompiler } from "#internal/index";
+import { type CompileResult, createCompiler } from "../index";
 
 const temporaryProjects: TemporaryProject[] = [];
 
