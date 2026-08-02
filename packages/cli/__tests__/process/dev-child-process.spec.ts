@@ -129,7 +129,7 @@ test("a participant handshake timeout terminates the real child and closes its e
     nodeExecutable,
     nodeArguments: ["--conditions=development"],
     applicationArguments: ["silent", observationPath],
-    ipcTimeoutMilliseconds: 100,
+    ipcTimeoutMilliseconds: 1_000,
     leaseParticipant: {
       async add() {},
       async remove() {},

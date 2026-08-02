@@ -32,7 +32,11 @@ function spawnDevCommandFixture(arguments_: readonly string[]): ResultPromise {
         ? [windowsSignalFixturePath, ...fixtureArguments]
         : fixtureArguments),
     ],
-    { ipc: process.platform === "win32", reject: false, shell: false },
+    {
+      reject: false,
+      shell: false,
+      ...(process.platform === "win32" ? { ipc: true, serialization: "json" as const } : {}),
+    },
   );
 }
 
