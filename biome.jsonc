@@ -8,7 +8,19 @@
   "root": true,
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage", "!bun.lock"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/.turbo",
+      "!**/coverage",
+      "!bun.lock",
+      "!.lsp.json",
+      "!.mcp.json",
+      "!apm_modules",
+      "!.claude",
+      "!.codex",
+      "!.agents"
+    ]
   },
   "formatter": {
     "enabled": true,
