@@ -9,10 +9,10 @@ import {
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import { createCompiler, type GeneratedFile } from "../../src/index";
+import { createCompiler, type GeneratedFile } from "../src/index";
 
-const fixtureDirectory = fileURLToPath(new URL("../../fixtures/", import.meta.url));
-const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const bunExecutable = await resolveBunExecutable();
 const temporaryProjects: TemporaryProject[] = [];
 

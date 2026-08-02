@@ -243,4 +243,27 @@ describe("provider selection", () => {
     expect(error?.related.every((item) => item.sourceSpan !== undefined)).toBe(true);
     expect(result.diagnostics.map((item) => item.code)).toEqual(["DUPLICATE_BEAN_QUALIFIER"]);
   });
+
+  test("an Injectable class wins over a Primary factory for its concrete type", async () => {
+    const result = await compileSource(
+      [
+        'import { defineBean, Injectable } from "@reforce/context";',
+        "@Injectable() export class Concrete {}",
+        "export const concreteFactory = defineBean<Concrete>({",
+        "  create: () => new Concrete(),",
+        "  primary: true,",
+        "});",
+        "@Injectable()",
+        "export class Consumer { constructor(readonly dependency: Concrete) {} }",
+        "",
+      ].join("\n"),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    const targetId = dependencyTarget(result, "src/application.ts#Consumer", 0);
+
+    expect(targetId).toBe("src/application.ts#Concrete");
+  });
 });
