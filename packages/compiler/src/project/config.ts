@@ -203,8 +203,22 @@ async function collectConfigGraph(
   return raw;
 }
 
+function normalizePattern(pattern: string): string {
+  const portable = pattern.replaceAll("\\", "/");
+  if (process.platform !== "win32") {
+    return portable;
+  }
+  if (/^\.\/[A-Za-z]:\//u.test(portable)) {
+    return portable.slice(2);
+  }
+  if (portable.startsWith(".///")) {
+    return portable.slice(1);
+  }
+  return portable;
+}
+
 function normalizePatterns(patterns: readonly string[] | undefined): readonly string[] {
-  return patterns?.map((pattern) => pattern.replaceAll("\\", "/")) ?? [];
+  return patterns?.map(normalizePattern) ?? [];
 }
 
 async function discoverConfiguredFiles(
