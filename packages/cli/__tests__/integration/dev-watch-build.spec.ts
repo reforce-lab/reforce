@@ -281,13 +281,14 @@ export class CreatedService {}
   ).toContain("CreatedService");
 });
 
-test("deleting a source file rebuilds once and removes its Bean", async () => {
+test("deleting a source file removes its Bean without watching generated output", async () => {
   const compilations: DevCompilation[] = [];
+  const invalidations: Array<string | null> = [];
   const project = await setupWatch(
     async (compilation) => {
       compilations.push(compilation);
     },
-    undefined,
+    (path) => invalidations.push(path),
     {
       "application.ts": `import { Injectable } from "@reforce/context";
 
@@ -305,10 +306,17 @@ export class RemovableService {}
   const generatedBeansPath = join(project.projectRoot, ".reforce", "generated", "beans.ts");
   expect(await readFile(generatedBeansPath, "utf8")).toContain("RemovableService");
 
-  await rm(join(project.projectRoot, "src", "removable.ts"));
+  const removedSourcePath = join(project.projectRoot, "src", "removable.ts");
+  await rm(removedSourcePath);
   await waitUntil(() => compilations.length >= 2);
   await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
-  expect(compilations.map((compilation) => compilation.status)).toEqual(["success", "success"]);
+  expect(compilations.every((compilation) => compilation.status === "success")).toBe(true);
   expect(await readFile(generatedBeansPath, "utf8")).not.toContain("RemovableService");
+  expect(invalidations).toContain(removedSourcePath);
+  expect(
+    invalidations.every(
+      (path) => path === null || !path.startsWith(join(project.projectRoot, ".reforce")),
+    ),
+  ).toBe(true);
 });

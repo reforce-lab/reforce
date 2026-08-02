@@ -27,5 +27,7 @@ try {
   await import(pathToFileURL(cliEntry).href);
 } finally {
   process.off("message", onMessage);
-  process.disconnect?.();
+  if (process.connected) {
+    process.disconnect?.();
+  }
 }

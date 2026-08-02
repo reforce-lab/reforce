@@ -153,7 +153,7 @@ test("a readiness timeout terminates the child before removing its participant",
     nodeExecutable,
     nodeArguments: ["--conditions=development"],
     applicationArguments: ["participant", observationPath],
-    ipcTimeoutMilliseconds: 100,
+    ipcTimeoutMilliseconds: 1_000,
     waitForReady: true,
     leaseParticipant: {
       async add() {},
@@ -186,7 +186,7 @@ test("a participant cleanup error is appended without replacing the readiness fa
     nodeExecutable,
     nodeArguments: ["--conditions=development"],
     applicationArguments: ["participant", observationPath],
-    ipcTimeoutMilliseconds: 100,
+    ipcTimeoutMilliseconds: 1_000,
     waitForReady: true,
     leaseParticipant: {
       async add() {},

@@ -15,7 +15,11 @@ import {
   type TransactionKind,
 } from "#internal/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import { spawnNodeIpcFixture } from "#test/node-ipc-fixture";
+import {
+  type IpcProcessOutcome,
+  type NodeIpcFixture,
+  spawnNodeIpcFixture,
+} from "#test/node-ipc-fixture";
 
 const leases: ProjectLease[] = [];
 const projects: TemporaryProject[] = [];
@@ -232,40 +236,139 @@ async function activeDistGeneration(projectRoot: string): Promise<string> {
   return generation;
 }
 
+async function waitForFixtureExit(
+  fixture: NodeIpcFixture,
+  timeoutMessage: string,
+): Promise<IpcProcessOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), 10_000);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([fixture.wait(), timeout]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function detachFixture(fixture: NodeIpcFixture): readonly unknown[] {
+  const errors: unknown[] = [];
+  try {
+    if (fixture.child.connected) {
+      fixture.child.disconnect();
+    }
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    fixture.child.unref();
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    fixture.child.stdout?.destroy();
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    fixture.child.stderr?.destroy();
+  } catch (error) {
+    errors.push(error);
+  }
+  return errors;
+}
+
+function parseReadyLeaseToken(message: unknown): string | undefined {
+  if (typeof message !== "object" || message === null || Reflect.get(message, "type") !== "ready") {
+    return undefined;
+  }
+  const leaseToken = Reflect.get(message, "leaseToken");
+  return typeof leaseToken === "string" ? leaseToken : undefined;
+}
+
+function assertTransactionCrashOutcome(
+  holder: NodeIpcFixture,
+  result: IpcProcessOutcome,
+  fault: { readonly faultPoint: string } | { readonly faultIndex: number },
+  transactionKind: TransactionKind,
+  expectedPoint?: string,
+): void {
+  if (result.exitCode === 87) {
+    return;
+  }
+  const output = holder.output();
+  const faultIndex = "faultIndex" in fault ? String(fault.faultIndex) : "none";
+  const point = "faultPoint" in fault ? fault.faultPoint : (expectedPoint ?? "unknown");
+  throw new Error(
+    [
+      `Transaction holder did not crash as requested: kind=${transactionKind}, faultIndex=${faultIndex}, point=${point}.`,
+      `exitCode=${result.exitCode ?? "null"}, signal=${result.signal ?? "none"}.`,
+      `stdout:\n${output.stdout}`,
+      `stderr:\n${output.stderr}`,
+    ].join("\n"),
+  );
+}
+
+async function cleanupTransactionHolder(holder: NodeIpcFixture): Promise<void> {
+  const errors: unknown[] = [];
+  try {
+    if (holder.child.exitCode === null && holder.child.signalCode === null) {
+      holder.child.kill();
+    }
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await waitForFixtureExit(holder, "Transaction holder did not exit during cleanup.");
+  } catch (error) {
+    errors.push(error, ...detachFixture(holder));
+  }
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "Transaction crash fixture cleanup failed.", {
+      cause: errors[0],
+    });
+  }
+}
+
 async function spawnTransactionCrash(
   projectRoot: string,
   fault: { readonly faultPoint: string } | { readonly faultIndex: number },
   transactionKind: TransactionKind = "generated",
+  expectedPoint?: string,
 ): Promise<string> {
   const fixturePath = fileURLToPath(
     new URL("../../fixtures/process/lease/project-lease.fixture.ts", import.meta.url),
   );
   const holder = spawnNodeIpcFixture(fixturePath, [projectRoot, "writer"]);
-  let message: unknown;
   try {
-    message = await holder.waitForMessage("Transaction holder did not publish readiness.");
+    const message = await holder.waitForMessage("Transaction holder did not publish readiness.");
+    const leaseToken = parseReadyLeaseToken(message);
+    if (leaseToken === undefined) {
+      throw new Error("Transaction holder sent an invalid ready message.");
+    }
+    await holder.sendMessage({ type: "transaction-crash", transactionKind, ...fault });
+    const result = await waitForFixtureExit(
+      holder,
+      "Transaction holder did not exit after the requested crash.",
+    );
+    assertTransactionCrashOutcome(holder, result, fault, transactionKind, expectedPoint);
+    return leaseToken;
   } catch (error) {
-    holder.child.kill();
-    await holder.wait();
+    try {
+      await cleanupTransactionHolder(holder);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Transaction crash fixture failed.", {
+        cause: error,
+      });
+    }
     throw error;
   }
-  const leaseToken =
-    typeof message === "object" &&
-    message !== null &&
-    Reflect.get(message, "type") === "ready" &&
-    typeof Reflect.get(message, "leaseToken") === "string"
-      ? Reflect.get(message, "leaseToken")
-      : undefined;
-  if (leaseToken === undefined) {
-    holder.child.kill();
-    const result = await holder.wait();
-    throw new Error(
-      `Transaction holder sent an invalid ready message and exited with code ${result.exitCode ?? "null"}.`,
-    );
-  }
-  await holder.sendMessage({ type: "transaction-crash", transactionKind, ...fault });
-  expect((await holder.wait()).exitCode).toBe(87);
-  return leaseToken;
 }
 
 function shuffledIndexes(length: number): readonly number[] {
@@ -279,6 +382,93 @@ function shuffledIndexes(length: number): readonly number[] {
     indexes[swapIndex] = current ?? swapIndex;
   }
   return indexes;
+}
+
+async function observeGeneratedFaultPoints(): Promise<readonly string[]> {
+  const baseline = await setupWriter();
+  try {
+    await baseline.transactions.commitGenerated(generatedFiles("pre"));
+    const observedPoints: string[] = [];
+    const traced = await DirectoryTransactions.create({
+      projectRoot: baseline.project.projectRoot,
+      lease: baseline.lease,
+      faultInjector(point, context) {
+        observedPoints.push(`${point}:${context.path ?? ""}`);
+      },
+    });
+
+    await traced.commitGenerated(generatedFiles("post"));
+
+    expect(observedPoints.length).toBeGreaterThan(40);
+    return observedPoints;
+  } finally {
+    await baseline.lease.release();
+    leases.splice(leases.indexOf(baseline.lease), 1);
+    await baseline.project.cleanup();
+    projects.splice(projects.indexOf(baseline.project), 1);
+  }
+}
+
+async function verifyGeneratedCrashBoundaryHalf(half: "first" | "second"): Promise<void> {
+  const observedPoints = await observeGeneratedFaultPoints();
+  const indexes = shuffledIndexes(observedPoints.length);
+  const midpoint = Math.ceil(indexes.length / 2);
+  const selectedIndexes = half === "first" ? indexes.slice(0, midpoint) : indexes.slice(midpoint);
+
+  for (const faultIndex of selectedIndexes) {
+    const project = await createTemporaryProject();
+    let initialLease: ProjectLease | undefined;
+    let replacement: ProjectLease | undefined;
+    try {
+      initialLease = await ProjectLease.acquire({
+        projectRoot: project.projectRoot,
+        mode: "writer",
+      });
+      const initialTransactions = await DirectoryTransactions.create({
+        projectRoot: project.projectRoot,
+        lease: initialLease,
+      });
+      await initialTransactions.commitGenerated(generatedFiles("pre"));
+      await initialLease.release();
+      initialLease = undefined;
+
+      const crashedWriterToken = await spawnTransactionCrash(
+        project.projectRoot,
+        { faultIndex },
+        "generated",
+        observedPoints[faultIndex],
+      );
+      replacement = await ProjectLease.acquire({
+        projectRoot: project.projectRoot,
+        mode: "writer",
+      });
+      expect(replacement.recoveredWriterTokens).toEqual([crashedWriterToken]);
+      const recovery = await DirectoryTransactions.create({
+        projectRoot: project.projectRoot,
+        lease: replacement,
+      });
+      await recovery.recover();
+
+      expect(["pre", "post"]).toContain(await activeGeneration(project.projectRoot));
+      const generatedTransactions = await readdir(
+        join(project.projectRoot, ".reforce", "transactions", "generated"),
+      );
+      expect(generatedTransactions).toEqual([]);
+      const reforceEntries = await readdir(join(project.projectRoot, ".reforce"));
+      const transactionLeftovers = reforceEntries.filter(
+        (entry) => entry.startsWith("generated.staging-") || entry.startsWith("generated.backup-"),
+      );
+      if (transactionLeftovers.length > 0) {
+        throw new Error(
+          `Crash boundary ${faultIndex} (${observedPoints[faultIndex]}) left ${transactionLeftovers.join(", ")}.`,
+        );
+      }
+    } finally {
+      await initialLease?.release();
+      await replacement?.release();
+      await project.cleanup();
+    }
+  }
 }
 
 describe("directory transactions", () => {
@@ -818,66 +1008,12 @@ describe("directory transactions", () => {
     await expect(recovery.recover()).rejects.toBeInstanceOf(DirectoryTransactionError);
   });
 
-  test("recovers a complete generation after every instrumented crash boundary", async () => {
-    const baseline = await setupWriter();
-    await baseline.transactions.commitGenerated(generatedFiles("pre"));
-    const observedPoints: string[] = [];
-    const traced = await DirectoryTransactions.create({
-      projectRoot: baseline.project.projectRoot,
-      lease: baseline.lease,
-      faultInjector(point, context) {
-        observedPoints.push(`${point}:${context.path ?? ""}`);
-      },
-    });
-    await traced.commitGenerated(generatedFiles("post"));
-    await baseline.lease.release();
-    leases.splice(leases.indexOf(baseline.lease), 1);
-    await baseline.project.cleanup();
-    projects.splice(projects.indexOf(baseline.project), 1);
-    expect(observedPoints.length).toBeGreaterThan(40);
+  test("recovers a complete generation across the first half of crash boundaries", async () => {
+    await verifyGeneratedCrashBoundaryHalf("first");
+  }, 60_000);
 
-    for (const faultIndex of shuffledIndexes(observedPoints.length)) {
-      const project = await createTemporaryProject();
-      const initialLease = await ProjectLease.acquire({
-        projectRoot: project.projectRoot,
-        mode: "writer",
-      });
-      const initialTransactions = await DirectoryTransactions.create({
-        projectRoot: project.projectRoot,
-        lease: initialLease,
-      });
-      await initialTransactions.commitGenerated(generatedFiles("pre"));
-      await initialLease.release();
-
-      const crashedWriterToken = await spawnTransactionCrash(project.projectRoot, { faultIndex });
-      const replacement = await ProjectLease.acquire({
-        projectRoot: project.projectRoot,
-        mode: "writer",
-      });
-      expect(replacement.recoveredWriterTokens).toEqual([crashedWriterToken]);
-      const recovery = await DirectoryTransactions.create({
-        projectRoot: project.projectRoot,
-        lease: replacement,
-      });
-      await recovery.recover();
-
-      expect(["pre", "post"]).toContain(await activeGeneration(project.projectRoot));
-      const generatedTransactions = await readdir(
-        join(project.projectRoot, ".reforce", "transactions", "generated"),
-      );
-      expect(generatedTransactions).toEqual([]);
-      const reforceEntries = await readdir(join(project.projectRoot, ".reforce"));
-      const transactionLeftovers = reforceEntries.filter(
-        (entry) => entry.startsWith("generated.staging-") || entry.startsWith("generated.backup-"),
-      );
-      if (transactionLeftovers.length > 0) {
-        throw new Error(
-          `Crash boundary ${faultIndex} (${observedPoints[faultIndex]}) left ${transactionLeftovers.join(", ")}.`,
-        );
-      }
-      await replacement.release();
-      await project.cleanup();
-    }
+  test("recovers a complete generation across the second half of crash boundaries", async () => {
+    await verifyGeneratedCrashBoundaryHalf("second");
   }, 60_000);
 
   test("recovers a complete dist after every instrumented crash boundary", async () => {
@@ -917,6 +1053,7 @@ describe("directory transactions", () => {
           project.projectRoot,
           { faultIndex },
           "dist",
+          observedPoints[faultIndex],
         );
         replacement = await ProjectLease.acquire({
           projectRoot: project.projectRoot,

@@ -2,7 +2,12 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { isObject } from "radashi";
 import type { DevChildExit, ManagedDevChild } from "#internal/dev-child-supervisor";
-import { isDevChildLeaseParticipantMessage, isDevChildReadyMessage } from "#internal/dev-ipc";
+import {
+  type DevChildLeaseParticipantMessage,
+  type DevChildReadyMessage,
+  isDevChildLeaseParticipantMessage,
+  isDevChildReadyMessage,
+} from "#internal/dev-ipc";
 import type { LeaseParticipant } from "#internal/project-lease";
 import type { ShutdownAckMessage } from "#internal/shutdown-controller";
 
@@ -22,16 +27,18 @@ export interface SpawnDevChildOptions {
   };
 }
 
-function isShutdownAcknowledgement(value: unknown, requestId: string): value is ShutdownAckMessage {
+function isShutdownAcknowledgementMessage(value: unknown): value is ShutdownAckMessage {
   if (!isObject(value)) {
     return false;
   }
   return (
     Reflect.get(value, "type") === "reforce:shutdown-ack" &&
-    Reflect.get(value, "requestId") === requestId &&
+    typeof Reflect.get(value, "requestId") === "string" &&
     typeof Reflect.get(value, "ok") === "boolean"
   );
 }
+
+type ShutdownAcknowledgementWaiter = ReturnType<typeof Promise.withResolvers<ShutdownAckMessage>>;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -52,43 +59,6 @@ async function withTimeout<T>(
   }
 }
 
-function waitForMessage<T>(
-  child: ChildProcess,
-  predicate: (message: unknown) => message is T,
-  timeoutMilliseconds: number,
-  timeoutMessage: string,
-): Promise<T> {
-  return withTimeout(
-    new Promise<T>((resolve, reject) => {
-      const cleanup = () => {
-        child.off("error", onError);
-        child.off("exit", onExit);
-        child.off("message", onMessage);
-      };
-      const onError = (error: Error) => {
-        cleanup();
-        reject(error);
-      };
-      const onExit = () => {
-        cleanup();
-        reject(new Error("Development child exited before completing the IPC handshake."));
-      };
-      const onMessage = (message: unknown) => {
-        if (!predicate(message)) {
-          return;
-        }
-        cleanup();
-        resolve(message);
-      };
-      child.on("error", onError);
-      child.on("exit", onExit);
-      child.on("message", onMessage);
-    }),
-    timeoutMilliseconds,
-    timeoutMessage,
-  );
-}
-
 function sendMessage(child: ChildProcess, message: object): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     child.send(message, (error) => {
@@ -103,6 +73,30 @@ function sendMessage(child: ChildProcess, message: object): Promise<void> {
 
 export async function spawnDevChild(options: SpawnDevChildOptions): Promise<ManagedDevChild> {
   const platform = options.platform ?? process.platform;
+  const participant = Promise.withResolvers<DevChildLeaseParticipantMessage>();
+  const ready = Promise.withResolvers<DevChildReadyMessage>();
+  const acknowledgements = new Map<string, ShutdownAcknowledgementWaiter>();
+  let ipcClosedError: Error | undefined;
+  void participant.promise.catch(() => undefined);
+  void ready.promise.catch(() => undefined);
+  const onMessage = (message: unknown) => {
+    if (isDevChildLeaseParticipantMessage(message)) {
+      participant.resolve(message);
+      return;
+    }
+    if (isDevChildReadyMessage(message)) {
+      ready.resolve(message);
+      return;
+    }
+    if (!isShutdownAcknowledgementMessage(message)) {
+      return;
+    }
+    const waiter = acknowledgements.get(message.requestId);
+    if (waiter !== undefined) {
+      acknowledgements.delete(message.requestId);
+      waiter.resolve(message);
+    }
+  };
   const child = spawn(
     options.nodeExecutable ?? process.execPath,
     [...(options.nodeArguments ?? []), options.entryPath, ...(options.applicationArguments ?? [])],
@@ -113,6 +107,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
       stdio: ["ignore", "inherit", "inherit", "ipc"],
     },
   );
+  child.on("message", onMessage);
   const baseExited = new Promise<DevChildExit>((resolve) => {
     child.once("error", (error) => resolve({ exitCode: null, error }));
     child.once("exit", (exitCode, signalName) =>
@@ -125,14 +120,27 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   const closed = new Promise<void>((resolve) => {
     child.once("close", () => resolve());
   });
+  void baseExited.then((result) => {
+    const error =
+      result.error instanceof Error
+        ? result.error
+        : new Error("Development child exited before completing the IPC handshake.");
+    ipcClosedError = error;
+    child.off("message", onMessage);
+    participant.reject(error);
+    ready.reject(error);
+    for (const waiter of acknowledgements.values()) {
+      waiter.reject(error);
+    }
+    acknowledgements.clear();
+  });
   let participantToken: string | undefined;
   let participantRegistered = false;
   let participantRemoval: Promise<void> | undefined;
   try {
     if (options.leaseParticipant) {
-      const registration = await waitForMessage(
-        child,
-        isDevChildLeaseParticipantMessage,
+      const registration = await withTimeout(
+        participant.promise,
         options.ipcTimeoutMilliseconds ?? 5_000,
         "Development child did not publish its lease participant.",
       );
@@ -146,9 +154,8 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
       });
     }
     if (options.waitForReady) {
-      await waitForMessage(
-        child,
-        isDevChildReadyMessage,
+      await withTimeout(
+        ready.promise,
         options.ipcTimeoutMilliseconds ?? 5_000,
         "Development child did not report readiness.",
       );
@@ -196,20 +203,26 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   async function requestIpcShutdown(): Promise<void> {
     try {
       const requestId = randomUUID();
-      const acknowledgement = waitForMessage(
-        child,
-        (message): message is ShutdownAckMessage => isShutdownAcknowledgement(message, requestId),
+      const acknowledgement = waitForShutdownAcknowledgement(
+        requestId,
         options.ipcTimeoutMilliseconds ?? 5_000,
-        "Development child did not acknowledge shutdown.",
       );
+      void acknowledgement.catch(() => undefined);
       await sendMessage(child, { type: "reforce:shutdown", requestId });
       const message = await acknowledgement;
-      if (!isShutdownAcknowledgement(message, requestId) || !message.ok) {
+      if (!message.ok) {
         throw new Error("Development child reported shutdown failure.");
       }
     } catch (error) {
-      terminateChild();
-      await closed;
+      try {
+        await terminateChildAndWait();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Development child shutdown and termination both failed.",
+          { cause: error },
+        );
+      }
       const result = await exited;
       if (result.error === undefined) {
         throw error;
@@ -228,11 +241,82 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     }
   }
 
-  function terminateChild(): void {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      return;
+  function waitForShutdownAcknowledgement(
+    requestId: string,
+    timeoutMilliseconds: number,
+  ): Promise<ShutdownAckMessage> {
+    if (ipcClosedError !== undefined) {
+      return Promise.reject(ipcClosedError);
     }
-    child.kill(platform === "win32" ? undefined : "SIGKILL");
+    const completion = Promise.withResolvers<ShutdownAckMessage>();
+    acknowledgements.set(requestId, completion);
+    return withTimeout(
+      completion.promise,
+      timeoutMilliseconds,
+      "Development child did not acknowledge shutdown.",
+    ).finally(() => acknowledgements.delete(requestId));
+  }
+
+  async function terminateChildAndWait(): Promise<void> {
+    const terminationError = forceTerminateChild();
+    try {
+      await withTimeout(
+        closed,
+        options.ipcTimeoutMilliseconds ?? 5_000,
+        "Development child did not exit after forced termination.",
+      );
+    } catch (error) {
+      throwTerminationFailure(terminationError, error, detachChildHandle());
+    }
+  }
+
+  function forceTerminateChild(): unknown | undefined {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return undefined;
+    }
+    try {
+      return child.kill(platform === "win32" ? undefined : "SIGKILL")
+        ? undefined
+        : new Error("Development child rejected forced termination.");
+    } catch (error) {
+      return error;
+    }
+  }
+
+  function throwTerminationFailure(
+    terminationError: unknown | undefined,
+    exitError: unknown,
+    detachmentErrors: readonly unknown[],
+  ): never {
+    const errors = [
+      ...(terminationError === undefined ? [] : [terminationError]),
+      exitError,
+      ...detachmentErrors,
+    ];
+    if (errors.length === 1) {
+      throw exitError;
+    }
+    throw new AggregateError(errors, "Development child termination failed.", {
+      cause: terminationError ?? exitError,
+    });
+  }
+
+  function detachChildHandle(): readonly unknown[] {
+    const errors: unknown[] = [];
+    child.off("message", onMessage);
+    try {
+      if (child.connected) {
+        child.disconnect();
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      child.unref();
+    } catch (error) {
+      errors.push(error);
+    }
+    return errors;
   }
 
   function removeParticipant(): Promise<void> {
@@ -246,11 +330,11 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   async function cleanupFailedChild(): Promise<readonly unknown[]> {
     const errors: unknown[] = [];
     try {
-      terminateChild();
+      await terminateChildAndWait();
     } catch (error) {
       errors.push(error);
+      return errors;
     }
-    await closed;
     try {
       await removeParticipant();
     } catch (error) {

@@ -153,6 +153,22 @@ function addGateErrors(compilation: Rspack.Compilation, result: DevCompilerGateR
   }
 }
 
+function createDevWatchBuild(
+  build: DevWatchBuild,
+  compiler: Rspack.Compiler | undefined,
+): DevWatchBuild {
+  let closePromise: Promise<void> | undefined;
+  return {
+    close() {
+      closePromise ??= Promise.resolve().then(() => {
+        compiler?.watching?.suspend();
+        return build.close();
+      });
+      return closePromise;
+    },
+  };
+}
+
 class ReforceCompilerGatePlugin {
   readonly #gate: DevCompilerGate;
   readonly #generatedModules: readonly string[];
@@ -373,12 +389,20 @@ export async function startDevWatchBuild(
   });
 
   let watch: Awaited<ReturnType<typeof rsbuild.build>> | undefined;
+  let devWatch: DevWatchBuild | undefined;
   try {
     watch = await rsbuild.build({ watch: true });
+    devWatch = createDevWatchBuild(watch, gatePlugin.compiler);
     await waitForRspackWatcher(gatePlugin, options.project.projectRoot);
   } catch (error) {
-    await watch?.close();
+    try {
+      await devWatch?.close();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Development watcher startup failed.", {
+        cause: error,
+      });
+    }
     throw error;
   }
-  return watch;
+  return devWatch;
 }

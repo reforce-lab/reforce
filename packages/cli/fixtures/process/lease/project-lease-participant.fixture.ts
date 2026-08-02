@@ -8,15 +8,34 @@ if (!leaseToken) {
 const endpoint = await createChildLeaseParticipant(leaseToken);
 process.send?.({ type: "participant", participant: endpoint.participant });
 
-process.on("disconnect", async () => {
-  await new Promise((resolve) => setTimeout(resolve, 750));
-  await endpoint.close();
-  process.exit(0);
+const finishClose = Promise.withResolvers<void>();
+let closePromise: Promise<void> | undefined;
+
+function closeEndpoint(): Promise<void> {
+  closePromise ??= endpoint.close().then(() => process.exit(0));
+  return closePromise;
+}
+
+process.on("disconnect", () => {
+  finishClose.resolve();
+  void closeEndpoint();
 });
 
-process.on("message", async (message: unknown) => {
-  if (typeof message === "object" && message !== null && Reflect.get(message, "type") === "close") {
-    await endpoint.close();
-    process.exit(0);
+process.on("message", (message: unknown) => {
+  if (typeof message !== "object" || message === null) {
+    return;
+  }
+  const type = Reflect.get(message, "type");
+  if (type === "close") {
+    void closeEndpoint();
+    return;
+  }
+  if (type === "begin-close") {
+    process.send?.({ type: "closing" });
+    closePromise ??= finishClose.promise.then(() => endpoint.close()).then(() => process.exit(0));
+    return;
+  }
+  if (type === "finish-close") {
+    finishClose.resolve();
   }
 });

@@ -3,7 +3,7 @@ import { readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { ProjectBusyError, ProjectLease } from "#internal/project-lease";
+import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "#internal/project-lease";
 import { spawnNodeIpcFixture } from "#test/node-ipc-fixture";
 
 const leases: ProjectLease[] = [];
@@ -24,19 +24,11 @@ async function temporaryProject(): Promise<TemporaryProject> {
   return project;
 }
 
-async function spawnLeaseHolder(
-  projectRoot: string,
-  mode: "reader" | "writer",
-  participantMode?: "with-child",
-) {
+async function spawnLeaseHolder(projectRoot: string, mode: "reader" | "writer") {
   const fixturePath = fileURLToPath(
     new URL("../../fixtures/process/lease/project-lease.fixture.ts", import.meta.url),
   );
-  const subprocess = spawnNodeIpcFixture(fixturePath, [
-    projectRoot,
-    mode,
-    ...(participantMode ? [participantMode] : []),
-  ]);
+  const subprocess = spawnNodeIpcFixture(fixturePath, [projectRoot, mode]);
   let message: unknown;
   try {
     message = await subprocess.waitForMessage("Lease holder did not publish readiness.");
@@ -60,6 +52,36 @@ async function spawnLeaseHolder(
     );
   }
   return { process: subprocess, leaseToken };
+}
+
+function parseParticipant(message: unknown): LeaseParticipant | undefined {
+  if (
+    typeof message !== "object" ||
+    message === null ||
+    Reflect.get(message, "type") !== "participant"
+  ) {
+    return undefined;
+  }
+  const participant = Reflect.get(message, "participant");
+  if (typeof participant !== "object" || participant === null) {
+    return undefined;
+  }
+  const participantToken = Reflect.get(participant, "participantToken");
+  const host = Reflect.get(participant, "host");
+  const port = Reflect.get(participant, "port");
+  const challenge = Reflect.get(participant, "challenge");
+  const role = Reflect.get(participant, "role");
+  if (
+    typeof participantToken !== "string" ||
+    host !== "127.0.0.1" ||
+    typeof port !== "number" ||
+    !Number.isInteger(port) ||
+    typeof challenge !== "string" ||
+    role !== "child"
+  ) {
+    return undefined;
+  }
+  return { participantToken, host, port, challenge, role };
 }
 
 describe("project lease", () => {
@@ -221,33 +243,51 @@ describe("project lease", () => {
 
   test("keeps a lease live while a registered child endpoint is still closing", async () => {
     const project = await temporaryProject();
-    const holder = await spawnLeaseHolder(project.projectRoot, "writer", "with-child");
-    await holder.process.sendMessage({ type: "parent-crash" });
-    expect((await holder.process.wait()).exitCode).toBe(88);
+    const holder = await spawnLeaseHolder(project.projectRoot, "writer");
+    const participantFixturePath = fileURLToPath(
+      new URL("../../fixtures/process/lease/project-lease-participant.fixture.ts", import.meta.url),
+    );
+    const participantProcess = spawnNodeIpcFixture(participantFixturePath, [holder.leaseToken]);
+    let participantClosed = false;
+    let holderClosed = false;
+    try {
+      const participant = parseParticipant(
+        await participantProcess.waitForMessage("Lease participant did not publish readiness."),
+      );
+      if (participant === undefined) {
+        throw new Error("Lease participant sent an invalid endpoint record.");
+      }
+      await holder.process.sendMessage({ type: "add-participant", participant });
+      await holder.process.waitForMessage("Lease holder did not register its participant.");
+      await holder.process.sendMessage({ type: "parent-crash" });
+      const holderResult = await holder.process.wait();
+      holderClosed = true;
+      expect(holderResult.exitCode).toBe(88);
+      await participantProcess.sendMessage({ type: "begin-close" });
+      await participantProcess.waitForMessage("Lease participant did not enter closing.");
 
-    await expect(
-      ProjectLease.acquire({ projectRoot: project.projectRoot, mode: "writer" }),
-    ).rejects.toBeInstanceOf(ProjectBusyError);
+      await expect(
+        ProjectLease.acquire({ projectRoot: project.projectRoot, mode: "writer" }),
+      ).rejects.toBeInstanceOf(ProjectBusyError);
 
-    let replacement: ProjectLease | undefined;
-    for (let attempt = 0; attempt < 30 && !replacement; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      try {
-        replacement = await ProjectLease.acquire({
-          projectRoot: project.projectRoot,
-          mode: "writer",
-        });
-      } catch (error) {
-        if (!(error instanceof ProjectBusyError)) {
-          throw error;
-        }
+      await participantProcess.sendMessage({ type: "finish-close" });
+      expect((await participantProcess.wait()).exitCode).toBe(0);
+      participantClosed = true;
+      const replacement = await ProjectLease.acquire({
+        projectRoot: project.projectRoot,
+        mode: "writer",
+      });
+      leases.push(replacement);
+      expect(replacement.recoveredWriterTokens).toEqual([holder.leaseToken]);
+    } finally {
+      if (!participantClosed) {
+        participantProcess.child.kill();
+        await participantProcess.wait();
+      }
+      if (!holderClosed) {
+        holder.process.child.kill();
+        await holder.process.wait();
       }
     }
-    expect(replacement).toBeDefined();
-    if (!replacement) {
-      throw new Error("Child participant did not finish cleanup.");
-    }
-    leases.push(replacement);
-    expect(replacement.recoveredWriterTokens).toEqual([holder.leaseToken]);
   });
 });
