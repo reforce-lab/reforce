@@ -1,0 +1,344 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "src/application.ts",
+    "sourceKind": "ts",
+    "imports": [
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "@reforce/context",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 27,
+              "line": 0,
+              "character": 27
+            },
+            "end": {
+              "offset": 45,
+              "line": 0,
+              "character": 45
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "local": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 9,
+                "line": 0,
+                "character": 9
+              },
+              "end": {
+                "offset": 19,
+                "line": 0,
+                "character": 19
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 46,
+            "line": 0,
+            "character": 46
+          }
+        }
+      }
+    ],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "Service",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 75,
+              "line": 3,
+              "character": 13
+            },
+            "end": {
+              "offset": 82,
+              "line": 3,
+              "character": 20
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Service",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 75,
+                "line": 3,
+                "character": 13
+              },
+              "end": {
+                "offset": 82,
+                "line": 3,
+                "character": 20
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 62,
+              "line": 3,
+              "character": 0
+            },
+            "end": {
+              "offset": 85,
+              "line": 3,
+              "character": 23
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 49,
+                    "line": 2,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 59,
+                    "line": 2,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 49,
+                  "line": 2,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 59,
+                  "line": 2,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 48,
+                "line": 2,
+                "character": 0
+              },
+              "end": {
+                "offset": 61,
+                "line": 2,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 69,
+            "line": 3,
+            "character": 7
+          },
+          "end": {
+            "offset": 85,
+            "line": 3,
+            "character": 23
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "service",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 114,
+              "line": 6,
+              "character": 13
+            },
+            "end": {
+              "offset": 121,
+              "line": 6,
+              "character": 20
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "service",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 114,
+                "line": 6,
+                "character": 13
+              },
+              "end": {
+                "offset": 121,
+                "line": 6,
+                "character": 20
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 101,
+              "line": 6,
+              "character": 0
+            },
+            "end": {
+              "offset": 124,
+              "line": 6,
+              "character": 23
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 88,
+                    "line": 5,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 98,
+                    "line": 5,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 88,
+                  "line": 5,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 98,
+                  "line": 5,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 87,
+                "line": 5,
+                "character": 0
+              },
+              "end": {
+                "offset": 100,
+                "line": 5,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 108,
+            "line": 6,
+            "character": 7
+          },
+          "end": {
+            "offset": 124,
+            "line": 6,
+            "character": 23
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "compiler",
+    "code": "PROJECT_CONFIG_NOT_FOUND",
+    "severity": "error",
+    "message": "No valid leaf application tsconfig exists directly in <projectRoot>.",
+    "related": [],
+    "help": "Add application sources to a direct leaf config or pass --tsconfig for a nested application."
+  }
+]

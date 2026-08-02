@@ -1,0 +1,30 @@
+[
+  {
+    "kind": "compiler",
+    "code": "BEAN_ID_COLLISION",
+    "severity": "error",
+    "message": "Bean identity collides portably: src/application.ts#service.",
+    "sourceSpan": {
+      "fileId": "src/application.ts",
+      "start": {
+        "offset": 69,
+        "line": 3,
+        "character": 7
+      },
+      "end": {
+        "offset": 85,
+        "line": 3,
+        "character": 23
+      }
+    },
+    "related": [
+      {
+        "message": "src/application.ts#Service"
+      },
+      {
+        "message": "src/application.ts#service"
+      }
+    ],
+    "help": "Rename one direct export or source so Bean IDs differ beyond letter case."
+  }
+]

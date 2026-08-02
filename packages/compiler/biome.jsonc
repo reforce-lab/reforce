@@ -1,5 +1,8 @@
 {
   "$schema": "node_modules/@biomejs/biome/configuration_schema.json",
   "extends": "//",
-  "root": false
+  "root": false,
+  "files": {
+    "includes": ["**", "!fixtures/**/project", "!fixtures/**/expected/generated"]
+  }
 }

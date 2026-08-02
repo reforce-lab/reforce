@@ -1,0 +1,174 @@
+{
+  "beans": [
+    {
+      "dependencies": [
+        {
+          "mode": "eager",
+          "parameterIndex": 0,
+          "source": {
+            "end": {
+              "character": 39,
+              "line": 8,
+              "offset": 221
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 14,
+              "line": 8,
+              "offset": 196
+            }
+          },
+          "targetId": "src/application.ts#Provider"
+        }
+      ],
+      "id": "src/application.ts#Consumer",
+      "kind": "class",
+      "lifecycle": {
+        "close": false,
+        "dispose": false,
+        "start": false
+      },
+      "primary": false,
+      "provides": [
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 9,
+              "offset": 227
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 7,
+              "offset": 165
+            }
+          },
+          "displayName": "Consumer",
+          "exportName": "Consumer",
+          "moduleSpecifier": "../../src/application.js"
+        }
+      ],
+      "qualifiers": [
+      ],
+      "runtimeExport": {
+        "exportName": "Consumer",
+        "moduleSpecifier": "../../src/application.js"
+      },
+      "source": {
+        "end": {
+          "character": 1,
+          "line": 9,
+          "offset": 227
+        },
+        "file": "src/application.ts",
+        "start": {
+          "character": 7,
+          "line": 7,
+          "offset": 165
+        }
+      }
+    },
+    {
+      "dependencies": [
+      ],
+      "id": "src/application.ts#Provider",
+      "kind": "class",
+      "lifecycle": {
+        "close": false,
+        "dispose": false,
+        "start": false
+      },
+      "primary": false,
+      "provides": [
+        {
+          "declaration": {
+            "end": {
+              "character": 46,
+              "line": 4,
+              "offset": 142
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 4,
+              "offset": 103
+            }
+          },
+          "displayName": "Provider",
+          "exportName": "Provider",
+          "moduleSpecifier": "../../src/application.js"
+        },
+        {
+          "declaration": {
+            "end": {
+              "character": 24,
+              "line": 0,
+              "offset": 24
+            },
+            "file": "src/ports.ts",
+            "start": {
+              "character": 7,
+              "line": 0,
+              "offset": 7
+            }
+          },
+          "displayName": "Port",
+          "exportName": "Port",
+          "moduleSpecifier": "../../src/ports.js"
+        }
+      ],
+      "qualifiers": [
+        {
+          "interface": {
+            "declaration": {
+              "end": {
+                "character": 24,
+                "line": 0,
+                "offset": 24
+              },
+              "file": "src/ports.ts",
+              "start": {
+                "character": 7,
+                "line": 0,
+                "offset": 7
+              }
+            },
+            "displayName": "Port",
+            "exportName": "Port",
+            "moduleSpecifier": "../../src/ports.js"
+          },
+          "member": "Provider"
+        }
+      ],
+      "runtimeExport": {
+        "exportName": "Provider",
+        "moduleSpecifier": "../../src/application.js"
+      },
+      "source": {
+        "end": {
+          "character": 46,
+          "line": 4,
+          "offset": 142
+        },
+        "file": "src/application.ts",
+        "start": {
+          "character": 7,
+          "line": 4,
+          "offset": 103
+        }
+      }
+    }
+  ],
+  "plans": {
+    "cleanupActionOrder": [
+    ],
+    "constructionOrder": [
+      "src/application.ts#Provider",
+      "src/application.ts#Consumer"
+    ],
+    "startActionOrder": [
+    ]
+  },
+  "schemaVersion": 1
+}

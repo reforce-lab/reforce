@@ -1,0 +1,85 @@
+import {
+  DevHmrManager,
+  type DevTimerScheduler,
+  type NodeHmrRuntime,
+} from "#internal/dev-hmr-manager";
+import type { Reporter } from "#internal/reporter";
+import {
+  installProcessShutdownHandlers,
+  ShutdownController,
+  type ShutdownFailure,
+  type ShutdownResult,
+  type ShutdownState,
+} from "#internal/shutdown-controller";
+
+export interface DevEntryOptions {
+  readonly hot: NodeHmrRuntime;
+  readonly bootstrap: () => Promise<{ close(): Promise<void> }>;
+  readonly reporter: Reporter;
+  readonly scheduler?: DevTimerScheduler;
+  readonly installProcessHandlers?: boolean;
+}
+
+export class DevEntryController {
+  readonly #hmr: DevHmrManager;
+  readonly #installHandlers: boolean;
+  readonly #shutdown: ShutdownController;
+  #startPromise: Promise<void> | undefined;
+
+  constructor(options: DevEntryOptions) {
+    this.#installHandlers = options.installProcessHandlers ?? true;
+    this.#shutdown = new ShutdownController({ command: "dev", reporter: options.reporter });
+    this.#hmr = new DevHmrManager({
+      hot: options.hot,
+      bootstrap: options.bootstrap,
+      scheduler: options.scheduler,
+      onFatal: (error) => {
+        void this.#shutdown.requestShutdown({
+          error,
+          code: "HMR_FATAL",
+          phase: "hmr",
+          message: "Development HMR failed.",
+        });
+      },
+    });
+  }
+
+  get finished(): Promise<ShutdownResult> {
+    return this.#shutdown.finished;
+  }
+
+  get state(): ShutdownState {
+    return this.#shutdown.state;
+  }
+
+  start(): Promise<void> {
+    this.#startPromise ??= this.#startOnce();
+    return this.#startPromise;
+  }
+
+  checkForUpdates(): Promise<void> {
+    return this.#hmr.checkForUpdates();
+  }
+
+  requestShutdown(failure?: ShutdownFailure): Promise<ShutdownResult> {
+    return this.#shutdown.requestShutdown(failure);
+  }
+
+  async #startOnce(): Promise<void> {
+    if (this.#installHandlers) {
+      installProcessShutdownHandlers(this.#shutdown);
+    } else {
+      this.#shutdown.setHandlerCleanup(() => undefined);
+    }
+    await this.#shutdown.start(async () => {
+      await this.#hmr.start();
+      return this.#hmr;
+    });
+  }
+}
+
+export async function runDevEntry(options: DevEntryOptions): Promise<ShutdownResult> {
+  const entry = new DevEntryController(options);
+  await entry.start();
+  return await entry.finished;
+}

@@ -1,0 +1,441 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "line-terminators.ts",
+    "sourceKind": "ts",
+    "imports": [],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "A",
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 13,
+              "line": 0,
+              "character": 13
+            },
+            "end": {
+              "offset": 14,
+              "line": 0,
+              "character": 14
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "A",
+            "span": {
+              "fileId": "line-terminators.ts",
+              "start": {
+                "offset": 13,
+                "line": 0,
+                "character": 13
+              },
+              "end": {
+                "offset": 14,
+                "line": 0,
+                "character": 14
+              }
+            }
+          },
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 0,
+              "line": 0,
+              "character": 0
+            },
+            "end": {
+              "offset": 17,
+              "line": 0,
+              "character": 17
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "line-terminators.ts",
+          "start": {
+            "offset": 7,
+            "line": 0,
+            "character": 7
+          },
+          "end": {
+            "offset": 17,
+            "line": 0,
+            "character": 17
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "B",
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 32,
+              "line": 1,
+              "character": 13
+            },
+            "end": {
+              "offset": 33,
+              "line": 1,
+              "character": 14
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "B",
+            "span": {
+              "fileId": "line-terminators.ts",
+              "start": {
+                "offset": 32,
+                "line": 1,
+                "character": 13
+              },
+              "end": {
+                "offset": 33,
+                "line": 1,
+                "character": 14
+              }
+            }
+          },
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 19,
+              "line": 1,
+              "character": 0
+            },
+            "end": {
+              "offset": 36,
+              "line": 1,
+              "character": 17
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "line-terminators.ts",
+          "start": {
+            "offset": 26,
+            "line": 1,
+            "character": 7
+          },
+          "end": {
+            "offset": 36,
+            "line": 1,
+            "character": 17
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "C",
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 50,
+              "line": 2,
+              "character": 13
+            },
+            "end": {
+              "offset": 51,
+              "line": 2,
+              "character": 14
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "C",
+            "span": {
+              "fileId": "line-terminators.ts",
+              "start": {
+                "offset": 50,
+                "line": 2,
+                "character": 13
+              },
+              "end": {
+                "offset": 51,
+                "line": 2,
+                "character": 14
+              }
+            }
+          },
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 37,
+              "line": 2,
+              "character": 0
+            },
+            "end": {
+              "offset": 54,
+              "line": 2,
+              "character": 17
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "line-terminators.ts",
+          "start": {
+            "offset": 44,
+            "line": 2,
+            "character": 7
+          },
+          "end": {
+            "offset": 54,
+            "line": 2,
+            "character": 17
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "D",
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 68,
+              "line": 3,
+              "character": 13
+            },
+            "end": {
+              "offset": 69,
+              "line": 3,
+              "character": 14
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "D",
+            "span": {
+              "fileId": "line-terminators.ts",
+              "start": {
+                "offset": 68,
+                "line": 3,
+                "character": 13
+              },
+              "end": {
+                "offset": 69,
+                "line": 3,
+                "character": 14
+              }
+            }
+          },
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 55,
+              "line": 3,
+              "character": 0
+            },
+            "end": {
+              "offset": 72,
+              "line": 3,
+              "character": 17
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "line-terminators.ts",
+          "start": {
+            "offset": 62,
+            "line": 3,
+            "character": 7
+          },
+          "end": {
+            "offset": 72,
+            "line": 3,
+            "character": 17
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "E",
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 86,
+              "line": 4,
+              "character": 13
+            },
+            "end": {
+              "offset": 87,
+              "line": 4,
+              "character": 14
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "E",
+            "span": {
+              "fileId": "line-terminators.ts",
+              "start": {
+                "offset": 86,
+                "line": 4,
+                "character": 13
+              },
+              "end": {
+                "offset": 87,
+                "line": 4,
+                "character": 14
+              }
+            }
+          },
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 73,
+              "line": 4,
+              "character": 0
+            },
+            "end": {
+              "offset": 90,
+              "line": 4,
+              "character": 17
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "line-terminators.ts",
+          "start": {
+            "offset": 80,
+            "line": 4,
+            "character": 7
+          },
+          "end": {
+            "offset": 90,
+            "line": 4,
+            "character": 17
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "F",
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 104,
+              "line": 5,
+              "character": 13
+            },
+            "end": {
+              "offset": 105,
+              "line": 5,
+              "character": 14
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "F",
+            "span": {
+              "fileId": "line-terminators.ts",
+              "start": {
+                "offset": 104,
+                "line": 5,
+                "character": 13
+              },
+              "end": {
+                "offset": 105,
+                "line": 5,
+                "character": 14
+              }
+            }
+          },
+          "span": {
+            "fileId": "line-terminators.ts",
+            "start": {
+              "offset": 91,
+              "line": 5,
+              "character": 0
+            },
+            "end": {
+              "offset": 108,
+              "line": 5,
+              "character": 17
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "line-terminators.ts",
+          "start": {
+            "offset": 98,
+            "line": 5,
+            "character": 7
+          },
+          "end": {
+            "offset": 108,
+            "line": 5,
+            "character": 17
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

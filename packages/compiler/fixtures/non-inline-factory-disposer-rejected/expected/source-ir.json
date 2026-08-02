@@ -1,0 +1,519 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "src/application.ts",
+    "sourceKind": "ts",
+    "imports": [
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "@reforce/context",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 27,
+              "line": 0,
+              "character": 27
+            },
+            "end": {
+              "offset": 45,
+              "line": 0,
+              "character": 45
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "defineBean",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "local": {
+              "text": "defineBean",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 9,
+                "line": 0,
+                "character": 9
+              },
+              "end": {
+                "offset": 19,
+                "line": 0,
+                "character": 19
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 46,
+            "line": 0,
+            "character": 46
+          }
+        }
+      }
+    ],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "Resource",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 61,
+              "line": 2,
+              "character": 13
+            },
+            "end": {
+              "offset": 69,
+              "line": 2,
+              "character": 21
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Resource",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 61,
+                "line": 2,
+                "character": 13
+              },
+              "end": {
+                "offset": 69,
+                "line": 2,
+                "character": 21
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 48,
+              "line": 2,
+              "character": 0
+            },
+            "end": {
+              "offset": 72,
+              "line": 2,
+              "character": 24
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 55,
+            "line": 2,
+            "character": 7
+          },
+          "end": {
+            "offset": 72,
+            "line": 2,
+            "character": 24
+          }
+        }
+      }
+    ],
+    "beanFactories": [
+      {
+        "kind": "define-bean",
+        "topLevel": true,
+        "declarationKind": "const",
+        "name": {
+          "text": "resource",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 152,
+              "line": 8,
+              "character": 13
+            },
+            "end": {
+              "offset": 160,
+              "line": 8,
+              "character": 21
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "resource",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 152,
+                "line": 8,
+                "character": 13
+              },
+              "end": {
+                "offset": 160,
+                "line": 8,
+                "character": 21
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 139,
+              "line": 8,
+              "character": 0
+            },
+            "end": {
+              "offset": 241,
+              "line": 11,
+              "character": 3
+            }
+          }
+        },
+        "callee": {
+          "kind": "identifier",
+          "name": {
+            "text": "defineBean",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 163,
+                "line": 8,
+                "character": 24
+              },
+              "end": {
+                "offset": 173,
+                "line": 8,
+                "character": 34
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 163,
+              "line": 8,
+              "character": 24
+            },
+            "end": {
+              "offset": 173,
+              "line": 8,
+              "character": 34
+            }
+          }
+        },
+        "typeArguments": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "Resource",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 174,
+                    "line": 8,
+                    "character": 35
+                  },
+                  "end": {
+                    "offset": 182,
+                    "line": 8,
+                    "character": 43
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 174,
+                  "line": 8,
+                  "character": 35
+                },
+                "end": {
+                  "offset": 182,
+                  "line": 8,
+                  "character": 43
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 174,
+                "line": 8,
+                "character": 35
+              },
+              "end": {
+                "offset": 182,
+                "line": 8,
+                "character": 43
+              }
+            }
+          }
+        ],
+        "options": {
+          "kind": "object",
+          "properties": [
+            {
+              "kind": "create",
+              "keySpan": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 188,
+                  "line": 9,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 194,
+                  "line": 9,
+                  "character": 8
+                }
+              },
+              "value": {
+                "kind": "arrow",
+                "async": false,
+                "parameters": [],
+                "body": {
+                  "kind": "direct-new",
+                  "callee": {
+                    "kind": "identifier",
+                    "name": {
+                      "text": "Resource",
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 206,
+                          "line": 9,
+                          "character": 20
+                        },
+                        "end": {
+                          "offset": 214,
+                          "line": 9,
+                          "character": 28
+                        }
+                      }
+                    },
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 206,
+                        "line": 9,
+                        "character": 20
+                      },
+                      "end": {
+                        "offset": 214,
+                        "line": 9,
+                        "character": 28
+                      }
+                    }
+                  },
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 202,
+                      "line": 9,
+                      "character": 16
+                    },
+                    "end": {
+                      "offset": 216,
+                      "line": 9,
+                      "character": 30
+                    }
+                  }
+                },
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 196,
+                    "line": 9,
+                    "character": 10
+                  },
+                  "end": {
+                    "offset": 216,
+                    "line": 9,
+                    "character": 30
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 188,
+                  "line": 9,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 216,
+                  "line": 9,
+                  "character": 30
+                }
+              }
+            },
+            {
+              "kind": "dispose",
+              "keySpan": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 220,
+                  "line": 10,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 227,
+                  "line": 10,
+                  "character": 9
+                }
+              },
+              "value": {
+                "kind": "unsupported",
+                "expressionKind": "identifier",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 229,
+                    "line": 10,
+                    "character": 11
+                  },
+                  "end": {
+                    "offset": 236,
+                    "line": 10,
+                    "character": 18
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 220,
+                  "line": 10,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 236,
+                  "line": 10,
+                  "character": 18
+                }
+              }
+            }
+          ],
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 184,
+              "line": 8,
+              "character": 45
+            },
+            "end": {
+              "offset": 239,
+              "line": 11,
+              "character": 1
+            }
+          }
+        },
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 152,
+            "line": 8,
+            "character": 13
+          },
+          "end": {
+            "offset": 240,
+            "line": 11,
+            "character": 2
+          }
+        }
+      }
+    ],
+    "unsupportedDeclarations": [
+      {
+        "kind": "unsupported-named-declaration",
+        "declarationKind": "function",
+        "topLevel": true,
+        "name": {
+          "text": "cleanup",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 83,
+              "line": 4,
+              "character": 9
+            },
+            "end": {
+              "offset": 90,
+              "line": 4,
+              "character": 16
+            }
+          }
+        },
+        "export": {
+          "kind": "none"
+        },
+        "typeParameters": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 74,
+            "line": 4,
+            "character": 0
+          },
+          "end": {
+            "offset": 137,
+            "line": 6,
+            "character": 1
+          }
+        }
+      }
+    ]
+  }
+]

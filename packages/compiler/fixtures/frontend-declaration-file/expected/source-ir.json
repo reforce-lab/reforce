@@ -1,0 +1,700 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "declarations.d.ts",
+    "sourceKind": "d.ts",
+    "imports": [],
+    "exports": [],
+    "interfaces": [
+      {
+        "kind": "interface",
+        "topLevel": true,
+        "name": {
+          "text": "ExternalPort",
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 17,
+              "line": 0,
+              "character": 17
+            },
+            "end": {
+              "offset": 29,
+              "line": 0,
+              "character": 29
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "ExternalPort",
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 17,
+                "line": 0,
+                "character": 17
+              },
+              "end": {
+                "offset": 29,
+                "line": 0,
+                "character": 29
+              }
+            }
+          },
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 0,
+              "line": 0,
+              "character": 0
+            },
+            "end": {
+              "offset": 55,
+              "line": 0,
+              "character": 55
+            }
+          }
+        },
+        "typeParameters": [
+          {
+            "name": {
+              "text": "T",
+              "span": {
+                "fileId": "declarations.d.ts",
+                "start": {
+                  "offset": 30,
+                  "line": 0,
+                  "character": 30
+                },
+                "end": {
+                  "offset": 31,
+                  "line": 0,
+                  "character": 31
+                }
+              }
+            },
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 30,
+                "line": 0,
+                "character": 30
+              },
+              "end": {
+                "offset": 31,
+                "line": 0,
+                "character": 31
+              }
+            }
+          }
+        ],
+        "extends": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "Iterable",
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 41,
+                    "line": 0,
+                    "character": 41
+                  },
+                  "end": {
+                    "offset": 49,
+                    "line": 0,
+                    "character": 49
+                  }
+                }
+              },
+              "span": {
+                "fileId": "declarations.d.ts",
+                "start": {
+                  "offset": 41,
+                  "line": 0,
+                  "character": 41
+                },
+                "end": {
+                  "offset": 49,
+                  "line": 0,
+                  "character": 49
+                }
+              }
+            },
+            "typeArguments": [
+              {
+                "kind": "type-parameter",
+                "name": {
+                  "text": "T",
+                  "span": {
+                    "fileId": "declarations.d.ts",
+                    "start": {
+                      "offset": 50,
+                      "line": 0,
+                      "character": 50
+                    },
+                    "end": {
+                      "offset": 51,
+                      "line": 0,
+                      "character": 51
+                    }
+                  }
+                },
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 50,
+                    "line": 0,
+                    "character": 50
+                  },
+                  "end": {
+                    "offset": 51,
+                    "line": 0,
+                    "character": 51
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 41,
+                "line": 0,
+                "character": 41
+              },
+              "end": {
+                "offset": 52,
+                "line": 0,
+                "character": 52
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "declarations.d.ts",
+          "start": {
+            "offset": 7,
+            "line": 0,
+            "character": 7
+          },
+          "end": {
+            "offset": 55,
+            "line": 0,
+            "character": 55
+          }
+        }
+      },
+      {
+        "kind": "interface",
+        "topLevel": false,
+        "name": {
+          "text": "Qualified",
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 118,
+              "line": 3,
+              "character": 19
+            },
+            "end": {
+              "offset": 127,
+              "line": 3,
+              "character": 28
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Qualified",
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 118,
+                "line": 3,
+                "character": 19
+              },
+              "end": {
+                "offset": 127,
+                "line": 3,
+                "character": 28
+              }
+            }
+          },
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 101,
+              "line": 3,
+              "character": 2
+            },
+            "end": {
+              "offset": 130,
+              "line": 3,
+              "character": 31
+            }
+          }
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "declarations.d.ts",
+          "start": {
+            "offset": 108,
+            "line": 3,
+            "character": 9
+          },
+          "end": {
+            "offset": 130,
+            "line": 3,
+            "character": 31
+          }
+        }
+      }
+    ],
+    "namespaces": [
+      {
+        "kind": "namespace",
+        "topLevel": true,
+        "name": {
+          "text": "ExternalTokens",
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 82,
+              "line": 2,
+              "character": 25
+            },
+            "end": {
+              "offset": 96,
+              "line": 2,
+              "character": 39
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "ExternalTokens",
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 82,
+                "line": 2,
+                "character": 25
+              },
+              "end": {
+                "offset": 96,
+                "line": 2,
+                "character": 39
+              }
+            }
+          },
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 57,
+              "line": 2,
+              "character": 0
+            },
+            "end": {
+              "offset": 132,
+              "line": 4,
+              "character": 1
+            }
+          }
+        },
+        "exportedMembers": [
+          {
+            "kind": "type",
+            "name": {
+              "text": "Qualified",
+              "span": {
+                "fileId": "declarations.d.ts",
+                "start": {
+                  "offset": 118,
+                  "line": 3,
+                  "character": 19
+                },
+                "end": {
+                  "offset": 127,
+                  "line": 3,
+                  "character": 28
+                }
+              }
+            },
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 101,
+                "line": 3,
+                "character": 2
+              },
+              "end": {
+                "offset": 130,
+                "line": 3,
+                "character": 31
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "declarations.d.ts",
+          "start": {
+            "offset": 72,
+            "line": 2,
+            "character": 15
+          },
+          "end": {
+            "offset": 132,
+            "line": 4,
+            "character": 1
+          }
+        }
+      }
+    ],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": true,
+        "name": {
+          "text": "ExternalBase",
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 164,
+              "line": 6,
+              "character": 30
+            },
+            "end": {
+              "offset": 176,
+              "line": 6,
+              "character": 42
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "ExternalBase",
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 164,
+                "line": 6,
+                "character": 30
+              },
+              "end": {
+                "offset": 176,
+                "line": 6,
+                "character": 42
+              }
+            }
+          },
+          "span": {
+            "fileId": "declarations.d.ts",
+            "start": {
+              "offset": 134,
+              "line": 6,
+              "character": 0
+            },
+            "end": {
+              "offset": 267,
+              "line": 9,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [
+          {
+            "name": {
+              "text": "T",
+              "span": {
+                "fileId": "declarations.d.ts",
+                "start": {
+                  "offset": 177,
+                  "line": 6,
+                  "character": 43
+                },
+                "end": {
+                  "offset": 178,
+                  "line": 6,
+                  "character": 44
+                }
+              }
+            },
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 177,
+                "line": 6,
+                "character": 43
+              },
+              "end": {
+                "offset": 178,
+                "line": 6,
+                "character": 44
+              }
+            }
+          }
+        ],
+        "decorators": [],
+        "implements": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "ExternalPort",
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 191,
+                    "line": 6,
+                    "character": 57
+                  },
+                  "end": {
+                    "offset": 203,
+                    "line": 6,
+                    "character": 69
+                  }
+                }
+              },
+              "span": {
+                "fileId": "declarations.d.ts",
+                "start": {
+                  "offset": 191,
+                  "line": 6,
+                  "character": 57
+                },
+                "end": {
+                  "offset": 203,
+                  "line": 6,
+                  "character": 69
+                }
+              }
+            },
+            "typeArguments": [
+              {
+                "kind": "type-parameter",
+                "name": {
+                  "text": "T",
+                  "span": {
+                    "fileId": "declarations.d.ts",
+                    "start": {
+                      "offset": 204,
+                      "line": 6,
+                      "character": 70
+                    },
+                    "end": {
+                      "offset": 205,
+                      "line": 6,
+                      "character": 71
+                    }
+                  }
+                },
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 204,
+                    "line": 6,
+                    "character": 70
+                  },
+                  "end": {
+                    "offset": 205,
+                    "line": 6,
+                    "character": 71
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 191,
+                "line": 6,
+                "character": 57
+              },
+              "end": {
+                "offset": 206,
+                "line": 6,
+                "character": 72
+              }
+            }
+          }
+        ],
+        "constructors": [
+          {
+            "kind": "constructor",
+            "accessibility": "protected",
+            "implementation": false,
+            "parameters": [
+              {
+                "kind": "constructor-parameter",
+                "index": 0,
+                "type": {
+                  "kind": "type-parameter",
+                  "name": {
+                    "text": "T",
+                    "span": {
+                      "fileId": "declarations.d.ts",
+                      "start": {
+                        "offset": 240,
+                        "line": 7,
+                        "character": 31
+                      },
+                      "end": {
+                        "offset": 241,
+                        "line": 7,
+                        "character": 32
+                      }
+                    }
+                  },
+                  "span": {
+                    "fileId": "declarations.d.ts",
+                    "start": {
+                      "offset": 240,
+                      "line": 7,
+                      "character": 31
+                    },
+                    "end": {
+                      "offset": 241,
+                      "line": 7,
+                      "character": 32
+                    }
+                  }
+                },
+                "optional": false,
+                "rest": false,
+                "hasInitializer": false,
+                "decorators": [],
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 233,
+                    "line": 7,
+                    "character": 24
+                  },
+                  "end": {
+                    "offset": 241,
+                    "line": 7,
+                    "character": 32
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 211,
+                "line": 7,
+                "character": 2
+              },
+              "end": {
+                "offset": 243,
+                "line": 7,
+                "character": 34
+              }
+            }
+          }
+        ],
+        "methods": [
+          {
+            "kind": "method",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "read",
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 255,
+                    "line": 8,
+                    "character": 11
+                  },
+                  "end": {
+                    "offset": 259,
+                    "line": 8,
+                    "character": 15
+                  }
+                }
+              }
+            },
+            "static": false,
+            "accessibility": "public",
+            "async": false,
+            "generator": false,
+            "optional": false,
+            "implementation": false,
+            "parameters": [],
+            "returnType": {
+              "kind": "type-parameter",
+              "name": {
+                "text": "T",
+                "span": {
+                  "fileId": "declarations.d.ts",
+                  "start": {
+                    "offset": 263,
+                    "line": 8,
+                    "character": 19
+                  },
+                  "end": {
+                    "offset": 264,
+                    "line": 8,
+                    "character": 20
+                  }
+                }
+              },
+              "span": {
+                "fileId": "declarations.d.ts",
+                "start": {
+                  "offset": 263,
+                  "line": 8,
+                  "character": 19
+                },
+                "end": {
+                  "offset": 264,
+                  "line": 8,
+                  "character": 20
+                }
+              }
+            },
+            "span": {
+              "fileId": "declarations.d.ts",
+              "start": {
+                "offset": 246,
+                "line": 8,
+                "character": 2
+              },
+              "end": {
+                "offset": 265,
+                "line": 8,
+                "character": 21
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "declarations.d.ts",
+          "start": {
+            "offset": 158,
+            "line": 6,
+            "character": 24
+          },
+          "end": {
+            "offset": 267,
+            "line": 9,
+            "character": 1
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

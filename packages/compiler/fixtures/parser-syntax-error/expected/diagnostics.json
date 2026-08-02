@@ -1,0 +1,22 @@
+[
+  {
+    "kind": "frontend",
+    "code": "PARSER_SYNTAX_ERROR",
+    "severity": "error",
+    "message": "Source contains invalid TypeScript syntax.",
+    "sourceSpan": {
+      "fileId": "syntax-error.ts",
+      "start": {
+        "offset": 13,
+        "line": 0,
+        "character": 13
+      },
+      "end": {
+        "offset": 14,
+        "line": 0,
+        "character": 14
+      }
+    },
+    "related": []
+  }
+]

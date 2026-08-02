@@ -1,0 +1,38 @@
+{
+  "name": "@reforce/tooling-testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#internal/*": {
+      "types": "./src/*.ts",
+      "development": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc",
+    "test": "bun --conditions=development test",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "execa": "^10.0.1",
+    "strip-ansi": "^7.2.0",
+    "tempy": "^3.2.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@types/bun": "catalog:",
+    "radashi": "^12.9.1",
+    "typescript": "catalog:"
+  }
+}

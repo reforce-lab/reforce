@@ -1,0 +1,23 @@
+[
+  {
+    "kind": "compiler",
+    "code": "INVALID_DEFINE_BEAN",
+    "severity": "error",
+    "message": "resource.dispose must be an inline function.",
+    "sourceSpan": {
+      "fileId": "src/application.ts",
+      "start": {
+        "offset": 184,
+        "line": 8,
+        "character": 45
+      },
+      "end": {
+        "offset": 239,
+        "line": 11,
+        "character": 1
+      }
+    },
+    "related": [],
+    "help": "Declare dispose(instance) inline or omit the option."
+  }
+]

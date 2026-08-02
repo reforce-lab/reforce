@@ -4,30 +4,41 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#/*": {
-      "type": "./src/*.ts",
+    "#internal/*": {
+      "types": "./src/*.ts",
       "development": "./src/*.ts",
       "default": "./dist/*.js"
+    },
+    "#test-support/*": {
+      "types": "./test-support/*.ts",
+      "development": "./test-support/*.ts"
     }
   },
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./generated-runtime": {
+      "types": "./src/generated-runtime.ts",
+      "default": "./src/generated-runtime.ts"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc",
-    "test": "bun test",
+    "test": "bun --conditions=development test src __tests__",
     "check": "biome check .",
     "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "radashi": "^12.9.1"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@types/bun": "catalog:",
-    "type-fest": "catalog:",
+    "fast-check": "^4.9.0",
     "typescript": "catalog:"
   }
 }
