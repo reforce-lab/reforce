@@ -32,10 +32,12 @@ Reforce 是一个**长期项目**，目标是把 Spring 生态中被验证过的
 
 ```
 reforce/
+├── e2e/                   # @reforce/e2e —— 只消费 dist 的完整用户链路
+│   └── fixtures/
+│       └── application/   # 由 E2E workspace 管理的唯一完整应用模板
 ├── packages/
 │   ├── cli/               # @reforce/cli —— 命令行工具
 │   ├── compiler/          # @reforce/compiler —— 内置 Yuku parser、项目解析、链接、分析与生成
-│   │   └── fixtures/      # Compiler 跨文件、项目解析与生成行为 fixtures
 │   ├── context/           # @reforce/context —— IoC 容器 / ApplicationContext
 │   ├── testing/           # @reforce/testing —— 框架测试支持
 │   └── web/               # @reforce/web —— Web 抽象
@@ -43,8 +45,8 @@ reforce/
 │   ├── fastify/           # @reforce/platform-fastify —— Fastify 适配
 │   └── hono/              # @reforce/platform-hono —— Hono 适配
 ├── tooling/
-│   ├── testing/           # @reforce/tooling-testing —— 跨平台真实进程 / filesystem fixture
-│   └── tsconfig/          # @reforce/tooling-tsconfig —— 唯一共享 TS 配置
+│   ├── testing/           # @reforce/tooling-testing —— 跨平台进程与临时项目工具
+│   └── tsconfig/          # @reforce/tooling-tsconfig —— workspace tsconfig 的共享基线
 └── .github/               # CI、Issue / PR 模板、CODEOWNERS
 ```
 
@@ -63,16 +65,26 @@ bun run check
 bun run typecheck
 bun run test
 bun run build
+bun run test:e2e
 bun packages/cli/dist/reforce.js --help
 ```
 
-所有有 JS 产物的 workspace package 都由 Rslib 构建 Bun 可执行的服务端 ESM 和 bundled d.ts，并统一外置 SWC helpers。TSGo 的独立职责是 `typecheck`；package 内部源码使用无扩展名的相对 import，Rslib 负责生成产物中的 `.js` module specifier。
+每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，`tsconfig.node.json` 管理源码与 Rslib/tooling 配置；两者都继承 `@reforce/tooling-tsconfig/base.json` 的 `noEmit: true`，不使用 project references。Rslib 自动读取源码配置并负责生成 Bun 可执行的服务端 ESM 和根级 bundleless d.ts。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
+
+包级单元测试位于 `test/`，路径严格镜像 `src`；跨模块、filesystem、子进程和 Worker 行为位于 `it/`。两个目录各自维护 `tsconfig.json`。默认 `bun run test` 运行 unit 与 IT；独立的 `@reforce/e2e` workspace 通过 `bun run test:e2e` 从构建后的 CLI 验证完整用户链路。
+
+package exports 只公开 `dist`。仓库内跨 package import、CLI dev/build 和用户应用都消费构建产物；Rsbuild 的 `development` / `production` mode 只描述用户应用是否启用开发能力，不改变 Reforce package 的解析入口。
 
 应用只需使用仓库统一的标准 decorators 配置；不启用旧 decorators，也不生成 runtime metadata：
 
 ```json
 {
   "extends": "@reforce/tooling-tsconfig/base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
   "include": ["src", ".reforce/generated/**/*.d.ts"]
 }
 ```
@@ -96,6 +108,8 @@ reforce start --project apps/api
 ```
 
 `--tsconfig` 相对 `--project` 解析；显式传入嵌套 config 后，输出仍固定写入该 leaf application 目录的 `.reforce/generated`、`.reforce/dev` 与 `dist`。`start` 只读取该目录的完整 production artifact，不读取 tsconfig。
+
+`e2e/fixtures/application` 是唯一完整应用模板，由 `@reforce/e2e` workspace 提供依赖和检查。E2E 会先把项目输入复制到临时目录，再生成、修改或启动；包内不保存 fixture，Compiler 项目输入与进程/Worker harness 都由相应 IT 在临时目录构造。
 
 ## 参与方式
 

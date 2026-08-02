@@ -1,0 +1,10 @@
+{
+  "extends": "@reforce/tooling-tsconfig/base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["bun"]
+  },
+  "include": ["src", ".reforce/generated/**/*.d.ts"]
+}

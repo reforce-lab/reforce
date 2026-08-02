@@ -1,9 +1,9 @@
 import type { ApplicationContext } from "@reforce/context";
 import { isObject } from "radashi";
-import { requireBunExecutable } from "./bun-runtime";
-import { createChildLeaseParticipant } from "./lease-endpoint";
-import { PlainTextReporter, type Reporter, reportShutdownFailure } from "./reporter";
-import { installProcessShutdownHandlers, ShutdownController } from "./shutdown-controller";
+import { requireBunExecutable } from "@/bun-runtime";
+import { createChildLeaseParticipant } from "@/lease-endpoint";
+import { PlainTextReporter, type Reporter, reportShutdownFailure } from "@/reporter";
+import { installProcessShutdownHandlers, ShutdownController } from "@/shutdown-controller";
 
 interface LeaseParticipantAck {
   readonly type: "reforce:lease-participant-ack";

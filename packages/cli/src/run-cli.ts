@@ -1,13 +1,13 @@
 import { Command, CommanderError } from "commander";
-import { runBuildCommand } from "./build-command";
-import { runDevCommand } from "./dev-command";
+import { runBuildCommand } from "@/build-command";
+import { runDevCommand } from "@/dev-command";
 import {
   type CliCommandName,
   createFailureEvent,
   PlainTextReporter,
   type Reporter,
-} from "./reporter";
-import { runStartCommand } from "./start-command";
+} from "@/reporter";
+import { runStartCommand } from "@/start-command";
 
 export interface RunCliOptions {
   readonly argv?: readonly string[];

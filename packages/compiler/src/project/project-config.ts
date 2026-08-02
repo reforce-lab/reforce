@@ -3,12 +3,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { parseTsconfig, type TsConfigJsonResolved } from "get-tsconfig";
 import { glob } from "tinyglobby";
-import type { CompilerDiagnostic, CompilerWatchInputs } from "../api";
-import { sortNativePaths } from "../determinism";
-import { diagnostic } from "../diagnostics";
-import { isPathContained, toPortablePath } from "./path-identity";
-import { createProjectSnapshot, type ProjectSnapshotEntry } from "./project-snapshot";
-import { createWatchInputs } from "./watch-inputs";
+import type { CompilerDiagnostic, CompilerWatchInputs } from "@/api";
+import { sortNativePaths } from "@/determinism";
+import { diagnostic } from "@/diagnostics";
+import { isPathContained, toPortablePath } from "@/project/path-identity";
+import { createProjectSnapshot, type ProjectSnapshotEntry } from "@/project/project-snapshot";
+import { createWatchInputs } from "@/project/watch-inputs";
 
 const sourceSuffixPattern = /\.(?:ts|tsx|mts|cts)$/u;
 const declarationSuffixPattern = /\.d\.(?:ts|mts|cts)$/u;

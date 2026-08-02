@@ -7,14 +7,11 @@
     "reforce": "./dist/reforce.js"
   },
   "scripts": {
-    "build": "rslib build && bun tooling/mark-executable.ts",
-    "typecheck": "tsc",
-    "test": "bun run test:fixtures && bun --conditions=development test --timeout 15000 src __tests__/commands __tests__/integration __tests__/process __tests__/recovery",
-    "test:e2e": "bun run test:fixtures && bun --conditions=development test __tests__/e2e",
-    "test:e2e:evidence": "bun run test:fixtures && bun --conditions=development test __tests__/e2e --reporter=junit --reporter-outfile=e2e-junit.xml",
-    "test:fixtures": "rslib build -c rslib.fixtures.config.ts",
-    "test:recovery": "bun run test:fixtures && bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts",
-    "test:recovery:evidence": "bun run test:fixtures && bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts --reporter=junit --reporter-outfile=recovery-junit.xml",
+    "build": "rslib build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "bun run build && bun test --timeout 15000 test it",
+    "test:recovery": "bun test it/recovery/project-lease.spec.ts it/recovery/directory-transaction.spec.ts",
+    "test:recovery:evidence": "bun test it/recovery/project-lease.spec.ts it/recovery/directory-transaction.spec.ts --reporter=junit --reporter-outfile=recovery-junit.xml",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },

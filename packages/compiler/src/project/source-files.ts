@@ -2,15 +2,15 @@ import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { LRUCache } from "lru-cache";
-import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "../api";
-import { compareUtf16CodeUnits } from "../determinism";
-import { diagnostic } from "../diagnostics";
-import { parseSource } from "../parser/parse-source";
-import type { SourceFileIr, SourceKind } from "../parser/source-ir";
-import type { CanonicalFileId } from "../parser/source-location";
-import { isPathContained, toPortablePath } from "./path-identity";
-import type { ProjectState } from "./project-config";
-import { createWatchInputs, mergeWatchInputs } from "./watch-inputs";
+import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "@/api";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { diagnostic } from "@/diagnostics";
+import { parseSource } from "@/parser/parse-source";
+import type { SourceFileIr, SourceKind } from "@/parser/source-ir";
+import type { CanonicalFileId } from "@/parser/source-location";
+import { isPathContained, toPortablePath } from "@/project/path-identity";
+import type { ProjectState } from "@/project/project-config";
+import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
 
 export interface ParsedSource {
   readonly absolutePath: string;

@@ -1,5 +1,5 @@
-import { compareUtf16CodeUnits, stableStructuralKey } from "../determinism";
-import type { SourceSpan } from "./source-location";
+import { compareUtf16CodeUnits, stableStructuralKey } from "@/determinism";
+import type { SourceSpan } from "@/parser/source-location";
 
 interface SpannedRecord {
   readonly span: SourceSpan;

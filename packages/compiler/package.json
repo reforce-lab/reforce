@@ -5,18 +5,14 @@
   "type": "module",
   "exports": {
     ".": {
-      "development": {
-        "types": "./src/index.ts",
-        "default": "./src/index.ts"
-      },
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
   "scripts": {
     "build": "rslib build",
-    "typecheck": "tsc",
-    "test": "bun --conditions=development test",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "bun test test it",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },

@@ -1,6 +1,6 @@
 import { isObject } from "radashi";
-import { InvalidGeneratedDefinitionError } from "./errors";
-import { type BeanClass, type BeanDefinition, beanDefinitionBrand } from "./public-types";
+import { InvalidGeneratedDefinitionError } from "@/errors";
+import { type BeanClass, type BeanDefinition, beanDefinitionBrand } from "@/public-types";
 
 export interface DefineBeanOptions<T extends object> {
   readonly create: () => T;
@@ -11,14 +11,14 @@ export interface DefineBeanOptions<T extends object> {
 
 class OwnedBeanDefinition<T extends object> implements BeanDefinition<T> {
   declare readonly [beanDefinitionBrand]: T;
-  readonly #options: DefineBeanOptions<T>;
+  private readonly options: DefineBeanOptions<T>;
 
   constructor(options: DefineBeanOptions<T>) {
-    this.#options = Object.freeze({ ...options });
+    this.options = Object.freeze({ ...options });
   }
 
   static read<T extends object>(definition: OwnedBeanDefinition<T>): DefineBeanOptions<T> {
-    return definition.#options;
+    return definition.options;
   }
 }
 

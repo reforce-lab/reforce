@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { requireBunExecutable } from "./bun-runtime";
-import { PlainTextReporter } from "./reporter";
-import { runCli } from "./run-cli";
+import { requireBunExecutable } from "@/bun-runtime";
+import { PlainTextReporter } from "@/reporter";
+import { runCli } from "@/run-cli";
 
 requireBunExecutable();
 const exitCode = await runCli({

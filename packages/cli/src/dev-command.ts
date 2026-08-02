@@ -1,17 +1,17 @@
 import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
-import { requireBunExecutable } from "./bun-runtime";
-import { spawnDevChild } from "./dev-child-process";
-import type { DevChildSupervisor } from "./dev-child-supervisor";
-import { DevChildSupervisor as ChildSupervisor } from "./dev-child-supervisor";
-import { DevCompilerGate } from "./dev-compiler-gate";
-import { writerLeaseTokenEnvironmentVariable } from "./dev-ipc";
-import { startDevWatchBuild } from "./dev-watch-build";
-import type { DevCompilation, DevWatchCoordinator } from "./dev-watch-coordinator";
-import { DevWatchCoordinator as WatchCoordinator } from "./dev-watch-coordinator";
-import { DirectoryTransactions } from "./directory-transaction";
-import { ProjectBusyError, ProjectLease } from "./project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
+import { requireBunExecutable } from "@/bun-runtime";
+import { spawnDevChild } from "@/dev-child-process";
+import type { DevChildSupervisor } from "@/dev-child-supervisor";
+import { DevChildSupervisor as ChildSupervisor } from "@/dev-child-supervisor";
+import { DevCompilerGate } from "@/dev-compiler-gate";
+import { writerLeaseTokenEnvironmentVariable } from "@/dev-ipc";
+import { startDevWatchBuild } from "@/dev-watch-build";
+import type { DevCompilation, DevWatchCoordinator } from "@/dev-watch-coordinator";
+import { DevWatchCoordinator as WatchCoordinator } from "@/dev-watch-coordinator";
+import { DirectoryTransactions } from "@/directory-transaction";
+import { ProjectBusyError, ProjectLease } from "@/project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
 
 export interface DevWatchBuild {
   close(): Promise<void>;
@@ -33,36 +33,36 @@ const defaultDependencies: DevCommandDependencies = {
 };
 
 class DeferredDevWatch implements DevWatchBuild {
-  readonly #watch: Promise<DevWatchBuild>;
-  readonly #resolveWatch: (watch: DevWatchBuild) => void;
-  #attached = false;
+  private readonly watch: Promise<DevWatchBuild>;
+  private readonly resolveWatch: (watch: DevWatchBuild) => void;
+  private attached = false;
 
   constructor() {
     const watch = Promise.withResolvers<DevWatchBuild>();
-    this.#watch = watch.promise;
-    this.#resolveWatch = watch.resolve;
+    this.watch = watch.promise;
+    this.resolveWatch = watch.resolve;
   }
 
   attach(watch: DevWatchBuild): void {
-    if (this.#attached) {
+    if (this.attached) {
       throw new Error("Development watch can only be attached once.");
     }
-    this.#attached = true;
-    this.#resolveWatch(watch);
+    this.attached = true;
+    this.resolveWatch(watch);
   }
 
   async close(): Promise<void> {
-    const watch = await this.#watch;
+    const watch = await this.watch;
     await watch.close();
   }
 }
 
 export class DevCommandController {
-  readonly #reporter: Reporter;
-  readonly #supervisor: DevChildSupervisor;
-  readonly #watch: DevWatchBuild;
-  readonly #watchCoordinator: DevWatchCoordinator;
-  #shutdownPromise: Promise<void> | undefined;
+  private readonly reporter: Reporter;
+  private readonly supervisor: DevChildSupervisor;
+  private readonly watch: DevWatchBuild;
+  private readonly watchCoordinator: DevWatchCoordinator;
+  private shutdownPromise: Promise<void> | undefined;
 
   constructor(options: {
     readonly watch: DevWatchBuild;
@@ -70,39 +70,39 @@ export class DevCommandController {
     readonly supervisor: DevChildSupervisor;
     readonly reporter: Reporter;
   }) {
-    this.#watch = options.watch;
-    this.#watchCoordinator = options.watchCoordinator;
-    this.#supervisor = options.supervisor;
-    this.#reporter = options.reporter;
+    this.watch = options.watch;
+    this.watchCoordinator = options.watchCoordinator;
+    this.supervisor = options.supervisor;
+    this.reporter = options.reporter;
   }
 
   acceptCompilation(compilation: DevCompilation): Promise<void> {
-    return this.#watchCoordinator.acceptCompilation(compilation);
+    return this.watchCoordinator.acceptCompilation(compilation);
   }
 
   shutdown(signal?: NodeJS.Signals): Promise<void> {
-    if (this.#shutdownPromise) {
-      return this.#shutdownPromise;
+    if (this.shutdownPromise) {
+      return this.shutdownPromise;
     }
-    this.#shutdownPromise = this.#shutdownOnce(signal);
-    return this.#shutdownPromise;
+    this.shutdownPromise = this.shutdownOnce(signal);
+    return this.shutdownPromise;
   }
 
-  async #shutdownOnce(signal?: NodeJS.Signals): Promise<void> {
+  private async shutdownOnce(signal?: NodeJS.Signals): Promise<void> {
     const errors: unknown[] = [];
     try {
-      await this.#watch.close();
+      await this.watch.close();
     } catch (error) {
       errors.push(error);
     }
     try {
-      await this.#supervisor.shutdown(signal);
+      await this.supervisor.shutdown(signal);
     } catch (error) {
       errors.push(error);
     }
     if (errors.length > 0) {
       const primary = errors[0];
-      this.#reporter.report(
+      this.reporter.report(
         createFailureEvent({
           command: "dev",
           phase: "shutdown",
@@ -113,7 +113,7 @@ export class DevCommandController {
       );
     }
     try {
-      await this.#reporter.flush();
+      await this.reporter.flush();
     } catch (error) {
       errors.push(error);
     }

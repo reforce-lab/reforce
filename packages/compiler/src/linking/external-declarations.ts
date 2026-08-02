@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { LRUCache } from "lru-cache";
-import { parseSource } from "../parser/parse-source";
-import type { ClassDeclaration, InterfaceDeclaration, SourceFileIr } from "../parser/source-ir";
-import type { CanonicalFileId } from "../parser/source-location";
-import { sourceKindOf } from "../project/source-files";
+import { parseSource } from "@/parser/parse-source";
+import type { ClassDeclaration, InterfaceDeclaration, SourceFileIr } from "@/parser/source-ir";
+import type { CanonicalFileId } from "@/parser/source-location";
+import { sourceKindOf } from "@/project/source-files";
 
 export interface ExternalDeclaration {
   readonly kind: "class" | "interface";

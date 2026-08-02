@@ -1,4 +1,4 @@
-import type { SourceSpan } from "./parser/source-location";
+import type { SourceSpan } from "@/parser/source-location";
 
 export const resolvedApplicationProjectBrand: unique symbol = Symbol("ResolvedApplicationProject");
 

@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
-import type { Compiler, ResolvedProject } from "./compiler-types";
-import { DirectoryTransactionError, DirectoryTransactions } from "./directory-transaction";
-import { buildProductionDist } from "./production-build";
-import { ProjectBusyError, ProjectLease } from "./project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
+import type { Compiler, ResolvedProject } from "@/compiler-types";
+import { DirectoryTransactionError, DirectoryTransactions } from "@/directory-transaction";
+import { buildProductionDist } from "@/production-build";
+import { ProjectBusyError, ProjectLease } from "@/project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
 
 export interface BuildCommandOptions {
   readonly cwd: string;

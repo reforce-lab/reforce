@@ -1,0 +1,24 @@
+{
+  "name": "@reforce/fixture-application",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "reforce dev",
+    "build": "reforce build",
+    "start": "reforce start",
+    "typecheck": "tsc",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@reforce/context": "workspace:*"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/cli": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

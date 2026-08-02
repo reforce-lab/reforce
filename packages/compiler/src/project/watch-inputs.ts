@@ -1,5 +1,5 @@
-import type { CompilerWatchInputs } from "../api";
-import { sortNativePaths } from "../determinism";
+import type { CompilerWatchInputs } from "@/api";
+import { sortNativePaths } from "@/determinism";
 
 interface WatchInputCollections {
   readonly fileDependencies?: Iterable<string>;

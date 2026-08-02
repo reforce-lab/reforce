@@ -1,6 +1,6 @@
-import type { LinkedSymbol, LinkedType } from "../linking/project-linker";
-import type { SourceSpan } from "../parser/source-location";
-import type { ParsedSource } from "../project/source-files";
+import type { LinkedSymbol, LinkedType } from "@/linking/project-linker";
+import type { SourceSpan } from "@/parser/source-location";
+import type { ParsedSource } from "@/project/source-files";
 
 interface GeneratedSourcePositionModel {
   readonly offset: number;

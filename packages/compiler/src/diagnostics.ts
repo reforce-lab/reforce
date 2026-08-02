@@ -1,6 +1,6 @@
-import type { CompilerDiagnostic, CompilerDiagnosticCode } from "./api";
-import { compareUtf16CodeUnits, stableStructuralKey } from "./determinism";
-import type { SourceSpan } from "./parser/source-location";
+import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@/api";
+import { compareUtf16CodeUnits, stableStructuralKey } from "@/determinism";
+import type { SourceSpan } from "@/parser/source-location";
 
 type DiagnosticCause = NonNullable<CompilerDiagnostic["cause"]>;
 type DiagnosticRelatedInformation = CompilerDiagnostic["related"][number];

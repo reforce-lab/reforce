@@ -1,4 +1,4 @@
-import type { SourceSpan } from "./source-location";
+import type { SourceSpan } from "@/parser/source-location";
 
 export type SourceKind = "ts" | "tsx" | "mts" | "cts" | "d.ts" | "d.mts" | "d.cts";
 

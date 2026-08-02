@@ -1,5 +1,8 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 
 export function resolveCliSupportModule(options: {
   readonly supportModuleName: string;
@@ -8,18 +11,21 @@ export function resolveCliSupportModule(options: {
   if (options.invokedEntryPath !== undefined) {
     try {
       const entryPath = realpathSync(options.invokedEntryPath);
-      for (const extension of [".js", ".ts"] as const) {
-        const candidate = join(dirname(entryPath), `${options.supportModuleName}${extension}`);
-        if (existsSync(candidate) && statSync(candidate).isFile()) {
-          return candidate;
-        }
+      const candidate = join(dirname(entryPath), `${options.supportModuleName}.js`);
+      if (existsSync(candidate) && statSync(candidate).isFile()) {
+        return candidate;
       }
     } catch {}
   }
 
-  const sourceCandidate = join(process.cwd(), "src", `${options.supportModuleName}.ts`);
-  if (existsSync(sourceCandidate) && statSync(sourceCandidate).isFile()) {
-    return sourceCandidate;
+  const distributionCandidate = join(
+    moduleDirectory,
+    "..",
+    "dist",
+    `${options.supportModuleName}.js`,
+  );
+  if (existsSync(distributionCandidate) && statSync(distributionCandidate).isFile()) {
+    return distributionCandidate;
   }
   throw new Error(`Unable to resolve CLI support module ${options.supportModuleName}.`);
 }

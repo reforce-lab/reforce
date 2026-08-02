@@ -1,16 +1,17 @@
-export { resolveBunExecutable } from "./bun-executable";
+export { resolveBunExecutable } from "@/bun-executable";
 export {
   type CommandOptions,
   runCommand,
   spawnCommand,
-} from "./command";
+} from "@/command";
 export {
-  copyFixtureTree,
+  copyApplicationProject,
+  copyProjectTree,
   createTemporaryProject,
-  type FixtureTree,
-  type FixtureTreeEntry,
-  readFixtureTree,
+  type ProjectTree,
+  type ProjectTreeEntry,
+  readProjectTree,
   type TemporaryProject,
-  writeFixtureTree,
-} from "./fixture-tree";
-export { normalizeTerminalOutput } from "./terminal";
+  writeProjectTree,
+} from "@/project-tree";
+export { normalizeTerminalOutput } from "@/terminal";

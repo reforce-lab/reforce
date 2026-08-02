@@ -3,19 +3,19 @@ import { constants } from "node:fs";
 import { access, lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { isObject, sleep } from "radashi";
-import { compareUtf16CodeUnits } from "./determinism";
+import { compareUtf16CodeUnits } from "@/determinism";
 import {
   type LeaseParticipant,
   type LeaseProbeResult,
   LivenessEndpoint,
   probeLeaseEndpoint,
-} from "./lease-endpoint";
+} from "@/lease-endpoint";
 import {
   publishMissingDestinationWithWindowsRetry,
   renameWithWindowsRetry,
-} from "./windows-rename-retry";
+} from "@/windows-rename-retry";
 
-export { createChildLeaseParticipant, type LeaseParticipant } from "./lease-endpoint";
+export { createChildLeaseParticipant, type LeaseParticipant } from "@/lease-endpoint";
 
 export type ProjectLeaseMode = "writer" | "reader";
 
@@ -486,12 +486,12 @@ export class ProjectLease {
   readonly projectRoot: string;
   readonly leaseToken: string;
   readonly recoveredWriterTokens: readonly string[];
-  readonly #endpoint: LivenessEndpoint;
-  readonly #paths: LeasePaths;
-  readonly #probeTimeoutMilliseconds: number;
-  readonly #gateWaitMilliseconds: number;
-  readonly #recoverableWriterTokens: Set<string>;
-  #releasePromise?: Promise<void>;
+  private readonly endpoint: LivenessEndpoint;
+  private readonly paths: LeasePaths;
+  private readonly probeTimeoutMilliseconds: number;
+  private readonly gateWaitMilliseconds: number;
+  private readonly recoverableWriterTokens: Set<string>;
+  private releasePromise?: Promise<void>;
 
   private constructor(input: {
     readonly mode: ProjectLeaseMode;
@@ -505,12 +505,12 @@ export class ProjectLease {
     this.mode = input.mode;
     this.projectRoot = input.paths.projectRoot;
     this.leaseToken = input.leaseToken;
-    this.#paths = input.paths;
-    this.#endpoint = input.endpoint;
+    this.paths = input.paths;
+    this.endpoint = input.endpoint;
     this.recoveredWriterTokens = Object.freeze([...input.recoveredWriterTokens]);
-    this.#recoverableWriterTokens = new Set(input.recoveredWriterTokens);
-    this.#probeTimeoutMilliseconds = input.probeTimeoutMilliseconds;
-    this.#gateWaitMilliseconds = input.gateWaitMilliseconds;
+    this.recoverableWriterTokens = new Set(input.recoveredWriterTokens);
+    this.probeTimeoutMilliseconds = input.probeTimeoutMilliseconds;
+    this.gateWaitMilliseconds = input.gateWaitMilliseconds;
   }
 
   static async acquire(options: AcquireProjectLeaseOptions): Promise<ProjectLease> {
@@ -567,12 +567,12 @@ export class ProjectLease {
     const status = await probeLeaseEndpoint(
       validatedParticipant,
       this.leaseToken,
-      this.#probeTimeoutMilliseconds,
+      this.probeTimeoutMilliseconds,
     );
     if (status !== "live") {
       throw new ProjectBusyError(this.projectRoot);
     }
-    await this.#updateParticipants((participants) => {
+    await this.updateParticipants((participants) => {
       if (
         participants.some(
           (candidate) => candidate.participantToken === validatedParticipant.participantToken,
@@ -585,10 +585,10 @@ export class ProjectLease {
   }
 
   async removeParticipant(participantToken: string): Promise<void> {
-    if (participantToken === this.#endpoint.participantToken) {
+    if (participantToken === this.endpoint.participantToken) {
       throw new Error("The parent participant remains registered for the lease lifetime.");
     }
-    await this.#updateParticipants((participants) =>
+    await this.updateParticipants((participants) =>
       participants.filter((participant) => participant.participantToken !== participantToken),
     );
   }
@@ -597,69 +597,69 @@ export class ProjectLease {
     if (this.mode !== "writer") {
       throw new Error("A reader lease cannot publish a transaction.");
     }
-    const current = await readOwner(this.#paths.writerRoot, this.projectRoot);
+    const current = await readOwner(this.paths.writerRoot, this.projectRoot);
     if (current?.record.leaseToken !== this.leaseToken) {
       throw new ProjectBusyError(this.projectRoot);
     }
   }
 
   canRecoverWriterToken(token: string): boolean {
-    return this.#recoverableWriterTokens.has(token);
+    return this.recoverableWriterTokens.has(token);
   }
 
   consumeRecoveredWriterToken(token: string): void {
-    if (!this.#recoverableWriterTokens.delete(token)) {
+    if (!this.recoverableWriterTokens.delete(token)) {
       throw new ProjectBusyError(this.projectRoot);
     }
   }
 
   release(): Promise<void> {
-    this.#releasePromise ??= this.#release();
-    return this.#releasePromise;
+    this.releasePromise ??= this.performRelease();
+    return this.releasePromise;
   }
 
-  async #release(): Promise<void> {
-    await this.#endpoint.close();
+  private async performRelease(): Promise<void> {
+    await this.endpoint.close();
     await withAcquisitionGate(
-      this.#paths,
-      this.#probeTimeoutMilliseconds,
-      this.#gateWaitMilliseconds,
+      this.paths,
+      this.probeTimeoutMilliseconds,
+      this.gateWaitMilliseconds,
       async () => {
         const directory =
           this.mode === "writer"
-            ? this.#paths.writerRoot
-            : join(this.#paths.readersRoot, this.leaseToken);
+            ? this.paths.writerRoot
+            : join(this.paths.readersRoot, this.leaseToken);
         const current = await readOwner(directory, this.projectRoot);
         if (current?.record.leaseToken === this.leaseToken) {
           const childParticipants = current.record.participants.filter(
-            (participant) => participant.participantToken !== this.#endpoint.participantToken,
+            (participant) => participant.participantToken !== this.endpoint.participantToken,
           );
           const childStatuses = await Promise.all(
             childParticipants.map((participant) =>
-              probeLeaseEndpoint(participant, this.leaseToken, this.#probeTimeoutMilliseconds),
+              probeLeaseEndpoint(participant, this.leaseToken, this.probeTimeoutMilliseconds),
             ),
           );
           if (childStatuses.some((status) => status !== "dead")) {
             throw new ProjectBusyError(this.projectRoot);
           }
-          await quarantineDirectory(this.#paths, directory, `${this.mode}-${this.leaseToken}`);
+          await quarantineDirectory(this.paths, directory, `${this.mode}-${this.leaseToken}`);
         }
       },
     );
   }
 
-  async #updateParticipants(
+  private async updateParticipants(
     update: (participants: readonly LeaseParticipant[]) => readonly LeaseParticipant[],
   ): Promise<void> {
     await withAcquisitionGate(
-      this.#paths,
-      this.#probeTimeoutMilliseconds,
-      this.#gateWaitMilliseconds,
+      this.paths,
+      this.probeTimeoutMilliseconds,
+      this.gateWaitMilliseconds,
       async () => {
         const directory =
           this.mode === "writer"
-            ? this.#paths.writerRoot
-            : join(this.#paths.readersRoot, this.leaseToken);
+            ? this.paths.writerRoot
+            : join(this.paths.readersRoot, this.leaseToken);
         const current = await readOwner(directory, this.projectRoot);
         if (current?.record.leaseToken !== this.leaseToken) {
           throw new ProjectBusyError(this.projectRoot);

@@ -1,4 +1,4 @@
-import type { ReadResolvedTarget } from "./resolution-state";
+import type { ReadResolvedTarget } from "@/resolution-state";
 
 export function createCycleProxy(readTarget: ReadResolvedTarget): object {
   const target: object = Object.create(null);

@@ -22,6 +22,7 @@ bun run check               # Biome 校验（不修改文件）
 bun run typecheck           # 全仓类型检查
 bun run test                # 全仓测试
 bun run build               # 全仓构建
+bun run test:e2e            # 构建后执行完整用户链路
 
 # 只跑单个子包：--filter=<包名>，多个任务同理
 bun run check:write --filter=<pkg>
@@ -53,6 +54,10 @@ bun run build --filter=<pkg>
     `--clean` 的编译。`--clean` 会递归清理被视为 orphan 的生成 `AGENTS.md`。
 - 全仓库使用 TS7 (tsgo)：
   - 类型安全第一
+  - 每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，根 `tsconfig.node.json` 管理源码与 Rslib/tooling 配置；测试目录各自维护 `tsconfig.json`。所有配置继承共享基线的 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`
+  - 有产物的 package 由 Rslib 自动读取源码 `tsconfig.json` 并负责 JS 与根级 bundleless d.ts emit；测试和配置文件不得进入声明产物
+  - package 内指向自身 `src` 的 import 统一使用该 package 的 `@/*` paths；跨 package 使用 `@reforce/*`，不要用 `#` import 或 `resolve.alias`
+  - package exports 不保留仓库专用源码 condition；仓库测试、CLI 和用户应用都消费 Reforce `dist`。Rsbuild 的 `development` / `production` 只表示用户应用模式
   - 能使用类型推导的，优先利用类型推导，而非到处声明类型
   - 禁止未经校验的 `as` 类型断言和 `@ts-ignore`；`as const` 不在此限。确需断言时，同行注释写明为什么类型系统推不出来。
   - 复杂类型优先复用 type-fest；不要仅为单处简单类型新增依赖或自行造轮子。
@@ -88,6 +93,7 @@ bun run build --filter=<pkg>
 本节约束的目标是一致性与可读性。以下仅列Linter管不到、但影响评审的规则：
 
 - 禁止嵌套三元。
+- 类私有成员统一使用 TypeScript `private` / `private readonly`，禁止 ES `#field` / `#method` 语法；只在初始化时赋值的字段优先 `private readonly`
 - 控制流优先使用卫语句和早返回，用类型窄化代替层层 if 嵌套。
 - 注释解释"为什么"，不复述"是什么"；讲人话，不假设读者掌握全部上下文；
   - 已有 Issue/RFC 的设计约束，相关注释必须引用编号。没有对应记录时，注释直接说明当前代码必须维持的约束，并在交付说明中标记缺失；
@@ -109,6 +115,11 @@ bun run build --filter=<pkg>
 
 ## 测试纪律
 
+- **目录与层级**：
+  - 单元测试放 `test/`，路径严格镜像源码：`src/a.ts` 对应 `test/a.spec.ts`；同一源码的 property-based 用例并入同一 spec。
+  - 跨模块、filesystem、子进程和 Worker 行为放 `it/`；support 只放该层测试直接使用的项目构造器或 harness，包内不保存 fixture。
+  - 完整用户链路只放独立的 `@reforce/e2e` workspace，消费构建后的 dist；唯一完整应用模板是 `e2e/fixtures/application`。
+  - `bun run test` 运行 unit 与 IT，`bun run test:e2e` 单独运行完整链路。
 - **不测**：纯类型推导（typecheck 已覆盖）、第三方库行为、getter/setter 级别的透传、私有实现细节。
 - **测**：公开 API 的行为契约、边界值、已修过的 bug（防回归）。
 - **用例设计要全面**：负向测试/异常测试优先设计与考虑。正向测试则要有多场景，如场景合适，可以用 property-based

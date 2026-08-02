@@ -1,13 +1,13 @@
-import type { CompilerDiagnostic } from "../api";
-import { compareUtf16CodeUnits } from "../determinism";
-import { diagnostic } from "../diagnostics";
-import type { ProjectLinker } from "../linking/project-linker";
-import type { ParsedSource } from "../project/source-files";
-import { analyzeClassProvider } from "./class-provider";
-import { createExecutionPlans } from "./execution-plan";
-import { analyzeFactoryProvider } from "./factory-provider";
-import type { ExecutionPlansModel, ProviderDraft, ProviderModel } from "./model";
-import { resolveProviders } from "./resolve-providers";
+import { analyzeClassProvider } from "@/analysis/class-provider";
+import { createExecutionPlans } from "@/analysis/execution-plan";
+import { analyzeFactoryProvider } from "@/analysis/factory-provider";
+import type { ExecutionPlansModel, ProviderDraft, ProviderModel } from "@/analysis/model";
+import { resolveProviders } from "@/analysis/resolve-providers";
+import type { CompilerDiagnostic } from "@/api";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { diagnostic } from "@/diagnostics";
+import type { ProjectLinker } from "@/linking/project-linker";
+import type { ParsedSource } from "@/project/source-files";
 
 interface AnalysisSuccess {
   readonly status: "success";

@@ -1,9 +1,9 @@
 import { parse, type SourceLang, type SourceType } from "yuku-parser";
-import type { CompilerDiagnostic } from "../api";
-import { diagnostic } from "../diagnostics";
-import { lowerSource } from "./lower-source";
-import type { SourceFileIr, SourceKind } from "./source-ir";
-import { type CanonicalFileId, createSourceMapper } from "./source-location";
+import type { CompilerDiagnostic } from "@/api";
+import { diagnostic } from "@/diagnostics";
+import { lowerSource } from "@/parser/lower-source";
+import type { SourceFileIr, SourceKind } from "@/parser/source-ir";
+import { type CanonicalFileId, createSourceMapper } from "@/parser/source-location";
 
 export interface ParseSourceInput {
   readonly file: CanonicalFileId;

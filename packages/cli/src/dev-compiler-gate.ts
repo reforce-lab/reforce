@@ -1,7 +1,7 @@
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { CompilerDiagnostic, GeneratedFile } from "@reforce/compiler";
-import type { Compiler, CompilerWatchInputs, ResolvedProject } from "./compiler-types";
-import { compareUtf16CodeUnits } from "./determinism";
+import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
+import { compareUtf16CodeUnits } from "@/determinism";
 
 export interface GeneratedOutputCommitter {
   commitGenerated(files: readonly GeneratedFile[]): Promise<void>;
@@ -73,100 +73,100 @@ function changedProjectDiagnostic(): CompilerDiagnostic {
 }
 
 export class DevCompilerGate {
-  readonly #compiler: Compiler;
-  readonly #generatedOutput: GeneratedOutputCommitter;
-  readonly #initialProject: ResolvedProject;
-  readonly #projectDirectory: string;
-  readonly #tsconfigPath: string | undefined;
-  readonly #initialWatchInputs: CompilerWatchInputs;
-  #stableWatchInputs: CompilerWatchInputs;
-  #initialized = false;
-  #initialResult: DevCompilerGateResult | undefined;
+  private readonly compiler: Compiler;
+  private readonly generatedOutput: GeneratedOutputCommitter;
+  private readonly initialProject: ResolvedProject;
+  private readonly projectDirectory: string;
+  private readonly tsconfigPath: string | undefined;
+  private readonly initialWatchInputs: CompilerWatchInputs;
+  private stableWatchInputs: CompilerWatchInputs;
+  private initialized = false;
+  private initialResult: DevCompilerGateResult | undefined;
 
   constructor(options: DevCompilerGateOptions) {
-    this.#compiler = options.compiler;
-    this.#projectDirectory = options.projectDirectory;
-    this.#tsconfigPath = options.tsconfigPath;
-    this.#initialProject = options.project;
-    this.#initialWatchInputs = options.initialWatchInputs;
-    this.#stableWatchInputs = mergeWatchInputs(
+    this.compiler = options.compiler;
+    this.projectDirectory = options.projectDirectory;
+    this.tsconfigPath = options.tsconfigPath;
+    this.initialProject = options.project;
+    this.initialWatchInputs = options.initialWatchInputs;
+    this.stableWatchInputs = mergeWatchInputs(
       options.project.projectRoot,
       options.initialWatchInputs,
     );
-    this.#generatedOutput = options.generatedOutput;
+    this.generatedOutput = options.generatedOutput;
   }
 
   async initialize(): Promise<DevCompilerGateResult> {
-    if (this.#initialized) {
+    if (this.initialized) {
       throw new Error("The development compiler gate can only initialize once.");
     }
-    this.#initialized = true;
-    this.#initialResult = await this.#compile(this.#initialProject, this.#initialWatchInputs);
-    return this.#initialResult;
+    this.initialized = true;
+    this.initialResult = await this.compile(this.initialProject, this.initialWatchInputs);
+    return this.initialResult;
   }
 
   takeInitialResult(): DevCompilerGateResult | undefined {
-    const result = this.#initialResult;
-    this.#initialResult = undefined;
+    const result = this.initialResult;
+    this.initialResult = undefined;
     return result;
   }
 
   async compileNext(): Promise<DevCompilerGateResult> {
     try {
-      const resolution = await this.#compiler.resolveProject({
-        projectDirectory: this.#projectDirectory,
-        ...(this.#tsconfigPath === undefined ? {} : { tsconfigPath: this.#tsconfigPath }),
+      const resolution = await this.compiler.resolveProject({
+        projectDirectory: this.projectDirectory,
+        ...(this.tsconfigPath === undefined ? {} : { tsconfigPath: this.tsconfigPath }),
       });
       if (resolution.status === "failure") {
         return {
           status: "failure",
           diagnostics: resolution.diagnostics,
-          watchInputs: this.#rememberWatchInputs(resolution.watchInputs),
+          watchInputs: this.rememberWatchInputs(resolution.watchInputs),
         };
       }
       if (
-        resolution.project.projectRoot !== this.#initialProject.projectRoot ||
-        resolution.project.tsconfigPath !== this.#initialProject.tsconfigPath
+        resolution.project.projectRoot !== this.initialProject.projectRoot ||
+        resolution.project.tsconfigPath !== this.initialProject.tsconfigPath
       ) {
         return {
           status: "failure",
           diagnostics: [changedProjectDiagnostic()],
-          watchInputs: this.#rememberWatchInputs(resolution.watchInputs),
+          watchInputs: this.rememberWatchInputs(resolution.watchInputs),
         };
       }
-      return await this.#compile(resolution.project, resolution.watchInputs);
+      return await this.compile(resolution.project, resolution.watchInputs);
     } catch (error) {
-      return { status: "error", error, watchInputs: this.#stableWatchInputs };
+      return { status: "error", error, watchInputs: this.stableWatchInputs };
     }
   }
 
-  #rememberWatchInputs(...inputs: readonly CompilerWatchInputs[]): CompilerWatchInputs {
-    this.#stableWatchInputs = mergeWatchInputs(
-      this.#initialProject.projectRoot,
-      this.#initialWatchInputs,
-      this.#stableWatchInputs,
+  private rememberWatchInputs(...inputs: readonly CompilerWatchInputs[]): CompilerWatchInputs {
+    this.stableWatchInputs = mergeWatchInputs(
+      this.initialProject.projectRoot,
+      this.initialWatchInputs,
+      this.stableWatchInputs,
       ...inputs,
     );
-    return this.#stableWatchInputs;
+    return this.stableWatchInputs;
   }
 
-  async #compile(
+  private async compile(
     project: ResolvedProject,
     resolutionWatchInputs: CompilerWatchInputs,
   ): Promise<DevCompilerGateResult> {
     try {
-      const compilation = await this.#compiler.compile({ project });
-      const watchInputs = this.#rememberWatchInputs(resolutionWatchInputs, compilation.watchInputs);
+      const compilation = await this.compiler.compile({ project });
+      const watchInputs = this.rememberWatchInputs(resolutionWatchInputs, compilation.watchInputs);
       if (compilation.status === "failure") {
         return { status: "failure", diagnostics: compilation.diagnostics, watchInputs };
       }
-      await this.#generatedOutput.commitGenerated(compilation.files);
+      await this.generatedOutput.commitGenerated(compilation.files);
       return { status: "success", watchInputs };
     } catch (error) {
       return {
         status: "error",
         error,
-        watchInputs: this.#rememberWatchInputs(resolutionWatchInputs),
+        watchInputs: this.rememberWatchInputs(resolutionWatchInputs),
       };
     }
   }

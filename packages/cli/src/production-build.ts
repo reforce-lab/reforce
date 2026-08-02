@@ -2,10 +2,10 @@ import { lstat, readdir } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { type BuildResult, createRsbuild, rspack } from "@rsbuild/core";
 import { isObject } from "radashi";
-import type { ResolvedProject } from "./compiler-types";
-import { compareUtf16CodeUnits } from "./determinism";
-import { renderProductionEntry } from "./production-entry";
-import { resolveCliSupportModule } from "./runtime-module-path";
+import type { ResolvedProject } from "@/compiler-types";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { renderProductionEntry } from "@/production-entry";
+import { resolveCliSupportModule } from "@/runtime-module-path";
 
 function toPortablePath(path: string): string {
   return path.split(sep).join("/");
@@ -167,19 +167,12 @@ export async function buildProductionDist(input: {
         minify: false,
       },
       performance: { printFileSize: false },
-      resolve: {
-        alias: {
-          "#reforce-production-runtime": productionRuntimePath,
-        },
-      },
       splitChunks: false,
       tools: {
         rspack(config) {
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
-          config.resolve ??= {};
-          config.resolve.conditionNames = ["development", "node", "import", "module", "default"];
           config.plugins.push(
             new rspack.experiments.VirtualModulesPlugin({
               [virtualEntryPath]: renderProductionEntry(),
@@ -187,6 +180,10 @@ export async function buildProductionDist(input: {
             new rspack.NormalModuleReplacementPlugin(
               /^reforce:production-entry$/u,
               virtualEntryPath,
+            ),
+            new rspack.NormalModuleReplacementPlugin(
+              /^reforce:production-runtime$/u,
+              productionRuntimePath,
             ),
             new rspack.NormalModuleReplacementPlugin(
               /^reforce:application-bootstrap$/u,
