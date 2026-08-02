@@ -1,8 +1,8 @@
 import { lstat, readdir } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { ResolvedApplicationProject } from "@reforce/compiler";
 import { type BuildResult, createRsbuild, rspack } from "@rsbuild/core";
 import { isObject } from "radashi";
+import type { ResolvedProject } from "./compiler-types";
 import { compareUtf16CodeUnits } from "./determinism";
 import { renderProductionEntry } from "./production-entry";
 import { resolveCliSupportModule } from "./runtime-module-path";
@@ -124,7 +124,7 @@ async function collectOutputFiles(root: string, directory = root): Promise<reado
 }
 
 export async function buildProductionDist(input: {
-  readonly project: ResolvedApplicationProject;
+  readonly project: ResolvedProject;
   readonly stagingDirectory: string;
 }): Promise<readonly string[]> {
   const virtualEntryPath = join(

@@ -1,14 +1,7 @@
 import { isAbsolute, join, relative, sep } from "node:path";
-import type {
-  Compiler,
-  CompilerDiagnostic,
-  CompilerWatchInputs,
-  GeneratedFile,
-  ResolvedApplicationProject,
-} from "@reforce/compiler";
+import type { CompilerDiagnostic, GeneratedFile } from "@reforce/compiler";
+import type { Compiler, CompilerWatchInputs, ResolvedProject } from "./compiler-types";
 import { compareUtf16CodeUnits } from "./determinism";
-
-type CompilerFrontend = Parameters<Compiler["compile"]>[0]["frontend"];
 
 export interface GeneratedOutputCommitter {
   commitGenerated(files: readonly GeneratedFile[]): Promise<void>;
@@ -32,10 +25,9 @@ export type DevCompilerGateResult =
 
 export interface DevCompilerGateOptions {
   readonly compiler: Compiler;
-  readonly frontend: CompilerFrontend;
   readonly projectDirectory: string;
   readonly tsconfigPath?: string;
-  readonly project: ResolvedApplicationProject;
+  readonly project: ResolvedProject;
   readonly initialWatchInputs: CompilerWatchInputs;
   readonly generatedOutput: GeneratedOutputCommitter;
 }
@@ -82,9 +74,8 @@ function changedProjectDiagnostic(): CompilerDiagnostic {
 
 export class DevCompilerGate {
   readonly #compiler: Compiler;
-  readonly #frontend: CompilerFrontend;
   readonly #generatedOutput: GeneratedOutputCommitter;
-  readonly #initialProject: ResolvedApplicationProject;
+  readonly #initialProject: ResolvedProject;
   readonly #projectDirectory: string;
   readonly #tsconfigPath: string | undefined;
   readonly #initialWatchInputs: CompilerWatchInputs;
@@ -94,7 +85,6 @@ export class DevCompilerGate {
 
   constructor(options: DevCompilerGateOptions) {
     this.#compiler = options.compiler;
-    this.#frontend = options.frontend;
     this.#projectDirectory = options.projectDirectory;
     this.#tsconfigPath = options.tsconfigPath;
     this.#initialProject = options.project;
@@ -161,11 +151,11 @@ export class DevCompilerGate {
   }
 
   async #compile(
-    project: ResolvedApplicationProject,
+    project: ResolvedProject,
     resolutionWatchInputs: CompilerWatchInputs,
   ): Promise<DevCompilerGateResult> {
     try {
-      const compilation = await this.#compiler.compile({ project, frontend: this.#frontend });
+      const compilation = await this.#compiler.compile({ project });
       const watchInputs = this.#rememberWatchInputs(resolutionWatchInputs, compilation.watchInputs);
       if (compilation.status === "failure") {
         return { status: "failure", diagnostics: compilation.diagnostics, watchInputs };

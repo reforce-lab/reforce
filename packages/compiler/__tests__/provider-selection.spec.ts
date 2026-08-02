@@ -1,18 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   copyFixtureTree,
   createTemporaryProject,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import {
-  type CompileResult,
-  type CompileSuccess,
-  createCompiler,
-  type GeneratedFilePath,
-} from "../src/index";
+import { type CompileResult, createCompiler, type GeneratedFile } from "../src/index";
+
+type CompileSuccess = Extract<CompileResult, { readonly status: "success" }>;
+type GeneratedFilePath = GeneratedFile["path"];
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const temporaryProjects: TemporaryProject[] = [];
@@ -38,7 +35,7 @@ async function compileProject(project: TemporaryProject): Promise<CompileResult>
   if (resolution.status === "failure") {
     throw new Error(JSON.stringify(resolution.diagnostics));
   }
-  return compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+  return compiler.compile({ project: resolution.project });
 }
 
 async function compileSource(source: string): Promise<CompileResult> {

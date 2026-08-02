@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import type {
   GeneratedDependency,
   GeneratedExecutionPlans,
@@ -15,13 +14,18 @@ import {
 } from "@reforce/tooling-testing";
 import {
   type CompileResult,
-  type Compiler,
-  type CompileSuccess,
   createCompiler,
   type GeneratedFile,
-  type GeneratedFilePath,
-  type ResolvedApplicationProject,
+  type ProjectResolutionResult,
 } from "../src/index";
+
+type Compiler = ReturnType<typeof createCompiler>;
+type CompileSuccess = Extract<CompileResult, { readonly status: "success" }>;
+type GeneratedFilePath = GeneratedFile["path"];
+type ResolvedApplicationProject = Extract<
+  ProjectResolutionResult,
+  { readonly status: "success" }
+>["project"];
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const temporaryProjects: TemporaryProject[] = [];
@@ -68,7 +72,7 @@ async function successfulCompile(
   compiler: Compiler,
   project: ResolvedApplicationProject,
 ): Promise<CompileSuccess> {
-  const result = await compiler.compile({ project, frontend: yukuFrontend });
+  const result = await compiler.compile({ project });
   if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics));
   }
@@ -79,7 +83,7 @@ async function compileFixture(name: string): Promise<CompileResult> {
   const fixture = await copiedFixture(name);
   const compiler = createCompiler();
   const project = await resolvedProject(compiler, fixture.projectRoot);
-  return compiler.compile({ project, frontend: yukuFrontend });
+  return compiler.compile({ project });
 }
 
 async function createDirectoryLink(source: string, target: string): Promise<void> {
@@ -213,7 +217,6 @@ describe("application project resolution", () => {
     const project = await resolvedProject(compiler, selectedDirectory);
 
     expect(project.projectRoot).toBe(selectedDirectory);
-    expect(project.selectionBoundary).toBe(selectedDirectory);
   });
 
   test("selects a nested config explicitly from a monorepo root", async () => {
@@ -227,7 +230,6 @@ describe("application project resolution", () => {
     );
 
     expect(project.projectRoot).toBe(path.join(fixture.projectRoot, "apps", "api"));
-    expect(project.selectionBoundary).toBe(fixture.projectRoot);
   });
 
   test("does not descend from a solution config into referenced applications", async () => {
@@ -425,7 +427,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -455,7 +457,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -497,7 +499,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -523,7 +525,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -550,7 +552,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -577,7 +579,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -616,7 +618,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -643,7 +645,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -705,7 +707,7 @@ describe("application compilation fixtures", () => {
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
     // Act
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     // Assert
     expect(result.status).toBe("success");
@@ -763,7 +765,7 @@ describe("application compilation fixtures", () => {
     const compiler = createCompiler();
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("success");
   });
@@ -806,7 +808,7 @@ describe("application compilation fixtures", () => {
     const compiler = createCompiler();
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("failure");
     if (result.status === "failure") {
@@ -859,7 +861,7 @@ describe("application compilation fixtures", () => {
     const compiler = createCompiler();
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("success");
     expect(result.watchInputs.fileDependencies).toContain(
@@ -944,7 +946,7 @@ describe("application compilation fixtures", () => {
     await rename(configPath, backupPath);
     await rename(replacementPath, configPath);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("failure");
     if (result.status === "failure") {
@@ -964,7 +966,7 @@ describe("application compilation fixtures", () => {
     const compiler = createCompiler();
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("failure");
     if (result.status === "failure") {
@@ -981,7 +983,7 @@ describe("application compilation fixtures", () => {
     const compiler = createCompiler();
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("failure");
     if (result.status === "failure") {
@@ -1008,7 +1010,7 @@ describe("application compilation fixtures", () => {
     const compiler = createCompiler();
     const project = await resolvedProject(compiler, fixture.projectRoot);
 
-    const result = await compiler.compile({ project, frontend: yukuFrontend });
+    const result = await compiler.compile({ project });
 
     expect(result.status).toBe("failure");
     if (result.status === "failure") {

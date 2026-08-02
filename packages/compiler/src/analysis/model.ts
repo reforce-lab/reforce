@@ -1,5 +1,5 @@
-import type { SourceSpan } from "@reforce/compiler-spi";
 import type { LinkedSymbol } from "../linking/module-graph";
+import type { SourceSpan } from "../parser/source-location";
 import type { ParsedSource } from "../project/source-files";
 
 export interface GeneratedSourcePositionModel {

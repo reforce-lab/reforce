@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import {
-  type Compiler,
-  type CompilerWatchInputs,
-  createCompiler,
-  type GeneratedFile,
-  type ResolvedApplicationProject,
-} from "@reforce/compiler";
-import { yukuFrontend } from "@reforce/compiler-yuku";
+import { createCompiler, type GeneratedFile } from "@reforce/compiler";
+import type { Compiler, CompilerWatchInputs, ResolvedProject } from "../../src/compiler-types";
 import { DevCompilerGate } from "../../src/dev-compiler-gate";
 
 const standaloneProject = resolve("../compiler/fixtures/standalone-application/project");
@@ -23,7 +17,6 @@ async function createGate() {
     commits,
     gate: new DevCompilerGate({
       compiler,
-      frontend: yukuFrontend,
       projectDirectory: standaloneProject,
       project: resolution.project,
       initialWatchInputs: resolution.watchInputs,
@@ -38,12 +31,11 @@ async function createGate() {
 
 function createCompilerGate(options: {
   compiler: Compiler;
-  project: ResolvedApplicationProject;
+  project: ResolvedProject;
   initialWatchInputs: CompilerWatchInputs;
 }): DevCompilerGate {
   return new DevCompilerGate({
     ...options,
-    frontend: yukuFrontend,
     projectDirectory: standaloneProject,
     generatedOutput: {
       async commitGenerated() {},

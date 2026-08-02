@@ -1,17 +1,22 @@
+import { LRUCache } from "lru-cache";
 import { compileProject } from "./compile-project";
-import { createParseCache } from "./incremental/parse-cache";
+import type { SourceUnit } from "./parser/source-ir";
 import { resolveProject } from "./project/resolve-project";
 import type {
   CompileRequest,
-  Compiler,
+  CompileResult,
+  ProjectResolutionResult,
   ProjectState,
   ResolvedApplicationProject,
   ResolveProjectRequest,
 } from "./types";
 
-export function createCompiler(): Compiler {
+export function createCompiler(): Readonly<{
+  resolveProject(request: ResolveProjectRequest): Promise<ProjectResolutionResult>;
+  compile(request: CompileRequest): Promise<CompileResult>;
+}> {
   const projects = new WeakMap<ResolvedApplicationProject, ProjectState>();
-  const parseCache = createParseCache();
+  const parseCache = new LRUCache<string, SourceUnit>({ max: 512 });
   return Object.freeze({
     resolveProject(request: ResolveProjectRequest) {
       return resolveProject(request, ({ project, state }) => {

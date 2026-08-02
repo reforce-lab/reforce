@@ -1,3 +1,11 @@
+import {
+  type AstNode,
+  booleanProperty,
+  nodeArrayProperty,
+  nodeProperty,
+  stringProperty,
+} from "./ast";
+import { normalizeSpanned } from "./normalize";
 import type {
   ConstructorParameter,
   DecoratorCallee,
@@ -9,21 +17,12 @@ import type {
   FunctionParameterDescriptor,
   IdentifierName,
   PrimitiveTypeName,
-  SourceSpan,
   TypeNode,
   TypeParameterDeclaration,
   UnsupportedExpressionKind,
   UnsupportedTypeReason,
-} from "@reforce/compiler-spi";
-import {
-  type AstNode,
-  booleanProperty,
-  nodeArrayProperty,
-  nodeProperty,
-  stringProperty,
-} from "./ast";
-import { normalizeSpanned } from "./normalize";
-import type { SourceMapper } from "./source-map";
+} from "./source-ir";
+import type { SourceMapper, SourceSpan } from "./source-location";
 
 export interface LoweringContext {
   readonly mapper: SourceMapper;

@@ -1,7 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { rm, symlink } from "node:fs/promises";
 import path from "node:path";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   createTemporaryProject,
   type TemporaryProject,
@@ -59,7 +58,7 @@ test("compile rejects a project directory link retargeted after resolution", asy
   }
 
   await replaceDirectoryLink(selected, second);
-  const result = await compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+  const result = await compiler.compile({ project: resolution.project });
 
   expect(result.status).toBe("failure");
   expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -83,7 +82,7 @@ test("compile rejects an explicit config link retargeted after resolution", asyn
   }
 
   await replaceDirectoryLink(selected, second);
-  const result = await compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+  const result = await compiler.compile({ project: resolution.project });
 
   expect(result.status).toBe("failure");
   expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([

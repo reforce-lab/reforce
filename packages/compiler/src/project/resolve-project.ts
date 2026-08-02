@@ -278,7 +278,6 @@ export async function resolveProject(
   const project = createResolvedApplicationProject({
     projectRoot: selected.projectRoot,
     tsconfigPath: selected.tsconfigPath,
-    selectionBoundary: boundary,
   });
   remember({ project, state: selected.state });
   return {

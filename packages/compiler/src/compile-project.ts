@@ -3,8 +3,8 @@ import { analyzeProject } from "./analysis/analyze-project";
 import { sortNativePaths } from "./determinism";
 import { diagnostic, orderDiagnostics } from "./diagnostics";
 import { renderGeneratedFiles } from "./emission/render-generated";
-import type { CachedParse } from "./incremental/parse-cache";
 import { createLinker } from "./linking/module-graph";
+import type { SourceUnit } from "./parser/source-ir";
 import { snapshotStillMatches } from "./project/config";
 import { parseProjectSources } from "./project/source-files";
 import type {
@@ -54,7 +54,7 @@ function mergeWatchInputs(
 export async function compileProject(
   request: CompileRequest,
   state: ProjectState | undefined,
-  cache: LRUCache<string, CachedParse>,
+  cache: LRUCache<string, SourceUnit>,
 ): Promise<CompileResult> {
   if (state === undefined || !(await snapshotStillMatches(state.snapshot))) {
     return failure(
@@ -73,14 +73,13 @@ export async function compileProject(
     );
   }
 
-  const parsed = await parseProjectSources(request.project, state, request.frontend, cache);
+  const parsed = await parseProjectSources(request.project, state, cache);
   if (parsed.status === "failure") {
     return failure(parsed.diagnostics, parsed.watchInputs);
   }
   const linker = await createLinker(
     parsed.sources,
     request.project,
-    request.frontend,
     cache,
     state.parsedConfig.config.compilerOptions?.customConditions,
   );

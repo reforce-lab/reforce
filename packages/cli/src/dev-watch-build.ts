@@ -1,7 +1,7 @@
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { ResolvedApplicationProject } from "@reforce/compiler";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
+import type { ResolvedProject } from "./compiler-types";
 import { compareUtf16CodeUnits } from "./determinism";
 import { createDevBuildId, type DevBuildAsset } from "./dev-build-id";
 import type { DevWatchBuild } from "./dev-command";
@@ -10,7 +10,7 @@ import type { DevCompilation } from "./dev-watch-coordinator";
 import { resolveCliSupportModule } from "./runtime-module-path";
 
 export interface StartDevWatchBuildOptions {
-  readonly project: ResolvedApplicationProject;
+  readonly project: ResolvedProject;
   readonly gate: DevCompilerGate;
   readonly onCompilation: (compilation: DevCompilation) => Promise<void>;
   readonly onInvalidated?: (path: string | null) => void;

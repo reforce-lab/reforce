@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { access, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import { writeFixtureTree } from "@reforce/tooling-testing";
 import { createCompiler } from "../src/index";
 
@@ -105,10 +104,7 @@ test.skipIf(process.platform !== "win32")(
     if (resolution.status === "failure") {
       throw new Error(JSON.stringify(resolution.diagnostics));
     }
-    const compilation = await compiler.compile({
-      project: resolution.project,
-      frontend: yukuFrontend,
-    });
+    const compilation = await compiler.compile({ project: resolution.project });
 
     expect(compilation.status).toBe("success");
     if (compilation.status === "success") {

@@ -1,5 +1,5 @@
-import type { CompilerFrontend, SourceSpan } from "@reforce/compiler-spi";
 import type { TsConfigJsonResolved } from "get-tsconfig";
+import type { SourceSpan } from "./parser/source-location";
 
 const resolvedApplicationProjectBrand: unique symbol = Symbol("ResolvedApplicationProject");
 
@@ -34,8 +34,7 @@ export type CompilerDiagnosticCode =
   | "UNKNOWN_BEAN_QUALIFIER"
   | "DUPLICATE_BEAN_QUALIFIER"
   | "INVALID_BEAN_QUALIFIER"
-  | "BEAN_ID_COLLISION"
-  | "CIRCULAR_DEPENDENCY";
+  | "BEAN_ID_COLLISION";
 
 export interface DiagnosticRelatedInformation {
   readonly message: string;
@@ -67,14 +66,12 @@ export interface ResolveProjectRequest {
 export interface ResolvedApplicationProject {
   readonly projectRoot: string;
   readonly tsconfigPath: string;
-  readonly selectionBoundary: string;
   readonly [resolvedApplicationProjectBrand]: true;
 }
 
 export function createResolvedApplicationProject(input: {
   readonly projectRoot: string;
   readonly tsconfigPath: string;
-  readonly selectionBoundary: string;
 }): ResolvedApplicationProject {
   return Object.freeze({
     ...input,
@@ -105,13 +102,10 @@ export type ProjectResolutionResult = ResolveProjectSuccess | ResolveProjectFail
 
 export interface CompileRequest {
   readonly project: ResolvedApplicationProject;
-  readonly frontend: CompilerFrontend;
 }
 
-export type GeneratedFilePath = "beans.ts" | "qualifiers.d.ts" | "manifest.json" | "bootstrap.ts";
-
 export interface GeneratedFile {
-  readonly path: GeneratedFilePath;
+  readonly path: "beans.ts" | "qualifiers.d.ts" | "manifest.json" | "bootstrap.ts";
   readonly content: string;
 }
 
@@ -129,11 +123,6 @@ export interface CompileFailure {
 }
 
 export type CompileResult = CompileSuccess | CompileFailure;
-
-export interface Compiler {
-  resolveProject(request: ResolveProjectRequest): Promise<ProjectResolutionResult>;
-  compile(request: CompileRequest): Promise<CompileResult>;
-}
 
 export interface ProjectSnapshotEntry {
   readonly path: string;

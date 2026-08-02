@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   createTemporaryProject,
   type FixtureTree,
@@ -71,7 +70,7 @@ async function compile(tree: FixtureTree): Promise<{
   }
   return {
     project,
-    result: await compiler.compile({ project: resolution.project, frontend: yukuFrontend }),
+    result: await compiler.compile({ project: resolution.project }),
   };
 }
 
@@ -195,7 +194,7 @@ describe("module resolution watch inputs", () => {
     if (resolution.status === "failure") {
       throw new Error(JSON.stringify(resolution.diagnostics));
     }
-    const first = await compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+    const first = await compiler.compile({ project: resolution.project });
     const manifest = path.join(
       project.projectRoot,
       "node_modules",
@@ -204,7 +203,7 @@ describe("module resolution watch inputs", () => {
     );
 
     await writeFile(manifest, declarationPackageManifest("./second.d.ts"));
-    const second = await compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+    const second = await compiler.compile({ project: resolution.project });
 
     expect(first.status).toBe("failure");
     expect(second.status).toBe("success");
@@ -221,7 +220,7 @@ describe("module resolution watch inputs", () => {
     if (resolution.status === "failure") {
       throw new Error(JSON.stringify(resolution.diagnostics));
     }
-    const first = await compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+    const first = await compiler.compile({ project: resolution.project });
     const packageDirectory = path.join(project.projectRoot, "node_modules", "missing-contract");
 
     await mkdir(packageDirectory);
@@ -230,7 +229,7 @@ describe("module resolution watch inputs", () => {
       writeFile(path.join(packageDirectory, "index.d.ts"), "export interface Port {}\n"),
       writeFile(path.join(packageDirectory, "index.js"), "export {};\n"),
     ]);
-    const second = await compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+    const second = await compiler.compile({ project: resolution.project });
 
     expect(first.status).toBe("failure");
     expect(second.status).toBe("success");

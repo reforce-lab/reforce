@@ -1,4 +1,20 @@
-import type { CanonicalFileId, SourcePosition, SourceSpan } from "@reforce/compiler-spi";
+declare const canonicalFileIdBrand: unique symbol;
+
+export type CanonicalFileId = string & {
+  readonly [canonicalFileIdBrand]: true;
+};
+
+export interface SourcePosition {
+  readonly offset: number;
+  readonly line: number;
+  readonly character: number;
+}
+
+export interface SourceSpan {
+  readonly fileId: CanonicalFileId;
+  readonly start: SourcePosition;
+  readonly end: SourcePosition;
+}
 
 export interface SourceMapper {
   readonly span: (start: number, end: number) => SourceSpan;

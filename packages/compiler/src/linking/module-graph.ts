@@ -2,22 +2,20 @@ import { createHash } from "node:crypto";
 import * as nodeFileSystem from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type {
-  CanonicalFileId,
-  ClassDeclaration,
-  CompilerFrontend,
-  EntityName,
-  InterfaceDeclaration,
-  SourceSpan,
-  SourceUnit,
-  TypeNode,
-} from "@reforce/compiler-spi";
 import enhancedResolve from "enhanced-resolve";
 import type { LRUCache } from "lru-cache";
 import { compareUtf16CodeUnits } from "../determinism";
 import { diagnostic } from "../diagnostics";
-import type { CachedParse } from "../incremental/parse-cache";
-import { frontendSourceKind, type ParsedSource } from "../project/source-files";
+import { parseSource } from "../parser/parse-source";
+import type {
+  ClassDeclaration,
+  EntityName,
+  InterfaceDeclaration,
+  SourceUnit,
+  TypeNode,
+} from "../parser/source-ir";
+import type { CanonicalFileId, SourceSpan } from "../parser/source-location";
+import { type ParsedSource, sourceKindOf } from "../project/source-files";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "../types";
 
 export type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
@@ -275,10 +273,9 @@ function externalParserFileId(physicalPath: string): CanonicalFileId {
 
 async function readExternalExports(
   physicalPath: string,
-  frontend: CompilerFrontend,
-  cache: LRUCache<string, CachedParse>,
+  cache: LRUCache<string, SourceUnit>,
 ): Promise<ReadonlyMap<string, ExternalExport> | undefined> {
-  const sourceKind = frontendSourceKind(physicalPath);
+  const sourceKind = sourceKindOf(physicalPath);
   if (sourceKind === undefined) {
     return undefined;
   }
@@ -289,29 +286,23 @@ async function readExternalExports(
     return undefined;
   }
   const sourceHash = createHash("sha256").update(sourceText, "utf8").digest("hex");
-  const cacheKey = JSON.stringify([
-    "external-declaration",
-    physicalPath,
-    sourceHash,
-    frontend.cacheKey,
-    sourceKind,
-  ]);
+  const cacheKey = JSON.stringify(["external-declaration", physicalPath, sourceHash, sourceKind]);
   const cached = cache.get(cacheKey);
   const parsed =
     cached === undefined
-      ? await frontend.parse({
-          file: externalParserFileId(physicalPath),
-          sourceKind,
-          sourceText,
-        })
-      : { unit: cached.unit, diagnostics: [] };
-  if (parsed.unit === undefined || parsed.diagnostics.length > 0) {
+      ? parseSource({ file: externalParserFileId(physicalPath), sourceKind, sourceText })
+      : undefined;
+  if (parsed?.status === "failure") {
+    return undefined;
+  }
+  const unit = cached ?? parsed?.unit;
+  if (unit === undefined) {
     return undefined;
   }
   if (cached === undefined) {
-    cache.set(cacheKey, { unit: parsed.unit });
+    cache.set(cacheKey, unit);
   }
-  return directExternalExports(parsed.unit);
+  return directExternalExports(unit);
 }
 
 function referencedModuleSpecifiers(source: ParsedSource): readonly string[] {
@@ -342,8 +333,7 @@ type ModuleResolver = (
 async function loadExternalExports(
   sources: readonly ParsedSource[],
   resolveModule: ModuleResolver,
-  frontend: CompilerFrontend,
-  cache: LRUCache<string, CachedParse>,
+  cache: LRUCache<string, SourceUnit>,
 ): Promise<ReadonlyMap<string, ReadonlyMap<string, ExternalExport> | undefined>> {
   const externalPaths = new Set<string>();
   for (const source of sources) {
@@ -357,7 +347,7 @@ async function loadExternalExports(
   }
   const result = new Map<string, ReadonlyMap<string, ExternalExport> | undefined>();
   for (const physicalPath of [...externalPaths].sort(compareUtf16CodeUnits)) {
-    result.set(physicalPath, await readExternalExports(physicalPath, frontend, cache));
+    result.set(physicalPath, await readExternalExports(physicalPath, cache));
   }
   return result;
 }
@@ -383,8 +373,7 @@ function classifyResolverDependencies(
 export async function createLinker(
   sources: readonly ParsedSource[],
   project: ResolvedApplicationProject,
-  frontend: CompilerFrontend,
-  cache: LRUCache<string, CachedParse>,
+  cache: LRUCache<string, SourceUnit>,
   customConditions: readonly string[] = [],
 ): Promise<Linker> {
   const records = new Map<string, ModuleRecord>();
@@ -491,7 +480,7 @@ export async function createLinker(
     return result;
   }
 
-  const externalExports = await loadExternalExports(sources, resolveModule, frontend, cache);
+  const externalExports = await loadExternalExports(sources, resolveModule, cache);
   classifyResolverDependencies(
     resolverFileDependencies,
     fileDependencies,

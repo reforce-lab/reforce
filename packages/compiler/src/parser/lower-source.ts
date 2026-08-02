@@ -1,26 +1,3 @@
-import type {
-  CanonicalFileId,
-  ClassDeclaration,
-  ClassMethodDeclaration,
-  ClassMethodName,
-  ConstructorDeclaration,
-  DeclarationExport,
-  DefineBeanDeclaration,
-  DefineBeanOptionProperty,
-  DefineBeanOptions,
-  ExportDeclaration,
-  ExportSpecifier,
-  FrontendSourceKind,
-  ImportBinding,
-  ImportDeclaration,
-  InterfaceDeclaration,
-  NamespaceDeclaration,
-  NamespaceExportedMember,
-  NamespaceMemberKind,
-  SourceUnit,
-  UnsupportedNamedDeclaration,
-  UnsupportedNamedDeclarationKind,
-} from "@reforce/compiler-spi";
 import {
   type AstNode,
   booleanProperty,
@@ -46,7 +23,30 @@ import {
   typeParametersOf,
 } from "./lower-values";
 import { normalizeSpanned } from "./normalize";
-import { createSourceMapper } from "./source-map";
+import type {
+  ClassDeclaration,
+  ClassMethodDeclaration,
+  ClassMethodName,
+  ConstructorDeclaration,
+  DeclarationExport,
+  DefineBeanDeclaration,
+  DefineBeanOptionProperty,
+  DefineBeanOptions,
+  ExportDeclaration,
+  ExportSpecifier,
+  ImportBinding,
+  ImportDeclaration,
+  InterfaceDeclaration,
+  NamespaceDeclaration,
+  NamespaceExportedMember,
+  NamespaceMemberKind,
+  SourceKind,
+  SourceUnit,
+  UnsupportedNamedDeclaration,
+  UnsupportedNamedDeclarationKind,
+} from "./source-ir";
+import type { CanonicalFileId } from "./source-location";
+import { createSourceMapper } from "./source-location";
 
 type ExportMode =
   | { readonly kind: "none" }
@@ -772,7 +772,7 @@ function visitNestedStatements(
 
 export function lowerSourceUnit(
   file: CanonicalFileId,
-  sourceKind: FrontendSourceKind,
+  sourceKind: SourceKind,
   sourceText: string,
   program: unknown,
 ): SourceUnit {

@@ -1,47 +1,43 @@
 import { expect, test } from "bun:test";
-import type {
-  CanonicalFileId,
-  FrontendInput,
-  FrontendSourceKind,
-  SourceUnit,
-} from "@reforce/compiler-spi";
-import { yukuFrontend } from "./frontend";
+import { type ParseSourceInput, parseSource } from "./parse-source";
+import type { SourceKind, SourceUnit } from "./source-ir";
+import type { CanonicalFileId } from "./source-location";
 
 function canonicalFileId(filename: string): CanonicalFileId {
   return filename as CanonicalFileId; // The adapter receives this opaque identity from Compiler in production.
 }
 
-async function parseUnit(
-  sourceText: string,
-  sourceKind: FrontendSourceKind = "ts",
-): Promise<SourceUnit> {
-  const result = await yukuFrontend.parse({
+function parseUnit(sourceText: string, sourceKind: SourceKind = "ts"): SourceUnit {
+  const result = parseSource({
     file: canonicalFileId(`source.${sourceKind}`),
     sourceKind,
     sourceText,
   });
-  if (result.unit === undefined) {
+  if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics));
   }
   return result.unit;
 }
 
-test("lowers a directly exported injectable class", async () => {
+test("lowers a directly exported injectable class", () => {
   const input = {
     file: canonicalFileId("src/service.ts"),
     sourceKind: "ts",
     sourceText: "@Injectable() export class Service {}",
-  } satisfies FrontendInput;
+  } satisfies ParseSourceInput;
 
-  const result = await yukuFrontend.parse(input);
+  const result = parseSource(input);
 
-  expect(result.diagnostics).toEqual([]);
-  expect(result.unit?.classes[0]?.name?.text).toBe("Service");
-  expect(result.unit?.classes[0]?.export.kind).toBe("named");
+  expect(result.status).toBe("success");
+  if (result.status === "failure") {
+    throw new Error(JSON.stringify(result.diagnostics));
+  }
+  expect(result.unit.classes[0]?.name?.text).toBe("Service");
+  expect(result.unit.classes[0]?.export.kind).toBe("named");
 });
 
-test("classifies supported import and export forms", async () => {
-  const unit = await parseUnit(
+test("classifies supported import and export forms", () => {
+  const unit = parseUnit(
     [
       'import DefaultValue, * as namespaceValue from "package-a";',
       'import type { Input as LocalInput } from "package-b";',
@@ -79,8 +75,8 @@ test("classifies supported import and export forms", async () => {
   ]);
 });
 
-test("lowers interface and namespace declaration structure", async () => {
-  const unit = await parseUnit(
+test("lowers interface and namespace declaration structure", () => {
+  const unit = parseUnit(
     [
       "export interface Port<T> extends Base<T> {}",
       "export namespace Tokens {",
@@ -110,8 +106,8 @@ test("lowers interface and namespace declaration structure", async () => {
   ).toEqual([{ name: "Tokens", topLevel: true, members: [["type", "Key"]] }]);
 });
 
-test("lowers standard class decorators and ordinary constructor parameters", async () => {
-  const unit = await parseUnit(
+test("lowers standard class decorators and ordinary constructor parameters", () => {
+  const unit = parseUnit(
     [
       '@Qualifier("primary")',
       "@Primary()",
@@ -155,8 +151,8 @@ test("lowers standard class decorators and ordinary constructor parameters", asy
   ]);
 });
 
-test("lowers supported defineBean options", async () => {
-  const unit = await parseUnit(
+test("lowers supported defineBean options", () => {
+  const unit = parseUnit(
     [
       "export const resource = defineBean<Resource>({",
       "  create: () => new Resource(),",
@@ -187,8 +183,8 @@ test("lowers supported defineBean options", async () => {
   ]);
 });
 
-test("lowers ambient declaration signatures without inventing implementations", async () => {
-  const unit = await parseUnit(
+test("lowers ambient declaration signatures without inventing implementations", () => {
+  const unit = parseUnit(
     [
       "export interface ExternalPort<T> extends Iterable<T> {}",
       "export declare abstract class ExternalBase<T> implements ExternalPort<T> {",
@@ -207,8 +203,8 @@ test("lowers ambient declaration signatures without inventing implementations", 
   expect(declaration?.methods[0]?.implementation).toBe(false);
 });
 
-test("reports logical lines while retaining UTF-16 offsets for every line terminator", async () => {
-  const unit = await parseUnit(
+test("reports logical lines while retaining UTF-16 offsets for every line terminator", () => {
+  const unit = parseUnit(
     "export class A {}\r\nexport class B {}\rexport class C {}\nexport class D {}\u2028export class E {}\u2029export class F {}",
   );
 
@@ -222,14 +218,14 @@ test("reports logical lines while retaining UTF-16 offsets for every line termin
   ]);
 });
 
-test("counts astral Unicode characters as two UTF-16 code units", async () => {
-  const unit = await parseUnit('const marker = "😀";\nexport class Unicode {}');
+test("counts astral Unicode characters as two UTF-16 code units", () => {
+  const unit = parseUnit('const marker = "😀";\nexport class Unicode {}');
 
   expect(unit.classes[0]?.name?.span.start).toEqual({ offset: 34, line: 1, character: 13 });
 });
 
-test("classifies unsupported syntax for Compiler diagnostics", async () => {
-  const unit = await parseUnit(
+test("classifies unsupported syntax for Compiler diagnostics", () => {
+  const unit = parseUnit(
     [
       'import Alias = require("package-a");',
       'export type Choice<T> = T extends string ? "yes" : "no";',
@@ -251,15 +247,18 @@ test("classifies unsupported syntax for Compiler diagnostics", async () => {
   ]);
 });
 
-test("rejects a source unit when syntax is incomplete", async () => {
+test("rejects a source unit when syntax is incomplete", () => {
   const input = {
     file: canonicalFileId("src/broken.ts"),
     sourceKind: "ts",
     sourceText: "export class {",
-  } satisfies FrontendInput;
+  } satisfies ParseSourceInput;
 
-  const result = await yukuFrontend.parse(input);
+  const result = parseSource(input);
 
-  expect(result.unit).toBeUndefined();
-  expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["PARSER_SYNTAX_ERROR"]);
+  expect(result.status).toBe("failure");
+  if (result.status === "success") {
+    throw new Error("Expected invalid syntax to fail parsing.");
+  }
+  expect(result.diagnostics.map((item) => item.code)).toEqual(["PARSER_SYNTAX_ERROR"]);
 });

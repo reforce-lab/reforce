@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { CompilerFrontend, FrontendInput, SourceUnit } from "@reforce/compiler-spi";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { createCompiler } from "./index";
 
@@ -38,29 +37,6 @@ async function temporaryApplication(
   projects.push(project);
   return project;
 }
-
-function emptyUnit(input: FrontendInput): SourceUnit {
-  return {
-    kind: "source-unit",
-    file: input.file,
-    sourceKind: input.sourceKind,
-    imports: [],
-    exports: [],
-    interfaces: [],
-    namespaces: [],
-    classes: [],
-    beanFactories: [],
-    unsupportedDeclarations: [],
-  };
-}
-
-const frontend: CompilerFrontend = {
-  id: "test",
-  cacheKey: "test@1",
-  async parse(input) {
-    return { unit: emptyUnit(input), diagnostics: [] };
-  },
-};
 
 test("the root entry exposes only the Compiler factory at runtime", async () => {
   const publicApi = await import("./index");
@@ -337,10 +313,7 @@ describe("two-stage compilation", () => {
     }
 
     // Act
-    const result = await compiler.compile({
-      project: resolution.project,
-      frontend,
-    });
+    const result = await compiler.compile({ project: resolution.project });
 
     // Assert
     expect(result.status).toBe("failure");
@@ -359,10 +332,7 @@ describe("two-stage compilation", () => {
       throw new Error(resolution.diagnostics[0].message);
     }
 
-    const result = await compiler.compile({
-      project: resolution.project,
-      frontend,
-    });
+    const result = await compiler.compile({ project: resolution.project });
 
     expect(result.status).toBe("success");
     if (result.status === "success") {
@@ -386,10 +356,7 @@ describe("two-stage compilation", () => {
     }
     const otherCompiler = createCompiler();
 
-    const result = await otherCompiler.compile({
-      project: resolution.project,
-      frontend,
-    });
+    const result = await otherCompiler.compile({ project: resolution.project });
 
     expect(result.status).toBe("failure");
     if (result.status === "failure") {

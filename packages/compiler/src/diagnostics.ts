@@ -1,5 +1,5 @@
-import type { SourceSpan } from "@reforce/compiler-spi";
 import { compareUtf16CodeUnits, stableStructuralKey } from "./determinism";
+import type { SourceSpan } from "./parser/source-location";
 import type {
   CompilerDiagnostic,
   CompilerDiagnosticCode,

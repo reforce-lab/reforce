@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   copyFixtureTree,
   createTemporaryProject,
@@ -30,10 +29,7 @@ async function compiledFixture(name: string): Promise<TemporaryProject> {
   if (resolution.status === "failure") {
     throw new Error(JSON.stringify(resolution.diagnostics));
   }
-  const compilation = await compiler.compile({
-    project: resolution.project,
-    frontend: yukuFrontend,
-  });
+  const compilation = await compiler.compile({ project: resolution.project });
   if (compilation.status === "failure") {
     throw new Error(JSON.stringify(compilation.diagnostics));
   }

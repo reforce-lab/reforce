@@ -3,7 +3,6 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { parseTsconfig, type TsConfigJsonResolved } from "get-tsconfig";
-import { isObject } from "radashi";
 import { glob } from "tinyglobby";
 import { compareUtf16CodeUnits, sortNativePaths } from "../determinism";
 import { diagnostic } from "../diagnostics";
@@ -144,7 +143,7 @@ function configExtendValues(value: unknown): readonly string[] {
 
 async function readRawConfig(configPath: string): Promise<RawConfig> {
   const parsed: unknown = JSON.parse(stripJsonComments(await readFile(configPath, "utf8")));
-  if (!isObject(parsed)) {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("tsconfig root must be an object");
   }
   return {

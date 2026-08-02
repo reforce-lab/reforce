@@ -1,3 +1,6 @@
+import { compareUtf16CodeUnits } from "../determinism";
+import { diagnostic } from "../diagnostics";
+import type { LinkedSymbol, LinkedType, Linker } from "../linking/module-graph";
 import type {
   ClassDeclaration,
   ClassMethodDeclaration,
@@ -6,12 +9,9 @@ import type {
   DefineBeanOptionProperty,
   FunctionDescriptor,
   NamespaceExportedMember,
-  SourceSpan,
   TypeNode,
-} from "@reforce/compiler-spi";
-import { compareUtf16CodeUnits } from "../determinism";
-import { diagnostic } from "../diagnostics";
-import type { LinkedSymbol, LinkedType, Linker } from "../linking/module-graph";
+} from "../parser/source-ir";
+import type { SourceSpan } from "../parser/source-location";
 import type { ParsedSource } from "../project/source-files";
 import type { CompilerDiagnostic, DiagnosticRelatedInformation } from "../types";
 import { createExecutionPlans } from "./graph-plan";

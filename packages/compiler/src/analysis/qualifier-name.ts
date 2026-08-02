@@ -1,9 +1,54 @@
-import {
-  isIdentifierName,
-  isKeyword,
-  isStrictReservedWord,
-} from "@babel/helper-validator-identifier";
+import { name as isIdentifierName } from "estree-util-is-identifier-name";
+
+const strictModuleReservedNames = new Set([
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+]);
 
 export function validQualifierName(name: string): boolean {
-  return isIdentifierName(name) && !isKeyword(name) && !isStrictReservedWord(name, true);
+  return isIdentifierName(name) && !strictModuleReservedNames.has(name);
 }

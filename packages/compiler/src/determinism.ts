@@ -1,5 +1,3 @@
-import { unique } from "radashi";
-
 export function compareUtf16CodeUnits(left: string, right: string): number {
   const sharedLength = Math.min(left.length, right.length);
   for (let index = 0; index < sharedLength; index += 1) {
@@ -13,7 +11,7 @@ export function compareUtf16CodeUnits(left: string, right: string): number {
 
 export function sortNativePaths(paths: Iterable<string>): readonly string[] {
   return Object.freeze(
-    unique([...paths]).sort((left, right) => {
+    [...new Set(paths)].sort((left, right) => {
       const normalized = compareUtf16CodeUnits(
         left.replaceAll("\\", "/"),
         right.replaceAll("\\", "/"),

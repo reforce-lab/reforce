@@ -1,5 +1,6 @@
-import type { FrontendInput } from "./frontend";
 import type { CanonicalFileId, SourceSpan } from "./source-location";
+
+export type SourceKind = "ts" | "tsx" | "mts" | "cts" | "d.ts" | "d.mts" | "d.cts";
 
 export interface IdentifierName {
   readonly text: string;
@@ -444,7 +445,7 @@ export interface UnsupportedNamedDeclaration {
 export interface SourceUnit {
   readonly kind: "source-unit";
   readonly file: CanonicalFileId;
-  readonly sourceKind: FrontendInput["sourceKind"];
+  readonly sourceKind: SourceKind;
   readonly imports: readonly ImportDeclaration[];
   readonly exports: readonly ExportDeclaration[];
   readonly interfaces: readonly InterfaceDeclaration[];
