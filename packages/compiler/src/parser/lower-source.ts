@@ -35,8 +35,8 @@ import {
   spanOf,
   typeNodeOf,
   typeParameterNamesOf,
-} from "./lower-values";
-import { normalizeSpanned } from "./normalize";
+} from "@/parser/lower-values";
+import { normalizeSpanned } from "@/parser/normalize";
 import type {
   ClassDeclaration,
   ClassMethodDeclaration,
@@ -57,9 +57,9 @@ import type {
   SourceFileIr,
   UnsupportedNamedDeclaration,
   UnsupportedNamedDeclarationKind,
-} from "./source-ir";
-import type { CanonicalFileId } from "./source-location";
-import { createSourceMapper } from "./source-location";
+} from "@/parser/source-ir";
+import type { CanonicalFileId } from "@/parser/source-location";
+import { createSourceMapper } from "@/parser/source-location";
 
 type ExportMode =
   | { readonly kind: "none" }

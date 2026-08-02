@@ -1,17 +1,17 @@
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
-import type { CompilerDiagnostic } from "../api";
-import { compareUtf16CodeUnits } from "../determinism";
-import { diagnostic } from "../diagnostics";
-import type { LinkedSymbol } from "../linking/project-linker";
-import type { NamespaceExportedMember } from "../parser/source-ir";
-import type { SourceSpan } from "../parser/source-location";
 import {
   type PendingDependency,
   type ProviderDraft,
   type ProviderModel,
   type QualifierModel,
   sourceReference,
-} from "./model";
+} from "@/analysis/model";
+import type { CompilerDiagnostic } from "@/api";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { diagnostic } from "@/diagnostics";
+import type { LinkedSymbol } from "@/linking/project-linker";
+import type { NamespaceExportedMember } from "@/parser/source-ir";
+import type { SourceSpan } from "@/parser/source-location";
 
 type DiagnosticRelatedInformation = CompilerDiagnostic["related"][number];
 

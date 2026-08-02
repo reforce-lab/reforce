@@ -11,7 +11,7 @@ dist/
 
 # test / coverage
 coverage/
-/packages/cli/e2e-junit.xml
+/e2e/e2e-junit.xml
 /packages/cli/recovery-junit.xml
 
 # logs

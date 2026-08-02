@@ -38,9 +38,14 @@ bun run check
 bun run typecheck
 bun run test
 bun run build
+bun run test:e2e
 ```
 
-有 JS 产物的 package 统一使用 Rslib：SWC 生成 Bun 可执行的服务端 ESM，TSGo 生成 bundled d.ts，`@swc/helpers` 作为声明过的运行时依赖复用 helper。`bun run typecheck` 仍是独立的 TSGo no-emit 校验。源码内部 import 写相对路径且不带扩展名；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。
+每个 Rslib workspace 的根 `tsconfig.json` 只包含 `src`，根 `tsconfig.node.json` 包含源码和 Rslib/tooling 配置；测试存在时，由 `test/tsconfig.json` 或 `it/tsconfig.json` 管理。所有配置保持 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`。Rslib 自动读取源码配置：SWC 生成 Bun 可执行的服务端 ESM，TSGo 生成根级 bundleless d.ts。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
+
+单元测试放 `test/`，并严格镜像被测源码路径（如 `src/parser/a.ts` 对应 `test/parser/a.spec.ts`）；跨模块、filesystem、子进程或 Worker 行为放 `it/`。包内不创建 fixture，IT 所需项目树和 harness 在测试 support 中构造。默认 `bun run test` 运行 unit 与 IT，完整 dist-only 用户链路单独运行 `bun run test:e2e`。
+
+package exports 只公开 `dist`，仓库测试的跨 package import 由 Turbo 先构建上游依赖后消费产物，不设置仓库专用 export condition。Rsbuild 的 `development` / `production` mode 只控制用户应用行为，两种 mode 都必须消费 Reforce package 的 `dist`。
 
 CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Bun 1.3.14 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Bun 进程证据支持。
 
@@ -53,6 +58,11 @@ Compiler 内置唯一的 Yuku parser。Parser-to-IR 测试只断言 Source IR、
 ```json
 {
   "extends": "@reforce/tooling-tsconfig/base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
   "include": ["src", ".reforce/generated/**/*.d.ts"]
 }
 ```
@@ -77,6 +87,8 @@ reforce start --project apps/api
 ```
 
 `--tsconfig` 相对 `--project` 解析。最终 project root 始终是 leaf tsconfig 所在目录；`generated`、`dev` 与 `dist` 输出不会写到 monorepo 根或 sibling app。
+
+完整正向应用场景只使用 `e2e/fixtures/application`。它不是独立 workspace，由 `@reforce/e2e` 提供依赖和检查；测试先复制项目输入到临时目录再生成、修改或启动，禁止直接污染模板。
 
 ## 知识沉淀义务
 

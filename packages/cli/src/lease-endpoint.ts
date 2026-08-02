@@ -16,16 +16,16 @@ function randomToken(): string {
 }
 
 export class LivenessEndpoint {
-  readonly #server: Server;
-  readonly #sockets = new Set<Socket>();
+  private readonly server: Server;
+  private readonly sockets = new Set<Socket>();
   readonly challenge = randomToken();
   readonly leaseToken: string;
   readonly participantToken = randomToken();
   readonly port: number;
-  #closePromise?: Promise<void>;
+  private closePromise?: Promise<void>;
 
   private constructor(server: Server, leaseToken: string, port: number) {
-    this.#server = server;
+    this.server = server;
     this.leaseToken = leaseToken;
     this.port = port;
   }
@@ -34,7 +34,7 @@ export class LivenessEndpoint {
     let endpoint: LivenessEndpoint | undefined;
     const server = createServer((socket) => {
       if (endpoint !== undefined) {
-        endpoint.#accept(socket);
+        endpoint.accept(socket);
       }
     });
     await new Promise<void>((resolve, reject) => {
@@ -64,11 +64,11 @@ export class LivenessEndpoint {
   }
 
   async close(): Promise<void> {
-    this.#closePromise ??= new Promise<void>((resolve, reject) => {
-      for (const socket of this.#sockets) {
+    this.closePromise ??= new Promise<void>((resolve, reject) => {
+      for (const socket of this.sockets) {
         socket.destroy();
       }
-      this.#server.close((error) => {
+      this.server.close((error) => {
         if (error) {
           reject(error);
           return;
@@ -76,11 +76,11 @@ export class LivenessEndpoint {
         resolve();
       });
     });
-    return this.#closePromise;
+    return this.closePromise;
   }
 
-  #accept(socket: Socket): void {
-    this.#sockets.add(socket);
+  private accept(socket: Socket): void {
+    this.sockets.add(socket);
     let request = "";
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => {
@@ -107,7 +107,7 @@ export class LivenessEndpoint {
         })}\n`,
       );
     });
-    socket.on("close", () => this.#sockets.delete(socket));
+    socket.on("close", () => this.sockets.delete(socket));
   }
 }
 

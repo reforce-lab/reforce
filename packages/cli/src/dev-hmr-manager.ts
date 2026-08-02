@@ -1,4 +1,4 @@
-import type { CloseableApplication } from "./shutdown-controller";
+import type { CloseableApplication } from "@/shutdown-controller";
 
 export const applicationBootstrapSpecifier = "reforce:application-bootstrap";
 
@@ -34,39 +34,39 @@ const defaultScheduler: DevTimerScheduler = {
 };
 
 export class DevHmrManager implements CloseableApplication {
-  readonly #bootstrap: () => Promise<CloseableApplication>;
-  readonly #hot: RspackHmrRuntime;
-  readonly #onFatal: (error: unknown) => void;
-  readonly #scheduler: DevTimerScheduler;
-  #application: CloseableApplication | undefined;
-  #closePromise: Promise<void> | undefined;
-  #fatalNotified = false;
-  #pendingCheck = false;
-  #shuttingDown = false;
-  #started = false;
-  #timer: unknown;
-  #updatePromise: Promise<void> | undefined;
+  private readonly bootstrap: () => Promise<CloseableApplication>;
+  private readonly hot: RspackHmrRuntime;
+  private readonly onFatal: (error: unknown) => void;
+  private readonly scheduler: DevTimerScheduler;
+  private application: CloseableApplication | undefined;
+  private closePromise: Promise<void> | undefined;
+  private fatalNotified = false;
+  private pendingCheck = false;
+  private shuttingDown = false;
+  private started = false;
+  private timer: unknown;
+  private updatePromise: Promise<void> | undefined;
 
   constructor(options: DevHmrManagerOptions) {
-    this.#bootstrap = options.bootstrap;
-    this.#hot = options.hot;
-    this.#onFatal = options.onFatal;
-    this.#scheduler = options.scheduler ?? defaultScheduler;
+    this.bootstrap = options.bootstrap;
+    this.hot = options.hot;
+    this.onFatal = options.onFatal;
+    this.scheduler = options.scheduler ?? defaultScheduler;
   }
 
   async start(): Promise<void> {
-    if (this.#started) {
+    if (this.started) {
       throw new Error("The development HMR manager can only start once.");
     }
-    this.#started = true;
-    this.#hot.accept(applicationBootstrapSpecifier);
-    this.#application = await this.#bootstrap();
-    if (this.#shuttingDown) {
+    this.started = true;
+    this.hot.accept(applicationBootstrapSpecifier);
+    this.application = await this.bootstrap();
+    if (this.shuttingDown) {
       await this.close();
       return;
     }
-    this.#timer = this.#scheduler.setInterval(() => {
-      if (this.#shuttingDown) {
+    this.timer = this.scheduler.setInterval(() => {
+      if (this.shuttingDown) {
         return;
       }
       void this.checkForUpdates().catch(() => undefined);
@@ -74,81 +74,81 @@ export class DevHmrManager implements CloseableApplication {
   }
 
   checkForUpdates(): Promise<void> {
-    if (this.#shuttingDown) {
+    if (this.shuttingDown) {
       return Promise.resolve();
     }
-    if (!this.#started || !this.#application) {
+    if (!this.started || !this.application) {
       return Promise.reject(new Error("The development HMR manager is not running."));
     }
-    if (this.#updatePromise) {
-      this.#pendingCheck = true;
-      return this.#updatePromise;
+    if (this.updatePromise) {
+      this.pendingCheck = true;
+      return this.updatePromise;
     }
-    this.#updatePromise = this.#runUpdateLoop()
+    this.updatePromise = this.runUpdateLoop()
       .catch((error: unknown) => {
-        this.#beginFatal(error);
+        this.beginFatal(error);
         throw error;
       })
       .finally(() => {
-        this.#updatePromise = undefined;
+        this.updatePromise = undefined;
       });
-    return this.#updatePromise;
+    return this.updatePromise;
   }
 
   close(): Promise<void> {
-    if (this.#closePromise) {
-      return this.#closePromise;
+    if (this.closePromise) {
+      return this.closePromise;
     }
-    this.#shuttingDown = true;
-    this.#clearTimer();
-    this.#closePromise = this.#finishClose();
-    return this.#closePromise;
+    this.shuttingDown = true;
+    this.clearTimer();
+    this.closePromise = this.finishClose();
+    return this.closePromise;
   }
 
-  async #runUpdateLoop(): Promise<void> {
+  private async runUpdateLoop(): Promise<void> {
     do {
-      this.#pendingCheck = false;
-      const outdatedModules = await this.#hot.check(false);
+      this.pendingCheck = false;
+      const outdatedModules = await this.hot.check(false);
       if (!outdatedModules) {
         continue;
       }
-      const previousApplication = this.#application;
+      const previousApplication = this.application;
       if (!previousApplication) {
         throw new Error("The current development application is unavailable.");
       }
       await previousApplication.close();
-      if (this.#application === previousApplication) {
-        this.#application = undefined;
+      if (this.application === previousApplication) {
+        this.application = undefined;
       }
-      await this.#hot.apply();
-      this.#application = await this.#bootstrap();
-    } while (this.#pendingCheck && !this.#shuttingDown);
+      await this.hot.apply();
+      this.application = await this.bootstrap();
+    } while (this.pendingCheck && !this.shuttingDown);
   }
 
-  #beginFatal(error: unknown): void {
-    if (this.#fatalNotified) {
+  private beginFatal(error: unknown): void {
+    if (this.fatalNotified) {
       return;
     }
-    this.#fatalNotified = true;
-    this.#shuttingDown = true;
-    this.#clearTimer();
-    this.#onFatal(error);
+    this.fatalNotified = true;
+    this.shuttingDown = true;
+    this.clearTimer();
+    this.onFatal(error);
   }
 
-  #clearTimer(): void {
-    if (this.#timer === undefined) {
+  private clearTimer(): void {
+    if (this.timer === undefined) {
       return;
     }
-    this.#scheduler.clearInterval(this.#timer);
-    this.#timer = undefined;
+    this.scheduler.clearInterval(this.timer);
+    this.timer = undefined;
   }
 
-  async #finishClose(): Promise<void> {
+  private async finishClose(): Promise<void> {
     try {
-      await this.#updatePromise;
+      await this.updatePromise;
     } catch {
       // The fatal error is owned by the shared shutdown controller.
     }
-    await this.#application?.close();
+    await this.application?.close();
   }
 }

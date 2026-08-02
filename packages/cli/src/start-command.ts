@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isObject } from "radashi";
-import { requireBunExecutable } from "./bun-runtime";
-import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "./project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
+import { requireBunExecutable } from "@/bun-runtime";
+import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "@/project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
 
 export interface StartCommandOptions {
   readonly cwd: string;
@@ -127,32 +127,32 @@ interface LeaseParticipantAck {
 }
 
 class BunProductionChild implements ProductionChild {
-  readonly #completion: Promise<ProductionChildResult>;
-  readonly #messages: unknown[] = [];
-  readonly #messageWaiters: Array<{
+  private readonly completion: Promise<ProductionChildResult>;
+  private readonly messages: unknown[] = [];
+  private readonly messageWaiters: Array<{
     readonly reject: (error: Error) => void;
     readonly resolve: (message: unknown) => void;
   }> = [];
-  readonly #process: ChildProcess;
-  #terminalError: Error | undefined;
+  private readonly process: ChildProcess;
+  private terminalError: Error | undefined;
 
   constructor(process: ChildProcess) {
-    this.#process = process;
+    this.process = process;
     process.on("message", (message: unknown) => {
-      const waiter = this.#messageWaiters.shift();
+      const waiter = this.messageWaiters.shift();
       if (waiter) {
         waiter.resolve(message);
         return;
       }
-      this.#messages.push(message);
+      this.messages.push(message);
     });
-    this.#completion = new Promise((resolve, reject) => {
+    this.completion = new Promise((resolve, reject) => {
       process.once("error", (error) => {
-        this.#closeInbox(error);
+        this.closeInbox(error);
         reject(error);
       });
       process.once("exit", (exitCode, signal) => {
-        this.#closeInbox(
+        this.closeInbox(
           new Error(
             `Production child exited before its IPC message (code ${exitCode ?? "null"}, signal ${signal ?? "none"}).`,
           ),
@@ -163,22 +163,22 @@ class BunProductionChild implements ProductionChild {
   }
 
   getOneMessage(): Promise<unknown> {
-    const message = this.#messages.shift();
+    const message = this.messages.shift();
     if (message !== undefined) {
       return Promise.resolve(message);
     }
-    if (this.#terminalError) {
-      return Promise.reject(this.#terminalError);
+    if (this.terminalError) {
+      return Promise.reject(this.terminalError);
     }
-    return new Promise((resolve, reject) => this.#messageWaiters.push({ resolve, reject }));
+    return new Promise((resolve, reject) => this.messageWaiters.push({ resolve, reject }));
   }
 
   async sendMessage(message: ShutdownRequest | LeaseParticipantAck): Promise<void> {
-    if (!this.#process.connected) {
+    if (!this.process.connected) {
       throw new Error("The production child IPC channel is unavailable.");
     }
     await new Promise<void>((resolve, reject) => {
-      this.#process.send(message, (error) => {
+      this.process.send(message, (error) => {
         if (error) {
           reject(error);
           return;
@@ -189,17 +189,17 @@ class BunProductionChild implements ProductionChild {
   }
 
   kill(signal: NodeJS.Signals): void {
-    this.#process.kill(signal);
+    this.process.kill(signal);
   }
 
   wait(): Promise<ProductionChildResult> {
-    return this.#completion;
+    return this.completion;
   }
 
-  #closeInbox(error: Error): void {
-    this.#terminalError ??= error;
-    for (const waiter of this.#messageWaiters.splice(0)) {
-      waiter.reject(this.#terminalError);
+  private closeInbox(error: Error): void {
+    this.terminalError ??= error;
+    for (const waiter of this.messageWaiters.splice(0)) {
+      waiter.reject(this.terminalError);
     }
   }
 }

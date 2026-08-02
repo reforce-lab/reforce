@@ -1,6 +1,6 @@
 import type { CompilerDiagnostic } from "@reforce/compiler";
-import type { DevChildSupervisor } from "./dev-child-supervisor";
-import { createFailureEvent, type Reporter } from "./reporter";
+import type { DevChildSupervisor } from "@/dev-child-supervisor";
+import { createFailureEvent, type Reporter } from "@/reporter";
 
 export interface FailedDevCompilation {
   readonly status: "failure";
@@ -17,26 +17,26 @@ export interface SuccessfulDevCompilation {
 export type DevCompilation = FailedDevCompilation | SuccessfulDevCompilation;
 
 export class DevWatchCoordinator {
-  readonly #reporter: Reporter;
-  readonly #supervisor: DevChildSupervisor;
-  #healthyBuildId: string | undefined;
+  private readonly reporter: Reporter;
+  private readonly supervisor: DevChildSupervisor;
+  private healthyBuildIdValue: string | undefined;
 
   constructor(options: {
     readonly reporter: Reporter;
     readonly supervisor: DevChildSupervisor;
   }) {
-    this.#reporter = options.reporter;
-    this.#supervisor = options.supervisor;
+    this.reporter = options.reporter;
+    this.supervisor = options.supervisor;
   }
 
   get healthyBuildId(): string | undefined {
-    return this.#healthyBuildId;
+    return this.healthyBuildIdValue;
   }
 
   async acceptCompilation(compilation: DevCompilation): Promise<void> {
     if (compilation.status === "failure") {
       for (const diagnostic of compilation.diagnostics) {
-        this.#reporter.report({
+        this.reporter.report({
           kind: "diagnostic",
           command: "dev",
           phase: "compiler",
@@ -44,7 +44,7 @@ export class DevWatchCoordinator {
         });
       }
       if (compilation.error !== undefined) {
-        this.#reporter.report(
+        this.reporter.report(
           createFailureEvent({
             command: "dev",
             phase: "build",
@@ -54,19 +54,19 @@ export class DevWatchCoordinator {
           }),
         );
       }
-      this.#reporter.report({
+      this.reporter.report({
         kind: "status",
         command: "dev",
         phase: "build",
         message: "Compilation failed; the last healthy application remains active.",
       });
-      await this.#supervisor.acceptBuildFailure();
+      await this.supervisor.acceptBuildFailure();
       return;
     }
     try {
       await compilation.validateAssets();
     } catch (error) {
-      this.#reporter.report(
+      this.reporter.report(
         createFailureEvent({
           command: "dev",
           phase: "build",
@@ -75,10 +75,10 @@ export class DevWatchCoordinator {
           cause: error,
         }),
       );
-      await this.#supervisor.acceptBuildFailure();
+      await this.supervisor.acceptBuildFailure();
       return;
     }
-    this.#healthyBuildId = compilation.buildId;
-    await this.#supervisor.acceptSuccessfulBuild(compilation.buildId);
+    this.healthyBuildIdValue = compilation.buildId;
+    await this.supervisor.acceptSuccessfulBuild(compilation.buildId);
   }
 }

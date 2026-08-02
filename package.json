@@ -14,6 +14,7 @@
     "bun": ">=1.3.14"
   },
   "workspaces": [
+    "e2e",
     "packages/*",
     "platforms/*",
     "tooling/*"
@@ -30,7 +31,8 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "test": "turbo run test --filter='!@reforce/e2e'",
+    "test:e2e": "turbo run test:e2e --filter=@reforce/e2e",
     "check": "turbo run check",
     "check:write": "turbo run check:write",
     "prepare": "lefthook install && apm install && apm compile --clean"

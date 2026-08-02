@@ -1,8 +1,0 @@
-{
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "Bundler"
-  },
-  "include": ["src", ".reforce/generated/**/*.d.ts"]
-}

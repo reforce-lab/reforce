@@ -1,4 +1,11 @@
 {
   "extends": "@reforce/tooling-tsconfig/base.json",
-  "include": ["src", "__tests__", "fixtures", "test-support"]
+  "compilerOptions": {
+    "rootDir": "./src",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["bun"]
+  },
+  "include": ["src"]
 }

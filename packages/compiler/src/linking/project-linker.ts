@@ -1,20 +1,25 @@
 import * as nodeFileSystem from "node:fs";
+import { isBuiltin } from "node:module";
 import path from "node:path";
 import enhancedResolve from "enhanced-resolve";
 import type { LRUCache } from "lru-cache";
-import type { CompilerDiagnostic, ResolvedApplicationProject } from "../api";
-import { compareUtf16CodeUnits } from "../determinism";
-import { diagnostic } from "../diagnostics";
+import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { diagnostic } from "@/diagnostics";
+import {
+  type ExternalDeclaration,
+  readExternalDeclarations,
+} from "@/linking/external-declarations";
 import type {
   ClassDeclaration,
   EntityName,
   InterfaceDeclaration,
   SourceFileIr,
   TypeNode,
-} from "../parser/source-ir";
-import type { SourceSpan } from "../parser/source-location";
-import type { ParsedSource } from "../project/source-files";
-import { type ExternalDeclaration, readExternalDeclarations } from "./external-declarations";
+} from "@/parser/source-ir";
+import type { SourceSpan } from "@/parser/source-location";
+import { isPathContained } from "@/project/path-identity";
+import type { ParsedSource } from "@/project/source-files";
 
 type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
 
@@ -199,7 +204,9 @@ async function loadExternalDeclarations(
   for (const source of sources) {
     for (const specifier of referencedModuleSpecifiers(source)) {
       const target =
-        specifier === "@reforce/context" ? undefined : resolveModule(source, specifier, false);
+        specifier === "@reforce/context" || isBuiltin(specifier)
+          ? undefined
+          : resolveModule(source, specifier, false);
       if (target !== undefined && target.record === undefined) {
         externalPaths.add(target.physicalPath);
       }
@@ -212,18 +219,42 @@ async function loadExternalDeclarations(
   return result;
 }
 
+function isStrictAncestor(directory: string, target: string): boolean {
+  const pathFromDirectory = path.relative(directory, target);
+  return (
+    pathFromDirectory !== "" &&
+    !path.isAbsolute(pathFromDirectory) &&
+    pathFromDirectory !== ".." &&
+    !pathFromDirectory.startsWith(`..${path.sep}`)
+  );
+}
+
+function shouldWatchResolverDirectory(directory: string, projectRoot: string): boolean {
+  if (isPathContained(projectRoot, directory)) {
+    return true;
+  }
+  if (isStrictAncestor(directory, projectRoot)) {
+    return false;
+  }
+  return !isStrictAncestor(nodeFileSystem.realpathSync(directory), projectRoot);
+}
+
 function classifyResolverDependencies(
   resolverDependencies: ReadonlySet<string>,
+  projectRoot: string,
   fileDependencies: Set<string>,
   contextDependencies: Set<string>,
   missingDependencies: Set<string>,
 ): void {
   for (const dependency of resolverDependencies) {
     try {
-      const target = nodeFileSystem.statSync(dependency).isDirectory()
-        ? contextDependencies
-        : fileDependencies;
-      target.add(dependency);
+      if (!nodeFileSystem.statSync(dependency).isDirectory()) {
+        fileDependencies.add(dependency);
+        continue;
+      }
+      if (shouldWatchResolverDirectory(dependency, projectRoot)) {
+        contextDependencies.add(dependency);
+      }
     } catch {
       missingDependencies.add(dependency);
     }
@@ -243,6 +274,7 @@ export async function createProjectLinker(
   const contextDependencies = new Set<string>();
   const missingDependencies = new Set<string>();
   const resolverFileDependencies = new Set<string>();
+  const resolverContextDependencies = new Set<string>();
   for (const source of sources) {
     const record = createModuleRecord(source);
     records.set(moduleKey(source.absolutePath), record);
@@ -276,7 +308,7 @@ export async function createProjectLinker(
 
   const resolutionContext = {
     fileDependencies: resolverFileDependencies,
-    contextDependencies,
+    contextDependencies: resolverContextDependencies,
     missingDependencies,
   };
   const resolvedModules = new Map<string, ResolvedModule | false>();
@@ -343,6 +375,14 @@ export async function createProjectLinker(
   const externalDeclarations = await loadExternalDeclarations(sources, resolveModule, cache);
   classifyResolverDependencies(
     resolverFileDependencies,
+    project.projectRoot,
+    fileDependencies,
+    contextDependencies,
+    missingDependencies,
+  );
+  classifyResolverDependencies(
+    resolverContextDependencies,
+    project.projectRoot,
     fileDependencies,
     contextDependencies,
     missingDependencies,

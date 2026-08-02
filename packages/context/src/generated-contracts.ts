@@ -1,4 +1,4 @@
-import type { BeanClass, BeanDefinition, Lazy } from "./public-types";
+import type { BeanClass, BeanDefinition, Lazy } from "@/public-types";
 
 export type GeneratedBeanId = string;
 

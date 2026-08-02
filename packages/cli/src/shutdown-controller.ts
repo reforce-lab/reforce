@@ -5,7 +5,7 @@ import {
   type CliFailurePhase,
   createFailureEvent,
   type Reporter,
-} from "./reporter";
+} from "@/reporter";
 
 export type ShutdownState = "bootstrapping" | "running" | "shutting-down" | "finished";
 
@@ -54,82 +54,82 @@ function isShutdownRequestMessage(value: unknown): value is ShutdownRequestMessa
 }
 
 export class ShutdownController {
-  readonly #command: CliCommandName;
-  readonly #reporter: Reporter;
-  readonly #completion: Promise<ShutdownResult>;
-  readonly #resolveCompletion: (result: ShutdownResult) => void;
-  readonly #acknowledgements: Array<(result: ShutdownResult) => void> = [];
-  #application?: CloseableApplication;
-  #detachHandlers: () => void = () => undefined;
-  #failure?: ShutdownFailure;
-  #requested = false;
-  #shutdownPromise?: Promise<ShutdownResult>;
-  #started = false;
-  #state: ShutdownState = "bootstrapping";
+  private readonly command: CliCommandName;
+  private readonly reporter: Reporter;
+  private readonly completion: Promise<ShutdownResult>;
+  private readonly resolveCompletion: (result: ShutdownResult) => void;
+  private readonly acknowledgements: Array<(result: ShutdownResult) => void> = [];
+  private application?: CloseableApplication;
+  private detachHandlers: () => void = () => undefined;
+  private failure?: ShutdownFailure;
+  private requested = false;
+  private shutdownPromise?: Promise<ShutdownResult>;
+  private started = false;
+  private stateValue: ShutdownState = "bootstrapping";
 
   constructor(options: ShutdownControllerOptions) {
-    this.#command = options.command;
-    this.#reporter = options.reporter;
+    this.command = options.command;
+    this.reporter = options.reporter;
     const completion = Promise.withResolvers<ShutdownResult>();
-    this.#completion = completion.promise;
-    this.#resolveCompletion = completion.resolve;
+    this.completion = completion.promise;
+    this.resolveCompletion = completion.resolve;
   }
 
   get state(): ShutdownState {
-    return this.#state;
+    return this.stateValue;
   }
 
   get finished(): Promise<ShutdownResult> {
-    return this.#completion;
+    return this.completion;
   }
 
   setHandlerCleanup(detachHandlers: () => void): void {
-    this.#detachHandlers = detachHandlers;
+    this.detachHandlers = detachHandlers;
   }
 
   async start(bootstrap: () => Promise<CloseableApplication>): Promise<void> {
-    if (this.#started) {
+    if (this.started) {
       throw new Error("The shutdown controller bootstrap can only run once.");
     }
-    this.#started = true;
+    this.started = true;
 
     try {
       const application = await bootstrap();
-      this.#application = application;
-      if (this.#requested) {
-        this.#state = "shutting-down";
-        await this.#beginShutdown();
+      this.application = application;
+      if (this.requested) {
+        this.stateValue = "shutting-down";
+        await this.beginShutdown();
         return;
       }
-      this.#state = "running";
+      this.stateValue = "running";
     } catch (error) {
-      this.#failure ??= {
+      this.failure ??= {
         error,
         code: "BOOTSTRAP_FAILED",
         phase: "bootstrap",
         message: "Application bootstrap failed.",
       };
-      this.#requested = true;
-      this.#state = "shutting-down";
-      await this.#beginShutdown();
+      this.requested = true;
+      this.stateValue = "shutting-down";
+      await this.beginShutdown();
     }
   }
 
   requestShutdown(failure?: ShutdownFailure): Promise<ShutdownResult> {
-    this.#requested = true;
-    this.#failure ??= failure;
-    if (this.#state === "running") {
-      this.#state = "shutting-down";
-      void this.#beginShutdown();
+    this.requested = true;
+    this.failure ??= failure;
+    if (this.stateValue === "running") {
+      this.stateValue = "shutting-down";
+      void this.beginShutdown();
     }
-    return this.#completion;
+    return this.completion;
   }
 
   receiveIpcMessage(message: unknown, acknowledge: (message: ShutdownAckMessage) => void): boolean {
     if (!isShutdownRequestMessage(message)) {
       return false;
     }
-    this.#acknowledgements.push((result) => {
+    this.acknowledgements.push((result) => {
       acknowledge({
         type: "reforce:shutdown-ack",
         requestId: message.requestId,
@@ -141,38 +141,38 @@ export class ShutdownController {
     return true;
   }
 
-  #beginShutdown(): Promise<ShutdownResult> {
-    this.#shutdownPromise ??= this.#performShutdown();
-    return this.#shutdownPromise;
+  private beginShutdown(): Promise<ShutdownResult> {
+    this.shutdownPromise ??= this.performShutdown();
+    return this.shutdownPromise;
   }
 
-  async #performShutdown(): Promise<ShutdownResult> {
-    this.#detachHandlers();
+  private async performShutdown(): Promise<ShutdownResult> {
+    this.detachHandlers();
     const errors: unknown[] = [];
-    let primaryError = this.#failure?.error;
+    let primaryError = this.failure?.error;
 
-    if (this.#failure) {
-      errors.push(this.#failure.error);
-      this.#reporter.report(
+    if (this.failure) {
+      errors.push(this.failure.error);
+      this.reporter.report(
         createFailureEvent({
-          command: this.#command,
-          phase: this.#failure.phase,
-          fallbackCode: this.#failure.code,
-          message: this.#failure.message,
-          cause: this.#failure.error,
+          command: this.command,
+          phase: this.failure.phase,
+          fallbackCode: this.failure.code,
+          message: this.failure.message,
+          cause: this.failure.error,
         }),
       );
     }
 
-    if (this.#application) {
+    if (this.application) {
       try {
-        await this.#application.close();
+        await this.application.close();
       } catch (error) {
         primaryError ??= error;
         errors.push(error);
-        this.#reporter.report(
+        this.reporter.report(
           createFailureEvent({
-            command: this.#command,
+            command: this.command,
             phase: "shutdown",
             fallbackCode: "SHUTDOWN_FAILED",
             message: "Application shutdown failed.",
@@ -183,7 +183,7 @@ export class ShutdownController {
     }
 
     try {
-      await this.#reporter.flush();
+      await this.reporter.flush();
     } catch (error) {
       primaryError ??= error;
       errors.push(error);
@@ -194,11 +194,11 @@ export class ShutdownController {
       ...(primaryError === undefined ? {} : { primaryError }),
       errors: Object.freeze(errors),
     };
-    this.#state = "finished";
-    for (const acknowledge of this.#acknowledgements.splice(0)) {
+    this.stateValue = "finished";
+    for (const acknowledge of this.acknowledgements.splice(0)) {
       acknowledge(result);
     }
-    this.#resolveCompletion(result);
+    this.resolveCompletion(result);
     return result;
   }
 }

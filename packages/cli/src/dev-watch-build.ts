@@ -1,13 +1,13 @@
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
-import type { ResolvedProject } from "./compiler-types";
-import { compareUtf16CodeUnits } from "./determinism";
-import { createDevBuildId, type DevBuildAsset } from "./dev-build-id";
-import type { DevWatchBuild } from "./dev-command";
-import type { DevCompilerGate, DevCompilerGateResult } from "./dev-compiler-gate";
-import type { DevCompilation } from "./dev-watch-coordinator";
-import { resolveCliSupportModule } from "./runtime-module-path";
+import type { ResolvedProject } from "@/compiler-types";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { createDevBuildId, type DevBuildAsset } from "@/dev-build-id";
+import type { DevWatchBuild } from "@/dev-command";
+import type { DevCompilerGate, DevCompilerGateResult } from "@/dev-compiler-gate";
+import type { DevCompilation } from "@/dev-watch-coordinator";
+import { resolveCliSupportModule } from "@/runtime-module-path";
 
 export interface StartDevWatchBuildOptions {
   readonly project: ResolvedProject;
@@ -56,7 +56,7 @@ async function waitForRspackWatcher(
 }
 
 export function renderDevelopmentEntry(): string {
-  return `import { createRspackHmrRuntime, runDevelopmentApplication } from "#reforce-dev-runtime";
+  return `import { createRspackHmrRuntime, runDevelopmentApplication } from "reforce:dev-runtime";
 
 const hot = import.meta.webpackHot;
 if (!hot) {
@@ -170,32 +170,32 @@ function createDevWatchBuild(
 }
 
 class ReforceCompilerGatePlugin {
-  readonly #gate: DevCompilerGate;
-  readonly #generatedModules: readonly string[];
-  #current: DevCompilerGateResult | undefined;
-  #compiler: Rspack.Compiler | undefined;
-  #knownWatchFiles = new Set<string>();
+  private readonly gate: DevCompilerGate;
+  private readonly generatedModules: readonly string[];
+  private currentValue: DevCompilerGateResult | undefined;
+  private compilerValue: Rspack.Compiler | undefined;
+  private knownWatchFiles = new Set<string>();
 
   constructor(gate: DevCompilerGate, generatedModules: readonly string[]) {
-    this.#gate = gate;
-    this.#generatedModules = generatedModules;
+    this.gate = gate;
+    this.generatedModules = generatedModules;
   }
 
   get current(): DevCompilerGateResult | undefined {
-    return this.#current;
+    return this.currentValue;
   }
 
   get compiler(): Rspack.Compiler | undefined {
-    return this.#compiler;
+    return this.compilerValue;
   }
 
   apply(compiler: Rspack.Compiler): void {
-    this.#compiler = compiler;
+    this.compilerValue = compiler;
     compiler.hooks.beforeCompile.tapPromise("ReforceCompilerGate", () =>
-      this.#prepareCompilation(compiler),
+      this.prepareCompilation(compiler),
     );
     compiler.hooks.thisCompilation.tap("ReforceCompilerGate", (compilation) => {
-      const current = this.#current;
+      const current = this.currentValue;
       if (!current) {
         compilation.errors.push(new rspack.WebpackError("Reforce compiler gate did not run."));
         return;
@@ -205,24 +205,24 @@ class ReforceCompilerGatePlugin {
     });
   }
 
-  async #prepareCompilation(compiler: Rspack.Compiler): Promise<void> {
-    const initial = this.#gate.takeInitialResult();
-    this.#current = initial ?? (await this.#gate.compileNext());
+  private async prepareCompilation(compiler: Rspack.Compiler): Promise<void> {
+    const initial = this.gate.takeInitialResult();
+    this.currentValue = initial ?? (await this.gate.compileNext());
     if (initial === undefined) {
-      this.#markModifiedFiles(compiler, this.#current);
+      this.markModifiedFiles(compiler, this.currentValue);
     }
-    this.#knownWatchFiles = new Set(this.#current.watchInputs.fileDependencies);
+    this.knownWatchFiles = new Set(this.currentValue.watchInputs.fileDependencies);
   }
 
-  #markModifiedFiles(compiler: Rspack.Compiler, current: DevCompilerGateResult): void {
+  private markModifiedFiles(compiler: Rspack.Compiler, current: DevCompilerGateResult): void {
     const modifiedFiles = new Set(compiler.modifiedFiles);
     if (current.status === "success") {
-      for (const generatedModule of this.#generatedModules) {
+      for (const generatedModule of this.generatedModules) {
         modifiedFiles.add(generatedModule);
       }
     }
     for (const watchFile of current.watchInputs.fileDependencies) {
-      if (!this.#knownWatchFiles.has(watchFile)) {
+      if (!this.knownWatchFiles.has(watchFile)) {
         modifiedFiles.add(watchFile);
       }
     }
@@ -279,11 +279,6 @@ export async function startDevWatchBuild(
         minify: false,
       },
       performance: { printFileSize: false },
-      resolve: {
-        alias: {
-          "#reforce-dev-runtime": devRuntimePath,
-        },
-      },
       splitChunks: false,
       tools: {
         rspack(config) {
@@ -303,6 +298,7 @@ export async function startDevWatchBuild(
               [virtualEntryPath]: renderDevelopmentEntry(),
             }),
             new rspack.NormalModuleReplacementPlugin(/^reforce:dev-entry$/u, virtualEntryPath),
+            new rspack.NormalModuleReplacementPlugin(/^reforce:dev-runtime$/u, devRuntimePath),
             new rspack.NormalModuleReplacementPlugin(
               /^reforce:application-bootstrap$/u,
               generatedBootstrapPath,
@@ -319,8 +315,6 @@ export async function startDevWatchBuild(
               },
             });
           }
-          config.resolve ??= {};
-          config.resolve.conditionNames = ["development", "node", "import", "module", "default"];
           config.watchOptions = {
             ...(config.watchOptions ?? {}),
             ignored: [

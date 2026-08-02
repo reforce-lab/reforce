@@ -5,11 +5,11 @@ import type {
   ProjectResolutionResult,
   ResolvedApplicationProject,
   ResolveProjectRequest,
-} from "./api";
-import { compile } from "./compile";
-import type { SourceFileIr } from "./parser/source-ir";
-import type { ProjectState } from "./project/project-config";
-import { resolveProject } from "./project/resolve-project";
+} from "@/api";
+import { compile } from "@/compile";
+import type { SourceFileIr } from "@/parser/source-ir";
+import type { ProjectState } from "@/project/project-config";
+import { resolveProject } from "@/project/resolve-project";
 
 export function createCompiler(): Readonly<{
   resolveProject(request: ResolveProjectRequest): Promise<ProjectResolutionResult>;

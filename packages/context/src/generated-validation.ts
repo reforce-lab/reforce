@@ -1,5 +1,5 @@
 import { isObject } from "radashi";
-import { InvalidGeneratedDefinitionError } from "./errors";
+import { InvalidGeneratedDefinitionError } from "@/errors";
 import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
@@ -9,7 +9,7 @@ import type {
   GeneratedFactoryRegistration,
   GeneratedSourcePosition,
   GeneratedSourceReference,
-} from "./generated-contracts";
+} from "@/generated-contracts";
 
 const dependencyModes = new Set(["eager", "cycle-proxy", "explicit-lazy"]);
 

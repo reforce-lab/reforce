@@ -4,8 +4,8 @@ import {
   BeanLifecycleError,
   type CleanupActionError,
   InvalidGeneratedDefinitionError,
-} from "./errors";
-import type { CleanupAction, ResolutionState } from "./resolution-state";
+} from "@/errors";
+import type { CleanupAction, ResolutionState } from "@/resolution-state";
 
 function invokeGeneratedInstanceAction(action: unknown, instance: object): unknown {
   if (typeof action !== "function") {
@@ -15,26 +15,26 @@ function invokeGeneratedInstanceAction(action: unknown, instance: object): unkno
 }
 
 export class LifecycleRunner {
-  readonly #state: ResolutionState;
+  private readonly state: ResolutionState;
 
   constructor(state: ResolutionState) {
-    this.#state = state;
+    this.state = state;
   }
 
   async runStartActions(): Promise<void> {
-    for (const id of this.#state.definition.plans.startActionOrder) {
-      await this.#runStartAction(id);
+    for (const id of this.state.definition.plans.startActionOrder) {
+      await this.runStartAction(id);
     }
   }
 
   async runCleanup(): Promise<void> {
     const errors: CleanupActionError[] = [];
-    for (const id of this.#state.definition.plans.cleanupActionOrder) {
-      const action = this.#state.consumeCleanup(id);
+    for (const id of this.state.definition.plans.cleanupActionOrder) {
+      const action = this.state.consumeCleanup(id);
       if (!action) {
         continue;
       }
-      const error = await this.#runCleanupAction(id, action);
+      const error = await this.runCleanupAction(id, action);
       if (error) {
         errors.push(error);
       }
@@ -44,9 +44,9 @@ export class LifecycleRunner {
     }
   }
 
-  async #runStartAction(id: string): Promise<void> {
-    const registration = this.#state.registration(id);
-    const record = this.#state.record(id);
+  private async runStartAction(id: string): Promise<void> {
+    const registration = this.state.registration(id);
+    const record = this.state.record(id);
     if (
       registration?.kind !== "class" ||
       !registration.hooks.start ||
@@ -63,12 +63,12 @@ export class LifecycleRunner {
     }
   }
 
-  async #runCleanupAction(
+  private async runCleanupAction(
     id: string,
     action: CleanupAction,
   ): Promise<CleanupActionError | undefined> {
     try {
-      await this.#invokeCleanupAction(id, action);
+      await this.invokeCleanupAction(id, action);
       return undefined;
     } catch (cause) {
       if (action.registration.kind === "class") {
@@ -78,7 +78,7 @@ export class LifecycleRunner {
     }
   }
 
-  async #invokeCleanupAction(id: string, action: CleanupAction): Promise<void> {
+  private async invokeCleanupAction(id: string, action: CleanupAction): Promise<void> {
     if (action.registration.kind === "class") {
       const close = action.registration.hooks.close;
       if (!close) {

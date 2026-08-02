@@ -1,14 +1,14 @@
 import type { LRUCache } from "lru-cache";
-import { analyzeProject } from "./analysis/analyze-project";
-import type { CompileRequest, CompileResult, CompilerDiagnostic, CompilerWatchInputs } from "./api";
-import { diagnostic, orderDiagnostics } from "./diagnostics";
-import { generateFiles } from "./emission/generate-files";
-import { createProjectLinker } from "./linking/project-linker";
-import type { SourceFileIr } from "./parser/source-ir";
-import type { ProjectState } from "./project/project-config";
-import { snapshotStillMatches } from "./project/project-snapshot";
-import { parseProjectSources } from "./project/source-files";
-import { createWatchInputs, mergeWatchInputs } from "./project/watch-inputs";
+import { analyzeProject } from "@/analysis/analyze-project";
+import type { CompileRequest, CompileResult, CompilerDiagnostic, CompilerWatchInputs } from "@/api";
+import { diagnostic, orderDiagnostics } from "@/diagnostics";
+import { generateFiles } from "@/emission/generate-files";
+import { createProjectLinker } from "@/linking/project-linker";
+import type { SourceFileIr } from "@/parser/source-ir";
+import type { ProjectState } from "@/project/project-config";
+import { snapshotStillMatches } from "@/project/project-snapshot";
+import { parseProjectSources } from "@/project/source-files";
+import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
 
 function failure(
   diagnostics: readonly CompilerDiagnostic[],

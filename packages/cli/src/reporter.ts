@@ -225,19 +225,19 @@ function renderEvent(event: CliReporterEvent): string {
 }
 
 export class PlainTextReporter implements Reporter {
-  readonly #output: Writable;
-  #pending = Promise.resolve();
+  private readonly output: Writable;
+  private pending = Promise.resolve();
 
   constructor(options: PlainTextReporterOptions = {}) {
-    this.#output = options.output ?? process.stderr;
+    this.output = options.output ?? process.stderr;
   }
 
   report(event: CliReporterEvent): void {
     const line = `${renderEvent(event)}\n`;
-    this.#pending = this.#pending.then(
+    this.pending = this.pending.then(
       () =>
         new Promise<void>((resolve, reject) => {
-          this.#output.write(line, (error) => {
+          this.output.write(line, (error) => {
             if (error) {
               reject(error);
               return;
@@ -249,6 +249,6 @@ export class PlainTextReporter implements Reporter {
   }
 
   async flush(): Promise<void> {
-    await this.#pending;
+    await this.pending;
   }
 }

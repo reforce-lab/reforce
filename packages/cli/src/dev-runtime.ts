@@ -1,13 +1,13 @@
-import { requireBunExecutable } from "./bun-runtime";
-import { createDevChildLeaseEndpoint, type DevChildLeaseEndpoint } from "./dev-child-liveness";
-import { DevEntryController } from "./dev-entry";
-import type { RspackHmrRuntime } from "./dev-hmr-manager";
+import { requireBunExecutable } from "@/bun-runtime";
+import { createDevChildLeaseEndpoint, type DevChildLeaseEndpoint } from "@/dev-child-liveness";
+import { DevEntryController } from "@/dev-entry";
+import type { RspackHmrRuntime } from "@/dev-hmr-manager";
 import {
   isDevChildLeaseParticipantAcknowledgement,
   writerLeaseTokenEnvironmentVariable,
-} from "./dev-ipc";
-import { PlainTextReporter, reportShutdownFailure } from "./reporter";
-import type { ShutdownResult } from "./shutdown-controller";
+} from "@/dev-ipc";
+import { PlainTextReporter, reportShutdownFailure } from "@/reporter";
+import type { ShutdownResult } from "@/shutdown-controller";
 
 export interface DevelopmentBootstrapModule {
   bootstrap(): Promise<{ close(): Promise<void> }>;

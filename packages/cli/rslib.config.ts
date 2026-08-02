@@ -39,7 +39,6 @@ export default defineConfig({
     sourceMap: false,
     target: "node",
   },
-  source: { tsconfigPath: "./tsconfig.build.json" },
   tools: {
     rspack(config) {
       config.optimization ??= {};
@@ -47,8 +46,6 @@ export default defineConfig({
       config.optimization.splitChunks = false;
       config.output ??= {};
       config.output.chunkLoading = false;
-      config.resolve ??= {};
-      config.resolve.conditionNames = ["development", "node", "import", "module", "default"];
     },
   },
 });

@@ -4,10 +4,10 @@ import type {
   ExecutionPlansModel,
   GeneratedSourceReferenceModel,
   ProviderModel,
-} from "../analysis/model";
-import type { GeneratedFile, ResolvedApplicationProject } from "../api";
-import { compareUtf16CodeUnits } from "../determinism";
-import type { LinkedSymbol } from "../linking/project-linker";
+} from "@/analysis/model";
+import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
+import { compareUtf16CodeUnits } from "@/determinism";
+import type { LinkedSymbol } from "@/linking/project-linker";
 
 function runtimeSuffix(file: string): string {
   if (file.endsWith(".d.mts")) {

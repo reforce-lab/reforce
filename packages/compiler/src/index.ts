@@ -6,6 +6,6 @@ export type {
   GeneratedFile,
   ProjectResolutionResult,
   ResolveProjectRequest,
-} from "./api";
+} from "@/api";
 
-export { createCompiler } from "./create-compiler";
+export { createCompiler } from "@/create-compiler";

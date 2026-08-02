@@ -8,7 +8,7 @@ import type {
   NodeOfType,
   TSType,
 } from "yuku-parser";
-import { normalizeSpanned } from "./normalize";
+import { normalizeSpanned } from "@/parser/normalize";
 import type {
   ConstructorParameter,
   DecoratorCallee,
@@ -19,8 +19,8 @@ import type {
   FunctionDescriptor,
   TypeNode,
   UnsupportedExpressionKind,
-} from "./source-ir";
-import type { SourceMapper, SourceSpan } from "./source-location";
+} from "@/parser/source-ir";
+import type { SourceMapper, SourceSpan } from "@/parser/source-location";
 
 export interface LoweringContext {
   readonly mapper: SourceMapper;

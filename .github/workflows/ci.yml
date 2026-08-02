@@ -64,14 +64,14 @@ jobs:
         run: bun run build
 
       - name: Real CLI, process, Worker, signal, and Bun artifact smoke
-        run: bun run --cwd packages/cli test:e2e:evidence
+        run: bun run --cwd e2e test:e2e:evidence
 
       - name: Upload CLI process failure evidence
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: cli-process-evidence-${{ runner.os }}
-          path: packages/cli/e2e-junit.xml
+          path: e2e/e2e-junit.xml
           if-no-files-found: warn
 
   commitlint:

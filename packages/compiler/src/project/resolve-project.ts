@@ -5,12 +5,12 @@ import {
   type ResolvedApplicationProject,
   type ResolveProjectRequest,
   resolvedApplicationProjectBrand,
-} from "../api";
-import { sortNativePaths } from "../determinism";
-import { diagnostic } from "../diagnostics";
-import { isPathContained } from "./path-identity";
-import { inspectProjectConfigCandidate, type ProjectState } from "./project-config";
-import { createWatchInputs } from "./watch-inputs";
+} from "@/api";
+import { sortNativePaths } from "@/determinism";
+import { diagnostic } from "@/diagnostics";
+import { isPathContained } from "@/project/path-identity";
+import { inspectProjectConfigCandidate, type ProjectState } from "@/project/project-config";
+import { createWatchInputs } from "@/project/watch-inputs";
 
 interface ResolvedProjectRecord {
   readonly project: ResolvedApplicationProject;

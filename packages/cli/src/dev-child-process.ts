@@ -1,15 +1,15 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { isObject } from "radashi";
-import type { DevChildExit, ManagedDevChild } from "./dev-child-supervisor";
+import type { DevChildExit, ManagedDevChild } from "@/dev-child-supervisor";
 import {
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
   isDevChildLeaseParticipantMessage,
   isDevChildReadyMessage,
-} from "./dev-ipc";
-import type { LeaseParticipant } from "./project-lease";
-import type { ShutdownAckMessage } from "./shutdown-controller";
+} from "@/dev-ipc";
+import type { LeaseParticipant } from "@/project-lease";
+import type { ShutdownAckMessage } from "@/shutdown-controller";
 
 export interface SpawnDevChildOptions {
   readonly entryPath: string;

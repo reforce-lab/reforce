@@ -1,16 +1,16 @@
-import type { CompilerDiagnostic } from "../api";
-import { diagnostic } from "../diagnostics";
-import type { LinkedSymbol, ProjectLinker } from "../linking/project-linker";
+import { type ProviderDraft, type QualifierModel, sourceReference } from "@/analysis/model";
+import { reportUnsupportedType } from "@/analysis/resolve-providers";
+import type { CompilerDiagnostic } from "@/api";
+import { diagnostic } from "@/diagnostics";
+import type { LinkedSymbol, ProjectLinker } from "@/linking/project-linker";
 import type {
   DefineBeanDeclaration,
   DefineBeanOptionProperty,
   FunctionDescriptor,
   TypeNode,
-} from "../parser/source-ir";
-import type { SourceSpan } from "../parser/source-location";
-import type { ParsedSource } from "../project/source-files";
-import { type ProviderDraft, type QualifierModel, sourceReference } from "./model";
-import { reportUnsupportedType } from "./resolve-providers";
+} from "@/parser/source-ir";
+import type { SourceSpan } from "@/parser/source-location";
+import type { ParsedSource } from "@/project/source-files";
 
 function functionOption(
   properties: readonly DefineBeanOptionProperty[],

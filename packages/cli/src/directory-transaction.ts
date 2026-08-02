@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { isObject } from "radashi";
-import { compareUtf16CodeUnits } from "./determinism";
-import { validateGeneratedManifestBytes } from "./generated-manifest";
-import { ProjectBusyError, type ProjectLease } from "./project-lease";
-import { renameWithWindowsRetry } from "./windows-rename-retry";
+import { compareUtf16CodeUnits } from "@/determinism";
+import { validateGeneratedManifestBytes } from "@/generated-manifest";
+import { ProjectBusyError, type ProjectLease } from "@/project-lease";
+import { renameWithWindowsRetry } from "@/windows-rename-retry";
 
 export type TransactionKind = "generated" | "dist";
 export type TransactionState = "prepared" | "backup-published" | "active-published" | "verified";
@@ -82,12 +82,12 @@ interface TreeSnapshot {
 }
 
 class FifoMutex {
-  #tail = Promise.resolve();
+  private tail = Promise.resolve();
 
   async run<T>(operation: () => Promise<T>): Promise<T> {
     const { promise: current, resolve: release } = Promise.withResolvers<void>();
-    const previous = this.#tail;
-    this.#tail = previous.then(() => current);
+    const previous = this.tail;
+    this.tail = previous.then(() => current);
     await previous;
     try {
       return await operation();
@@ -432,13 +432,13 @@ function parseJournal(
 }
 
 export class DirectoryTransactions {
-  readonly #faultInjector?: TransactionFaultInjector;
-  readonly #lease: ProjectLease;
-  readonly #mutex = new FifoMutex();
-  readonly #projectRoot: string;
-  readonly #reforceRoot: string;
-  readonly #generatedTransactionRoot: string;
-  readonly #distTransactionRoot: string;
+  private readonly faultInjector?: TransactionFaultInjector;
+  private readonly lease: ProjectLease;
+  private readonly mutex = new FifoMutex();
+  private readonly projectRoot: string;
+  private readonly reforceRoot: string;
+  private readonly generatedTransactionRoot: string;
+  private readonly distTransactionRoot: string;
 
   private constructor(input: {
     readonly projectRoot: string;
@@ -448,12 +448,12 @@ export class DirectoryTransactions {
     readonly lease: ProjectLease;
     readonly faultInjector?: TransactionFaultInjector;
   }) {
-    this.#projectRoot = input.projectRoot;
-    this.#reforceRoot = input.reforceRoot;
-    this.#generatedTransactionRoot = input.generatedTransactionRoot;
-    this.#distTransactionRoot = input.distTransactionRoot;
-    this.#lease = input.lease;
-    this.#faultInjector = input.faultInjector;
+    this.projectRoot = input.projectRoot;
+    this.reforceRoot = input.reforceRoot;
+    this.generatedTransactionRoot = input.generatedTransactionRoot;
+    this.distTransactionRoot = input.distTransactionRoot;
+    this.lease = input.lease;
+    this.faultInjector = input.faultInjector;
   }
 
   static async create(options: DirectoryTransactionOptions): Promise<DirectoryTransactions> {
@@ -484,22 +484,22 @@ export class DirectoryTransactions {
   }
 
   async prepareDist(): Promise<PreparedDistTransaction> {
-    return await this.#mutex.run(async () => {
-      await this.#lease.assertCurrentWriter();
+    return await this.mutex.run(async () => {
+      await this.lease.assertCurrentWriter();
       const transactionToken = randomUUID();
-      const paths = this.#paths("dist", transactionToken);
-      await this.#hit("before:mkdir:staging", "dist", transactionToken, paths.staging);
+      const paths = this.paths("dist", transactionToken);
+      await this.hit("before:mkdir:staging", "dist", transactionToken, paths.staging);
       await mkdir(paths.staging);
-      await this.#hit("after:mkdir:staging", "dist", transactionToken, paths.staging);
+      await this.hit("after:mkdir:staging", "dist", transactionToken, paths.staging);
       return { transactionToken, stagingDirectory: paths.staging };
     });
   }
 
   async commitGenerated(files: readonly GeneratedTransactionFile[]): Promise<void> {
-    await this.#mutex.run(async () => {
-      await this.#lease.assertCurrentWriter();
+    await this.mutex.run(async () => {
+      await this.lease.assertCurrentWriter();
       const transactionToken = randomUUID();
-      const paths = this.#paths("generated", transactionToken);
+      const paths = this.paths("generated", transactionToken);
       const sortedFiles = [...files].sort((left, right) =>
         compareUtf16CodeUnits(left.path, right.path),
       );
@@ -514,21 +514,21 @@ export class DirectoryTransactions {
         );
       }
 
-      await this.#hit("before:mkdir:staging", "generated", transactionToken, paths.staging);
+      await this.hit("before:mkdir:staging", "generated", transactionToken, paths.staging);
       await mkdir(paths.staging);
-      await this.#hit("after:mkdir:staging", "generated", transactionToken, paths.staging);
+      await this.hit("after:mkdir:staging", "generated", transactionToken, paths.staging);
       try {
         for (const file of sortedFiles) {
-          await this.#writeFile(
+          await this.writeFile(
             join(paths.staging, file.path),
             file.content,
             "generated",
             transactionToken,
           );
         }
-        await this.#commitPrepared("generated", transactionToken, paths, generatedFilePaths);
+        await this.commitPrepared("generated", transactionToken, paths, generatedFilePaths);
       } catch (error) {
-        await this.#recoverTokenIfJournalExists("generated", transactionToken, paths);
+        await this.recoverTokenIfJournalExists("generated", transactionToken, paths);
         throw error instanceof DirectoryTransactionError
           ? error
           : new DirectoryTransactionError("generated", "Generated output transaction failed.", {
@@ -539,9 +539,9 @@ export class DirectoryTransactions {
   }
 
   async commitDist(options: CommitDistOptions): Promise<void> {
-    await this.#mutex.run(async () => {
-      await this.#lease.assertCurrentWriter();
-      const paths = this.#paths("dist", options.transactionToken);
+    await this.mutex.run(async () => {
+      await this.lease.assertCurrentWriter();
+      const paths = this.paths("dist", options.transactionToken);
       if (paths.staging !== options.stagingDirectory) {
         throw new DirectoryTransactionError(
           "dist",
@@ -556,9 +556,9 @@ export class DirectoryTransactions {
         assertRelativeFilePath(path);
       }
       try {
-        await this.#commitPrepared("dist", options.transactionToken, paths, expectedFiles);
+        await this.commitPrepared("dist", options.transactionToken, paths, expectedFiles);
       } catch (error) {
-        await this.#recoverTokenIfJournalExists("dist", options.transactionToken, paths);
+        await this.recoverTokenIfJournalExists("dist", options.transactionToken, paths);
         throw error instanceof DirectoryTransactionError
           ? error
           : new DirectoryTransactionError("dist", "Production output transaction failed.", {
@@ -569,10 +569,10 @@ export class DirectoryTransactions {
   }
 
   async recover(): Promise<void> {
-    await this.#mutex.run(async () => {
-      await this.#lease.assertCurrentWriter();
+    await this.mutex.run(async () => {
+      await this.lease.assertCurrentWriter();
       for (const kind of ["generated", "dist"] as const) {
-        const transactionRoot = this.#transactionRoot(kind);
+        const transactionRoot = this.transactionRoot(kind);
         const entries = await readdir(transactionRoot, { withFileTypes: true });
         entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
         for (const entry of entries) {
@@ -582,20 +582,20 @@ export class DirectoryTransactions {
               `Invalid transaction metadata entry: ${entry.name}`,
             );
           }
-          const paths = this.#paths(kind, entry.name);
+          const paths = this.paths(kind, entry.name);
           if (await pathExists(paths.journalFile)) {
-            await this.#recoverJournal(kind, entry.name, paths);
+            await this.recoverJournal(kind, entry.name, paths);
           } else {
-            await this.#recoverJournalOrphan(kind, entry.name, paths);
+            await this.recoverJournalOrphan(kind, entry.name, paths);
           }
         }
-        await this.#recoverUnjournaledStaging(kind);
+        await this.recoverUnjournaledStaging(kind);
       }
     });
   }
 
-  async #recoverUnjournaledStaging(kind: TransactionKind): Promise<void> {
-    const parent = kind === "generated" ? this.#reforceRoot : this.#projectRoot;
+  private async recoverUnjournaledStaging(kind: TransactionKind): Promise<void> {
+    const parent = kind === "generated" ? this.reforceRoot : this.projectRoot;
     const prefix = kind === "generated" ? "generated.staging-" : "dist.staging-";
     const entries = await readdir(parent, { withFileTypes: true });
     entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
@@ -610,7 +610,7 @@ export class DirectoryTransactions {
         );
       }
       const transactionToken = entry.name.slice(prefix.length);
-      const paths = this.#paths(kind, transactionToken);
+      const paths = this.paths(kind, transactionToken);
       if (await pathExists(paths.journalDirectory)) {
         continue;
       }
@@ -620,11 +620,11 @@ export class DirectoryTransactions {
           "Unjournaled staging output has an associated backup.",
         );
       }
-      await this.#removeTree(paths.staging, kind, transactionToken, paths.staging);
+      await this.removeTree(paths.staging, kind, transactionToken, paths.staging);
     }
   }
 
-  async #commitPrepared(
+  private async commitPrepared(
     kind: TransactionKind,
     transactionToken: string,
     paths: TransactionPaths,
@@ -655,7 +655,7 @@ export class DirectoryTransactions {
     const journal: TransactionJournal = {
       schemaVersion: 1,
       transactionToken,
-      leaseOwnerToken: this.#lease.leaseToken,
+      leaseOwnerToken: this.lease.leaseToken,
       kind,
       state: "prepared",
       hadActiveBefore,
@@ -664,55 +664,55 @@ export class DirectoryTransactions {
       previousFiles: previousSnapshot?.files ?? [],
       previousAggregateSha256: previousSnapshot?.aggregateSha256 ?? null,
     };
-    await this.#writeJournal(paths, journal);
+    await this.writeJournal(paths, journal);
 
     if (hadActiveBefore) {
-      await this.#rename(paths.active, paths.backup, kind, transactionToken, "active-to-backup");
+      await this.rename(paths.active, paths.backup, kind, transactionToken, "active-to-backup");
     }
-    await this.#writeJournal(paths, { ...journal, state: "backup-published" });
-    await this.#rename(paths.staging, paths.active, kind, transactionToken, "staging-to-active");
-    await this.#writeJournal(paths, { ...journal, state: "active-published" });
-    await this.#hit("before:verification-read", kind, transactionToken, paths.active);
+    await this.writeJournal(paths, { ...journal, state: "backup-published" });
+    await this.rename(paths.staging, paths.active, kind, transactionToken, "staging-to-active");
+    await this.writeJournal(paths, { ...journal, state: "active-published" });
+    await this.hit("before:verification-read", kind, transactionToken, paths.active);
     const activeIsValid = await validateTreeAgainstJournal(paths.active, journal);
-    await this.#hit("after:verification-close", kind, transactionToken, paths.active);
+    await this.hit("after:verification-close", kind, transactionToken, paths.active);
     if (!activeIsValid) {
       throw new DirectoryTransactionError(
         kind,
         "Published output did not match its transaction journal.",
       );
     }
-    await this.#writeJournal(paths, { ...journal, state: "verified" });
+    await this.writeJournal(paths, { ...journal, state: "verified" });
     if (hadActiveBefore) {
-      await this.#removeTree(paths.backup, kind, transactionToken, paths.backup);
+      await this.removeTree(paths.backup, kind, transactionToken, paths.backup);
     }
-    await this.#removeTree(paths.journalDirectory, kind, transactionToken, paths.journalDirectory);
+    await this.removeTree(paths.journalDirectory, kind, transactionToken, paths.journalDirectory);
   }
 
-  async #recoverTokenIfJournalExists(
+  private async recoverTokenIfJournalExists(
     kind: TransactionKind,
     transactionToken: string,
     paths: TransactionPaths,
   ): Promise<void> {
     if (await pathExists(paths.journalFile)) {
-      await this.#recoverJournal(kind, transactionToken, paths);
+      await this.recoverJournal(kind, transactionToken, paths);
       return;
     }
     if (await pathExists(paths.staging)) {
-      await this.#removeTree(paths.staging, kind, transactionToken, paths.staging);
+      await this.removeTree(paths.staging, kind, transactionToken, paths.staging);
     }
     if (await pathExists(paths.journalDirectory)) {
-      await this.#recoverJournalOrphan(kind, transactionToken, paths);
+      await this.recoverJournalOrphan(kind, transactionToken, paths);
     }
   }
 
-  async #recoverJournal(
+  private async recoverJournal(
     kind: TransactionKind,
     transactionToken: string,
     paths: TransactionPaths,
   ): Promise<void> {
-    await this.#lease.assertCurrentWriter();
-    const journal = await this.#adoptJournal(
-      await this.#readJournal(paths, kind, transactionToken),
+    await this.lease.assertCurrentWriter();
+    const journal = await this.adoptJournal(
+      await this.readJournal(paths, kind, transactionToken),
       paths,
     );
     const activeMatches = await validateTreeAgainstJournal(paths.active, journal);
@@ -726,34 +726,34 @@ export class DirectoryTransactions {
       backupMatchesPrevious,
     };
     if (journal.state === "prepared") {
-      await this.#recoverPrepared(journal, paths, validations);
+      await this.recoverPrepared(journal, paths, validations);
     } else if (journal.state === "backup-published") {
-      await this.#recoverBackupPublished(journal, paths, validations);
+      await this.recoverBackupPublished(journal, paths, validations);
     } else {
-      await this.#recoverPublished(journal, paths, validations);
+      await this.recoverPublished(journal, paths, validations);
     }
-    await this.#validateRecoveredActive(journal, paths);
-    await this.#cleanupRecoveredTransaction(journal, paths);
+    await this.validateRecoveredActive(journal, paths);
+    await this.cleanupRecoveredTransaction(journal, paths);
   }
 
-  async #adoptJournal(
+  private async adoptJournal(
     journal: TransactionJournal,
     paths: TransactionPaths,
   ): Promise<TransactionJournal> {
-    if (journal.leaseOwnerToken === this.#lease.leaseToken) {
+    if (journal.leaseOwnerToken === this.lease.leaseToken) {
       return journal;
     }
     const recoveredWriterToken = journal.leaseOwnerToken;
-    if (!this.#lease.canRecoverWriterToken(recoveredWriterToken)) {
-      throw new ProjectBusyError(this.#projectRoot);
+    if (!this.lease.canRecoverWriterToken(recoveredWriterToken)) {
+      throw new ProjectBusyError(this.projectRoot);
     }
-    const adopted = { ...journal, leaseOwnerToken: this.#lease.leaseToken };
-    await this.#writeJournal(paths, adopted);
-    this.#lease.consumeRecoveredWriterToken(recoveredWriterToken);
+    const adopted = { ...journal, leaseOwnerToken: this.lease.leaseToken };
+    await this.writeJournal(paths, adopted);
+    this.lease.consumeRecoveredWriterToken(recoveredWriterToken);
     return adopted;
   }
 
-  async #recoverPrepared(
+  private async recoverPrepared(
     journal: TransactionJournal,
     paths: TransactionPaths,
     validation: {
@@ -762,7 +762,7 @@ export class DirectoryTransactions {
     },
   ): Promise<void> {
     if (await pathExists(paths.staging)) {
-      await this.#removeTree(paths.staging, journal.kind, journal.transactionToken, paths.staging);
+      await this.removeTree(paths.staging, journal.kind, journal.transactionToken, paths.staging);
     }
     if (!journal.hadActiveBefore) {
       if (await pathExists(paths.active)) {
@@ -782,10 +782,10 @@ export class DirectoryTransactions {
         "Recovery could not verify the previous generation.",
       );
     }
-    await this.#restoreBackup(journal, paths);
+    await this.restoreBackup(journal, paths);
   }
 
-  async #recoverBackupPublished(
+  private async recoverBackupPublished(
     journal: TransactionJournal,
     paths: TransactionPaths,
     validation: {
@@ -796,21 +796,16 @@ export class DirectoryTransactions {
   ): Promise<void> {
     if (validation.activeMatches) {
       if (await pathExists(paths.staging)) {
-        await this.#removeTree(
-          paths.staging,
-          journal.kind,
-          journal.transactionToken,
-          paths.staging,
-        );
+        await this.removeTree(paths.staging, journal.kind, journal.transactionToken, paths.staging);
       }
       return;
     }
     if (validation.stagingMatches) {
-      await this.#replaceActive(paths.staging, journal, paths, "recovery-staging-to-active");
+      await this.replaceActive(paths.staging, journal, paths, "recovery-staging-to-active");
       return;
     }
     if (validation.backupMatchesPrevious) {
-      await this.#restoreBackup(journal, paths);
+      await this.restoreBackup(journal, paths);
       return;
     }
     throw new DirectoryTransactionError(
@@ -819,7 +814,7 @@ export class DirectoryTransactions {
     );
   }
 
-  async #recoverPublished(
+  private async recoverPublished(
     journal: TransactionJournal,
     paths: TransactionPaths,
     validation: { readonly activeMatches: boolean; readonly backupMatchesPrevious: boolean },
@@ -834,28 +829,28 @@ export class DirectoryTransactions {
       );
     }
     if (await pathExists(paths.active)) {
-      await this.#removeTree(paths.active, journal.kind, journal.transactionToken, paths.active);
+      await this.removeTree(paths.active, journal.kind, journal.transactionToken, paths.active);
     }
-    await this.#restoreBackup(journal, paths);
+    await this.restoreBackup(journal, paths);
   }
 
-  async #restoreBackup(journal: TransactionJournal, paths: TransactionPaths): Promise<void> {
-    await this.#replaceActive(paths.backup, journal, paths, "recovery-backup-to-active");
+  private async restoreBackup(journal: TransactionJournal, paths: TransactionPaths): Promise<void> {
+    await this.replaceActive(paths.backup, journal, paths, "recovery-backup-to-active");
   }
 
-  async #replaceActive(
+  private async replaceActive(
     source: string,
     journal: TransactionJournal,
     paths: TransactionPaths,
     label: string,
   ): Promise<void> {
     if (await pathExists(paths.active)) {
-      await this.#removeTree(paths.active, journal.kind, journal.transactionToken, paths.active);
+      await this.removeTree(paths.active, journal.kind, journal.transactionToken, paths.active);
     }
-    await this.#rename(source, paths.active, journal.kind, journal.transactionToken, label);
+    await this.rename(source, paths.active, journal.kind, journal.transactionToken, label);
   }
 
-  async #validateRecoveredActive(
+  private async validateRecoveredActive(
     journal: TransactionJournal,
     paths: TransactionPaths,
   ): Promise<void> {
@@ -881,16 +876,16 @@ export class DirectoryTransactions {
     }
   }
 
-  async #cleanupRecoveredTransaction(
+  private async cleanupRecoveredTransaction(
     journal: TransactionJournal,
     paths: TransactionPaths,
   ): Promise<void> {
     for (const leftover of [paths.staging, paths.backup]) {
       if (await pathExists(leftover)) {
-        await this.#removeTree(leftover, journal.kind, journal.transactionToken, leftover);
+        await this.removeTree(leftover, journal.kind, journal.transactionToken, leftover);
       }
     }
-    await this.#removeTree(
+    await this.removeTree(
       paths.journalDirectory,
       journal.kind,
       journal.transactionToken,
@@ -898,12 +893,12 @@ export class DirectoryTransactions {
     );
   }
 
-  async #recoverJournalOrphan(
+  private async recoverJournalOrphan(
     kind: TransactionKind,
     transactionToken: string,
     paths: TransactionPaths,
   ): Promise<void> {
-    await this.#lease.assertCurrentWriter();
+    await this.lease.assertCurrentWriter();
     if (await pathExists(paths.backup)) {
       throw new DirectoryTransactionError(
         kind,
@@ -911,26 +906,21 @@ export class DirectoryTransactions {
       );
     }
     if (await pathExists(paths.staging)) {
-      await this.#removeTree(paths.staging, kind, transactionToken, paths.staging);
+      await this.removeTree(paths.staging, kind, transactionToken, paths.staging);
     }
     if (await pathExists(paths.journalDirectory)) {
-      await this.#removeTree(
-        paths.journalDirectory,
-        kind,
-        transactionToken,
-        paths.journalDirectory,
-      );
+      await this.removeTree(paths.journalDirectory, kind, transactionToken, paths.journalDirectory);
     }
   }
 
-  async #readJournal(
+  private async readJournal(
     paths: TransactionPaths,
     kind: TransactionKind,
     transactionToken: string,
   ): Promise<TransactionJournal> {
-    await this.#hit("before:journal-read", kind, transactionToken, paths.journalFile);
+    await this.hit("before:journal-read", kind, transactionToken, paths.journalFile);
     const bytes = await readFileClosed(paths.journalFile);
-    await this.#hit("after:journal-close", kind, transactionToken, paths.journalFile);
+    await this.hit("after:journal-close", kind, transactionToken, paths.journalFile);
     let value: unknown;
     try {
       value = JSON.parse(new TextDecoder().decode(bytes));
@@ -946,16 +936,16 @@ export class DirectoryTransactions {
     return journal;
   }
 
-  async #writeJournal(paths: TransactionPaths, journal: TransactionJournal): Promise<void> {
-    await this.#lease.assertCurrentWriter();
-    await this.#hit(
+  private async writeJournal(paths: TransactionPaths, journal: TransactionJournal): Promise<void> {
+    await this.lease.assertCurrentWriter();
+    await this.hit(
       "before:mkdir:journal",
       journal.kind,
       journal.transactionToken,
       paths.journalDirectory,
     );
     await mkdir(paths.journalDirectory, { recursive: true });
-    await this.#hit(
+    await this.hit(
       "after:mkdir:journal",
       journal.kind,
       journal.transactionToken,
@@ -963,21 +953,21 @@ export class DirectoryTransactions {
     );
     const temporaryPath = join(paths.journalDirectory, `journal-${randomUUID()}.json`);
     const serializedJournal = `${JSON.stringify(journal, undefined, 2)}\n`;
-    await this.#writeFile(
+    await this.writeFile(
       temporaryPath,
       serializedJournal,
       journal.kind,
       journal.transactionToken,
       "journal",
     );
-    await this.#hit(
+    await this.hit(
       "before:journal-verification-read",
       journal.kind,
       journal.transactionToken,
       temporaryPath,
     );
     const written = await readFileClosed(temporaryPath);
-    await this.#hit(
+    await this.hit(
       "after:journal-verification-close",
       journal.kind,
       journal.transactionToken,
@@ -993,7 +983,7 @@ export class DirectoryTransactions {
     ) {
       throw new DirectoryTransactionError(journal.kind, "Transaction journal verification failed.");
     }
-    await this.#rename(
+    await this.rename(
       temporaryPath,
       paths.journalFile,
       journal.kind,
@@ -1002,25 +992,25 @@ export class DirectoryTransactions {
     );
   }
 
-  async #writeFile(
+  private async writeFile(
     path: string,
     content: string | Uint8Array,
     kind: TransactionKind,
     transactionToken: string,
     label = "file",
   ): Promise<void> {
-    await this.#hit(`before:${label}-write`, kind, transactionToken, path);
+    await this.hit(`before:${label}-write`, kind, transactionToken, path);
     const handle = await open(path, "wx");
     let operationError: unknown;
     try {
       await handle.writeFile(content);
       await handle.sync();
-      await this.#hit(`after:${label}-write`, kind, transactionToken, path);
+      await this.hit(`after:${label}-write`, kind, transactionToken, path);
     } catch (error) {
       operationError = error;
     } finally {
       try {
-        await this.#hit(`before:${label}-close`, kind, transactionToken, path);
+        await this.hit(`before:${label}-close`, kind, transactionToken, path);
       } catch (error) {
         operationError ??= error;
       }
@@ -1030,7 +1020,7 @@ export class DirectoryTransactions {
         operationError ??= error;
       }
       try {
-        await this.#hit(`after:${label}-close`, kind, transactionToken, path);
+        await this.hit(`after:${label}-close`, kind, transactionToken, path);
       } catch (error) {
         operationError ??= error;
       }
@@ -1040,29 +1030,29 @@ export class DirectoryTransactions {
     }
   }
 
-  async #rename(
+  private async rename(
     source: string,
     destination: string,
     kind: TransactionKind,
     transactionToken: string,
     label: string,
   ): Promise<void> {
-    await this.#lease.assertCurrentWriter();
-    await this.#hit(`before:${label}-rename`, kind, transactionToken, source);
+    await this.lease.assertCurrentWriter();
+    await this.hit(`before:${label}-rename`, kind, transactionToken, source);
     await renameWithWindowsRetry(source, destination);
-    await this.#hit(`after:${label}-rename`, kind, transactionToken, destination);
+    await this.hit(`after:${label}-rename`, kind, transactionToken, destination);
   }
 
-  async #removeTree(
+  private async removeTree(
     target: string,
     kind: TransactionKind,
     transactionToken: string,
     ownershipRoot: string,
   ): Promise<void> {
-    await this.#lease.assertCurrentWriter();
+    await this.lease.assertCurrentWriter();
     const [canonicalTarget, canonicalBoundary] = await Promise.all([
       realpath(target),
-      realpath(this.#boundaryFor(kind, target)),
+      realpath(this.boundaryFor(kind, target)),
     ]);
     assertContained(canonicalBoundary, canonicalTarget);
     if (canonicalTarget !== (await realpath(ownershipRoot))) {
@@ -1071,10 +1061,10 @@ export class DirectoryTransactions {
         "Transaction cleanup target did not match its owner path.",
       );
     }
-    await this.#removeDirectoryContents(target, kind, transactionToken);
+    await this.removeDirectoryContents(target, kind, transactionToken);
   }
 
-  async #removeDirectoryContents(
+  private async removeDirectoryContents(
     directory: string,
     kind: TransactionKind,
     transactionToken: string,
@@ -1090,7 +1080,7 @@ export class DirectoryTransactions {
         );
       }
       if (entry.isDirectory()) {
-        await this.#removeDirectoryContents(path, kind, transactionToken);
+        await this.removeDirectoryContents(path, kind, transactionToken);
         continue;
       }
       if (!entry.isFile()) {
@@ -1099,62 +1089,62 @@ export class DirectoryTransactions {
           `Transaction cleanup refused a non-file entry: ${path}`,
         );
       }
-      await this.#hit("before:file-delete", kind, transactionToken, path);
+      await this.hit("before:file-delete", kind, transactionToken, path);
       await unlink(path);
-      await this.#hit("after:file-delete", kind, transactionToken, path);
+      await this.hit("after:file-delete", kind, transactionToken, path);
     }
-    await this.#hit("before:directory-delete", kind, transactionToken, directory);
+    await this.hit("before:directory-delete", kind, transactionToken, directory);
     await rmdir(directory);
-    await this.#hit("after:directory-delete", kind, transactionToken, directory);
+    await this.hit("after:directory-delete", kind, transactionToken, directory);
   }
 
-  #boundaryFor(kind: TransactionKind, target: string): string {
-    if (target.startsWith(join(this.#reforceRoot, "transactions")) || kind === "generated") {
-      return this.#reforceRoot;
+  private boundaryFor(kind: TransactionKind, target: string): string {
+    if (target.startsWith(join(this.reforceRoot, "transactions")) || kind === "generated") {
+      return this.reforceRoot;
     }
-    return this.#projectRoot;
+    return this.projectRoot;
   }
 
-  #paths(kind: TransactionKind, transactionToken: string): TransactionPaths {
+  private paths(kind: TransactionKind, transactionToken: string): TransactionPaths {
     if (!/^[A-Za-z0-9-]+$/u.test(transactionToken)) {
       throw new DirectoryTransactionError(kind, "Transaction token has an invalid shape.");
     }
-    const transactionRoot = this.#transactionRoot(kind);
+    const transactionRoot = this.transactionRoot(kind);
     const journalDirectory = join(transactionRoot, transactionToken);
     if (kind === "generated") {
       return {
-        active: join(this.#reforceRoot, "generated"),
-        staging: join(this.#reforceRoot, `generated.staging-${transactionToken}`),
-        backup: join(this.#reforceRoot, `generated.backup-${transactionToken}`),
+        active: join(this.reforceRoot, "generated"),
+        staging: join(this.reforceRoot, `generated.staging-${transactionToken}`),
+        backup: join(this.reforceRoot, `generated.backup-${transactionToken}`),
         transactionRoot,
         journalDirectory,
         journalFile: join(journalDirectory, "journal.json"),
       };
     }
     return {
-      active: join(this.#projectRoot, "dist"),
-      staging: join(this.#projectRoot, `dist.staging-${transactionToken}`),
-      backup: join(this.#projectRoot, `dist.backup-${transactionToken}`),
+      active: join(this.projectRoot, "dist"),
+      staging: join(this.projectRoot, `dist.staging-${transactionToken}`),
+      backup: join(this.projectRoot, `dist.backup-${transactionToken}`),
       transactionRoot,
       journalDirectory,
       journalFile: join(journalDirectory, "journal.json"),
     };
   }
 
-  async #hit(
+  private async hit(
     point: string,
     kind: TransactionKind,
     transactionToken: string,
     path?: string,
   ): Promise<void> {
-    await this.#faultInjector?.(point, {
+    await this.faultInjector?.(point, {
       kind,
       transactionToken,
       ...(path === undefined ? {} : { path }),
     });
   }
 
-  #transactionRoot(kind: TransactionKind): string {
-    return kind === "generated" ? this.#generatedTransactionRoot : this.#distTransactionRoot;
+  private transactionRoot(kind: TransactionKind): string {
+    return kind === "generated" ? this.generatedTransactionRoot : this.distTransactionRoot;
   }
 }
