@@ -1,20 +1,11 @@
-export { createCompiler } from "./create-compiler";
 export type {
-  CompileFailure,
   CompileRequest,
   CompileResult,
-  Compiler,
   CompilerDiagnostic,
   CompilerDiagnosticCode,
-  CompilerWatchInputs,
-  CompileSuccess,
-  DiagnosticCause,
-  DiagnosticRelatedInformation,
   GeneratedFile,
-  GeneratedFilePath,
   ProjectResolutionResult,
-  ResolvedApplicationProject,
-  ResolveProjectFailure,
   ResolveProjectRequest,
-  ResolveProjectSuccess,
-} from "./types";
+} from "./api";
+
+export { createCompiler } from "./create-compiler";

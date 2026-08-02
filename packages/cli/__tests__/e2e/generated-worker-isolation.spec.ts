@@ -3,7 +3,6 @@ import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCompiler, type GeneratedFile } from "@reforce/compiler";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   copyFixtureTree,
   createTemporaryProject,
@@ -76,10 +75,7 @@ beforeAll(async () => {
   if (resolution.status === "failure") {
     throw new Error(JSON.stringify(resolution.diagnostics));
   }
-  const compilation = await compiler.compile({
-    project: resolution.project,
-    frontend: yukuFrontend,
-  });
+  const compilation = await compiler.compile({ project: resolution.project });
   if (compilation.status === "failure") {
     throw new Error(JSON.stringify(compilation.diagnostics));
   }

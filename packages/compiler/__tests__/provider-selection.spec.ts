@@ -1,18 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import {
   copyFixtureTree,
   createTemporaryProject,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import {
-  type CompileResult,
-  type CompileSuccess,
-  createCompiler,
-  type GeneratedFilePath,
-} from "../src/index";
+import { type CompileResult, createCompiler, type GeneratedFile } from "../src/index";
+
+type CompileSuccess = Extract<CompileResult, { readonly status: "success" }>;
+type GeneratedFilePath = GeneratedFile["path"];
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const temporaryProjects: TemporaryProject[] = [];
@@ -38,7 +35,7 @@ async function compileProject(project: TemporaryProject): Promise<CompileResult>
   if (resolution.status === "failure") {
     throw new Error(JSON.stringify(resolution.diagnostics));
   }
-  return compiler.compile({ project: resolution.project, frontend: yukuFrontend });
+  return compiler.compile({ project: resolution.project });
 }
 
 async function compileSource(source: string): Promise<CompileResult> {
@@ -245,5 +242,28 @@ describe("provider selection", () => {
     ]);
     expect(error?.related.every((item) => item.sourceSpan !== undefined)).toBe(true);
     expect(result.diagnostics.map((item) => item.code)).toEqual(["DUPLICATE_BEAN_QUALIFIER"]);
+  });
+
+  test("an Injectable class wins over a Primary factory for its concrete type", async () => {
+    const result = await compileSource(
+      [
+        'import { defineBean, Injectable } from "@reforce/context";',
+        "@Injectable() export class Concrete {}",
+        "export const concreteFactory = defineBean<Concrete>({",
+        "  create: () => new Concrete(),",
+        "  primary: true,",
+        "});",
+        "@Injectable()",
+        "export class Consumer { constructor(readonly dependency: Concrete) {} }",
+        "",
+      ].join("\n"),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    const targetId = dependencyTarget(result, "src/application.ts#Consumer", 0);
+
+    expect(targetId).toBe("src/application.ts#Concrete");
   });
 });

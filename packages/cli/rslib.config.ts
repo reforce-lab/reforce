@@ -29,7 +29,7 @@ export default defineConfig({
   output: {
     autoExternal: {
       dependencies: true,
-      exclude: [/^@reforce\//u],
+      exclude: ["@reforce/context"],
     },
     cleanDistPath: true,
     distPath: { js: "", jsAsync: "", root: "dist" },

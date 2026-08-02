@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createCompiler } from "@reforce/compiler";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { DevCompilerGate } from "../../src/dev-compiler-gate";
 import { startDevWatchBuild } from "../../src/dev-watch-build";
@@ -72,7 +71,6 @@ export class ApplicationService {}
   });
   const gate = new DevCompilerGate({
     compiler,
-    frontend: yukuFrontend,
     projectDirectory: project.projectRoot,
     project: resolution.project,
     initialWatchInputs: resolution.watchInputs,
@@ -222,7 +220,6 @@ export class ApplicationService {}
   const transactions = await DirectoryTransactions.create({ projectRoot, lease });
   const gate = new DevCompilerGate({
     compiler,
-    frontend: yukuFrontend,
     projectDirectory: projectRoot,
     project: resolution.project,
     initialWatchInputs: resolution.watchInputs,

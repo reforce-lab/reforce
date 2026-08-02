@@ -4,8 +4,6 @@ node_modules/
 # build output
 dist/
 .reforce/
-/packages/compiler-babel/benchmark-results/
-/packages/compiler-babel/.rslib-tooling/
 *.tsbuildinfo
 
 # turbo

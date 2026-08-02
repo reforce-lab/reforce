@@ -1,10 +1,6 @@
 import { resolve } from "node:path";
-import {
-  type CompilerDiagnostic,
-  createCompiler,
-  type ResolvedApplicationProject,
-} from "@reforce/compiler";
-import { yukuFrontend } from "@reforce/compiler-yuku";
+import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
+import type { Compiler, ResolvedProject } from "./compiler-types";
 import { DirectoryTransactionError, DirectoryTransactions } from "./directory-transaction";
 import { buildProductionDist } from "./production-build";
 import { ProjectBusyError, ProjectLease } from "./project-lease";
@@ -25,8 +21,6 @@ const defaultDependencies: BuildCommandDependencies = {
   releaseLease: (lease) => lease.release(),
 };
 
-type Compiler = ReturnType<typeof createCompiler>;
-
 function reportCompilerDiagnostics(
   reporter: Reporter,
   phase: "project" | "compiler",
@@ -39,7 +33,7 @@ function reportCompilerDiagnostics(
 
 async function buildResolvedProject(input: {
   readonly compiler: Compiler;
-  readonly project: ResolvedApplicationProject;
+  readonly project: ResolvedProject;
   readonly lease: ProjectLease;
   readonly reporter: Reporter;
 }): Promise<0 | 1> {
@@ -48,10 +42,7 @@ async function buildResolvedProject(input: {
     lease: input.lease,
   });
   await transactions.recover();
-  const compilation = await input.compiler.compile({
-    project: input.project,
-    frontend: yukuFrontend,
-  });
+  const compilation = await input.compiler.compile({ project: input.project });
   if (compilation.status === "failure") {
     reportCompilerDiagnostics(input.reporter, "compiler", compilation.diagnostics);
     return 1;

@@ -1,6 +1,5 @@
 import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
-import { yukuFrontend } from "@reforce/compiler-yuku";
 import { requireBunExecutable } from "./bun-runtime";
 import { spawnDevChild } from "./dev-child-process";
 import type { DevChildSupervisor } from "./dev-child-supervisor";
@@ -225,7 +224,6 @@ export async function runDevCommand(
     await transactions.recover();
     const gate = new DevCompilerGate({
       compiler,
-      frontend: yukuFrontend,
       projectDirectory,
       ...(options.tsconfigPath === undefined ? {} : { tsconfigPath: options.tsconfigPath }),
       project: resolution.project,
