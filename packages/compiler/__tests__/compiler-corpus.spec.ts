@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, readdir, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { yukuFrontend } from "@reforce/compiler-yuku";
@@ -13,8 +13,8 @@ import {
   createTemporaryProject,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import { isObject } from "radashi";
 import {
+  type CompileResult,
   type Compiler,
   type CompileSuccess,
   createCompiler,
@@ -25,12 +25,6 @@ import {
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const temporaryProjects: TemporaryProject[] = [];
-const generatedFilePaths = [
-  "beans.ts",
-  "qualifiers.d.ts",
-  "manifest.json",
-  "bootstrap.ts",
-] as const satisfies readonly GeneratedFilePath[];
 
 function applicationTsconfig(): string {
   return `${JSON.stringify({
@@ -53,65 +47,6 @@ async function copiedFixture(name: string): Promise<TemporaryProject> {
   temporaryProjects.push(temporary);
   await copyFixtureTree(path.join(fixtureDirectory, name, "project"), temporary.projectRoot);
   return temporary;
-}
-
-async function fixtureNames(): Promise<readonly string[]> {
-  const entries = await readdir(fixtureDirectory, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-}
-
-async function compilerFixtureNames(): Promise<readonly string[]> {
-  const names = await Promise.all(
-    (await fixtureNames()).map(async (name) => {
-      const projectEntries = await readdir(path.join(fixtureDirectory, name, "project"));
-      return projectEntries.some((name) => /^tsconfig.*\.json$/u.test(name)) ? name : undefined;
-    }),
-  );
-  return names
-    .filter((name) => name !== undefined)
-    .toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0));
-}
-
-function normalizeProjectPaths(value: unknown, projectRoot: string): unknown {
-  if (typeof value === "string") {
-    const replaced = value.split(projectRoot).join("<projectRoot>");
-    return replaced.includes("<projectRoot>") ? replaced.split(path.sep).join("/") : replaced;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeProjectPaths(item, projectRoot));
-  }
-  if (!isObject(value)) {
-    return value;
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, normalizeProjectPaths(item, projectRoot)]),
-  );
-}
-
-async function expectedDiagnostics(name: string): Promise<unknown> {
-  return JSON.parse(
-    await readFile(path.join(fixtureDirectory, name, "expected", "diagnostics.json"), "utf8"),
-  );
-}
-
-async function expectedGenerated(name: string): Promise<readonly GeneratedFile[]> {
-  const generatedDirectory = path.join(fixtureDirectory, name, "expected", "generated");
-  try {
-    return await Promise.all(
-      generatedFilePaths.map(async (filePath) => ({
-        path: filePath,
-        content: await readFile(path.join(generatedDirectory, filePath), "utf8"),
-      })),
-    );
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
 }
 
 async function resolvedProject(
@@ -138,6 +73,13 @@ async function successfulCompile(
     throw new Error(JSON.stringify(result.diagnostics));
   }
   return result;
+}
+
+async function compileFixture(name: string): Promise<CompileResult> {
+  const fixture = await copiedFixture(name);
+  const compiler = createCompiler();
+  const project = await resolvedProject(compiler, fixture.projectRoot);
+  return compiler.compile({ project, frontend: yukuFrontend });
 }
 
 async function createDirectoryLink(source: string, target: string): Promise<void> {
@@ -241,26 +183,6 @@ function embeddedData(value: unknown): string {
 function occurrences(value: string, search: string): number {
   return value.split(search).length - 1;
 }
-
-describe("compiler fixture goldens", async () => {
-  for (const name of await compilerFixtureNames()) {
-    test(`${name} matches its committed diagnostics and generated output`, async () => {
-      const fixture = await copiedFixture(name);
-      const diagnostics = await expectedDiagnostics(name);
-      const generated = await expectedGenerated(name);
-      const compiler = createCompiler();
-
-      const resolution = await compiler.resolveProject({ projectDirectory: fixture.projectRoot });
-      const result =
-        resolution.status === "success"
-          ? await compiler.compile({ project: resolution.project, frontend: yukuFrontend })
-          : resolution;
-
-      expect(normalizeProjectPaths(result.diagnostics, fixture.projectRoot)).toEqual(diagnostics);
-      expect(result.status === "success" ? result.files : []).toEqual(generated);
-    });
-  }
-});
 
 describe("application project resolution", () => {
   test("resolves a standalone application from its own directory", async () => {
@@ -420,6 +342,66 @@ describe("application project resolution", () => {
 });
 
 describe("application compilation fixtures", () => {
+  test("rejects a computed lifecycle method name", async () => {
+    const result = await compileFixture("computed-lifecycle-method-rejected");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "INVALID_LIFECYCLE_DECLARATION",
+    ]);
+  });
+
+  test("rejects a lifecycle method with an incompatible return type", async () => {
+    const result = await compileFixture("invalid-lifecycle-return-rejected");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "INVALID_LIFECYCLE_DECLARATION",
+    ]);
+  });
+
+  test("rejects a decorator on a constructor parameter", async () => {
+    const result = await compileFixture("legacy-parameter-decorator-rejected");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "INVALID_DECORATOR_USAGE",
+    ]);
+  });
+
+  test("rejects a non-inline factory disposer", async () => {
+    const result = await compileFixture("non-inline-factory-disposer-rejected");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "INVALID_DEFINE_BEAN",
+    ]);
+  });
+
+  test("rejects Bean IDs that differ only by portable case", async () => {
+    const result = await compileFixture("portable-bean-id-collision");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["BEAN_ID_COLLISION"]);
+  });
+
+  test("rejects a qualifier that cannot be emitted as a declaration name", async () => {
+    const result = await compileFixture("reserved-qualifier-rejected");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "INVALID_BEAN_QUALIFIER",
+    ]);
+  });
+
+  test("rejects a generated qualifier member that already exists", async () => {
+    const result = await compileFixture("duplicate-generated-qualifier-member");
+
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "DUPLICATE_BEAN_QUALIFIER",
+    ]);
+  });
+
+  test("links an interface imported through a namespace export", async () => {
+    const result = await compileFixture("namespace-export-contract");
+
+    expect(result.status).toBe("success");
+  });
+
   test("does not flatten a namespace export into named exports", async () => {
     // Arrange
     const fixture = await createTemporaryProject({

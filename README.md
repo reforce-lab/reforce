@@ -19,6 +19,7 @@ Reforce 是一个**长期项目**，目标是把 Spring 生态中被验证过的
 | CLI runtime / production smoke | Node.js | 24.12.0 |
 | 任务编排 / 缓存 | Turborepo | 2.10.8 |
 | 语言 | TypeScript（Go 原生编译器，2026-07-08 GA） | 7.0.2 |
+| Compiler frontend | Yuku Parser | 0.8.3 |
 | 测试 | Bun test（内置 runner，与运行时同引擎） | 随 bun 1.3.14 |
 | Lint / Format | Biome | 2.5.6 |
 | 提交规范 | commitlint（Conventional Commits） | 21.2.1 |
@@ -33,10 +34,9 @@ reforce/
 ├── packages/
 │   ├── cli/               # @reforce/cli —— 命令行工具
 │   ├── compiler/          # @reforce/compiler —— 项目解析、链接、分析与生成
-│   │   └── fixtures/      # 两套 frontend 与完整 Compiler 共用的 conformance corpus
+│   │   └── fixtures/      # Compiler 跨文件、项目解析与生成行为 fixtures
 │   ├── compiler-spi/      # @reforce/compiler-spi —— frontend Source IR 合同
-│   ├── compiler-babel/    # Babel frontend 与 conformance / benchmark
-│   ├── compiler-yuku/     # 默认 Yuku frontend
+│   ├── compiler-yuku/     # 唯一 Yuku frontend 与 Source IR 行为测试
 │   ├── context/           # @reforce/context —— IoC 容器 / ApplicationContext
 │   ├── testing/           # @reforce/testing —— 框架测试支持
 │   └── web/               # @reforce/web —— Web 抽象
@@ -50,6 +50,9 @@ reforce/
 ```
 
 > 文档不进代码仓库：决策记录在 [ADR issues](https://github.com/reforce-lab/reforce/issues?q=label%3A%22type%3A+adr%22)，长期知识在 [Wiki](https://github.com/reforce-lab/reforce/wiki)。
+
+Compiler 只使用 Yuku frontend，不提供 parser 选择或 fallback；选型依据与维护边界见
+[ADR 0003](https://github.com/reforce-lab/reforce/issues/13)。Parser 只参与编译，应用的 production artifact 不包含 Compiler 或 parser。
 
 ## 快速开始
 

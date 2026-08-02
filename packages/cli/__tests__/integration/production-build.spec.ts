@@ -76,7 +76,7 @@ describe("production application build", () => {
     ]);
   });
 
-  test("excludes compiler frontends from application output", async () => {
+  test("excludes build-time compiler dependencies from application output", async () => {
     const fixture = await arrangeApplicationBuild();
     temporaryProject = fixture.temporaryProject;
 
@@ -89,7 +89,6 @@ describe("production application build", () => {
       await Promise.all(files.map((file) => readFile(join(fixture.stagingDirectory, file), "utf8")))
     ).join("\n");
     expect(output).not.toContain("@reforce/compiler");
-    expect(output).not.toContain("@babel/parser");
     expect(output).not.toContain("createCompiler");
     expect(output).not.toContain("PARSER_SYNTAX_ERROR");
     expect(output).not.toContain("yuku-parser");

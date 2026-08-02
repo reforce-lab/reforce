@@ -24,7 +24,6 @@
     "test:e2e": "bun --conditions=development test __tests__/e2e",
     "test:e2e:evidence": "bun --conditions=development test __tests__/e2e --reporter=junit --reporter-outfile=e2e-junit.xml",
     "test:recovery": "bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts",
-    "test:recovery:evidence": "bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts --reporter=junit --reporter-outfile=recovery-junit.xml",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
