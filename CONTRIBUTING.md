@@ -40,7 +40,9 @@ bun run test
 bun run build
 ```
 
-CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 24.12.0 与 Bun 1.3.14 重复执行 frozen install、以上门禁、真实 CLI/child/HMR/lease/transaction recovery，以及同一 production artifact 的 Node/Bun smoke。平台相关行为必须由对应 runner 的真实进程证据支持。
+CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 24.12.0 与 Bun 1.3.14 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery，以及同一 production artifact 的 Node/Bun smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实进程证据支持。
+
+Compiler 只维护 Yuku frontend。Adapter 测试直接断言 Source IR、span 与 parser diagnostic 的相关字段；完整项目行为由 Compiler 集成测试和生成物执行测试负责，不提交整棵 Source IR 或 generated output 快照。
 
 ## 运行一个应用
 

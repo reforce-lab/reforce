@@ -1,5 +1,0 @@
-{
-  "file": "line-terminators.ts",
-  "sourceKind": "ts",
-  "sourceText": "export class A {}\r\nexport class B {}\rexport class C {}\nexport class D {} export class E {} export class F {}"
-}

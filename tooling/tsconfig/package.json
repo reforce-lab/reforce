@@ -8,14 +8,9 @@
   },
   "scripts": {
     "check": "node_modules/.bin/biome check .",
-    "check:write": "node_modules/.bin/biome check --write .",
-    "test": "bun test effective-config.spec.ts",
-    "typecheck": "tsc"
+    "check:write": "node_modules/.bin/biome check --write ."
   },
   "devDependencies": {
-    "@biomejs/biome": "catalog:",
-    "@types/bun": "catalog:",
-    "radashi": "^12.9.1",
-    "typescript": "catalog:"
+    "@biomejs/biome": "catalog:"
   }
 }

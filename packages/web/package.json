@@ -19,7 +19,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc",
-    "test": "bun test",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },

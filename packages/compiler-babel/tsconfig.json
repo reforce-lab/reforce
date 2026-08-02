@@ -1,4 +1,0 @@
-{
-  "extends": "@reforce/tooling-tsconfig/base.json",
-  "include": ["src", "tooling", "__tests__"]
-}
