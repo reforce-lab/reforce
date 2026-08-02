@@ -40,7 +40,7 @@ bun run build --filter=<pkg>
 - 提交前先对相关 package 运行 `check:write` 自动修复，再确保 `check` / `typecheck` / `test` / `build` 全部通过；不必每次改动都验证全仓库。
 - 提交信息必须符合 conventional 规范，scope不得为空，否则 commit-msg hook 会拒绝。
 - 涉及 Issue、分支、提交或 PR 时，遵循 `CONTRIBUTING.md` 的 Issue 前置、分支命名和 PR 关联规则。
-- 编码前运行 `git rev-parse --git-dir --git-common-dir` 判断工作区：
+- 产出文件变更（修改/新增/删除）前运行 `git rev-parse --git-dir --git-common-dir` 判断工作区：
   - 两者指向不同路径：当前已是 Git/Codex/Claude 管理的 worktree，直接使用，禁止嵌套创建。
   - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在 `.worktrees` 下新建
     worktree。
@@ -62,7 +62,7 @@ bun run build --filter=<pkg>
 ## 沟通与边界
 
 - 需求澄清阶段：只围绕用户提出的目标提问和讨论，不主动扩展到相邻需求；发现需求矛盾或更优路径时，最多提一次，用户不采纳就按原意执行。
-- 方案确认后按约定范围实现，不顺手扩展；低风险细节按现有惯例处理，无惯例则选最小改动并在交付中说明，不反复询问。若新事实影响公开 API、数据兼容、安全边界或使方案失效，停止实现并交由 owner 决策。
+- 方案确认后按约定范围实现，不顺手扩展；低风险细节按现有惯例处理，无惯例则选最小改动并在交付中说明，不反复询问。
 - 不要假设owner知道全部真相、背景、事实、上下文。
 - 不要在回复末尾附加"下一步建议"式的推销尾巴；任务完成就结束，除非不做某件事会导致数据丢失或返工。
 - 与Owner讨论方案时避免堆砌术语：专业词汇首次出现时，用一句当前语境下的具体操作解释它（如"幂等 = 重复请求用 requestId
