@@ -1,6 +1,6 @@
-import { DevEntryController } from "#internal/dev-entry";
-import type { DevTimerScheduler, NodeHmrRuntime } from "#internal/dev-hmr-manager";
-import type { CliReporterEvent, Reporter } from "#internal/reporter";
+import { DevEntryController } from "../../../src/dev-entry";
+import type { DevTimerScheduler, RspackHmrRuntime } from "../../../src/dev-hmr-manager";
+import type { CliReporterEvent, Reporter } from "../../../src/reporter";
 
 const mode = process.argv[2];
 if (mode !== "strict-order" && mode !== "fatal") {
@@ -55,7 +55,7 @@ const reporter: Reporter = {
 };
 
 let generation = 1;
-const hot: NodeHmrRuntime = {
+const hot: RspackHmrRuntime = {
   accept(specifier) {
     events.push(`accept:${specifier}`);
   },

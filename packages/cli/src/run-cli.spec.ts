@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createTemporaryProject } from "@reforce/tooling-testing";
-import type { CliReporterEvent, Reporter } from "#internal/reporter";
-import { runCli } from "#internal/run-cli";
+import type { CliReporterEvent, Reporter } from "./reporter";
+import { runCli } from "./run-cli";
 
 class FirstFlushFailureReporter implements Reporter {
   readonly events: CliReporterEvent[] = [];

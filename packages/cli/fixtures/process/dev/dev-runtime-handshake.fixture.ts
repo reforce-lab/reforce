@@ -1,5 +1,5 @@
-import type { NodeHmrRuntime } from "#internal/dev-hmr-manager";
-import { runDevelopmentApplication } from "#internal/dev-runtime";
+import type { RspackHmrRuntime } from "../../../src/dev-hmr-manager";
+import { runDevelopmentApplication } from "../../../src/dev-runtime";
 
 const onMessage = (message: unknown) => {
   if (
@@ -26,7 +26,7 @@ for (const signal of signalNames) {
   process.on(signal, onSignal);
 }
 
-const hot: NodeHmrRuntime = {
+const hot: RspackHmrRuntime = {
   accept() {},
   async check() {
     return null;

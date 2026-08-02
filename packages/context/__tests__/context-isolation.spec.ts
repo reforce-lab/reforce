@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { classBean, createApplicationContext, factoryBean } from "#internal/generated-runtime";
-import { ApplicationContextStateError, defineBean } from "#internal/index";
-import { testDefinition, testDependency, testSource } from "#test-support/test-definition";
+import { classBean, createApplicationContext, factoryBean } from "../src/generated-runtime";
+import { ApplicationContextStateError, defineBean } from "../src/index";
+import { testDefinition, testDependency, testSource } from "../test-support/test-definition";
 
 describe("context isolation", () => {
   test("two contexts create and clean independent instance state", async () => {

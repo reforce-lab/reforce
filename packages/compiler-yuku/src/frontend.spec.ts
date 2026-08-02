@@ -5,7 +5,7 @@ import type {
   FrontendSourceKind,
   SourceUnit,
 } from "@reforce/compiler-spi";
-import { yukuFrontend } from "#internal/frontend";
+import { yukuFrontend } from "./frontend";
 
 function canonicalFileId(filename: string): CanonicalFileId {
   return filename as CanonicalFileId; // The adapter receives this opaque identity from Compiler in production.

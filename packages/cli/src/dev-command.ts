@@ -1,17 +1,18 @@
 import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
 import { yukuFrontend } from "@reforce/compiler-yuku";
-import { spawnDevChild } from "#internal/dev-child-process";
-import type { DevChildSupervisor } from "#internal/dev-child-supervisor";
-import { DevChildSupervisor as ChildSupervisor } from "#internal/dev-child-supervisor";
-import { DevCompilerGate } from "#internal/dev-compiler-gate";
-import { writerLeaseTokenEnvironmentVariable } from "#internal/dev-ipc";
-import { startDevWatchBuild } from "#internal/dev-watch-build";
-import type { DevCompilation, DevWatchCoordinator } from "#internal/dev-watch-coordinator";
-import { DevWatchCoordinator as WatchCoordinator } from "#internal/dev-watch-coordinator";
-import { DirectoryTransactions } from "#internal/directory-transaction";
-import { ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "#internal/reporter";
+import { requireBunExecutable } from "./bun-runtime";
+import { spawnDevChild } from "./dev-child-process";
+import type { DevChildSupervisor } from "./dev-child-supervisor";
+import { DevChildSupervisor as ChildSupervisor } from "./dev-child-supervisor";
+import { DevCompilerGate } from "./dev-compiler-gate";
+import { writerLeaseTokenEnvironmentVariable } from "./dev-ipc";
+import { startDevWatchBuild } from "./dev-watch-build";
+import type { DevCompilation, DevWatchCoordinator } from "./dev-watch-coordinator";
+import { DevWatchCoordinator as WatchCoordinator } from "./dev-watch-coordinator";
+import { DirectoryTransactions } from "./directory-transaction";
+import { ProjectBusyError, ProjectLease } from "./project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
 
 export interface DevWatchBuild {
   close(): Promise<void>;
@@ -141,10 +142,6 @@ function installParentSignalHandlers(onSignal: (signal: NodeJS.Signals) => void)
   };
 }
 
-function nodeExecutable(): string {
-  return process.release.name === "node" ? process.execPath : "node";
-}
-
 function reportCommandFailure(reporter: Reporter, error: unknown): void {
   const busy = error instanceof ProjectBusyError;
   reporter.report(
@@ -255,7 +252,7 @@ export async function runDevCommand(
         await spawnDevChild({
           entryPath: resolve(resolution.project.projectRoot, ".reforce", "dev", "main.mjs"),
           cwd: resolution.project.projectRoot,
-          nodeExecutable: nodeExecutable(),
+          bunExecutable: requireBunExecutable(),
           env: { [writerLeaseTokenEnvironmentVariable]: writerLease.leaseToken },
           waitForReady: true,
           leaseParticipant: {

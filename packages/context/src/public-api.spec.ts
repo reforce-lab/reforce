@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type {
-  GeneratedClassHooks,
-  GeneratedFactoryRegistration,
-} from "#internal/generated-contracts";
-import { factoryBean } from "#internal/generated-runtime";
-import { defineBean, Injectable, Primary, Qualifier, ReforceRuntimeError } from "#internal/index";
+import type { GeneratedClassHooks, GeneratedFactoryRegistration } from "./generated-contracts";
+import { factoryBean } from "./generated-runtime";
+import { defineBean, Injectable, Primary, Qualifier, ReforceRuntimeError } from "./index";
 
 interface BaseResource {
   readonly base: true;

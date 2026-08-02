@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Writable } from "node:stream";
-import { PlainTextReporter, type Reporter } from "#internal/reporter";
+import { PlainTextReporter, type Reporter } from "./reporter";
 
 class RecordingWritable extends Writable {
   readonly chunks: string[] = [];

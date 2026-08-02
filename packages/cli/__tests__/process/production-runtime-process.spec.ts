@@ -2,16 +2,19 @@ import { afterEach, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { resolveNodeExecutable } from "@reforce/tooling-testing";
-import { type LeaseParticipant, probeLeaseEndpoint } from "#internal/lease-endpoint";
+import { resolveBunExecutable } from "@reforce/tooling-testing";
+import { type LeaseParticipant, probeLeaseEndpoint } from "../../src/lease-endpoint";
 
 const fixturePath = fileURLToPath(
-  new URL("../../fixtures/process/production/production-runtime-order.fixture.ts", import.meta.url),
+  new URL(
+    "../../fixtures/dist/process/production/production-runtime-order.fixture.js",
+    import.meta.url,
+  ),
 );
 const windowsSignalFixturePath = fileURLToPath(
-  new URL("../../fixtures/process/windows-signal.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/windows-signal.fixture.js", import.meta.url),
 );
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 const subprocesses: Array<{
   readonly child: ChildProcess;
   readonly completion: Promise<number | null>;
@@ -117,7 +120,7 @@ function spawnObservedProductionFixture(
   const barriers = new Map<string, () => void>();
   const counts = new Map<string, number>();
   const child = spawn(
-    nodeExecutable,
+    bunExecutable,
     [
       "--conditions=development",
       ...(useWindowsSignalHarness ? [windowsSignalFixturePath, fixturePath] : [fixturePath]),
@@ -204,7 +207,7 @@ test("production keeps its lease participant live through application cleanup an
   const shutdownAcknowledged = Promise.withResolvers<void>();
   const returned = Promise.withResolvers<void>();
   const events: string[] = [];
-  const child = spawn(nodeExecutable, ["--conditions=development", fixturePath], {
+  const child = spawn(bunExecutable, ["--conditions=development", fixturePath], {
     env: { ...process.env, REFORCE_LEASE_TOKEN: leaseToken },
     shell: false,
     stdio: ["ignore", "pipe", "pipe", "ipc"],

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
-import { createExecutionPlans } from "#internal/analysis/graph-plan";
-import type { DependencyModel } from "#internal/analysis/model";
+import { createExecutionPlans } from "./graph-plan";
+import type { DependencyModel } from "./model";
 
 type TestDependency = Pick<DependencyModel, "mode" | "parameterIndex" | "targetId">;
 

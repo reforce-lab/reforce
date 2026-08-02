@@ -13,13 +13,9 @@ import {
   DirectoryTransactions,
   type GeneratedTransactionFile,
   type TransactionKind,
-} from "#internal/directory-transaction";
-import { ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import {
-  type IpcProcessOutcome,
-  type NodeIpcFixture,
-  spawnNodeIpcFixture,
-} from "#test/node-ipc-fixture";
+} from "../../src/directory-transaction";
+import { ProjectBusyError, ProjectLease } from "../../src/project-lease";
+import { type BunIpcFixture, type IpcProcessOutcome, spawnBunIpcFixture } from "./bun-ipc-fixture";
 
 const leases: ProjectLease[] = [];
 const projects: TemporaryProject[] = [];
@@ -237,7 +233,7 @@ async function activeDistGeneration(projectRoot: string): Promise<string> {
 }
 
 async function waitForFixtureExit(
-  fixture: NodeIpcFixture,
+  fixture: BunIpcFixture,
   timeoutMessage: string,
 ): Promise<IpcProcessOutcome> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -254,7 +250,7 @@ async function waitForFixtureExit(
   }
 }
 
-function detachFixture(fixture: NodeIpcFixture): readonly unknown[] {
+function detachFixture(fixture: BunIpcFixture): readonly unknown[] {
   const errors: unknown[] = [];
   try {
     if (fixture.child.connected) {
@@ -290,7 +286,7 @@ function parseReadyLeaseToken(message: unknown): string | undefined {
 }
 
 function assertTransactionCrashOutcome(
-  holder: NodeIpcFixture,
+  holder: BunIpcFixture,
   result: IpcProcessOutcome,
   fault: { readonly faultPoint: string } | { readonly faultIndex: number },
   transactionKind: TransactionKind,
@@ -312,7 +308,7 @@ function assertTransactionCrashOutcome(
   );
 }
 
-async function cleanupTransactionHolder(holder: NodeIpcFixture): Promise<void> {
+async function cleanupTransactionHolder(holder: BunIpcFixture): Promise<void> {
   const errors: unknown[] = [];
   try {
     if (holder.child.exitCode === null && holder.child.signalCode === null) {
@@ -343,9 +339,9 @@ async function spawnTransactionCrash(
   expectedPoint?: string,
 ): Promise<string> {
   const fixturePath = fileURLToPath(
-    new URL("../../fixtures/process/lease/project-lease.fixture.ts", import.meta.url),
+    new URL("../../fixtures/dist/process/lease/project-lease.fixture.js", import.meta.url),
   );
-  const holder = spawnNodeIpcFixture(fixturePath, [projectRoot, "writer"]);
+  const holder = spawnBunIpcFixture(fixturePath, [projectRoot, "writer"]);
   try {
     const message = await holder.waitForMessage("Transaction holder did not publish readiness.");
     const leaseToken = parseReadyLeaseToken(message);

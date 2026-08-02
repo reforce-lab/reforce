@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createDevBuildId, type DevBuildAsset } from "#internal/dev-build-id";
+import { createDevBuildId, type DevBuildAsset } from "./dev-build-id";
 
 const encoder = new TextEncoder();
 

@@ -2,9 +2,9 @@ import { afterEach, expect, test } from "bun:test";
 import { symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { createChildLeaseParticipant } from "#internal/project-lease";
-import type { CliReporterEvent, Reporter } from "#internal/reporter";
-import { runStartCommand } from "#internal/start-command";
+import { createChildLeaseParticipant } from "../../src/project-lease";
+import type { CliReporterEvent, Reporter } from "../../src/reporter";
+import { runStartCommand } from "../../src/start-command";
 
 const projects: TemporaryProject[] = [];
 

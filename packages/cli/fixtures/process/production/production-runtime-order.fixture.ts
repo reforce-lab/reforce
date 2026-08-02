@@ -1,5 +1,5 @@
-import { runProductionApplication } from "#internal/production-runtime";
-import type { Reporter } from "#internal/reporter";
+import { runProductionApplication } from "../../../src/production-runtime";
+import type { Reporter } from "../../../src/reporter";
 
 const flushContinuation = Promise.withResolvers<void>();
 const onMessage = (message: unknown) => {

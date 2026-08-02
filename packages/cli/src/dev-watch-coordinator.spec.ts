@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { CompilerDiagnostic } from "@reforce/compiler";
-import { DevChildSupervisor, type ManagedDevChild } from "#internal/dev-child-supervisor";
-import { DevCommandController } from "#internal/dev-command";
-import { DevWatchCoordinator } from "#internal/dev-watch-coordinator";
-import type { CliReporterEvent, Reporter } from "#internal/reporter";
+import { DevChildSupervisor, type ManagedDevChild } from "./dev-child-supervisor";
+import { DevCommandController } from "./dev-command";
+import { DevWatchCoordinator } from "./dev-watch-coordinator";
+import type { CliReporterEvent, Reporter } from "./reporter";
 
 class RecordingReporter implements Reporter {
   readonly events: CliReporterEvent[] = [];

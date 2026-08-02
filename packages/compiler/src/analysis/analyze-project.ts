@@ -9,19 +9,19 @@ import type {
   SourceSpan,
   TypeNode,
 } from "@reforce/compiler-spi";
-import { createExecutionPlans } from "#internal/analysis/graph-plan";
+import { compareUtf16CodeUnits } from "../determinism";
+import { diagnostic } from "../diagnostics";
+import type { LinkedSymbol, LinkedType, Linker } from "../linking/module-graph";
+import type { ParsedSource } from "../project/source-files";
+import type { CompilerDiagnostic, DiagnosticRelatedInformation } from "../types";
+import { createExecutionPlans } from "./graph-plan";
 import {
   type ExecutionPlansModel,
   type ProviderModel,
   type QualifierModel,
   sourceReference,
-} from "#internal/analysis/model";
-import { validQualifierName } from "#internal/analysis/qualifier-name";
-import { compareUtf16CodeUnits } from "#internal/determinism";
-import { diagnostic } from "#internal/diagnostics";
-import type { LinkedSymbol, LinkedType, Linker } from "#internal/linking/module-graph";
-import type { ParsedSource } from "#internal/project/source-files";
-import type { CompilerDiagnostic, DiagnosticRelatedInformation } from "#internal/types";
+} from "./model";
+import { validQualifierName } from "./qualifier-name";
 
 interface PendingDependency {
   readonly index: number;

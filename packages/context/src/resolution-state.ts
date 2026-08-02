@@ -1,8 +1,8 @@
 import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
-} from "#internal/generated-contracts";
-import type { BeanClass, BeanDefinition, ContextState, Lazy } from "#internal/public-types";
+} from "./generated-contracts";
+import type { BeanClass, BeanDefinition, ContextState, Lazy } from "./public-types";
 
 export interface ConstructingRecord {
   readonly state: "constructing";

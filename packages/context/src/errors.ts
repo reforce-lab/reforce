@@ -1,4 +1,4 @@
-import type { ContextOperation, ContextState } from "#internal/public-types";
+import type { ContextOperation, ContextState } from "./public-types";
 
 export type RuntimeErrorCode =
   | "EARLY_BEAN_ACCESS"

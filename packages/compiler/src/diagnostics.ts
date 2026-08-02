@@ -1,11 +1,11 @@
 import type { SourceSpan } from "@reforce/compiler-spi";
-import { compareUtf16CodeUnits, stableStructuralKey } from "#internal/determinism";
+import { compareUtf16CodeUnits, stableStructuralKey } from "./determinism";
 import type {
   CompilerDiagnostic,
   CompilerDiagnosticCode,
   DiagnosticCause,
   DiagnosticRelatedInformation,
-} from "#internal/types";
+} from "./types";
 
 export interface DiagnosticInput {
   readonly code: CompilerDiagnosticCode;

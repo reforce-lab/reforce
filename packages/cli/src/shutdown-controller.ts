@@ -5,7 +5,7 @@ import {
   type CliFailurePhase,
   createFailureEvent,
   type Reporter,
-} from "#internal/reporter";
+} from "./reporter";
 
 export type ShutdownState = "bootstrapping" | "running" | "shutting-down" | "finished";
 

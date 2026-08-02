@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { isObject } from "radashi";
-import { compareUtf16CodeUnits } from "#internal/determinism";
-import { validateGeneratedManifestBytes } from "#internal/generated-manifest";
-import { ProjectBusyError, type ProjectLease } from "#internal/project-lease";
-import { renameWithWindowsRetry } from "#internal/windows-rename-retry";
+import { compareUtf16CodeUnits } from "./determinism";
+import { validateGeneratedManifestBytes } from "./generated-manifest";
+import { ProjectBusyError, type ProjectLease } from "./project-lease";
+import { renameWithWindowsRetry } from "./windows-rename-retry";
 
 export type TransactionKind = "generated" | "dist";
 export type TransactionState = "prepared" | "backup-published" | "active-published" | "verified";

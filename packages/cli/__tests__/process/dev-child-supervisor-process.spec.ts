@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { resolveNodeExecutable } from "@reforce/tooling-testing";
+import { resolveBunExecutable } from "@reforce/tooling-testing";
 import { execa } from "execa";
-import { DevChildSupervisor, type ManagedDevChild } from "#internal/dev-child-supervisor";
+import { DevChildSupervisor, type ManagedDevChild } from "../../src/dev-child-supervisor";
 
 const fixturePath = fileURLToPath(
-  new URL("../../fixtures/process/dev/dev-child-exit.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/dev/dev-child-exit.fixture.js", import.meta.url),
 );
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 
 async function waitUntil(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 10_000;
@@ -35,7 +35,7 @@ test("real child processes obey restart budget and never overlap", async () => {
       liveChildren += 1;
       maximumLiveChildren = Math.max(maximumLiveChildren, liveChildren);
       const subprocess = execa(
-        nodeExecutable,
+        bunExecutable,
         ["--conditions=development", fixturePath, String(exitCode)],
         { reject: false, shell: false },
       );

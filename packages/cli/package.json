@@ -6,24 +6,15 @@
   "bin": {
     "reforce": "./dist/reforce.js"
   },
-  "imports": {
-    "#internal/*": {
-      "types": "./src/*.ts",
-      "development": "./src/*.ts",
-      "default": "./dist/*.js"
-    },
-    "#test/*": {
-      "types": "./__tests__/recovery/*.ts",
-      "development": "./__tests__/recovery/*.ts"
-    }
-  },
   "scripts": {
-    "build": "bun --conditions=development src/build-cli.ts",
+    "build": "rslib build && bun tooling/mark-executable.ts",
     "typecheck": "tsc",
-    "test": "bun --conditions=development test --timeout 15000 src __tests__/commands __tests__/integration __tests__/process __tests__/recovery",
-    "test:e2e": "bun --conditions=development test __tests__/e2e",
-    "test:e2e:evidence": "bun --conditions=development test __tests__/e2e --reporter=junit --reporter-outfile=e2e-junit.xml",
-    "test:recovery": "bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts",
+    "test": "bun run test:fixtures && bun --conditions=development test --timeout 15000 src __tests__/commands __tests__/integration __tests__/process __tests__/recovery",
+    "test:e2e": "bun run test:fixtures && bun --conditions=development test __tests__/e2e",
+    "test:e2e:evidence": "bun run test:fixtures && bun --conditions=development test __tests__/e2e --reporter=junit --reporter-outfile=e2e-junit.xml",
+    "test:fixtures": "rslib build -c rslib.fixtures.config.ts",
+    "test:recovery": "bun run test:fixtures && bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts",
+    "test:recovery:evidence": "bun run test:fixtures && bun --conditions=development test __tests__/recovery/project-lease.spec.ts __tests__/recovery/directory-transaction.spec.ts --reporter=junit --reporter-outfile=recovery-junit.xml",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
@@ -34,9 +25,9 @@
     "@reforce/compiler-yuku": "workspace:*",
     "@reforce/context": "workspace:*",
     "@rsbuild/core": "^2.1.9",
+    "@swc/helpers": "catalog:",
     "commander": "^15.0.0",
     "enhanced-resolve": "^5.24.5",
-    "execa": "^10.0.1",
     "get-tsconfig": "^4.14.1",
     "json-stable-stringify": "^1.3.0",
     "lru-cache": "^11.5.2",
@@ -46,9 +37,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
     "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
+    "@rslib/core": "catalog:",
     "@types/bun": "catalog:",
+    "execa": "^10.0.1",
     "typescript": "catalog:"
   }
 }

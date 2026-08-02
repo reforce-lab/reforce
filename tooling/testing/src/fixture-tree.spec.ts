@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { copyFixtureTree, createTemporaryProject, readFixtureTree } from "#internal/fixture-tree";
+import { copyFixtureTree, createTemporaryProject, readFixtureTree } from "./fixture-tree";
 
 const cleanups: Array<() => Promise<void>> = [];
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { classBean, createApplicationContext } from "#internal/generated-runtime";
-import { InvalidGeneratedDefinitionError } from "#internal/index";
-import { testDefinition, testDependency, testSource } from "#test-support/test-definition";
+import { testDefinition, testDependency, testSource } from "../test-support/test-definition";
+import { classBean, createApplicationContext } from "./generated-runtime";
+import { InvalidGeneratedDefinitionError } from "./index";
 
 describe("generated definition validation", () => {
   test("a Bean ID must contain a relative path and direct export", () => {

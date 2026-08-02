@@ -1,6 +1,6 @@
 import type { SourceSpan } from "@reforce/compiler-spi";
-import type { LinkedSymbol } from "#internal/linking/module-graph";
-import type { ParsedSource } from "#internal/project/source-files";
+import type { LinkedSymbol } from "../linking/module-graph";
+import type { ParsedSource } from "../project/source-files";
 
 export interface GeneratedSourcePositionModel {
   readonly offset: number;

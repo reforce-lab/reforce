@@ -12,7 +12,7 @@ import {
   type CompileSuccess,
   createCompiler,
   type GeneratedFilePath,
-} from "#internal/index";
+} from "../src/index";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const temporaryProjects: TemporaryProject[] = [];

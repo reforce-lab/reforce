@@ -1,3 +1,5 @@
+export {};
+
 const exitCode = Number(process.argv[2]);
 if (!Number.isInteger(exitCode) || exitCode < 0) {
   throw new Error("Development child fixture requires a non-negative exit code.");

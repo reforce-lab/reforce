@@ -4,11 +4,11 @@ import type {
   ExecutionPlansModel,
   GeneratedSourceReferenceModel,
   ProviderModel,
-} from "#internal/analysis/model";
-import { compareUtf16CodeUnits } from "#internal/determinism";
-import { renderRuntimeSpecifier } from "#internal/emission/runtime-specifier";
-import type { LinkedSymbol } from "#internal/linking/module-graph";
-import type { GeneratedFile, ResolvedApplicationProject } from "#internal/types";
+} from "../analysis/model";
+import { compareUtf16CodeUnits } from "../determinism";
+import type { LinkedSymbol } from "../linking/module-graph";
+import type { GeneratedFile, ResolvedApplicationProject } from "../types";
+import { renderRuntimeSpecifier } from "./runtime-specifier";
 
 function json(value: unknown): string {
   const rendered = stableStringify(value, { space: 2 });

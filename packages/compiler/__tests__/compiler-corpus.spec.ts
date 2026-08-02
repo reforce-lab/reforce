@@ -21,7 +21,7 @@ import {
   type GeneratedFile,
   type GeneratedFilePath,
   type ResolvedApplicationProject,
-} from "#internal/index";
+} from "../src/index";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 const temporaryProjects: TemporaryProject[] = [];

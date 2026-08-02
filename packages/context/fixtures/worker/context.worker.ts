@@ -1,7 +1,7 @@
 import { parentPort } from "node:worker_threads";
-import { createApplicationContext, factoryBean } from "#internal/generated-runtime";
-import { defineBean } from "#internal/index";
-import { testDefinition, testSource } from "#test-support/test-definition";
+import { createApplicationContext, factoryBean } from "../../src/generated-runtime";
+import { defineBean } from "../../src/index";
+import { testDefinition, testSource } from "../../test-support/test-definition";
 
 if (!parentPort) {
   throw new Error("Worker message port is unavailable.");

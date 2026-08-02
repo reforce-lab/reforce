@@ -1,5 +1,5 @@
-import type { SourceUnit } from "#internal/source-ir";
-import type { CanonicalFileId, SourceSpan } from "#internal/source-location";
+import type { SourceUnit } from "./source-ir";
+import type { CanonicalFileId, SourceSpan } from "./source-location";
 
 export type FrontendSourceKind = "ts" | "tsx" | "mts" | "cts" | "d.ts" | "d.mts" | "d.cts";
 

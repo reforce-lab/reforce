@@ -1,8 +1,9 @@
+export { resolveBunExecutable } from "./bun-executable";
 export {
   type CommandOptions,
   runCommand,
   spawnCommand,
-} from "#internal/command";
+} from "./command";
 export {
   copyFixtureTree,
   createTemporaryProject,
@@ -11,6 +12,5 @@ export {
   readFixtureTree,
   type TemporaryProject,
   writeFixtureTree,
-} from "#internal/fixture-tree";
-export { resolveNodeExecutable } from "#internal/node-executable";
-export { normalizeTerminalOutput } from "#internal/terminal";
+} from "./fixture-tree";
+export { normalizeTerminalOutput } from "./terminal";

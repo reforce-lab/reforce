@@ -1,8 +1,8 @@
-import type { CloseableApplication } from "#internal/shutdown-controller";
+import type { CloseableApplication } from "./shutdown-controller";
 
 export const applicationBootstrapSpecifier = "reforce:application-bootstrap";
 
-export interface NodeHmrRuntime {
+export interface RspackHmrRuntime {
   accept(specifier: typeof applicationBootstrapSpecifier): void;
   check(autoApply: false): Promise<false | null | readonly string[]>;
   apply(): Promise<unknown>;
@@ -14,7 +14,7 @@ export interface DevTimerScheduler {
 }
 
 export interface DevHmrManagerOptions {
-  readonly hot: NodeHmrRuntime;
+  readonly hot: RspackHmrRuntime;
   readonly bootstrap: () => Promise<CloseableApplication>;
   readonly onFatal: (error: unknown) => void;
   readonly scheduler?: DevTimerScheduler;
@@ -35,7 +35,7 @@ const defaultScheduler: DevTimerScheduler = {
 
 export class DevHmrManager implements CloseableApplication {
   readonly #bootstrap: () => Promise<CloseableApplication>;
-  readonly #hot: NodeHmrRuntime;
+  readonly #hot: RspackHmrRuntime;
   readonly #onFatal: (error: unknown) => void;
   readonly #scheduler: DevTimerScheduler;
   #application: CloseableApplication | undefined;

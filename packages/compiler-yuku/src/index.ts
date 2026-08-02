@@ -1,1 +1,1 @@
-export { yukuFrontend } from "#internal/frontend";
+export { yukuFrontend } from "./frontend";

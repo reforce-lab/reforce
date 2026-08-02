@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createTemporaryProject,
-  resolveNodeExecutable,
+  resolveBunExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
@@ -17,10 +17,10 @@ const workspaceRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const cliEntry = join(cliRoot, "dist", "reforce.js");
 const contextRoot = join(workspaceRoot, "packages", "context");
 const windowsSignalFixture = fileURLToPath(
-  new URL("../../fixtures/process/windows-signal.fixture.ts", import.meta.url),
+  new URL("../../fixtures/dist/process/windows-signal.fixture.js", import.meta.url),
 );
 const commandTimeout = 120_000;
-const nodeExecutable = await resolveNodeExecutable();
+const bunExecutable = await resolveBunExecutable();
 
 interface ApplicationFixture {
   readonly project: TemporaryProject;
@@ -292,7 +292,7 @@ async function createMonorepoProject(): Promise<TemporaryProject> {
 
 async function buildProject(projectRoot: string, arguments_: readonly string[] = []) {
   return await runCommand(
-    nodeExecutable,
+    bunExecutable,
     [cliEntry, "build", "--project", projectRoot, ...arguments_],
     {
       cwd: projectRoot,
@@ -421,7 +421,7 @@ function spawnStartCommand(input: {
   readonly useWindowsSignalHarness?: boolean;
 }): SpawnedIpcProcess {
   return spawnIpcProcess({
-    executable: nodeExecutable,
+    executable: bunExecutable,
     arguments: input.useWindowsSignalHarness
       ? [windowsSignalFixture, cliEntry, "start", "--project", input.projectRoot]
       : [cliEntry, "start", "--project", input.projectRoot],
@@ -454,7 +454,11 @@ async function startApplication(
     return { ...subprocess, marker, readyPath, closedPath };
   } catch (error) {
     await forceCleanupProcess(subprocess);
-    throw error;
+    const output = subprocess.output();
+    throw new Error(
+      `Production start failed before readiness.\n${output.stdout}\n${output.stderr}`,
+      { cause: error },
+    );
   }
 }
 
@@ -466,7 +470,7 @@ function spawnDevCommand(input: {
   readonly marker: string;
 }): SpawnedIpcProcess {
   return spawnIpcProcess({
-    executable: nodeExecutable,
+    executable: bunExecutable,
     arguments:
       process.platform === "win32"
         ? [windowsSignalFixture, cliEntry, "dev", "--project", input.projectDirectory]
@@ -608,17 +612,17 @@ describe.serial("built Reforce CLI", () => {
     }
   });
 
-  test("prints help from the built Node executable", async () => {
-    const result = await runCommand(nodeExecutable, [cliEntry, "--help"], { timeout: 10_000 });
+  test("prints help from the built Bun executable", async () => {
+    const result = await runCommand(bunExecutable, [cliEntry, "--help"], { timeout: 10_000 });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Usage: reforce");
   });
 
-  test("starts the built executable with a Node shebang", async () => {
+  test("starts the built executable with a Bun shebang", async () => {
     const source = await readFile(cliEntry, "utf8");
 
-    expect(source.split("\n", 1)).toEqual(["#!/usr/bin/env node"]);
+    expect(source.split("\n", 1)).toEqual(["#!/usr/bin/env bun"]);
   });
 
   test("does not embed the build workspace path in the executable", async () => {
@@ -632,7 +636,7 @@ describe.serial("built Reforce CLI", () => {
     const project = await createTemporaryProject();
     try {
       const result = await runCommand(
-        nodeExecutable,
+        bunExecutable,
         [cliEntry, "build", "--project", project.projectRoot],
         { timeout: 10_000 },
       );
@@ -673,7 +677,7 @@ describe.serial("built Reforce CLI", () => {
         const appRoot = join(monorepo.projectRoot, "apps", "api service");
 
         const result = await runCommand(
-          nodeExecutable,
+          bunExecutable,
           [cliEntry, "build", "--project", join("apps", "api service")],
           { cwd: monorepo.projectRoot, timeout: commandTimeout },
         );
@@ -696,7 +700,7 @@ describe.serial("built Reforce CLI", () => {
         const appRoot = join(monorepo.projectRoot, "apps", "admin service");
 
         const result = await runCommand(
-          nodeExecutable,
+          bunExecutable,
           [
             cliEntry,
             "build",
@@ -859,11 +863,11 @@ describe.serial("built Reforce CLI", () => {
       const adminRoot = join(monorepo.projectRoot, adminDirectory);
       try {
         const [apiBuild, adminBuild] = await Promise.all([
-          runCommand(nodeExecutable, [cliEntry, "build", "--project", apiDirectory], {
+          runCommand(bunExecutable, [cliEntry, "build", "--project", apiDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
-          runCommand(nodeExecutable, [cliEntry, "build", "--project", adminDirectory], {
+          runCommand(bunExecutable, [cliEntry, "build", "--project", adminDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
@@ -901,11 +905,11 @@ describe.serial("built Reforce CLI", () => {
       let adminStarted: StartedApplication | undefined;
       try {
         const [apiBuild, adminBuild] = await Promise.all([
-          runCommand(nodeExecutable, [cliEntry, "build", "--project", apiDirectory], {
+          runCommand(bunExecutable, [cliEntry, "build", "--project", apiDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
-          runCommand(nodeExecutable, [cliEntry, "build", "--project", adminDirectory], {
+          runCommand(bunExecutable, [cliEntry, "build", "--project", adminDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
@@ -949,35 +953,7 @@ describe.serial("built Reforce CLI", () => {
   );
 
   test(
-    "runs the complete production artifact with Node",
-    async () => {
-      const fixture = currentApplication();
-      const artifactRoot = fixture.isolatedArtifact.projectRoot;
-      const readyPath = join(artifactRoot, "node-artifact.ready");
-      const closedPath = join(artifactRoot, "node-artifact.closed");
-      const runtime = await runCommand(nodeExecutable, [
-        "-p",
-        'JSON.stringify({release:process.release.name,bun:Reflect.get(process.versions,"bun")})',
-      ]);
-
-      await executeArtifact({
-        executable: nodeExecutable,
-        projectRoot: artifactRoot,
-        readyPath,
-        closedPath,
-      });
-
-      expect(runtime.stdout).toBe('{"release":"node"}');
-      expect(await pathExists(join(artifactRoot, "src"))).toBe(false);
-      expect(await pathExists(join(artifactRoot, "node_modules"))).toBe(false);
-      expect(await pathExists(readyPath)).toBe(true);
-      expect(await pathExists(closedPath)).toBe(true);
-    },
-    commandTimeout,
-  );
-
-  test(
-    "runs the same complete production artifact with Bun",
+    "runs the complete isolated production artifact with Bun",
     async () => {
       const fixture = currentApplication();
       const artifactRoot = fixture.isolatedArtifact.projectRoot;
@@ -992,6 +968,8 @@ describe.serial("built Reforce CLI", () => {
       });
 
       expect(Reflect.get(process.versions, "bun")).toBe("1.3.14");
+      expect(await pathExists(join(artifactRoot, "src"))).toBe(false);
+      expect(await pathExists(join(artifactRoot, "node_modules"))).toBe(false);
       expect(await pathExists(readyPath)).toBe(true);
       expect(await pathExists(closedPath)).toBe(true);
     },

@@ -1,16 +1,17 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { execa } from "execa";
 import { isObject } from "radashi";
-import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "#internal/project-lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "#internal/reporter";
+import { requireBunExecutable } from "./bun-runtime";
+import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "./project-lease";
+import { createFailureEvent, type Reporter, reportShutdownFailure } from "./reporter";
 
 export interface StartCommandOptions {
   readonly cwd: string;
   readonly projectDirectory: string;
   readonly reporter: Reporter;
-  readonly nodeExecutable?: string;
+  readonly bunExecutable?: string;
 }
 
 export interface StartCommandDependencies {
@@ -109,8 +110,6 @@ function isShutdownRequest(value: unknown): value is ShutdownRequest {
   );
 }
 
-type SpawnedProductionProcess = ReturnType<typeof execa>;
-
 interface ProductionChildResult {
   readonly exitCode?: number;
 }
@@ -127,36 +126,81 @@ interface LeaseParticipantAck {
   readonly participantToken: string;
 }
 
-class ExecaProductionChild implements ProductionChild {
-  readonly #process: SpawnedProductionProcess;
+class BunProductionChild implements ProductionChild {
+  readonly #completion: Promise<ProductionChildResult>;
+  readonly #messages: unknown[] = [];
+  readonly #messageWaiters: Array<{
+    readonly reject: (error: Error) => void;
+    readonly resolve: (message: unknown) => void;
+  }> = [];
+  readonly #process: ChildProcess;
+  #terminalError: Error | undefined;
 
-  constructor(process: SpawnedProductionProcess) {
+  constructor(process: ChildProcess) {
     this.#process = process;
+    process.on("message", (message: unknown) => {
+      const waiter = this.#messageWaiters.shift();
+      if (waiter) {
+        waiter.resolve(message);
+        return;
+      }
+      this.#messages.push(message);
+    });
+    this.#completion = new Promise((resolve, reject) => {
+      process.once("error", (error) => {
+        this.#closeInbox(error);
+        reject(error);
+      });
+      process.once("exit", (exitCode, signal) => {
+        this.#closeInbox(
+          new Error(
+            `Production child exited before its IPC message (code ${exitCode ?? "null"}, signal ${signal ?? "none"}).`,
+          ),
+        );
+        resolve(exitCode === null ? {} : { exitCode });
+      });
+    });
   }
 
   getOneMessage(): Promise<unknown> {
-    const getOneMessage = this.#process.getOneMessage;
-    if (getOneMessage === undefined) {
-      throw new Error("The production child IPC channel is unavailable.");
+    const message = this.#messages.shift();
+    if (message !== undefined) {
+      return Promise.resolve(message);
     }
-    return getOneMessage.call(this.#process);
+    if (this.#terminalError) {
+      return Promise.reject(this.#terminalError);
+    }
+    return new Promise((resolve, reject) => this.#messageWaiters.push({ resolve, reject }));
   }
 
   async sendMessage(message: ShutdownRequest | LeaseParticipantAck): Promise<void> {
-    const sendMessage = this.#process.sendMessage;
-    if (sendMessage === undefined) {
+    if (!this.#process.connected) {
       throw new Error("The production child IPC channel is unavailable.");
     }
-    await sendMessage.call(this.#process, message);
+    await new Promise<void>((resolve, reject) => {
+      this.#process.send(message, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
   }
 
   kill(signal: NodeJS.Signals): void {
     this.#process.kill(signal);
   }
 
-  async wait(): Promise<ProductionChildResult> {
-    const result = await this.#process;
-    return { exitCode: result.exitCode };
+  wait(): Promise<ProductionChildResult> {
+    return this.#completion;
+  }
+
+  #closeInbox(error: Error): void {
+    this.#terminalError ??= error;
+    for (const waiter of this.#messageWaiters.splice(0)) {
+      waiter.reject(this.#terminalError);
+    }
   }
 }
 
@@ -166,16 +210,13 @@ function spawnProductionChild(input: {
   readonly projectRoot: string;
   readonly leaseToken: string;
 }): ProductionChild {
-  return new ExecaProductionChild(
-    execa(input.executable, [input.entryPath], {
+  return new BunProductionChild(
+    spawn(input.executable, [input.entryPath], {
       cwd: input.projectRoot,
-      env: { REFORCE_LEASE_TOKEN: input.leaseToken },
-      ipc: true,
-      reject: false,
+      env: { ...process.env, REFORCE_LEASE_TOKEN: input.leaseToken },
       shell: false,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+      stdio: ["inherit", "inherit", "inherit", "ipc"],
+      windowsHide: true,
     }),
   );
 }
@@ -351,7 +392,7 @@ async function startProductionChild(input: {
   input.state.lease = lease;
   const entryPath = await resolveProductionEntry(projectRoot);
   const child = input.dependencies.spawnChild({
-    executable: input.options.nodeExecutable ?? process.execPath,
+    executable: input.options.bunExecutable ?? requireBunExecutable(),
     entryPath,
     projectRoot,
     leaseToken: lease.leaseToken,

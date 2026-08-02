@@ -21,9 +21,9 @@ import {
   nodeArrayProperty,
   nodeProperty,
   stringProperty,
-} from "#internal/ast";
-import { normalizeSpanned } from "#internal/normalize";
-import type { SourceMapper } from "#internal/source-map";
+} from "./ast";
+import { normalizeSpanned } from "./normalize";
+import type { SourceMapper } from "./source-map";
 
 export interface LoweringContext {
   readonly mapper: SourceMapper;

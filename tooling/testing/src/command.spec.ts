@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runCommand } from "#internal/command";
-import { normalizeTerminalOutput } from "#internal/terminal";
+import { runCommand } from "./command";
+import { normalizeTerminalOutput } from "./terminal";
 
 describe("real commands", () => {
   test("passes arguments without shell interpolation", async () => {

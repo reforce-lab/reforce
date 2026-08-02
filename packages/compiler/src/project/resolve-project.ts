@@ -1,20 +1,20 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { sortNativePaths } from "#internal/determinism";
-import { diagnostic } from "#internal/diagnostics";
-import {
-  type ConfigCandidateResult,
-  candidateDisplayOrder,
-  inspectConfigCandidate,
-} from "#internal/project/config";
-import { isPathContained } from "#internal/project/path-identity";
+import { sortNativePaths } from "../determinism";
+import { diagnostic } from "../diagnostics";
 import type {
   ProjectResolutionResult,
   ProjectState,
   ResolvedApplicationProject,
   ResolveProjectRequest,
-} from "#internal/types";
-import { createResolvedApplicationProject } from "#internal/types";
+} from "../types";
+import { createResolvedApplicationProject } from "../types";
+import {
+  type ConfigCandidateResult,
+  candidateDisplayOrder,
+  inspectConfigCandidate,
+} from "./config";
+import { isPathContained } from "./path-identity";
 
 export interface ResolvedProjectRecord {
   readonly project: ResolvedApplicationProject;

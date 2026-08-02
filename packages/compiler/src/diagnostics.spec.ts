@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { CanonicalFileId, SourceSpan } from "@reforce/compiler-spi";
 import fc from "fast-check";
-import { diagnostic, orderDiagnostics } from "#internal/diagnostics";
+import { diagnostic, orderDiagnostics } from "./diagnostics";
 
 function sourceSpan(fileId: string): SourceSpan {
   return {

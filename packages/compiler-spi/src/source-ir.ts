@@ -1,5 +1,5 @@
-import type { FrontendInput } from "#internal/frontend";
-import type { CanonicalFileId, SourceSpan } from "#internal/source-location";
+import type { FrontendInput } from "./frontend";
+import type { CanonicalFileId, SourceSpan } from "./source-location";
 
 export interface IdentifierName {
   readonly text: string;
