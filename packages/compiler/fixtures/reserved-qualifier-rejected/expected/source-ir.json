@@ -1,0 +1,457 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "src/application.ts",
+    "sourceKind": "ts",
+    "imports": [
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "@reforce/context",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 38,
+              "line": 0,
+              "character": 38
+            },
+            "end": {
+              "offset": 56,
+              "line": 0,
+              "character": 56
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "local": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 9,
+                "line": 0,
+                "character": 9
+              },
+              "end": {
+                "offset": 19,
+                "line": 0,
+                "character": 19
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Qualifier",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 21,
+                  "line": 0,
+                  "character": 21
+                },
+                "end": {
+                  "offset": 30,
+                  "line": 0,
+                  "character": 30
+                }
+              }
+            },
+            "local": {
+              "text": "Qualifier",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 21,
+                  "line": 0,
+                  "character": 21
+                },
+                "end": {
+                  "offset": 30,
+                  "line": 0,
+                  "character": 30
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 21,
+                "line": 0,
+                "character": 21
+              },
+              "end": {
+                "offset": 30,
+                "line": 0,
+                "character": 30
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 57,
+            "line": 0,
+            "character": 57
+          }
+        }
+      }
+    ],
+    "exports": [],
+    "interfaces": [
+      {
+        "kind": "interface",
+        "topLevel": true,
+        "name": {
+          "text": "JobPort",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 76,
+              "line": 2,
+              "character": 17
+            },
+            "end": {
+              "offset": 83,
+              "line": 2,
+              "character": 24
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "JobPort",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 76,
+                "line": 2,
+                "character": 17
+              },
+              "end": {
+                "offset": 83,
+                "line": 2,
+                "character": 24
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 59,
+              "line": 2,
+              "character": 0
+            },
+            "end": {
+              "offset": 86,
+              "line": 2,
+              "character": 27
+            }
+          }
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 66,
+            "line": 2,
+            "character": 7
+          },
+          "end": {
+            "offset": 86,
+            "line": 2,
+            "character": 27
+          }
+        }
+      }
+    ],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "JobService",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 134,
+              "line": 6,
+              "character": 13
+            },
+            "end": {
+              "offset": 144,
+              "line": 6,
+              "character": 23
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "JobService",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 134,
+                "line": 6,
+                "character": 13
+              },
+              "end": {
+                "offset": 144,
+                "line": 6,
+                "character": 23
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 121,
+              "line": 6,
+              "character": 0
+            },
+            "end": {
+              "offset": 166,
+              "line": 6,
+              "character": 45
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Qualifier",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 89,
+                    "line": 4,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 98,
+                    "line": 4,
+                    "character": 10
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 89,
+                  "line": 4,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 98,
+                  "line": 4,
+                  "character": 10
+                }
+              }
+            },
+            "called": true,
+            "arguments": [
+              {
+                "kind": "string-literal",
+                "value": "enum",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 99,
+                    "line": 4,
+                    "character": 11
+                  },
+                  "end": {
+                    "offset": 105,
+                    "line": 4,
+                    "character": 17
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 88,
+                "line": 4,
+                "character": 0
+              },
+              "end": {
+                "offset": 106,
+                "line": 4,
+                "character": 18
+              }
+            }
+          },
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 108,
+                    "line": 5,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 118,
+                    "line": 5,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 108,
+                  "line": 5,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 118,
+                  "line": 5,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 107,
+                "line": 5,
+                "character": 0
+              },
+              "end": {
+                "offset": 120,
+                "line": 5,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "JobPort",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 156,
+                    "line": 6,
+                    "character": 35
+                  },
+                  "end": {
+                    "offset": 163,
+                    "line": 6,
+                    "character": 42
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 156,
+                  "line": 6,
+                  "character": 35
+                },
+                "end": {
+                  "offset": 163,
+                  "line": 6,
+                  "character": 42
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 156,
+                "line": 6,
+                "character": 35
+              },
+              "end": {
+                "offset": 163,
+                "line": 6,
+                "character": 42
+              }
+            }
+          }
+        ],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 128,
+            "line": 6,
+            "character": 7
+          },
+          "end": {
+            "offset": 166,
+            "line": 6,
+            "character": 45
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

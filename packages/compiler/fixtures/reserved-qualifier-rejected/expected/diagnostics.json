@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "compiler",
+    "code": "INVALID_BEAN_QUALIFIER",
+    "severity": "error",
+    "message": "enum is not a valid non-reserved TypeScript identifier.",
+    "related": [],
+    "help": "Choose a valid identifier for the qualifier member."
+  }
+]

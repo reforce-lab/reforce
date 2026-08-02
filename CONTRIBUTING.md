@@ -11,19 +11,68 @@
 - 分支：`feat/<issue>-<slug>`、`fix/<issue>-<slug>`、`chore/<slug>`。
 - 提交信息遵循 **Conventional Commits**（commitlint 强制）：
   - `feat(core): add bean definition registry`
-  - `fix(playground): correct bun types resolution`
+  - `fix(compiler): preserve canonical project identity`
+  - `feat(cli): add production reader lease`
   - `chore(tooling): bump typescript to 7.0.2`
   - `docs(adr): record decorator strategy decision`
-- scope 使用包名（`core` / `playground` / `tooling`）或领域名。
+- scope 使用实际包或领域名（如 `context` / `compiler` / `cli` / `tooling`）。
 
 ## 本地检查（提交前会自动跑）
 
 lefthook 在 `pre-commit` 跑 Biome 自动修复，在 `commit-msg` 跑 commitlint。
-完整验证请手动跑一遍（CI 也会跑）：
+受影响 package 先分别运行以下命令：
 
 ```bash
-bun run check:write && bun run typecheck && bun run test && bun run build
+bun run check:write --filter=<package>
+bun run check --filter=<package>
+bun run typecheck --filter=<package>
+bun run test --filter=<package>
+bun run build --filter=<package>
 ```
+
+提交前再运行全仓门禁：
+
+```bash
+bun run check:write
+bun run check
+bun run typecheck
+bun run test
+bun run build
+```
+
+CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 24.12.0 与 Bun 1.3.14 重复执行 frozen install、以上门禁、真实 CLI/child/HMR/lease/transaction recovery，以及同一 production artifact 的 Node/Bun smoke。平台相关行为必须由对应 runner 的真实进程证据支持。
+
+## 运行一个应用
+
+应用使用仓库唯一的共享 TypeScript 配置。它关闭旧 decorators 与 runtime metadata，只保留标准 decorators：
+
+```json
+{
+  "extends": "@reforce/tooling-tsconfig/base.json",
+  "include": ["src", ".reforce/generated/**/*.d.ts"]
+}
+```
+
+```ts
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+
+@Injectable()
+export class Application implements OnContextStart, OnContextClose {
+  onContextStart(): void {}
+  onContextClose(): void {}
+}
+```
+
+standalone 项目在自身目录运行；monorepo 可以从根目录选择 leaf application：
+
+```bash
+reforce dev --project .
+reforce build --project apps/api
+reforce build --project . --tsconfig apps/api/tsconfig.json
+reforce start --project apps/api
+```
+
+`--tsconfig` 相对 `--project` 解析。最终 project root 始终是 leaf tsconfig 所在目录；`generated`、`dev` 与 `dist` 输出不会写到 monorepo 根或 sibling app。
 
 ## 知识沉淀义务
 

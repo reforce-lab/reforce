@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.shared.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@shared/path": ["../../packages/shared/src/path-contract.ts"]
+    }
+  },
+  "include": ["src", ".reforce/generated/**/*.d.ts"]
+}

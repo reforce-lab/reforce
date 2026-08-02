@@ -1,0 +1,392 @@
+{
+  "beans": [
+    {
+      "dependencies": [
+      ],
+      "id": "src/application.ts#FallbackProvider",
+      "kind": "class",
+      "lifecycle": {
+        "close": false,
+        "dispose": false,
+        "start": false
+      },
+      "primary": false,
+      "provides": [
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 12,
+              "offset": 261
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 8,
+              "offset": 165
+            }
+          },
+          "displayName": "FallbackProvider",
+          "exportName": "FallbackProvider",
+          "moduleSpecifier": "../../src/application.js"
+        },
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 4,
+              "offset": 119
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 2,
+              "offset": 75
+            }
+          },
+          "displayName": "DefaultPort",
+          "exportName": "DefaultPort",
+          "moduleSpecifier": "../../src/application.js"
+        }
+      ],
+      "qualifiers": [
+        {
+          "interface": {
+            "declaration": {
+              "end": {
+                "character": 1,
+                "line": 4,
+                "offset": 119
+              },
+              "file": "src/application.ts",
+              "start": {
+                "character": 7,
+                "line": 2,
+                "offset": 75
+              }
+            },
+            "displayName": "DefaultPort",
+            "exportName": "DefaultPort",
+            "moduleSpecifier": "../../src/application.js"
+          },
+          "member": "Fallback"
+        }
+      ],
+      "runtimeExport": {
+        "exportName": "FallbackProvider",
+        "moduleSpecifier": "../../src/application.js"
+      },
+      "source": {
+        "end": {
+          "character": 1,
+          "line": 12,
+          "offset": 261
+        },
+        "file": "src/application.ts",
+        "start": {
+          "character": 7,
+          "line": 8,
+          "offset": 165
+        }
+      }
+    },
+    {
+      "dependencies": [
+      ],
+      "id": "src/application.ts#PreferredProvider",
+      "kind": "class",
+      "lifecycle": {
+        "close": false,
+        "dispose": false,
+        "start": false
+      },
+      "primary": true,
+      "provides": [
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 21,
+              "offset": 417
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 17,
+              "offset": 319
+            }
+          },
+          "displayName": "PreferredProvider",
+          "exportName": "PreferredProvider",
+          "moduleSpecifier": "../../src/application.js"
+        },
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 4,
+              "offset": 119
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 2,
+              "offset": 75
+            }
+          },
+          "displayName": "DefaultPort",
+          "exportName": "DefaultPort",
+          "moduleSpecifier": "../../src/application.js"
+        }
+      ],
+      "qualifiers": [
+        {
+          "interface": {
+            "declaration": {
+              "end": {
+                "character": 1,
+                "line": 4,
+                "offset": 119
+              },
+              "file": "src/application.ts",
+              "start": {
+                "character": 7,
+                "line": 2,
+                "offset": 75
+              }
+            },
+            "displayName": "DefaultPort",
+            "exportName": "DefaultPort",
+            "moduleSpecifier": "../../src/application.js"
+          },
+          "member": "Preferred"
+        }
+      ],
+      "runtimeExport": {
+        "exportName": "PreferredProvider",
+        "moduleSpecifier": "../../src/application.js"
+      },
+      "source": {
+        "end": {
+          "character": 1,
+          "line": 21,
+          "offset": 417
+        },
+        "file": "src/application.ts",
+        "start": {
+          "character": 7,
+          "line": 17,
+          "offset": 319
+        }
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "mode": "eager",
+          "parameterIndex": 0,
+          "source": {
+            "end": {
+              "character": 37,
+              "line": 37,
+              "offset": 681
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 4,
+              "line": 37,
+              "offset": 648
+            }
+          },
+          "targetId": "src/application.ts#PreferredProvider"
+        },
+        {
+          "mode": "eager",
+          "parameterIndex": 1,
+          "source": {
+            "end": {
+              "character": 48,
+              "line": 38,
+              "offset": 731
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 4,
+              "line": 38,
+              "offset": 687
+            }
+          },
+          "targetId": "src/application.ts#FallbackProvider"
+        },
+        {
+          "mode": "eager",
+          "parameterIndex": 2,
+          "source": {
+            "end": {
+              "character": 35,
+              "line": 39,
+              "offset": 768
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 4,
+              "line": 39,
+              "offset": 737
+            }
+          },
+          "targetId": "src/application.ts#UniqueProvider"
+        }
+      ],
+      "id": "src/application.ts#SelectionProbe",
+      "kind": "class",
+      "lifecycle": {
+        "close": false,
+        "dispose": false,
+        "start": false
+      },
+      "primary": false,
+      "provides": [
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 45,
+              "offset": 907
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 35,
+              "offset": 606
+            }
+          },
+          "displayName": "SelectionProbe",
+          "exportName": "SelectionProbe",
+          "moduleSpecifier": "../../src/application.js"
+        }
+      ],
+      "qualifiers": [
+      ],
+      "runtimeExport": {
+        "exportName": "SelectionProbe",
+        "moduleSpecifier": "../../src/application.js"
+      },
+      "source": {
+        "end": {
+          "character": 1,
+          "line": 45,
+          "offset": 907
+        },
+        "file": "src/application.ts",
+        "start": {
+          "character": 7,
+          "line": 35,
+          "offset": 606
+        }
+      }
+    },
+    {
+      "dependencies": [
+      ],
+      "id": "src/application.ts#UniqueProvider",
+      "kind": "class",
+      "lifecycle": {
+        "close": false,
+        "dispose": false,
+        "start": false
+      },
+      "primary": false,
+      "provides": [
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 32,
+              "offset": 583
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 28,
+              "offset": 492
+            }
+          },
+          "displayName": "UniqueProvider",
+          "exportName": "UniqueProvider",
+          "moduleSpecifier": "../../src/application.js"
+        },
+        {
+          "declaration": {
+            "end": {
+              "character": 1,
+              "line": 25,
+              "offset": 469
+            },
+            "file": "src/application.ts",
+            "start": {
+              "character": 7,
+              "line": 23,
+              "offset": 426
+            }
+          },
+          "displayName": "UniquePort",
+          "exportName": "UniquePort",
+          "moduleSpecifier": "../../src/application.js"
+        }
+      ],
+      "qualifiers": [
+        {
+          "interface": {
+            "declaration": {
+              "end": {
+                "character": 1,
+                "line": 25,
+                "offset": 469
+              },
+              "file": "src/application.ts",
+              "start": {
+                "character": 7,
+                "line": 23,
+                "offset": 426
+              }
+            },
+            "displayName": "UniquePort",
+            "exportName": "UniquePort",
+            "moduleSpecifier": "../../src/application.js"
+          },
+          "member": "UniqueProvider"
+        }
+      ],
+      "runtimeExport": {
+        "exportName": "UniqueProvider",
+        "moduleSpecifier": "../../src/application.js"
+      },
+      "source": {
+        "end": {
+          "character": 1,
+          "line": 32,
+          "offset": 583
+        },
+        "file": "src/application.ts",
+        "start": {
+          "character": 7,
+          "line": 28,
+          "offset": 492
+        }
+      }
+    }
+  ],
+  "plans": {
+    "cleanupActionOrder": [
+    ],
+    "constructionOrder": [
+      "src/application.ts#FallbackProvider",
+      "src/application.ts#PreferredProvider",
+      "src/application.ts#UniqueProvider",
+      "src/application.ts#SelectionProbe"
+    ],
+    "startActionOrder": [
+    ]
+  },
+  "schemaVersion": 1
+}

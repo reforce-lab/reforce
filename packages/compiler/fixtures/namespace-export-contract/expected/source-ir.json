@@ -1,0 +1,775 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "src/application.ts",
+    "sourceKind": "ts",
+    "imports": [
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "@reforce/context",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 27,
+              "line": 0,
+              "character": 27
+            },
+            "end": {
+              "offset": 45,
+              "line": 0,
+              "character": 45
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "local": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 9,
+                  "line": 0,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 9,
+                "line": 0,
+                "character": 9
+              },
+              "end": {
+                "offset": 19,
+                "line": 0,
+                "character": 19
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 46,
+            "line": 0,
+            "character": 46
+          }
+        }
+      },
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "./barrel",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 69,
+              "line": 1,
+              "character": 22
+            },
+            "end": {
+              "offset": 79,
+              "line": 1,
+              "character": 32
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Ports",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 56,
+                  "line": 1,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 61,
+                  "line": 1,
+                  "character": 14
+                }
+              }
+            },
+            "local": {
+              "text": "Ports",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 56,
+                  "line": 1,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 61,
+                  "line": 1,
+                  "character": 14
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 56,
+                "line": 1,
+                "character": 9
+              },
+              "end": {
+                "offset": 61,
+                "line": 1,
+                "character": 14
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 47,
+            "line": 1,
+            "character": 0
+          },
+          "end": {
+            "offset": 80,
+            "line": 1,
+            "character": 33
+          }
+        }
+      }
+    ],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "Provider",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 109,
+              "line": 4,
+              "character": 13
+            },
+            "end": {
+              "offset": 117,
+              "line": 4,
+              "character": 21
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Provider",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 109,
+                "line": 4,
+                "character": 13
+              },
+              "end": {
+                "offset": 117,
+                "line": 4,
+                "character": 21
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 96,
+              "line": 4,
+              "character": 0
+            },
+            "end": {
+              "offset": 142,
+              "line": 4,
+              "character": 46
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 83,
+                    "line": 3,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 93,
+                    "line": 3,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 83,
+                  "line": 3,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 93,
+                  "line": 3,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 82,
+                "line": 3,
+                "character": 0
+              },
+              "end": {
+                "offset": 95,
+                "line": 3,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "qualified",
+              "left": {
+                "kind": "identifier",
+                "name": {
+                  "text": "Ports",
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 129,
+                      "line": 4,
+                      "character": 33
+                    },
+                    "end": {
+                      "offset": 134,
+                      "line": 4,
+                      "character": 38
+                    }
+                  }
+                },
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 129,
+                    "line": 4,
+                    "character": 33
+                  },
+                  "end": {
+                    "offset": 134,
+                    "line": 4,
+                    "character": 38
+                  }
+                }
+              },
+              "right": {
+                "text": "Port",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 135,
+                    "line": 4,
+                    "character": 39
+                  },
+                  "end": {
+                    "offset": 139,
+                    "line": 4,
+                    "character": 43
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 129,
+                  "line": 4,
+                  "character": 33
+                },
+                "end": {
+                  "offset": 139,
+                  "line": 4,
+                  "character": 43
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 129,
+                "line": 4,
+                "character": 33
+              },
+              "end": {
+                "offset": 139,
+                "line": 4,
+                "character": 43
+              }
+            }
+          }
+        ],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 103,
+            "line": 4,
+            "character": 7
+          },
+          "end": {
+            "offset": 142,
+            "line": 4,
+            "character": 46
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "Consumer",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 171,
+              "line": 7,
+              "character": 13
+            },
+            "end": {
+              "offset": 179,
+              "line": 7,
+              "character": 21
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Consumer",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 171,
+                "line": 7,
+                "character": 13
+              },
+              "end": {
+                "offset": 179,
+                "line": 7,
+                "character": 21
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 158,
+              "line": 7,
+              "character": 0
+            },
+            "end": {
+              "offset": 227,
+              "line": 9,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 145,
+                    "line": 6,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 155,
+                    "line": 6,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 145,
+                  "line": 6,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 155,
+                  "line": 6,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 144,
+                "line": 6,
+                "character": 0
+              },
+              "end": {
+                "offset": 157,
+                "line": 6,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [],
+        "constructors": [
+          {
+            "kind": "constructor",
+            "accessibility": "public",
+            "implementation": true,
+            "parameters": [
+              {
+                "kind": "constructor-parameter",
+                "index": 0,
+                "type": {
+                  "kind": "reference",
+                  "name": {
+                    "kind": "qualified",
+                    "left": {
+                      "kind": "identifier",
+                      "name": {
+                        "text": "Ports",
+                        "span": {
+                          "fileId": "src/application.ts",
+                          "start": {
+                            "offset": 211,
+                            "line": 8,
+                            "character": 29
+                          },
+                          "end": {
+                            "offset": 216,
+                            "line": 8,
+                            "character": 34
+                          }
+                        }
+                      },
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 211,
+                          "line": 8,
+                          "character": 29
+                        },
+                        "end": {
+                          "offset": 216,
+                          "line": 8,
+                          "character": 34
+                        }
+                      }
+                    },
+                    "right": {
+                      "text": "Port",
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 217,
+                          "line": 8,
+                          "character": 35
+                        },
+                        "end": {
+                          "offset": 221,
+                          "line": 8,
+                          "character": 39
+                        }
+                      }
+                    },
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 211,
+                        "line": 8,
+                        "character": 29
+                      },
+                      "end": {
+                        "offset": 221,
+                        "line": 8,
+                        "character": 39
+                      }
+                    }
+                  },
+                  "typeArguments": [],
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 211,
+                      "line": 8,
+                      "character": 29
+                    },
+                    "end": {
+                      "offset": 221,
+                      "line": 8,
+                      "character": 39
+                    }
+                  }
+                },
+                "optional": false,
+                "rest": false,
+                "hasInitializer": false,
+                "decorators": [],
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 196,
+                    "line": 8,
+                    "character": 14
+                  },
+                  "end": {
+                    "offset": 221,
+                    "line": 8,
+                    "character": 39
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 184,
+                "line": 8,
+                "character": 2
+              },
+              "end": {
+                "offset": 225,
+                "line": 8,
+                "character": 43
+              }
+            }
+          }
+        ],
+        "methods": [],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 165,
+            "line": 7,
+            "character": 7
+          },
+          "end": {
+            "offset": 227,
+            "line": 9,
+            "character": 1
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  },
+  {
+    "kind": "source-unit",
+    "file": "src/barrel.ts",
+    "sourceKind": "ts",
+    "imports": [],
+    "exports": [
+      {
+        "kind": "namespace",
+        "moduleSpecifier": {
+          "text": "./ports",
+          "span": {
+            "fileId": "src/barrel.ts",
+            "start": {
+              "offset": 23,
+              "line": 0,
+              "character": 23
+            },
+            "end": {
+              "offset": 32,
+              "line": 0,
+              "character": 32
+            }
+          }
+        },
+        "exported": {
+          "text": "Ports",
+          "span": {
+            "fileId": "src/barrel.ts",
+            "start": {
+              "offset": 12,
+              "line": 0,
+              "character": 12
+            },
+            "end": {
+              "offset": 17,
+              "line": 0,
+              "character": 17
+            }
+          }
+        },
+        "typeOnly": false,
+        "span": {
+          "fileId": "src/barrel.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 33,
+            "line": 0,
+            "character": 33
+          }
+        }
+      }
+    ],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  },
+  {
+    "kind": "source-unit",
+    "file": "src/ports.ts",
+    "sourceKind": "ts",
+    "imports": [],
+    "exports": [],
+    "interfaces": [
+      {
+        "kind": "interface",
+        "topLevel": true,
+        "name": {
+          "text": "Port",
+          "span": {
+            "fileId": "src/ports.ts",
+            "start": {
+              "offset": 17,
+              "line": 0,
+              "character": 17
+            },
+            "end": {
+              "offset": 21,
+              "line": 0,
+              "character": 21
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Port",
+            "span": {
+              "fileId": "src/ports.ts",
+              "start": {
+                "offset": 17,
+                "line": 0,
+                "character": 17
+              },
+              "end": {
+                "offset": 21,
+                "line": 0,
+                "character": 21
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/ports.ts",
+            "start": {
+              "offset": 0,
+              "line": 0,
+              "character": 0
+            },
+            "end": {
+              "offset": 24,
+              "line": 0,
+              "character": 24
+            }
+          }
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "src/ports.ts",
+          "start": {
+            "offset": 7,
+            "line": 0,
+            "character": 7
+          },
+          "end": {
+            "offset": 24,
+            "line": 0,
+            "character": 24
+          }
+        }
+      }
+    ],
+    "namespaces": [],
+    "classes": [],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

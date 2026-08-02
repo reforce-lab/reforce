@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  },
+  "files": ["src/zeta.ts", "src/alpha.ts"],
+  "include": [".reforce/generated/**/*.d.ts"]
+}

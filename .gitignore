@@ -3,6 +3,8 @@ node_modules/
 
 # build output
 dist/
+.reforce/
+/packages/compiler-babel/benchmark-results/
 *.tsbuildinfo
 
 # turbo
@@ -10,6 +12,8 @@ dist/
 
 # test / coverage
 coverage/
+/packages/cli/e2e-junit.xml
+/packages/cli/recovery-junit.xml
 
 # logs
 *.log

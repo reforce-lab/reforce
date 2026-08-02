@@ -1,0 +1,86 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "unicode.ts",
+    "sourceKind": "ts",
+    "imports": [],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "Unicode",
+          "span": {
+            "fileId": "unicode.ts",
+            "start": {
+              "offset": 34,
+              "line": 1,
+              "character": 13
+            },
+            "end": {
+              "offset": 41,
+              "line": 1,
+              "character": 20
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Unicode",
+            "span": {
+              "fileId": "unicode.ts",
+              "start": {
+                "offset": 34,
+                "line": 1,
+                "character": 13
+              },
+              "end": {
+                "offset": 41,
+                "line": 1,
+                "character": 20
+              }
+            }
+          },
+          "span": {
+            "fileId": "unicode.ts",
+            "start": {
+              "offset": 21,
+              "line": 1,
+              "character": 0
+            },
+            "end": {
+              "offset": 44,
+              "line": 1,
+              "character": 23
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [],
+        "span": {
+          "fileId": "unicode.ts",
+          "start": {
+            "offset": 28,
+            "line": 1,
+            "character": 7
+          },
+          "end": {
+            "offset": 44,
+            "line": 1,
+            "character": 23
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

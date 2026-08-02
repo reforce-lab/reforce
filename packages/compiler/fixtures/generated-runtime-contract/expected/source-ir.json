@@ -1,0 +1,2086 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "src/application.ts",
+    "sourceKind": "ts",
+    "imports": [
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "@reforce/context",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 103,
+              "line": 6,
+              "character": 7
+            },
+            "end": {
+              "offset": 121,
+              "line": 6,
+              "character": 25
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "defineBean",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 11,
+                  "line": 1,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 21,
+                  "line": 1,
+                  "character": 12
+                }
+              }
+            },
+            "local": {
+              "text": "defineBean",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 11,
+                  "line": 1,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 21,
+                  "line": 1,
+                  "character": 12
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 11,
+                "line": 1,
+                "character": 2
+              },
+              "end": {
+                "offset": 21,
+                "line": 1,
+                "character": 12
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 25,
+                  "line": 2,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 35,
+                  "line": 2,
+                  "character": 12
+                }
+              }
+            },
+            "local": {
+              "text": "Injectable",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 25,
+                  "line": 2,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 35,
+                  "line": 2,
+                  "character": 12
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 25,
+                "line": 2,
+                "character": 2
+              },
+              "end": {
+                "offset": 35,
+                "line": 2,
+                "character": 12
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Lazy",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 44,
+                  "line": 3,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 48,
+                  "line": 3,
+                  "character": 11
+                }
+              }
+            },
+            "local": {
+              "text": "Lazy",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 44,
+                  "line": 3,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 48,
+                  "line": 3,
+                  "character": 11
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 39,
+                "line": 3,
+                "character": 2
+              },
+              "end": {
+                "offset": 48,
+                "line": 3,
+                "character": 11
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "OnContextClose",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 57,
+                  "line": 4,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 71,
+                  "line": 4,
+                  "character": 21
+                }
+              }
+            },
+            "local": {
+              "text": "OnContextClose",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 57,
+                  "line": 4,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 71,
+                  "line": 4,
+                  "character": 21
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 52,
+                "line": 4,
+                "character": 2
+              },
+              "end": {
+                "offset": 71,
+                "line": 4,
+                "character": 21
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "OnContextStart",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 80,
+                  "line": 5,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 94,
+                  "line": 5,
+                  "character": 21
+                }
+              }
+            },
+            "local": {
+              "text": "OnContextStart",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 80,
+                  "line": 5,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 94,
+                  "line": 5,
+                  "character": 21
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 75,
+                "line": 5,
+                "character": 2
+              },
+              "end": {
+                "offset": 94,
+                "line": 5,
+                "character": 21
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 122,
+            "line": 6,
+            "character": 26
+          }
+        }
+      },
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "./contracts",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 186,
+              "line": 7,
+              "character": 63
+            },
+            "end": {
+              "offset": 199,
+              "line": 7,
+              "character": 76
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "AlphaPort",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 137,
+                  "line": 7,
+                  "character": 14
+                },
+                "end": {
+                  "offset": 146,
+                  "line": 7,
+                  "character": 23
+                }
+              }
+            },
+            "local": {
+              "text": "AlphaPort",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 137,
+                  "line": 7,
+                  "character": 14
+                },
+                "end": {
+                  "offset": 146,
+                  "line": 7,
+                  "character": 23
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 132,
+                "line": 7,
+                "character": 9
+              },
+              "end": {
+                "offset": 146,
+                "line": 7,
+                "character": 23
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "BetaPort",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 153,
+                  "line": 7,
+                  "character": 30
+                },
+                "end": {
+                  "offset": 161,
+                  "line": 7,
+                  "character": 38
+                }
+              }
+            },
+            "local": {
+              "text": "BetaPort",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 153,
+                  "line": 7,
+                  "character": 30
+                },
+                "end": {
+                  "offset": 161,
+                  "line": 7,
+                  "character": 38
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 148,
+                "line": 7,
+                "character": 25
+              },
+              "end": {
+                "offset": 161,
+                "line": 7,
+                "character": 38
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "ManagedResource",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 163,
+                  "line": 7,
+                  "character": 40
+                },
+                "end": {
+                  "offset": 178,
+                  "line": 7,
+                  "character": 55
+                }
+              }
+            },
+            "local": {
+              "text": "ManagedResource",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 163,
+                  "line": 7,
+                  "character": 40
+                },
+                "end": {
+                  "offset": 178,
+                  "line": 7,
+                  "character": 55
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 163,
+                "line": 7,
+                "character": 40
+              },
+              "end": {
+                "offset": 178,
+                "line": 7,
+                "character": 55
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 123,
+            "line": 7,
+            "character": 0
+          },
+          "end": {
+            "offset": 200,
+            "line": 7,
+            "character": 77
+          }
+        }
+      }
+    ],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "AlphaService",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 229,
+              "line": 10,
+              "character": 13
+            },
+            "end": {
+              "offset": 241,
+              "line": 10,
+              "character": 25
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "AlphaService",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 229,
+                "line": 10,
+                "character": 13
+              },
+              "end": {
+                "offset": 241,
+                "line": 10,
+                "character": 25
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 216,
+              "line": 10,
+              "character": 0
+            },
+            "end": {
+              "offset": 510,
+              "line": 23,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 203,
+                    "line": 9,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 213,
+                    "line": 9,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 203,
+                  "line": 9,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 213,
+                  "line": 9,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 202,
+                "line": 9,
+                "character": 0
+              },
+              "end": {
+                "offset": 215,
+                "line": 9,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "AlphaPort",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 253,
+                    "line": 10,
+                    "character": 37
+                  },
+                  "end": {
+                    "offset": 262,
+                    "line": 10,
+                    "character": 46
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 253,
+                  "line": 10,
+                  "character": 37
+                },
+                "end": {
+                  "offset": 262,
+                  "line": 10,
+                  "character": 46
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 253,
+                "line": 10,
+                "character": 37
+              },
+              "end": {
+                "offset": 262,
+                "line": 10,
+                "character": 46
+              }
+            }
+          },
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "OnContextStart",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 264,
+                    "line": 10,
+                    "character": 48
+                  },
+                  "end": {
+                    "offset": 278,
+                    "line": 10,
+                    "character": 62
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 264,
+                  "line": 10,
+                  "character": 48
+                },
+                "end": {
+                  "offset": 278,
+                  "line": 10,
+                  "character": 62
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 264,
+                "line": 10,
+                "character": 48
+              },
+              "end": {
+                "offset": 278,
+                "line": 10,
+                "character": 62
+              }
+            }
+          },
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "OnContextClose",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 280,
+                    "line": 10,
+                    "character": 64
+                  },
+                  "end": {
+                    "offset": 294,
+                    "line": 10,
+                    "character": 78
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 280,
+                  "line": 10,
+                  "character": 64
+                },
+                "end": {
+                  "offset": 294,
+                  "line": 10,
+                  "character": 78
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 280,
+                "line": 10,
+                "character": 64
+              },
+              "end": {
+                "offset": 294,
+                "line": 10,
+                "character": 78
+              }
+            }
+          }
+        ],
+        "constructors": [
+          {
+            "kind": "constructor",
+            "accessibility": "public",
+            "implementation": true,
+            "parameters": [
+              {
+                "kind": "constructor-parameter",
+                "index": 0,
+                "type": {
+                  "kind": "reference",
+                  "name": {
+                    "kind": "identifier",
+                    "name": {
+                      "text": "BetaService",
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 331,
+                          "line": 12,
+                          "character": 19
+                        },
+                        "end": {
+                          "offset": 342,
+                          "line": 12,
+                          "character": 30
+                        }
+                      }
+                    },
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 331,
+                        "line": 12,
+                        "character": 19
+                      },
+                      "end": {
+                        "offset": 342,
+                        "line": 12,
+                        "character": 30
+                      }
+                    }
+                  },
+                  "typeArguments": [],
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 331,
+                      "line": 12,
+                      "character": 19
+                    },
+                    "end": {
+                      "offset": 342,
+                      "line": 12,
+                      "character": 30
+                    }
+                  }
+                },
+                "optional": false,
+                "rest": false,
+                "hasInitializer": false,
+                "decorators": [],
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 316,
+                    "line": 12,
+                    "character": 4
+                  },
+                  "end": {
+                    "offset": 342,
+                    "line": 12,
+                    "character": 30
+                  }
+                }
+              },
+              {
+                "kind": "constructor-parameter",
+                "index": 1,
+                "type": {
+                  "kind": "reference",
+                  "name": {
+                    "kind": "identifier",
+                    "name": {
+                      "text": "Lazy",
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 367,
+                          "line": 13,
+                          "character": 23
+                        },
+                        "end": {
+                          "offset": 371,
+                          "line": 13,
+                          "character": 27
+                        }
+                      }
+                    },
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 367,
+                        "line": 13,
+                        "character": 23
+                      },
+                      "end": {
+                        "offset": 371,
+                        "line": 13,
+                        "character": 27
+                      }
+                    }
+                  },
+                  "typeArguments": [
+                    {
+                      "kind": "reference",
+                      "name": {
+                        "kind": "identifier",
+                        "name": {
+                          "text": "ManagedResource",
+                          "span": {
+                            "fileId": "src/application.ts",
+                            "start": {
+                              "offset": 372,
+                              "line": 13,
+                              "character": 28
+                            },
+                            "end": {
+                              "offset": 387,
+                              "line": 13,
+                              "character": 43
+                            }
+                          }
+                        },
+                        "span": {
+                          "fileId": "src/application.ts",
+                          "start": {
+                            "offset": 372,
+                            "line": 13,
+                            "character": 28
+                          },
+                          "end": {
+                            "offset": 387,
+                            "line": 13,
+                            "character": 43
+                          }
+                        }
+                      },
+                      "typeArguments": [],
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 372,
+                          "line": 13,
+                          "character": 28
+                        },
+                        "end": {
+                          "offset": 387,
+                          "line": 13,
+                          "character": 43
+                        }
+                      }
+                    }
+                  ],
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 367,
+                      "line": 13,
+                      "character": 23
+                    },
+                    "end": {
+                      "offset": 388,
+                      "line": 13,
+                      "character": 44
+                    }
+                  }
+                },
+                "optional": false,
+                "rest": false,
+                "hasInitializer": false,
+                "decorators": [],
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 348,
+                    "line": 13,
+                    "character": 4
+                  },
+                  "end": {
+                    "offset": 388,
+                    "line": 13,
+                    "character": 44
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 299,
+                "line": 11,
+                "character": 2
+              },
+              "end": {
+                "offset": 396,
+                "line": 14,
+                "character": 6
+              }
+            }
+          }
+        ],
+        "methods": [
+          {
+            "kind": "method",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "alpha",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 400,
+                    "line": 16,
+                    "character": 2
+                  },
+                  "end": {
+                    "offset": 405,
+                    "line": 16,
+                    "character": 7
+                  }
+                }
+              }
+            },
+            "static": false,
+            "accessibility": "public",
+            "async": false,
+            "generator": false,
+            "optional": false,
+            "implementation": true,
+            "parameters": [],
+            "returnType": {
+              "kind": "primitive",
+              "name": "string",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 409,
+                  "line": 16,
+                  "character": 11
+                },
+                "end": {
+                  "offset": 415,
+                  "line": 16,
+                  "character": 17
+                }
+              }
+            },
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 400,
+                "line": 16,
+                "character": 2
+              },
+              "end": {
+                "offset": 450,
+                "line": 18,
+                "character": 3
+              }
+            }
+          },
+          {
+            "kind": "method",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "onContextStart",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 454,
+                    "line": 20,
+                    "character": 2
+                  },
+                  "end": {
+                    "offset": 468,
+                    "line": 20,
+                    "character": 16
+                  }
+                }
+              }
+            },
+            "static": false,
+            "accessibility": "public",
+            "async": false,
+            "generator": false,
+            "optional": false,
+            "implementation": true,
+            "parameters": [],
+            "returnType": {
+              "kind": "primitive",
+              "name": "void",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 472,
+                  "line": 20,
+                  "character": 20
+                },
+                "end": {
+                  "offset": 476,
+                  "line": 20,
+                  "character": 24
+                }
+              }
+            },
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 454,
+                "line": 20,
+                "character": 2
+              },
+              "end": {
+                "offset": 479,
+                "line": 20,
+                "character": 27
+              }
+            }
+          },
+          {
+            "kind": "method",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "onContextClose",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 483,
+                    "line": 22,
+                    "character": 2
+                  },
+                  "end": {
+                    "offset": 497,
+                    "line": 22,
+                    "character": 16
+                  }
+                }
+              }
+            },
+            "static": false,
+            "accessibility": "public",
+            "async": false,
+            "generator": false,
+            "optional": false,
+            "implementation": true,
+            "parameters": [],
+            "returnType": {
+              "kind": "primitive",
+              "name": "void",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 501,
+                  "line": 22,
+                  "character": 20
+                },
+                "end": {
+                  "offset": 505,
+                  "line": 22,
+                  "character": 24
+                }
+              }
+            },
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 483,
+                "line": 22,
+                "character": 2
+              },
+              "end": {
+                "offset": 508,
+                "line": 22,
+                "character": 27
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 223,
+            "line": 10,
+            "character": 7
+          },
+          "end": {
+            "offset": 510,
+            "line": 23,
+            "character": 1
+          }
+        }
+      },
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "BetaService",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 539,
+              "line": 26,
+              "character": 13
+            },
+            "end": {
+              "offset": 550,
+              "line": 26,
+              "character": 24
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "BetaService",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 539,
+                "line": 26,
+                "character": 13
+              },
+              "end": {
+                "offset": 550,
+                "line": 26,
+                "character": 24
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 526,
+              "line": 26,
+              "character": 0
+            },
+            "end": {
+              "offset": 664,
+              "line": 32,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [
+          {
+            "kind": "decorator",
+            "callee": {
+              "kind": "identifier",
+              "name": {
+                "text": "Injectable",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 513,
+                    "line": 25,
+                    "character": 1
+                  },
+                  "end": {
+                    "offset": 523,
+                    "line": 25,
+                    "character": 11
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 513,
+                  "line": 25,
+                  "character": 1
+                },
+                "end": {
+                  "offset": 523,
+                  "line": 25,
+                  "character": 11
+                }
+              }
+            },
+            "called": true,
+            "arguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 512,
+                "line": 25,
+                "character": 0
+              },
+              "end": {
+                "offset": 525,
+                "line": 25,
+                "character": 13
+              }
+            }
+          }
+        ],
+        "implements": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "BetaPort",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 562,
+                    "line": 26,
+                    "character": 36
+                  },
+                  "end": {
+                    "offset": 570,
+                    "line": 26,
+                    "character": 44
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 562,
+                  "line": 26,
+                  "character": 36
+                },
+                "end": {
+                  "offset": 570,
+                  "line": 26,
+                  "character": 44
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 562,
+                "line": 26,
+                "character": 36
+              },
+              "end": {
+                "offset": 570,
+                "line": 26,
+                "character": 44
+              }
+            }
+          }
+        ],
+        "constructors": [
+          {
+            "kind": "constructor",
+            "accessibility": "public",
+            "implementation": true,
+            "parameters": [
+              {
+                "kind": "constructor-parameter",
+                "index": 0,
+                "type": {
+                  "kind": "reference",
+                  "name": {
+                    "kind": "identifier",
+                    "name": {
+                      "text": "AlphaService",
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 603,
+                          "line": 27,
+                          "character": 30
+                        },
+                        "end": {
+                          "offset": 615,
+                          "line": 27,
+                          "character": 42
+                        }
+                      }
+                    },
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 603,
+                        "line": 27,
+                        "character": 30
+                      },
+                      "end": {
+                        "offset": 615,
+                        "line": 27,
+                        "character": 42
+                      }
+                    }
+                  },
+                  "typeArguments": [],
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 603,
+                      "line": 27,
+                      "character": 30
+                    },
+                    "end": {
+                      "offset": 615,
+                      "line": 27,
+                      "character": 42
+                    }
+                  }
+                },
+                "optional": false,
+                "rest": false,
+                "hasInitializer": false,
+                "decorators": [],
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 587,
+                    "line": 27,
+                    "character": 14
+                  },
+                  "end": {
+                    "offset": 615,
+                    "line": 27,
+                    "character": 42
+                  }
+                }
+              }
+            ],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 575,
+                "line": 27,
+                "character": 2
+              },
+              "end": {
+                "offset": 619,
+                "line": 27,
+                "character": 46
+              }
+            }
+          }
+        ],
+        "methods": [
+          {
+            "kind": "method",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "beta",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 623,
+                    "line": 29,
+                    "character": 2
+                  },
+                  "end": {
+                    "offset": 627,
+                    "line": 29,
+                    "character": 6
+                  }
+                }
+              }
+            },
+            "static": false,
+            "accessibility": "public",
+            "async": false,
+            "generator": false,
+            "optional": false,
+            "implementation": true,
+            "parameters": [],
+            "returnType": {
+              "kind": "primitive",
+              "name": "string",
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 631,
+                  "line": 29,
+                  "character": 10
+                },
+                "end": {
+                  "offset": 637,
+                  "line": 29,
+                  "character": 16
+                }
+              }
+            },
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 623,
+                "line": 29,
+                "character": 2
+              },
+              "end": {
+                "offset": 662,
+                "line": 31,
+                "character": 3
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 533,
+            "line": 26,
+            "character": 7
+          },
+          "end": {
+            "offset": 664,
+            "line": 32,
+            "character": 1
+          }
+        }
+      }
+    ],
+    "beanFactories": [
+      {
+        "kind": "define-bean",
+        "topLevel": true,
+        "declarationKind": "const",
+        "name": {
+          "text": "managedResource",
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 679,
+              "line": 34,
+              "character": 13
+            },
+            "end": {
+              "offset": 694,
+              "line": 34,
+              "character": 28
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "managedResource",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 679,
+                "line": 34,
+                "character": 13
+              },
+              "end": {
+                "offset": 694,
+                "line": 34,
+                "character": 28
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 666,
+              "line": 34,
+              "character": 0
+            },
+            "end": {
+              "offset": 812,
+              "line": 37,
+              "character": 3
+            }
+          }
+        },
+        "callee": {
+          "kind": "identifier",
+          "name": {
+            "text": "defineBean",
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 697,
+                "line": 34,
+                "character": 31
+              },
+              "end": {
+                "offset": 707,
+                "line": 34,
+                "character": 41
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 697,
+              "line": 34,
+              "character": 31
+            },
+            "end": {
+              "offset": 707,
+              "line": 34,
+              "character": 41
+            }
+          }
+        },
+        "typeArguments": [
+          {
+            "kind": "reference",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "ManagedResource",
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 708,
+                    "line": 34,
+                    "character": 42
+                  },
+                  "end": {
+                    "offset": 723,
+                    "line": 34,
+                    "character": 57
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 708,
+                  "line": 34,
+                  "character": 42
+                },
+                "end": {
+                  "offset": 723,
+                  "line": 34,
+                  "character": 57
+                }
+              }
+            },
+            "typeArguments": [],
+            "span": {
+              "fileId": "src/application.ts",
+              "start": {
+                "offset": 708,
+                "line": 34,
+                "character": 42
+              },
+              "end": {
+                "offset": 723,
+                "line": 34,
+                "character": 57
+              }
+            }
+          }
+        ],
+        "options": {
+          "kind": "object",
+          "properties": [
+            {
+              "kind": "create",
+              "keySpan": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 729,
+                  "line": 35,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 735,
+                  "line": 35,
+                  "character": 8
+                }
+              },
+              "value": {
+                "kind": "arrow",
+                "async": false,
+                "parameters": [],
+                "body": {
+                  "kind": "direct-new",
+                  "callee": {
+                    "kind": "identifier",
+                    "name": {
+                      "text": "ManagedResource",
+                      "span": {
+                        "fileId": "src/application.ts",
+                        "start": {
+                          "offset": 747,
+                          "line": 35,
+                          "character": 20
+                        },
+                        "end": {
+                          "offset": 762,
+                          "line": 35,
+                          "character": 35
+                        }
+                      }
+                    },
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 747,
+                        "line": 35,
+                        "character": 20
+                      },
+                      "end": {
+                        "offset": 762,
+                        "line": 35,
+                        "character": 35
+                      }
+                    }
+                  },
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 743,
+                      "line": 35,
+                      "character": 16
+                    },
+                    "end": {
+                      "offset": 764,
+                      "line": 35,
+                      "character": 37
+                    }
+                  }
+                },
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 737,
+                    "line": 35,
+                    "character": 10
+                  },
+                  "end": {
+                    "offset": 764,
+                    "line": 35,
+                    "character": 37
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 729,
+                  "line": 35,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 764,
+                  "line": 35,
+                  "character": 37
+                }
+              }
+            },
+            {
+              "kind": "dispose",
+              "keySpan": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 768,
+                  "line": 36,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 775,
+                  "line": 36,
+                  "character": 9
+                }
+              },
+              "value": {
+                "kind": "arrow",
+                "async": false,
+                "parameters": [
+                  {
+                    "index": 0,
+                    "optional": false,
+                    "rest": false,
+                    "hasInitializer": false,
+                    "span": {
+                      "fileId": "src/application.ts",
+                      "start": {
+                        "offset": 778,
+                        "line": 36,
+                        "character": 12
+                      },
+                      "end": {
+                        "offset": 786,
+                        "line": 36,
+                        "character": 20
+                      }
+                    }
+                  }
+                ],
+                "body": {
+                  "kind": "unsupported",
+                  "expressionKind": "call",
+                  "span": {
+                    "fileId": "src/application.ts",
+                    "start": {
+                      "offset": 791,
+                      "line": 36,
+                      "character": 25
+                    },
+                    "end": {
+                      "offset": 807,
+                      "line": 36,
+                      "character": 41
+                    }
+                  }
+                },
+                "span": {
+                  "fileId": "src/application.ts",
+                  "start": {
+                    "offset": 777,
+                    "line": 36,
+                    "character": 11
+                  },
+                  "end": {
+                    "offset": 807,
+                    "line": 36,
+                    "character": 41
+                  }
+                }
+              },
+              "span": {
+                "fileId": "src/application.ts",
+                "start": {
+                  "offset": 768,
+                  "line": 36,
+                  "character": 2
+                },
+                "end": {
+                  "offset": 807,
+                  "line": 36,
+                  "character": 41
+                }
+              }
+            }
+          ],
+          "span": {
+            "fileId": "src/application.ts",
+            "start": {
+              "offset": 725,
+              "line": 34,
+              "character": 59
+            },
+            "end": {
+              "offset": 810,
+              "line": 37,
+              "character": 1
+            }
+          }
+        },
+        "span": {
+          "fileId": "src/application.ts",
+          "start": {
+            "offset": 679,
+            "line": 34,
+            "character": 13
+          },
+          "end": {
+            "offset": 811,
+            "line": 37,
+            "character": 2
+          }
+        }
+      }
+    ],
+    "unsupportedDeclarations": []
+  },
+  {
+    "kind": "source-unit",
+    "file": "src/contracts.ts",
+    "sourceKind": "ts",
+    "imports": [],
+    "exports": [],
+    "interfaces": [
+      {
+        "kind": "interface",
+        "topLevel": true,
+        "name": {
+          "text": "AlphaPort",
+          "span": {
+            "fileId": "src/contracts.ts",
+            "start": {
+              "offset": 17,
+              "line": 0,
+              "character": 17
+            },
+            "end": {
+              "offset": 26,
+              "line": 0,
+              "character": 26
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "AlphaPort",
+            "span": {
+              "fileId": "src/contracts.ts",
+              "start": {
+                "offset": 17,
+                "line": 0,
+                "character": 17
+              },
+              "end": {
+                "offset": 26,
+                "line": 0,
+                "character": 26
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/contracts.ts",
+            "start": {
+              "offset": 0,
+              "line": 0,
+              "character": 0
+            },
+            "end": {
+              "offset": 49,
+              "line": 2,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "src/contracts.ts",
+          "start": {
+            "offset": 7,
+            "line": 0,
+            "character": 7
+          },
+          "end": {
+            "offset": 49,
+            "line": 2,
+            "character": 1
+          }
+        }
+      },
+      {
+        "kind": "interface",
+        "topLevel": true,
+        "name": {
+          "text": "BetaPort",
+          "span": {
+            "fileId": "src/contracts.ts",
+            "start": {
+              "offset": 68,
+              "line": 4,
+              "character": 17
+            },
+            "end": {
+              "offset": 76,
+              "line": 4,
+              "character": 25
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "BetaPort",
+            "span": {
+              "fileId": "src/contracts.ts",
+              "start": {
+                "offset": 68,
+                "line": 4,
+                "character": 17
+              },
+              "end": {
+                "offset": 76,
+                "line": 4,
+                "character": 25
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/contracts.ts",
+            "start": {
+              "offset": 51,
+              "line": 4,
+              "character": 0
+            },
+            "end": {
+              "offset": 98,
+              "line": 6,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "src/contracts.ts",
+          "start": {
+            "offset": 58,
+            "line": 4,
+            "character": 7
+          },
+          "end": {
+            "offset": 98,
+            "line": 6,
+            "character": 1
+          }
+        }
+      }
+    ],
+    "namespaces": [],
+    "classes": [
+      {
+        "kind": "class",
+        "topLevel": true,
+        "abstract": false,
+        "name": {
+          "text": "ManagedResource",
+          "span": {
+            "fileId": "src/contracts.ts",
+            "start": {
+              "offset": 113,
+              "line": 8,
+              "character": 13
+            },
+            "end": {
+              "offset": 128,
+              "line": 8,
+              "character": 28
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "ManagedResource",
+            "span": {
+              "fileId": "src/contracts.ts",
+              "start": {
+                "offset": 113,
+                "line": 8,
+                "character": 13
+              },
+              "end": {
+                "offset": 128,
+                "line": 8,
+                "character": 28
+              }
+            }
+          },
+          "span": {
+            "fileId": "src/contracts.ts",
+            "start": {
+              "offset": 100,
+              "line": 8,
+              "character": 0
+            },
+            "end": {
+              "offset": 151,
+              "line": 10,
+              "character": 1
+            }
+          }
+        },
+        "typeParameters": [],
+        "decorators": [],
+        "implements": [],
+        "constructors": [],
+        "methods": [
+          {
+            "kind": "method",
+            "name": {
+              "kind": "identifier",
+              "name": {
+                "text": "close",
+                "span": {
+                  "fileId": "src/contracts.ts",
+                  "start": {
+                    "offset": 133,
+                    "line": 9,
+                    "character": 2
+                  },
+                  "end": {
+                    "offset": 138,
+                    "line": 9,
+                    "character": 7
+                  }
+                }
+              }
+            },
+            "static": false,
+            "accessibility": "public",
+            "async": false,
+            "generator": false,
+            "optional": false,
+            "implementation": true,
+            "parameters": [],
+            "returnType": {
+              "kind": "primitive",
+              "name": "void",
+              "span": {
+                "fileId": "src/contracts.ts",
+                "start": {
+                  "offset": 142,
+                  "line": 9,
+                  "character": 11
+                },
+                "end": {
+                  "offset": 146,
+                  "line": 9,
+                  "character": 15
+                }
+              }
+            },
+            "span": {
+              "fileId": "src/contracts.ts",
+              "start": {
+                "offset": 133,
+                "line": 9,
+                "character": 2
+              },
+              "end": {
+                "offset": 149,
+                "line": 9,
+                "character": 18
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "src/contracts.ts",
+          "start": {
+            "offset": 107,
+            "line": 8,
+            "character": 7
+          },
+          "end": {
+            "offset": 151,
+            "line": 10,
+            "character": 1
+          }
+        }
+      }
+    ],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]

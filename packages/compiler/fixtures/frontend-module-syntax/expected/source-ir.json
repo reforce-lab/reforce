@@ -1,0 +1,991 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "modules.ts",
+    "sourceKind": "ts",
+    "imports": [
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "package-a",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 46,
+              "line": 0,
+              "character": 46
+            },
+            "end": {
+              "offset": 57,
+              "line": 0,
+              "character": 57
+            }
+          }
+        },
+        "typeOnly": false,
+        "bindings": [
+          {
+            "kind": "default",
+            "local": {
+              "text": "DefaultValue",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 7,
+                  "line": 0,
+                  "character": 7
+                },
+                "end": {
+                  "offset": 19,
+                  "line": 0,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 7,
+                "line": 0,
+                "character": 7
+              },
+              "end": {
+                "offset": 19,
+                "line": 0,
+                "character": 19
+              }
+            }
+          },
+          {
+            "kind": "namespace",
+            "local": {
+              "text": "namespaceValue",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 26,
+                  "line": 0,
+                  "character": 26
+                },
+                "end": {
+                  "offset": 40,
+                  "line": 0,
+                  "character": 40
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 21,
+                "line": 0,
+                "character": 21
+              },
+              "end": {
+                "offset": 40,
+                "line": 0,
+                "character": 40
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 0,
+            "line": 0,
+            "character": 0
+          },
+          "end": {
+            "offset": 58,
+            "line": 0,
+            "character": 58
+          }
+        }
+      },
+      {
+        "kind": "import",
+        "moduleSpecifier": {
+          "text": "package-b",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 111,
+              "line": 1,
+              "character": 52
+            },
+            "end": {
+              "offset": 122,
+              "line": 1,
+              "character": 63
+            }
+          }
+        },
+        "typeOnly": true,
+        "bindings": [
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Input",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 73,
+                  "line": 1,
+                  "character": 14
+                },
+                "end": {
+                  "offset": 78,
+                  "line": 1,
+                  "character": 19
+                }
+              }
+            },
+            "local": {
+              "text": "Input",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 73,
+                  "line": 1,
+                  "character": 14
+                },
+                "end": {
+                  "offset": 78,
+                  "line": 1,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 73,
+                "line": 1,
+                "character": 14
+              },
+              "end": {
+                "offset": 78,
+                "line": 1,
+                "character": 19
+              }
+            }
+          },
+          {
+            "kind": "named",
+            "imported": {
+              "text": "Source",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 80,
+                  "line": 1,
+                  "character": 21
+                },
+                "end": {
+                  "offset": 86,
+                  "line": 1,
+                  "character": 27
+                }
+              }
+            },
+            "local": {
+              "text": "RenamedSource",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 90,
+                  "line": 1,
+                  "character": 31
+                },
+                "end": {
+                  "offset": 103,
+                  "line": 1,
+                  "character": 44
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 80,
+                "line": 1,
+                "character": 21
+              },
+              "end": {
+                "offset": 103,
+                "line": 1,
+                "character": 44
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 59,
+            "line": 1,
+            "character": 0
+          },
+          "end": {
+            "offset": 123,
+            "line": 1,
+            "character": 64
+          }
+        }
+      }
+    ],
+    "exports": [
+      {
+        "kind": "local-named",
+        "typeOnly": false,
+        "specifiers": [
+          {
+            "local": {
+              "text": "LocalValue",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 134,
+                  "line": 3,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 144,
+                  "line": 3,
+                  "character": 19
+                }
+              }
+            },
+            "exported": {
+              "text": "LocalValue",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 134,
+                  "line": 3,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 144,
+                  "line": 3,
+                  "character": 19
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 134,
+                "line": 3,
+                "character": 9
+              },
+              "end": {
+                "offset": 144,
+                "line": 3,
+                "character": 19
+              }
+            }
+          },
+          {
+            "local": {
+              "text": "LocalType",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 151,
+                  "line": 3,
+                  "character": 26
+                },
+                "end": {
+                  "offset": 160,
+                  "line": 3,
+                  "character": 35
+                }
+              }
+            },
+            "exported": {
+              "text": "LocalType",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 151,
+                  "line": 3,
+                  "character": 26
+                },
+                "end": {
+                  "offset": 160,
+                  "line": 3,
+                  "character": 35
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 146,
+                "line": 3,
+                "character": 21
+              },
+              "end": {
+                "offset": 160,
+                "line": 3,
+                "character": 35
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 125,
+            "line": 3,
+            "character": 0
+          },
+          "end": {
+            "offset": 163,
+            "line": 3,
+            "character": 38
+          }
+        }
+      },
+      {
+        "kind": "reexport-named",
+        "moduleSpecifier": {
+          "text": "package-c",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 218,
+              "line": 4,
+              "character": 54
+            },
+            "end": {
+              "offset": 229,
+              "line": 4,
+              "character": 65
+            }
+          }
+        },
+        "typeOnly": false,
+        "specifiers": [
+          {
+            "local": {
+              "text": "RemoteValue",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 173,
+                  "line": 4,
+                  "character": 9
+                },
+                "end": {
+                  "offset": 184,
+                  "line": 4,
+                  "character": 20
+                }
+              }
+            },
+            "exported": {
+              "text": "Value",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 188,
+                  "line": 4,
+                  "character": 24
+                },
+                "end": {
+                  "offset": 193,
+                  "line": 4,
+                  "character": 29
+                }
+              }
+            },
+            "typeOnly": false,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 173,
+                "line": 4,
+                "character": 9
+              },
+              "end": {
+                "offset": 193,
+                "line": 4,
+                "character": 29
+              }
+            }
+          },
+          {
+            "local": {
+              "text": "RemoteType",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 200,
+                  "line": 4,
+                  "character": 36
+                },
+                "end": {
+                  "offset": 210,
+                  "line": 4,
+                  "character": 46
+                }
+              }
+            },
+            "exported": {
+              "text": "RemoteType",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 200,
+                  "line": 4,
+                  "character": 36
+                },
+                "end": {
+                  "offset": 210,
+                  "line": 4,
+                  "character": 46
+                }
+              }
+            },
+            "typeOnly": true,
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 195,
+                "line": 4,
+                "character": 31
+              },
+              "end": {
+                "offset": 210,
+                "line": 4,
+                "character": 46
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 164,
+            "line": 4,
+            "character": 0
+          },
+          "end": {
+            "offset": 230,
+            "line": 4,
+            "character": 66
+          }
+        }
+      },
+      {
+        "kind": "reexport-all",
+        "moduleSpecifier": {
+          "text": "package-d",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 245,
+              "line": 5,
+              "character": 14
+            },
+            "end": {
+              "offset": 256,
+              "line": 5,
+              "character": 25
+            }
+          }
+        },
+        "typeOnly": false,
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 231,
+            "line": 5,
+            "character": 0
+          },
+          "end": {
+            "offset": 257,
+            "line": 5,
+            "character": 26
+          }
+        }
+      },
+      {
+        "kind": "namespace",
+        "moduleSpecifier": {
+          "text": "package-e",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 281,
+              "line": 6,
+              "character": 23
+            },
+            "end": {
+              "offset": 292,
+              "line": 6,
+              "character": 34
+            }
+          }
+        },
+        "exported": {
+          "text": "tools",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 270,
+              "line": 6,
+              "character": 12
+            },
+            "end": {
+              "offset": 275,
+              "line": 6,
+              "character": 17
+            }
+          }
+        },
+        "typeOnly": false,
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 258,
+            "line": 6,
+            "character": 0
+          },
+          "end": {
+            "offset": 293,
+            "line": 6,
+            "character": 35
+          }
+        }
+      },
+      {
+        "kind": "default-local",
+        "local": {
+          "text": "DefaultValue",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 309,
+              "line": 7,
+              "character": 15
+            },
+            "end": {
+              "offset": 321,
+              "line": 7,
+              "character": 27
+            }
+          }
+        },
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 294,
+            "line": 7,
+            "character": 0
+          },
+          "end": {
+            "offset": 322,
+            "line": 7,
+            "character": 28
+          }
+        }
+      }
+    ],
+    "interfaces": [
+      {
+        "kind": "interface",
+        "topLevel": false,
+        "name": {
+          "text": "Contract",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 368,
+              "line": 10,
+              "character": 19
+            },
+            "end": {
+              "offset": 376,
+              "line": 10,
+              "character": 27
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Contract",
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 368,
+                "line": 10,
+                "character": 19
+              },
+              "end": {
+                "offset": 376,
+                "line": 10,
+                "character": 27
+              }
+            }
+          },
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 351,
+              "line": 10,
+              "character": 2
+            },
+            "end": {
+              "offset": 379,
+              "line": 10,
+              "character": 30
+            }
+          }
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 358,
+            "line": 10,
+            "character": 9
+          },
+          "end": {
+            "offset": 379,
+            "line": 10,
+            "character": 30
+          }
+        }
+      },
+      {
+        "kind": "interface",
+        "topLevel": true,
+        "name": {
+          "text": "LocalType",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 465,
+              "line": 16,
+              "character": 10
+            },
+            "end": {
+              "offset": 474,
+              "line": 16,
+              "character": 19
+            }
+          }
+        },
+        "export": {
+          "kind": "none"
+        },
+        "typeParameters": [],
+        "extends": [],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 455,
+            "line": 16,
+            "character": 0
+          },
+          "end": {
+            "offset": 477,
+            "line": 16,
+            "character": 22
+          }
+        }
+      }
+    ],
+    "namespaces": [
+      {
+        "kind": "namespace",
+        "topLevel": true,
+        "name": {
+          "text": "Outer",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 341,
+              "line": 9,
+              "character": 17
+            },
+            "end": {
+              "offset": 346,
+              "line": 9,
+              "character": 22
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Outer",
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 341,
+                "line": 9,
+                "character": 17
+              },
+              "end": {
+                "offset": 346,
+                "line": 9,
+                "character": 22
+              }
+            }
+          },
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 324,
+              "line": 9,
+              "character": 0
+            },
+            "end": {
+              "offset": 453,
+              "line": 14,
+              "character": 1
+            }
+          }
+        },
+        "exportedMembers": [
+          {
+            "kind": "type",
+            "name": {
+              "text": "Contract",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 368,
+                  "line": 10,
+                  "character": 19
+                },
+                "end": {
+                  "offset": 376,
+                  "line": 10,
+                  "character": 27
+                }
+              }
+            },
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 351,
+                "line": 10,
+                "character": 2
+              },
+              "end": {
+                "offset": 379,
+                "line": 10,
+                "character": 30
+              }
+            }
+          },
+          {
+            "kind": "namespace",
+            "name": {
+              "text": "Inner",
+              "span": {
+                "fileId": "modules.ts",
+                "start": {
+                  "offset": 399,
+                  "line": 11,
+                  "character": 19
+                },
+                "end": {
+                  "offset": 404,
+                  "line": 11,
+                  "character": 24
+                }
+              }
+            },
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 382,
+                "line": 11,
+                "character": 2
+              },
+              "end": {
+                "offset": 451,
+                "line": 13,
+                "character": 3
+              }
+            }
+          }
+        ],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 331,
+            "line": 9,
+            "character": 7
+          },
+          "end": {
+            "offset": 453,
+            "line": 14,
+            "character": 1
+          }
+        }
+      },
+      {
+        "kind": "namespace",
+        "topLevel": false,
+        "name": {
+          "text": "Inner",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 399,
+              "line": 11,
+              "character": 19
+            },
+            "end": {
+              "offset": 404,
+              "line": 11,
+              "character": 24
+            }
+          }
+        },
+        "export": {
+          "kind": "named",
+          "exportedName": {
+            "text": "Inner",
+            "span": {
+              "fileId": "modules.ts",
+              "start": {
+                "offset": 399,
+                "line": 11,
+                "character": 19
+              },
+              "end": {
+                "offset": 404,
+                "line": 11,
+                "character": 24
+              }
+            }
+          },
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 382,
+              "line": 11,
+              "character": 2
+            },
+            "end": {
+              "offset": 451,
+              "line": 13,
+              "character": 3
+            }
+          }
+        },
+        "exportedMembers": [],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 389,
+            "line": 11,
+            "character": 9
+          },
+          "end": {
+            "offset": 451,
+            "line": 13,
+            "character": 3
+          }
+        }
+      }
+    ],
+    "classes": [],
+    "beanFactories": [],
+    "unsupportedDeclarations": [
+      {
+        "kind": "unsupported-named-declaration",
+        "declarationKind": "type-alias",
+        "topLevel": true,
+        "name": {
+          "text": "InputAlias",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 505,
+              "line": 18,
+              "character": 5
+            },
+            "end": {
+              "offset": 515,
+              "line": 18,
+              "character": 15
+            }
+          }
+        },
+        "export": {
+          "kind": "none"
+        },
+        "typeParameters": [],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 500,
+            "line": 18,
+            "character": 0
+          },
+          "end": {
+            "offset": 524,
+            "line": 18,
+            "character": 24
+          }
+        }
+      },
+      {
+        "kind": "unsupported-named-declaration",
+        "declarationKind": "type-alias",
+        "topLevel": true,
+        "name": {
+          "text": "SourceAlias",
+          "span": {
+            "fileId": "modules.ts",
+            "start": {
+              "offset": 530,
+              "line": 19,
+              "character": 5
+            },
+            "end": {
+              "offset": 541,
+              "line": 19,
+              "character": 16
+            }
+          }
+        },
+        "export": {
+          "kind": "none"
+        },
+        "typeParameters": [],
+        "span": {
+          "fileId": "modules.ts",
+          "start": {
+            "offset": 525,
+            "line": 19,
+            "character": 0
+          },
+          "end": {
+            "offset": 558,
+            "line": 19,
+            "character": 33
+          }
+        }
+      }
+    ]
+  }
+]

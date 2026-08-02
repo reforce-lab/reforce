@@ -1,0 +1,8 @@
+{
+  "name": "compiler-monorepo-fixture",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#shared-contract": "./packages/shared/src/import-contract.ts"
+  }
+}

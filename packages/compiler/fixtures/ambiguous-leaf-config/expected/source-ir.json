@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "source-unit",
+    "file": "src/application.ts",
+    "sourceKind": "ts",
+    "imports": [],
+    "exports": [],
+    "interfaces": [],
+    "namespaces": [],
+    "classes": [],
+    "beanFactories": [],
+    "unsupportedDeclarations": []
+  }
+]
