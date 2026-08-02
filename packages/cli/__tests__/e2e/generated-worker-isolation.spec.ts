@@ -15,7 +15,7 @@ import {
 const fixtureRoot = fileURLToPath(
   new URL("../../fixtures/worker/generated-application", import.meta.url),
 );
-const cliNodeModules = fileURLToPath(new URL("../../node_modules", import.meta.url));
+const contextRoot = fileURLToPath(new URL("../../../context", import.meta.url));
 const commandTimeout = 120_000;
 let temporaryProject: TemporaryProject | undefined;
 let builtWorkerEntry: string | undefined;
@@ -62,9 +62,11 @@ async function runBuiltWorkers(): Promise<unknown> {
 beforeAll(async () => {
   temporaryProject = await createTemporaryProject();
   await copyFixtureTree(fixtureRoot, temporaryProject.projectRoot);
+  const scopeRoot = join(temporaryProject.projectRoot, "node_modules", "@reforce");
+  await mkdir(scopeRoot, { recursive: true });
   await symlink(
-    cliNodeModules,
-    join(temporaryProject.projectRoot, "node_modules"),
+    contextRoot,
+    join(scopeRoot, "context"),
     process.platform === "win32" ? "junction" : "dir",
   );
 

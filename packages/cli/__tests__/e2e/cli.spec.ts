@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, cp, readdir, readFile, rm, symlink } from "node:fs/promises";
+import { access, cp, mkdir, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -15,7 +15,7 @@ import { sleep } from "radashi";
 const cliRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 const cliEntry = join(cliRoot, "dist", "reforce.js");
-const cliNodeModules = join(cliRoot, "node_modules");
+const contextRoot = join(workspaceRoot, "packages", "context");
 const windowsSignalFixture = fileURLToPath(
   new URL("../../fixtures/process/windows-signal.fixture.ts", import.meta.url),
 );
@@ -188,10 +188,12 @@ function isShutdownAcknowledgement(
   );
 }
 
-async function linkWorkspaceDependencies(projectRoot: string): Promise<void> {
+async function linkContextPackage(projectRoot: string): Promise<void> {
+  const scopeRoot = join(projectRoot, "node_modules", "@reforce");
+  await mkdir(scopeRoot, { recursive: true });
   await symlink(
-    cliNodeModules,
-    join(projectRoot, "node_modules"),
+    contextRoot,
+    join(scopeRoot, "context"),
     process.platform === "win32" ? "junction" : "dir",
   );
 }
@@ -250,7 +252,7 @@ async function createApplicationProject(): Promise<TemporaryProject> {
     "tsconfig.json": leafTsconfig(),
   });
   try {
-    await linkWorkspaceDependencies(project.projectRoot);
+    await linkContextPackage(project.projectRoot);
     return project;
   } catch (error) {
     await project.cleanup();
@@ -280,7 +282,7 @@ async function createMonorepoProject(): Promise<TemporaryProject> {
     })}\n`,
   });
   try {
-    await linkWorkspaceDependencies(project.projectRoot);
+    await linkContextPackage(project.projectRoot);
     return project;
   } catch (error) {
     await project.cleanup();
