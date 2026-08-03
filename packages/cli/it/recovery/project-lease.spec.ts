@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
@@ -7,12 +8,21 @@ import { ProjectBusyError, ProjectLease } from "@/project/lease";
 import type { LeaseParticipant } from "@/project/lease-endpoint";
 import { spawnBunIpcHarness } from "../support/process/bun-ipc-harness";
 
+interface FakeGateEndpoint {
+  readonly port: number;
+  close(): Promise<void>;
+}
+
 const leases: ProjectLease[] = [];
 const projects: TemporaryProject[] = [];
+const endpoints: FakeGateEndpoint[] = [];
 
 afterEach(async () => {
   for (const lease of leases.splice(0).reverse()) {
     await lease.release();
+  }
+  for (const endpoint of endpoints.splice(0).reverse()) {
+    await endpoint.close();
   }
   for (const project of projects.splice(0).reverse()) {
     await project.cleanup();
@@ -23,6 +33,64 @@ async function temporaryProject(): Promise<TemporaryProject> {
   const project = await createTemporaryProject();
   projects.push(project);
   return project;
+}
+
+// 抢锁 gate 的存活探测走 TCP，用真服务端才能控制探测结果（"dead" / "unknown"）以及探测窗口内的
+// 记录变更时序；`inspectExistingGate` 是模块私有的，没有可注入的缝。
+async function fakeGateEndpoint(
+  handleProbe: (socket: Socket) => Promise<void> | void,
+): Promise<FakeGateEndpoint> {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    void Promise.resolve(handleProbe(socket)).catch(() => socket.destroy());
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw new Error("Fake gate endpoint did not publish a TCP port.");
+  }
+  const endpoint: FakeGateEndpoint = {
+    port: address.port,
+    close: async () => {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+  endpoints.push(endpoint);
+  return endpoint;
+}
+
+function gateRecordJson(port: number, gateToken: string): string {
+  return `${JSON.stringify({
+    schemaVersion: 1,
+    gateToken,
+    host: "127.0.0.1",
+    port,
+    challenge: "gate-challenge",
+  })}\n`;
+}
+
+async function prepareGateRoot(projectRoot: string): Promise<string> {
+  const gateRoot = join(projectRoot, ".reforce", "lease", "gate");
+  await mkdir(gateRoot, { recursive: true });
+  return gateRoot;
+}
+
+async function replaceGateRecord(gateRoot: string, contents: string): Promise<void> {
+  const staging = join(gateRoot, "record.replacement.json");
+  await writeFile(staging, contents);
+  await rename(staging, join(gateRoot, "record.json"));
 }
 
 async function spawnLeaseHolder(projectRoot: string, mode: "reader" | "writer") {
@@ -228,6 +296,82 @@ describe("project lease", () => {
     );
 
     const acquisition = ProjectLease.acquire({ projectRoot: project.projectRoot, mode: "writer" });
+
+    await expect(acquisition).rejects.toBeInstanceOf(ProjectBusyError);
+  });
+
+  test("retries the acquisition gate when the gate directory is released while waiting", async () => {
+    const project = await temporaryProject();
+    const gateRoot = await prepareGateRoot(project.projectRoot);
+    // 目录非空，发布用的 rename 才会撞上 ENOTEMPTY 判定为竞争失败；空目录在 POSIX 上会被直接覆盖。
+    // 没有 record.json 则与「持有者刚刚释放 gate」产生的中间状态逐字节一致（#101）。
+    await writeFile(join(gateRoot, "holder.marker"), "holder\n");
+    const release = setTimeout(() => {
+      void rm(gateRoot, { recursive: true, force: true }).catch(() => {});
+    }, 200);
+    release.unref();
+
+    const lease = await ProjectLease.acquire({
+      projectRoot: project.projectRoot,
+      mode: "writer",
+      gateWaitMilliseconds: 5_000,
+    });
+    leases.push(lease);
+
+    expect(lease.leaseToken.length).toBeGreaterThan(0);
+  });
+
+  test("retries the acquisition gate while the gate probe has no verdict", async () => {
+    const project = await temporaryProject();
+    const gateRoot = await prepareGateRoot(project.projectRoot);
+    const probed = Promise.withResolvers<void>();
+    // 关停中的持有者会 destroy 未完成的探测连接，等待方拿到的结果是 "unknown"；「连上就 FIN、不回数据」
+    // 复现同一个结果又不依赖 RST 的到达时序。
+    const endpoint = await fakeGateEndpoint((socket) => {
+      socket.end();
+      probed.resolve();
+    });
+    await writeFile(
+      join(gateRoot, "record.json"),
+      gateRecordJson(endpoint.port, "unknown-gate-token"),
+    );
+
+    const acquisition = ProjectLease.acquire({
+      projectRoot: project.projectRoot,
+      mode: "writer",
+      gateWaitMilliseconds: 5_000,
+    });
+    await probed.promise;
+    await endpoint.close();
+    const lease = await acquisition;
+    leases.push(lease);
+
+    expect(lease.leaseToken.length).toBeGreaterThan(0);
+  });
+
+  test("spends the gate budget when the gate record changes during the probe", async () => {
+    const project = await temporaryProject();
+    const gateRoot = await prepareGateRoot(project.projectRoot);
+    let probes = 0;
+    let gatePort = 0;
+    const endpoint = await fakeGateEndpoint(async (socket) => {
+      probes += 1;
+      // 只换一次记录：缺陷版本要等到「记录不再变」才会退出重试循环，用例才能快速判失败而不是挂死。
+      if (probes === 1) {
+        await replaceGateRecord(gateRoot, gateRecordJson(gatePort, "replaced-gate-token"));
+      }
+      socket.end(
+        `${JSON.stringify({ schemaVersion: 1, leaseToken: "other", challenge: "other" })}\n`,
+      );
+    });
+    gatePort = endpoint.port;
+    await writeFile(join(gateRoot, "record.json"), gateRecordJson(gatePort, "initial-gate-token"));
+
+    const acquisition = ProjectLease.acquire({
+      projectRoot: project.projectRoot,
+      mode: "writer",
+      gateWaitMilliseconds: 0,
+    });
 
     await expect(acquisition).rejects.toBeInstanceOf(ProjectBusyError);
   });
