@@ -89,6 +89,31 @@ function localSymbolsFor(source: ParsedSource): ReadonlyMap<string, LinkedSymbol
   return localSymbols;
 }
 
+// unsupported 符号没有 declaration（LinkedSymbol.declaration 只容 class|interface），它是否被具名导出
+// 只能从 IR 读回来。缺了这一步，跨模块的 `export type X = {}` 对 resolveExport 不可见，
+// UNSUPPORTED_TYPE_DECLARATION 会退化成误导性的 TYPE_LINK_FAILED，而同文件的 `export { type X }`
+// 却能正确解析（#109）。
+function directlyExportedLocal(
+  record: ModuleRecord,
+  exportedName: string,
+): LinkedSymbol | undefined {
+  const direct = record.localSymbols.get(exportedName);
+  if (direct === undefined) {
+    return undefined;
+  }
+  if (direct.declaration?.export.kind === "named") {
+    return direct;
+  }
+  if (direct.kind !== "unsupported") {
+    return undefined;
+  }
+  // 没有导出修饰符的本地声明必须在这里保持不可见，否则会遮蔽只由 `export * from ...` 提供的同名符号。
+  const exported = record.source.unit.unsupportedDeclarations.some(
+    (item) => item.name === exportedName && item.export.kind === "named",
+  );
+  return exported ? direct : undefined;
+}
+
 function importReferencesFor(source: ParsedSource): ReadonlyMap<string, ImportReference> {
   const imports = new Map<string, ImportReference>();
   for (const declaration of source.unit.imports) {
@@ -358,8 +383,8 @@ export async function createProjectLinker(
     }
     visited.add(visitKey);
 
-    const direct = record.localSymbols.get(exportedName);
-    if (direct?.declaration?.export.kind === "named") {
+    const direct = directlyExportedLocal(record, exportedName);
+    if (direct !== undefined) {
       return direct;
     }
     const named = resolveNamedExport(record, exportedName, visited);
