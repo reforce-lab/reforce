@@ -166,17 +166,20 @@ function validFactoryProvidedType(
   provided: FactoryProvidedType | undefined,
   declaration: DefineBeanDeclaration,
   exportName: string,
+  linkFailureReported: boolean,
   diagnostics: CompilerDiagnostic[],
 ): provided is FactoryProvidedType {
   if (provided === undefined) {
-    diagnostics.push(
-      diagnostic({
-        code: "INVALID_DEFINE_BEAN",
-        message: `${exportName} must explicitly provide a non-generic object class or interface.`,
-        sourceSpan: declaration.span,
-        help: "Add defineBean<T>, a create return type, or a direct new expression.",
-      }),
-    );
+    if (!linkFailureReported) {
+      diagnostics.push(
+        diagnostic({
+          code: "INVALID_DEFINE_BEAN",
+          message: `${exportName} must explicitly provide a non-generic object class or interface.`,
+          sourceSpan: declaration.span,
+          help: "Add defineBean<T>, a create return type, or a direct new expression.",
+        }),
+      );
+    }
     return false;
   }
   const symbol = provided.symbol;
@@ -295,8 +298,14 @@ export function analyzeFactoryProvider(
   if (functions === undefined) {
     return undefined;
   }
+  // The linker records its own diagnostic when it cannot link the provided type, but stays silent
+  // on the shapes it never links; only report INVALID_DEFINE_BEAN when it said nothing (#108).
+  const diagnosticCount = linker.diagnostics.length;
   const provided = resolveFactoryProvidedType(source, declaration, functions.create, linker);
-  if (!validFactoryProvidedType(provided, declaration, exportName, diagnostics)) {
+  const linkFailureReported = linker.diagnostics.length > diagnosticCount;
+  if (
+    !validFactoryProvidedType(provided, declaration, exportName, linkFailureReported, diagnostics)
+  ) {
     return undefined;
   }
   const providedSymbol = provided.symbol;
