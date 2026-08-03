@@ -2,43 +2,13 @@ import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
 import { classBean, createApplicationContext, factoryBean } from "@/generated-runtime";
 import {
-  ApplicationCleanupError,
   ApplicationContextStateError,
-  ApplicationStartError,
   BeanCreationError,
   BeanLifecycleError,
   defineBean,
 } from "@/index";
+import { applicationCleanupError, applicationStartError, rejection } from "../support/rejection";
 import { testDefinition, testSource } from "../support/test-definition";
-
-async function rejection(promise: Promise<unknown>): Promise<Error> {
-  let reason: unknown;
-  try {
-    await promise;
-  } catch (error) {
-    reason = error;
-  }
-  if (!(reason instanceof Error)) {
-    throw new Error("Expected the Promise to reject with an Error.");
-  }
-  return reason;
-}
-
-function applicationStartError(error: Error): ApplicationStartError {
-  expect(error).toBeInstanceOf(ApplicationStartError);
-  if (!(error instanceof ApplicationStartError)) {
-    throw error;
-  }
-  return error;
-}
-
-function applicationCleanupError(error: Error): ApplicationCleanupError {
-  expect(error).toBeInstanceOf(ApplicationCleanupError);
-  if (!(error instanceof ApplicationCleanupError)) {
-    throw error;
-  }
-  return error;
-}
 
 describe("startup and shutdown coordination", () => {
   test("concurrent shutdown callers share one result and one cleanup", async () => {

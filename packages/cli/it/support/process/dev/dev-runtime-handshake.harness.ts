@@ -1,5 +1,6 @@
 import { runDevelopmentApplication } from "@/dev-runtime";
 import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
+import { observeShutdownSignals } from "../signal-observer";
 
 const onMessage = (message: unknown) => {
   if (
@@ -17,14 +18,7 @@ const onMessage = (message: unknown) => {
 };
 process.on("message", onMessage);
 
-const signalNames: NodeJS.Signals[] =
-  process.platform === "win32" ? ["SIGINT", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
-const onSignal = (signal: NodeJS.Signals) => {
-  process.send?.({ type: "harness:signal-observed", signal });
-};
-for (const signal of signalNames) {
-  process.on(signal, onSignal);
-}
+const stopObservingSignals = observeShutdownSignals();
 
 const hot: RspackHmrRuntime = {
   accept() {},
@@ -51,6 +45,4 @@ process.exitCode = await runDevelopmentApplication({
 });
 
 process.off("message", onMessage);
-for (const signal of signalNames) {
-  process.off(signal, onSignal);
-}
+stopObservingSignals();

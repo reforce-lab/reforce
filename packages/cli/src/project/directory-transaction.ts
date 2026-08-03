@@ -229,7 +229,11 @@ async function collectTreeEntries(
   return collected;
 }
 
-async function snapshotTree(root: string): Promise<TreeSnapshot> {
+// 导出仅供 it/recovery/directory-transaction.spec.ts：它要伪造「崩溃在写入中途」的 journal，
+// 即一份与已被改动的目录树相符、但与事务记录不符的快照。真实入口只会写「与当前树一致」的快照，
+// 无法构造这种状态。测试若自己重算哈希，就会把这里的拼接规则复制一份——改了聚合算法两边同步跟着改，
+// 回归测试照绿而存量 journal 已全部失效（Issue #35）。
+export async function snapshotTree(root: string): Promise<TreeSnapshot> {
   const entries = await collectTreeEntries(root);
   return {
     files: entries.map((entry) => ({

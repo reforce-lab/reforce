@@ -38,6 +38,19 @@ function applicationConfig(
   )}\n`;
 }
 
+// `files` 形式的 tsconfig 与 applicationConfig 的 `include` 形式走不同的覆盖判定分支，
+// 两个用例只差 files 列表本身。
+function filesConfig(files: readonly string[]): string {
+  return `${JSON.stringify({
+    compilerOptions: {
+      module: "ESNext",
+      moduleResolution: "Bundler",
+      target: "ESNext",
+    },
+    files,
+  })}\n`;
+}
+
 async function temporaryApplication(
   files: Record<string, string> = { "application.ts": "export {};\n" },
 ): Promise<TemporaryProject> {
@@ -277,14 +290,7 @@ describe("project resolution", () => {
   test("rejects a files-only config that omits generated declarations", async () => {
     const application = await createTemporaryProject({
       src: { "application.ts": "export {};\n" },
-      "tsconfig.json": `${JSON.stringify({
-        compilerOptions: {
-          module: "ESNext",
-          moduleResolution: "Bundler",
-          target: "ESNext",
-        },
-        files: ["src/application.ts"],
-      })}\n`,
+      "tsconfig.json": filesConfig(["src/application.ts"]),
     });
     projects.push(application);
     const compiler = createCompiler();
@@ -300,14 +306,7 @@ describe("project resolution", () => {
   test("accepts a files-only config that names the generated declaration", async () => {
     const application = await createTemporaryProject({
       src: { "application.ts": "export {};\n" },
-      "tsconfig.json": `${JSON.stringify({
-        compilerOptions: {
-          module: "ESNext",
-          moduleResolution: "Bundler",
-          target: "ESNext",
-        },
-        files: ["src/application.ts", ".reforce/generated/qualifiers.d.ts"],
-      })}\n`,
+      "tsconfig.json": filesConfig(["src/application.ts", ".reforce/generated/qualifiers.d.ts"]),
     });
     projects.push(application);
     const compiler = createCompiler();

@@ -2,34 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { classBean, createApplicationContext } from "@/generated-runtime";
 import {
   ApplicationContextStateError,
-  ApplicationStartError,
   BeanCreationError,
   EarlyBeanAccessError,
   InvalidGeneratedDefinitionError,
   UnregisteredBeanTargetError,
 } from "@/index";
+import { applicationStartError, rejection } from "../support/rejection";
 import { testDefinition, testDependency, testSource } from "../support/test-definition";
-
-async function rejection(promise: Promise<unknown>): Promise<Error> {
-  let reason: unknown;
-  try {
-    await promise;
-  } catch (error) {
-    reason = error;
-  }
-  if (!(reason instanceof Error)) {
-    throw new Error("Expected the Promise to reject with an Error.");
-  }
-  return reason;
-}
-
-function applicationStartError(error: Error): ApplicationStartError {
-  expect(error).toBeInstanceOf(ApplicationStartError);
-  if (!(error instanceof ApplicationStartError)) {
-    throw error;
-  }
-  return error;
-}
 
 describe("application context identity", () => {
   test("constructor injection and public lookup return one singleton", async () => {

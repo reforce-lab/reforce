@@ -1,29 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
 import { classBean, createApplicationContext, factoryBean } from "@/generated-runtime";
-import { ApplicationCleanupError, ApplicationStartError, defineBean } from "@/index";
+import { ApplicationStartError, defineBean } from "@/index";
+import { applicationCleanupError, rejection } from "../support/rejection";
 import { testDefinition, testDependency, testSource } from "../support/test-definition";
-
-async function rejection(promise: Promise<unknown>): Promise<Error> {
-  let reason: unknown;
-  try {
-    await promise;
-  } catch (error) {
-    reason = error;
-  }
-  if (!(reason instanceof Error)) {
-    throw new Error("Expected the Promise to reject with an Error.");
-  }
-  return reason;
-}
-
-function applicationCleanupError(error: Error): ApplicationCleanupError {
-  expect(error).toBeInstanceOf(ApplicationCleanupError);
-  if (!(error instanceof ApplicationCleanupError)) {
-    throw error;
-  }
-  return error;
-}
 
 describe("lifecycle execution", () => {
   test("startup and cleanup consume their generated order forward", async () => {

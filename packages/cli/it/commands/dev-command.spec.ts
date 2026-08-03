@@ -14,7 +14,7 @@ const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-command.harness.ts", import.meta.url),
 );
 const windowsSignalHarnessPath = fileURLToPath(
-  new URL("../support/process/windows-signal.harness.ts", import.meta.url),
+  import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
 const bunExecutable = await resolveBunExecutable();
 const workspaceRoot = resolve("../..");
@@ -117,6 +117,31 @@ async function createApplicationProject(tree: ProjectTree): Promise<TemporaryPro
     cp(radashiRoot, join(project.projectRoot, "node_modules", "radashi"), { recursive: true }),
   ]);
   return project;
+}
+
+// 两个 HMR 用例的起手式相同：建一个带初始 application 的项目、把 dev 命令 harness 跑起来、
+// 边收 stderr 边等第一次 start。stderr 以取值函数返回，因为它在子进程生命周期里一直在追加。
+async function startHmrApplication(): Promise<{
+  readonly project: TemporaryProject;
+  readonly subprocess: ResultPromise;
+  readonly stderr: () => string;
+}> {
+  const tree = applicationProjectTree();
+  const project = await createApplicationProject({
+    ...tree,
+    src: {
+      ...tree.src,
+      "application.ts": initialHmrApplicationSource,
+    },
+  });
+  const subprocess = spawnDevCommandHarness([project.projectRoot, "."]);
+  processes.push(subprocess);
+  let stderr = "";
+  subprocess.stderr?.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+  await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:one"));
+  return { project, subprocess, stderr: () => stderr };
 }
 
 const initialHmrApplicationSource = `import { appendFileSync } from "node:fs";
@@ -277,21 +302,7 @@ describe("development command", () => {
   }, 30_000);
 
   test("applies a real Bun ESM hot update only after the previous Context closes", async () => {
-    const tree = applicationProjectTree();
-    const project = await createApplicationProject({
-      ...tree,
-      src: {
-        ...tree.src,
-        "application.ts": initialHmrApplicationSource,
-      },
-    });
-    const subprocess = spawnDevCommandHarness([project.projectRoot, "."]);
-    processes.push(subprocess);
-    let stderr = "";
-    subprocess.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:one"));
+    const { project, subprocess, stderr } = await startHmrApplication();
 
     await writeFile(
       join(project.projectRoot, "src", "application.ts"),
@@ -301,7 +312,7 @@ describe("development command", () => {
       await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:two"));
     } catch (error) {
       throw new Error(
-        `Development command did not recover. events=${JSON.stringify(await readEvents(project.projectRoot))} stderr=${stderr}`,
+        `Development command did not recover. events=${JSON.stringify(await readEvents(project.projectRoot))} stderr=${stderr()}`,
         { cause: error },
       );
     }
@@ -325,33 +336,19 @@ describe("development command", () => {
   }, 30_000);
 
   test("keeps the healthy child and assets through a failed rebuild", async () => {
-    const tree = applicationProjectTree();
-    const project = await createApplicationProject({
-      ...tree,
-      src: {
-        ...tree.src,
-        "application.ts": initialHmrApplicationSource,
-      },
-    });
-    const subprocess = spawnDevCommandHarness([project.projectRoot, "."]);
-    processes.push(subprocess);
-    let stderr = "";
-    subprocess.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:one"));
+    const { project, subprocess, stderr } = await startHmrApplication();
     const devOutputRoot = join(project.projectRoot, ".reforce", "dev");
     const healthyAssets = await snapshotFiles(devOutputRoot);
 
     const applicationPath = join(project.projectRoot, "src", "application.ts");
     await writeFile(applicationPath, "export class Broken {\n");
-    await waitUntil(async () => stderr.includes("PARSER_SYNTAX_ERROR"));
+    await waitUntil(async () => stderr().includes("PARSER_SYNTAX_ERROR"));
 
     const eventsAfterFailure = await readEvents(project.projectRoot);
     const assetsAfterFailure = await snapshotFiles(devOutputRoot);
     if (eventsAfterFailure.join(",") !== "start:one") {
       throw new Error(
-        `Failed compilation changed the healthy child. events=${JSON.stringify(eventsAfterFailure)} files=${JSON.stringify([...healthyAssets.keys()])} assets=${JSON.stringify(changedFiles(healthyAssets, assetsAfterFailure))} stderr=${stderr}`,
+        `Failed compilation changed the healthy child. events=${JSON.stringify(eventsAfterFailure)} files=${JSON.stringify([...healthyAssets.keys()])} assets=${JSON.stringify(changedFiles(healthyAssets, assetsAfterFailure))} stderr=${stderr()}`,
       );
     }
     expect(assetsAfterFailure).toEqual(healthyAssets);
@@ -361,7 +358,7 @@ describe("development command", () => {
       await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:two"));
     } catch (error) {
       throw new Error(
-        `Development command did not recover after a failed compilation. events=${JSON.stringify(await readEvents(project.projectRoot))} stderr=${stderr}`,
+        `Development command did not recover after a failed compilation. events=${JSON.stringify(await readEvents(project.projectRoot))} stderr=${stderr()}`,
         { cause: error },
       );
     }

@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +11,7 @@ import {
 import {
   DirectoryTransactionError,
   DirectoryTransactions,
+  snapshotTree,
   type TransactionKind,
 } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
@@ -161,38 +161,11 @@ function generatedFilesWithManifest(
   );
 }
 
-function aggregateHash(
-  entries: readonly { readonly path: string; readonly bytes: Uint8Array }[],
-): string {
-  const hash = createHash("sha256");
-  for (const entry of entries) {
-    hash.update(Buffer.from(entry.path, "utf8"));
-    hash.update("\0");
-    hash.update(String(entry.bytes.byteLength));
-    hash.update("\0");
-    hash.update(entry.bytes);
-  }
-  return hash.digest("hex");
-}
-
 async function replaceJournalSnapshot(journalPath: string, treeRoot: string): Promise<void> {
-  const entries = await readProjectTree(treeRoot);
   const journal = JSON.parse(await readFile(journalPath, "utf8"));
   await writeFile(
     journalPath,
-    `${JSON.stringify(
-      {
-        ...journal,
-        files: entries.map((entry) => ({
-          path: entry.path,
-          byteLength: entry.bytes.byteLength,
-          sha256: createHash("sha256").update(entry.bytes).digest("hex"),
-        })),
-        aggregateSha256: aggregateHash(entries),
-      },
-      undefined,
-      2,
-    )}\n`,
+    `${JSON.stringify({ ...journal, ...(await snapshotTree(treeRoot)) }, undefined, 2)}\n`,
   );
 }
 
