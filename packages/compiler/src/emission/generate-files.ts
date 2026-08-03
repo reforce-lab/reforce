@@ -3,7 +3,7 @@ import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import stableStringify from "json-stable-stringify";
 import { type ExecutionPlansModel, type ProviderModel, sourceReference } from "@/analysis/model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
-import type { LinkedSymbol } from "@/linking/project-linker";
+import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
 
 const contextModuleSpecifier = "@reforce/context";

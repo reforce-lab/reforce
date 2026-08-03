@@ -7,6 +7,7 @@ import {
   type ExternalDeclaration,
   readExternalDeclarations,
 } from "@/linking/external-declarations";
+import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import {
   createModuleResolver,
   type ImportReference,
@@ -22,30 +23,9 @@ import type {
   SourceFileIr,
   TypeNode,
 } from "@/parser/source-ir";
-import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
 const contextModuleSpecifier = "@reforce/context";
-
-type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
-
-export interface LinkedSymbol {
-  readonly key: string;
-  readonly kind: LinkedSymbolKind;
-  readonly name: string;
-  readonly moduleSpecifier: string;
-  readonly source?: ParsedSource;
-  readonly declaration?: ClassDeclaration | InterfaceDeclaration;
-  readonly generic: boolean;
-}
-
-export interface LinkedType {
-  readonly symbol: LinkedSymbol;
-  readonly typeArguments: readonly TypeNode[];
-  readonly lazy: boolean;
-  readonly qualifierMember?: string;
-  readonly span: SourceSpan;
-}
 
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];

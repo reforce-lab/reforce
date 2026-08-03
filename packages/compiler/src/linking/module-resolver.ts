@@ -3,7 +3,7 @@ import path from "node:path";
 import enhancedResolve from "enhanced-resolve";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import type { LinkedSymbol } from "@/linking/project-linker";
+import type { LinkedSymbol } from "@/linking/model";
 import { isPathContained } from "@/project/path-identity";
 import type { ParsedSource } from "@/project/source-files";
 
