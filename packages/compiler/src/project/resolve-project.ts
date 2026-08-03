@@ -9,7 +9,11 @@ import {
 import { sortNativePaths } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
 import { isPathContained } from "@/project/path-identity";
-import { inspectProjectConfigCandidate, type ProjectState } from "@/project/project-config";
+import {
+  type ConfigCandidateResult,
+  inspectProjectConfigCandidate,
+  type ProjectState,
+} from "@/project/project-config";
 import { createWatchInputs } from "@/project/watch-inputs";
 
 interface ResolvedProjectRecord {
@@ -18,8 +22,6 @@ interface ResolvedProjectRecord {
 }
 
 type RememberProject = (record: ResolvedProjectRecord) => void;
-
-type ConfigCandidateResult = Awaited<ReturnType<typeof inspectProjectConfigCandidate>>;
 
 interface SelectionBoundary {
   readonly canonicalPath: string;
@@ -192,14 +194,15 @@ function explicitSelectionFailure(
   inspected: readonly ConfigCandidateResult[],
 ): ProjectResolutionResult {
   const explicitFailure = inspected.at(0);
-  const firstDiagnostic =
-    explicitFailure?.status === "failure" ? explicitFailure.diagnostics.at(0) : undefined;
-  if (explicitFailure?.status === "failure" && firstDiagnostic !== undefined) {
-    return {
-      status: "failure",
-      diagnostics: [firstDiagnostic],
-      watchInputs: explicitFailure.watchInputs,
-    };
+  if (explicitFailure?.status === "failure") {
+    const firstDiagnostic = explicitFailure.diagnostics.at(0);
+    if (firstDiagnostic !== undefined) {
+      return {
+        status: "failure",
+        diagnostics: [firstDiagnostic],
+        watchInputs: explicitFailure.watchInputs,
+      };
+    }
   }
   return failure(
     diagnostic({
@@ -247,7 +250,7 @@ export async function resolveProject(
 
   const inspected = await Promise.all(
     selection.candidates.map((candidate) =>
-      inspectProjectConfigCandidate(boundary, candidate.canonicalPath, {
+      inspectProjectConfigCandidate(candidate.canonicalPath, {
         selectionBoundary: resolvedBoundary.identityPath,
         config: candidate.identityPath,
       }),

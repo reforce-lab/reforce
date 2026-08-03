@@ -1,3 +1,5 @@
+import type { CompilerDiagnostic } from "@/api";
+import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol, LinkedType } from "@/linking/project-linker";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
@@ -19,6 +21,8 @@ type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
 export interface DependencyModel {
   readonly parameterIndex: number;
   readonly targetId: string;
+  // execution-plan's cycle marking rewrites "eager" to "cycle-proxy" in place after analysis,
+  // so this is the only field that must stay mutable.
   mode: DependencyMode;
   readonly source: GeneratedSourceReferenceModel;
 }
@@ -69,18 +73,25 @@ export interface ExecutionPlansModel {
   readonly cleanupActionOrder: readonly string[];
 }
 
+export function providerId(fileId: string, exportName: string): string {
+  return `${fileId}#${exportName}`;
+}
+
+export function reportUnsupportedType(
+  diagnostics: CompilerDiagnostic[],
+  symbol: LinkedSymbol,
+  span: SourceSpan,
+): void {
+  diagnostics.push(
+    diagnostic({
+      code: "UNSUPPORTED_TYPE_DECLARATION",
+      message: `${symbol.name} resolves to a declaration kind that Reforce cannot use as a Bean contract.`,
+      sourceSpan: span,
+      help: "Use a directly linked non-generic class or interface as the Bean contract.",
+    }),
+  );
+}
+
 export function sourceReference(span: SourceSpan): GeneratedSourceReferenceModel {
-  return {
-    file: span.fileId,
-    start: {
-      offset: span.start.offset,
-      line: span.start.line,
-      character: span.start.character,
-    },
-    end: {
-      offset: span.end.offset,
-      line: span.end.line,
-      character: span.end.character,
-    },
-  };
+  return { file: span.fileId, start: { ...span.start }, end: { ...span.end } };
 }

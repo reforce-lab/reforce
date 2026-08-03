@@ -76,7 +76,6 @@ function compareDiagnostics(left: CompilerDiagnostic, right: CompilerDiagnostic)
     [leftSpan?.fileId ?? "", rightSpan?.fileId ?? ""],
     [leftSpan?.start.offset ?? -1, rightSpan?.start.offset ?? -1],
     [leftSpan?.end.offset ?? -1, rightSpan?.end.offset ?? -1],
-    [left.severity, right.severity],
     [left.code, right.code],
     [left.message, right.message],
     [left.help ?? "", right.help ?? ""],
@@ -112,11 +111,7 @@ export function orderDiagnostics(
 ): readonly CompilerDiagnostic[] {
   const unique = new Map<string, CompilerDiagnostic>();
   for (const item of diagnostics) {
-    const normalized = Object.freeze({
-      ...item,
-      related: normalizeRelated(item.related),
-    });
-    unique.set(stableStructuralKey(normalized), normalized);
+    unique.set(stableStructuralKey(item), item);
   }
   return Object.freeze([...unique.values()].toSorted(compareDiagnostics));
 }

@@ -46,6 +46,7 @@ import type {
   DefineBeanDeclaration,
   DefineBeanOptionProperty,
   DefineBeanOptions,
+  EntityName,
   ExportDeclaration,
   ExportSpecifier,
   ImportBinding,
@@ -384,12 +385,10 @@ function declarationNameOf(declaration: Declaration): string | undefined {
     case "ClassDeclaration":
     case "FunctionDeclaration":
     case "TSDeclareFunction":
-      return identifierTextOf(declaration.id);
     case "TSEnumDeclaration":
     case "TSImportEqualsDeclaration":
     case "TSInterfaceDeclaration":
     case "TSTypeAliasDeclaration":
-      return identifierTextOf(declaration.id);
     case "TSModuleDeclaration":
       return identifierTextOf(declaration.id);
     default:
@@ -536,7 +535,7 @@ function isDefineBeanKey(
   return value === "create" || value === "dispose" || value === "primary" || value === "qualifier";
 }
 
-function entityTail(entity: ReturnType<typeof entityNameOf>): string | undefined {
+function entityTail(entity: EntityName | undefined): string | undefined {
   if (entity === undefined) {
     return undefined;
   }
@@ -665,33 +664,42 @@ function visitModuleDeclaration(
   collector: Collector,
   context: LoweringContext,
 ): void {
-  if (node.type === "ImportDeclaration") {
-    lowerImport(node, collector, context);
-    return;
-  }
-  if (node.type === "ExportNamedDeclaration") {
-    if (node.declaration === null) {
-      lowerNamedExport(node, collector, context);
+  switch (node.type) {
+    case "ImportDeclaration":
+      lowerImport(node, collector, context);
       return;
-    }
-    visitStatement(node.declaration, topLevel, { kind: "named", owner: node }, collector, context);
-    return;
-  }
-  if (node.type === "ExportAllDeclaration") {
-    lowerExportAll(node, collector, context);
-    return;
-  }
-  if (node.type === "ExportDefaultDeclaration") {
-    lowerDefaultExport(node, collector, context);
-    visitDefaultDeclaration(node, topLevel, collector, context);
-    return;
-  }
-  if (node.type === "TSExportAssignment") {
-    collector.exports.push({
-      kind: "unsupported-export",
-      syntaxKind: "export-assignment",
-      span: spanOf(node, context),
-    });
+    case "ExportNamedDeclaration":
+      if (node.declaration === null) {
+        lowerNamedExport(node, collector, context);
+        return;
+      }
+      visitStatement(
+        node.declaration,
+        topLevel,
+        { kind: "named", owner: node },
+        collector,
+        context,
+      );
+      return;
+    case "ExportAllDeclaration":
+      lowerExportAll(node, collector, context);
+      return;
+    case "ExportDefaultDeclaration":
+      lowerDefaultExport(node, collector, context);
+      visitDefaultDeclaration(node, topLevel, collector, context);
+      return;
+    case "TSExportAssignment":
+      collector.exports.push({
+        kind: "unsupported-export",
+        syntaxKind: "export-assignment",
+        span: spanOf(node, context),
+      });
+      return;
+    default:
+      // TSNamespaceExportDeclaration (`export as namespace X`) lands here and currently produces
+      // no IR record at all; recording an unsupported-export instead would change behavior and
+      // awaits an owner decision.
+      return;
   }
 }
 
@@ -706,32 +714,37 @@ function visitStatement(
     visitModuleDeclaration(node, topLevel, collector, context);
     return;
   }
-  if (node.type === "ClassDeclaration") {
-    lowerClass(node, topLevel, mode, collector, context);
-    return;
-  }
-  if (node.type === "TSInterfaceDeclaration") {
-    lowerInterface(node, topLevel, mode, collector, context);
-    return;
-  }
-  if (node.type === "TSModuleDeclaration") {
-    lowerNamespace(node, topLevel, mode, collector, context);
-    return;
-  }
-  if (node.type === "VariableDeclaration") {
-    for (const declarator of node.declarations) {
-      lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
-    }
-    return;
-  }
-  if (isUnsupportedDeclaration(node)) {
-    if (node.type === "TSImportEqualsDeclaration") {
+  switch (node.type) {
+    case "ClassDeclaration":
+      lowerClass(node, topLevel, mode, collector, context);
+      return;
+    case "TSInterfaceDeclaration":
+      lowerInterface(node, topLevel, mode, collector, context);
+      return;
+    case "TSModuleDeclaration":
+      lowerNamespace(node, topLevel, mode, collector, context);
+      return;
+    case "VariableDeclaration":
+      for (const declarator of node.declarations) {
+        lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
+      }
+      return;
+    case "TSTypeAliasDeclaration":
+    case "TSEnumDeclaration":
+    case "FunctionDeclaration":
+    case "TSDeclareFunction":
+      lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
+      return;
+    case "TSImportEqualsDeclaration":
+      // `import Alias = require(...)` is recorded both as an unsupported import and as an
+      // unsupported declaration; tests pin this double-write.
       lowerImport(node, collector, context);
-    }
-    lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
-    return;
+      lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
+      return;
+    default:
+      visitNestedStatements(node, collector, context);
+      return;
   }
-  visitNestedStatements(node, collector, context);
 }
 
 function visitNestedStatements(

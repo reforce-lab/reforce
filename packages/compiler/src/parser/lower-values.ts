@@ -81,7 +81,6 @@ function typeParameterDeclarationOf(
     case "ClassExpression":
     case "FunctionDeclaration":
     case "FunctionExpression":
-      return owner.typeParameters;
     case "TSDeclareFunction":
     case "TSEmptyBodyFunctionExpression":
     case "TSFunctionType":
@@ -104,9 +103,8 @@ export function entityNameOf(
   node: Node | null | undefined,
   context: LoweringContext,
 ): EntityName | undefined {
-  const identifier = identifierTextOf(node);
-  if (identifier !== undefined && node !== null && node !== undefined) {
-    return { kind: "identifier", name: identifier, span: spanOf(node, context) };
+  if (node?.type === "Identifier") {
+    return { kind: "identifier", name: node.name, span: spanOf(node, context) };
   }
   if (node?.type === "TSQualifiedName") {
     const left = entityNameOf(node.left, context);
@@ -280,11 +278,10 @@ function parameterShapeOf(parameter: FunctionParameter, context: LoweringContext
   const assignment = outer.type === "AssignmentPattern" ? outer : undefined;
   const rest = outer.type === "RestElement" ? outer : undefined;
   const node = parameterBindingOf(outer);
-  const decoratorNodes = [
-    ...(parameter.decorators ?? []),
-    ...(outer === parameter ? [] : (outer.decorators ?? [])),
-    ...(node === outer ? [] : (node.decorators ?? [])),
-  ];
+  // Decorators may sit on any of the unwrapping levels (TSParameterProperty, AssignmentPattern /
+  // RestElement, binding pattern); identity-dedupe keeps each level's decorators exactly once.
+  const levels = [...new Set([parameter, outer, node])];
+  const decoratorNodes = levels.flatMap((level) => level.decorators ?? []);
   return {
     node,
     optional: node.optional ?? false,
@@ -334,21 +331,19 @@ export function constructorParametersOf(
   });
 }
 
+function returnedExpressionOf(body: NodeOfType<"BlockStatement">): Expression | null | undefined {
+  if (body.body.length !== 1) {
+    return undefined;
+  }
+  const statement = body.body[0];
+  return statement?.type === "ReturnStatement" ? statement.argument : undefined;
+}
+
 function directNewBodyOf(
   body: Expression | NodeOfType<"BlockStatement"> | null,
   context: LoweringContext,
 ): FunctionBodyDescriptor | undefined {
-  if (body?.type === "NewExpression") {
-    const callee = entityNameOf(body.callee, context);
-    return callee === undefined
-      ? undefined
-      : { kind: "direct-new", callee, span: spanOf(body, context) };
-  }
-  if (body?.type !== "BlockStatement" || body.body.length !== 1) {
-    return undefined;
-  }
-  const statement = body.body[0];
-  const expression = statement?.type === "ReturnStatement" ? statement.argument : undefined;
+  const expression = body?.type === "BlockStatement" ? returnedExpressionOf(body) : body;
   if (expression?.type !== "NewExpression") {
     return undefined;
   }
@@ -390,9 +385,12 @@ export function sourceKeywordSpan(
   keyword: string,
   context: LoweringContext,
 ): SourceSpan {
+  // node.start lands on a leading decorator or the `export` modifier, but the IR contract pins
+  // declaration spans to the declaration keyword (class/interface/namespace), so locate the
+  // keyword by searching backwards from the declaration name.
   const before = name?.start ?? node.end;
   const start = context.sourceText.lastIndexOf(keyword, before);
-  if (start < node.start || start < 0) {
+  if (start < node.start) {
     return spanOf(node, context);
   }
   return context.mapper.span(start, node.end);
