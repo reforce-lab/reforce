@@ -40,7 +40,7 @@ bun run build --filter=<pkg>
 - Lint/Format 唯一工具和真相是 **Biome**。
 - 提交前先对相关 package 运行 `check:write` 自动修复，再确保 `check` / `typecheck` / `test` / `build` 全部通过；不必每次改动都验证全仓库。
 - 提交信息必须符合 conventional 规范，scope不得为空，否则 commit-msg hook 会拒绝。
-- 涉及 Issue、分支、提交或 PR 时，遵循 `CONTRIBUTING.md` 的 Issue 前置、分支命名和 PR 关联规则。
+- 涉及 Issue、分支、提交或 PR 时，遵循 `CONTRIBUTING.md` 的 Issue 前置、标题格式、分支命名和 PR 关联规则。
 - 产出文件变更（修改/新增/删除）前运行 `git rev-parse --git-dir --git-common-dir` 判断工作区：
   - 两者指向不同路径：当前已是 Git/Codex/Claude 管理的 worktree，直接使用，禁止嵌套创建。
   - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在

@@ -1,6 +1,6 @@
 name: ✨ 功能需求
 description: 提出一个可执行的需求（将进入 backlog 排序）
-title: "[Feature] "
+title: "feat(scope): "
 labels: ["type: feature", "status: needs-triage"]
 body:
   - type: textarea
