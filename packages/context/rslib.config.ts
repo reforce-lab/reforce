@@ -3,6 +3,7 @@ import { defineConfig } from "@rslib/core";
 export default defineConfig({
   lib: [
     {
+      bundle: false,
       dts: { tsgo: true },
       externalHelpers: true,
       format: "esm",
@@ -10,10 +11,4 @@ export default defineConfig({
     },
   ],
   output: { target: "node" },
-  source: {
-    entry: {
-      "generated-runtime": "./src/generated-runtime.ts",
-      index: "./src/index.ts",
-    },
-  },
 });

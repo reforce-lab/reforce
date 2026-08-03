@@ -55,7 +55,7 @@ bun run build --filter=<pkg>
 - 全仓库使用 TS7 (tsgo)：
   - 类型安全第一
   - 每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，根 `tsconfig.node.json` 管理源码与 Rslib/tooling 配置；测试目录各自维护 `tsconfig.json`。所有配置继承共享基线的 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`
-  - 有产物的 package 由 Rslib 自动读取源码 `tsconfig.json` 并负责 JS 与根级 bundleless d.ts emit；测试和配置文件不得进入声明产物
+  - 有产物的 package 由 Rslib 自动读取源码 `tsconfig.json` 并负责 emit；JS 与 d.ts 一律 bundleless，`dist/` 与 `src/` 1:1 对应（Issue #34）。测试和配置文件不得进入声明产物
   - package 内指向自身 `src` 的 import 统一使用该 package 的 `@/*` paths；跨 package 使用 `@reforce/*`，不要用 `#` import 或 `resolve.alias`
   - package exports 不保留仓库专用源码 condition；仓库测试、CLI 和用户应用都消费 Reforce `dist`。Rsbuild 的 `development` / `production` 只表示用户应用模式
   - 能使用类型推导的，优先利用类型推导，而非到处声明类型

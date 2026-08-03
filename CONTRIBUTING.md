@@ -41,7 +41,7 @@ bun run build
 bun run test:e2e
 ```
 
-每个 Rslib workspace 的根 `tsconfig.json` 只包含 `src`，根 `tsconfig.node.json` 包含源码和 Rslib/tooling 配置；测试存在时，由 `test/tsconfig.json` 或 `it/tsconfig.json` 管理。所有配置保持 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`。Rslib 自动读取源码配置：SWC 生成 Bun 可执行的服务端 ESM，TSGo 生成根级 bundleless d.ts。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
+每个 Rslib workspace 的根 `tsconfig.json` 只包含 `src`，根 `tsconfig.node.json` 包含源码和 Rslib/tooling 配置；测试存在时，由 `test/tsconfig.json` 或 `it/tsconfig.json` 管理。所有配置保持 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`。Rslib 自动读取源码配置：SWC 生成 Bun 可执行的服务端 ESM，TSGo 生成 d.ts；两者都是 bundleless（所有 lib 条目设 `bundle: false`），`dist/` 与 `src/` 1:1 对应，公开入口落在 `dist/` 根、内部模块落在 `dist/<domain>/`。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
 
 单元测试放 `test/`，并严格镜像被测源码路径（如 `src/parser/a.ts` 对应 `test/parser/a.spec.ts`）；跨模块、filesystem、子进程或 Worker 行为放 `it/`。包内不创建 fixture，IT 所需项目树和 harness 在测试 support 中构造。默认 `bun run test` 运行 unit 与 IT，完整 dist-only 用户链路单独运行 `bun run test:e2e`。
 
