@@ -1,37 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { runBuildCommand } from "@/commands/build";
-import type { CliReporterEvent, Reporter } from "@/reporter";
+import { recordingReporter } from "../support/recording-reporter";
 
 const projects: TemporaryProject[] = [];
 
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((project) => project.cleanup()));
 });
-
-function recordingReporter(onFlush?: () => void): {
-  readonly events: CliReporterEvent[];
-  readonly flushCount: number;
-  readonly reporter: Reporter;
-} {
-  const events: CliReporterEvent[] = [];
-  let flushCount = 0;
-  return {
-    events,
-    get flushCount() {
-      return flushCount;
-    },
-    reporter: {
-      report(event) {
-        events.push(event);
-      },
-      async flush() {
-        onFlush?.();
-        flushCount += 1;
-      },
-    },
-  };
-}
 
 async function createApplication(transactionKind: "generated" | "dist"): Promise<TemporaryProject> {
   const project = await createTemporaryProject({

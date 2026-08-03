@@ -13,50 +13,15 @@ import type {
   FunctionBodyDescriptor,
   FunctionDescriptor,
   InterfaceDeclaration,
-  SourceFileIr,
   TypeNode,
 } from "@/parser/source-ir";
-import type { SourceSpan } from "@/parser/source-location";
-import type { ParsedSource } from "@/project/source-files";
-import { canonicalFileId, span as spanIn } from "./support/ir";
+import { singleFileIr } from "./support/ir";
 
 // Every declaration under test lives in one file, so spans only vary by offset here.
-const fileId = canonicalFileId("src/application.ts");
-
-function span(offset = 0): SourceSpan {
-  return spanIn(fileId, offset);
-}
-
-const emptyUnit: SourceFileIr = {
-  imports: [],
-  exports: [],
-  interfaces: [],
-  namespaces: [],
-  classes: [],
-  beanFactories: [],
-  unsupportedDeclarations: [],
-};
-
-const source: ParsedSource = {
-  absolutePath: "/project/src/application.ts",
-  fileId,
-  sourceKind: "ts",
-  unit: emptyUnit,
-};
-
-function identifier(name: string): EntityName {
-  return { kind: "identifier", name, span: span() };
-}
-
-function typeReference(name: string, typeArguments: readonly TypeNode[] = []): TypeNode {
-  return { kind: "reference", name: identifier(name), typeArguments, span: span() };
-}
-
-const voidType: TypeNode = { kind: "primitive", name: "void", span: span() };
-
-function stringLiteral(value: string): ExpressionValue {
-  return { kind: "string-literal", value, span: span() };
-}
+const { fileId, identifier, source, span, stringLiteral, typeReference, voidType } = singleFileIr(
+  "src/application.ts",
+  "/project/src/application.ts",
+);
 
 function booleanLiteral(value: boolean): ExpressionValue {
   return { kind: "boolean-literal", value, span: span() };

@@ -4,7 +4,7 @@ import type { GeneratedFile } from "@reforce/compiler";
 import { isObject } from "radashi";
 import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectLease } from "@/project/lease";
-import type { LeaseParticipant } from "@/project/lease-endpoint";
+import { parseLeaseParticipant } from "../lease-participant";
 
 const projectRootArgument = process.argv[2];
 const modeArgument = process.argv[3];
@@ -16,28 +16,6 @@ const mode = modeArgument;
 
 const lease = await ProjectLease.acquire({ projectRoot, mode });
 process.send?.({ type: "ready", leaseToken: lease.leaseToken });
-
-function parseParticipant(value: unknown): LeaseParticipant | undefined {
-  if (!isObject(value)) {
-    return undefined;
-  }
-  const participantToken = Reflect.get(value, "participantToken");
-  const host = Reflect.get(value, "host");
-  const port = Reflect.get(value, "port");
-  const challenge = Reflect.get(value, "challenge");
-  const role = Reflect.get(value, "role");
-  if (
-    typeof participantToken !== "string" ||
-    host !== "127.0.0.1" ||
-    typeof port !== "number" ||
-    !Number.isInteger(port) ||
-    typeof challenge !== "string" ||
-    role !== "child"
-  ) {
-    return undefined;
-  }
-  return { participantToken, host, port, challenge, role };
-}
 
 function generatedFiles(generation: string): readonly GeneratedFile[] {
   return [
@@ -107,7 +85,7 @@ async function releaseLease(): Promise<void> {
 }
 
 async function addParticipant(message: object): Promise<void> {
-  const participant = parseParticipant(Reflect.get(message, "participant"));
+  const participant = parseLeaseParticipant(Reflect.get(message, "participant"));
   if (participant === undefined) {
     process.exit(2);
   }
