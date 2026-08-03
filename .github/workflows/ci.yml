@@ -43,12 +43,12 @@ jobs:
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     strategy:
       fail-fast: false
+      # 探针分支：只跑 macOS——#86 只在 macos-latest 上出现过（勿合，Issue #86）。
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
-    # 正常一轮 3 分钟（ubuntu ~55s / macos ~60s / windows 2m38s–3m23s）；冷缓存留足余量后仍远
-    # 小于 GitHub 默认的 6 小时。挂死的测试必须快速失败，而不是把 runner 占一上午（Issue #75）。
-    timeout-minutes: 20
+    # 探针循环最多 40 + 10 轮，正常 ~15 分钟；一轮卡死吃 2.5 分钟后立即退出。
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -105,28 +105,28 @@ jobs:
           key: ${{ runner.os }}-turbo-${{ github.sha }}
           restore-keys: ${{ runner.os }}-turbo-
 
-      - name: Check source contracts and formatting
-        run: bun run check
-
-      - name: Typecheck (TS7)
-        run: bun run typecheck
-
-      - name: Test unit, integration, process, lease, and recovery behavior (Bun)
-        run: bun run test
-
       - name: Build
         run: bun run build
 
-      - name: Real CLI, process, Worker, signal, and Bun artifact smoke
-        run: bun run --cwd e2e test:e2e:evidence
+      # 探针步骤（Issue #86）：主动循环砸 macOS 上那次 120s 卡死。第一次失败立即退出，
+      # untilObserved 里的 [watch-diagnostic] 输出就是要采的数据。
+      - name: Probe issue 86 — loop dev watch spec
+        working-directory: packages/cli
+        run: |
+          for i in $(seq 1 40); do
+            echo "=== spec iteration $i ==="
+            bun test --timeout 15000 it/integration/dev-watch-build.spec.ts || exit 1
+          done
 
-      - name: Upload CLI process failure evidence
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: cli-process-evidence-${{ runner.os }}
-          path: e2e/e2e-junit.xml
-          if-no-files-found: warn
+      # 原始失败发生在完整 test+it 套件里（watcher 数量贴近 darwin 上限 20），
+      # spec 单跑砸不出来时用全套件再试。
+      - name: Probe issue 86 — loop full cli test set
+        working-directory: packages/cli
+        run: |
+          for i in $(seq 1 10); do
+            echo "=== suite iteration $i ==="
+            bun test --timeout 15000 test it || exit 1
+          done
 
   commitlint:
     if: github.event_name == 'pull_request'
