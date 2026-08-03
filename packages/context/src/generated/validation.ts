@@ -478,7 +478,7 @@ export function snapshotApplicationDefinition(
   definition: GeneratedApplicationDefinition,
 ): GeneratedApplicationDefinition {
   validateApplicationDefinition(definition);
-  const snapshot = Object.freeze({
+  return Object.freeze({
     schemaVersion: 1 as const,
     registrations: Object.freeze(definition.registrations.map(cloneRegistration)),
     plans: Object.freeze({
@@ -487,5 +487,4 @@ export function snapshotApplicationDefinition(
       cleanupActionOrder: Object.freeze([...definition.plans.cleanupActionOrder]),
     }),
   });
-  return snapshot;
 }
