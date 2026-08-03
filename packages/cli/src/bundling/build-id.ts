@@ -1,48 +1,16 @@
-import { createHash } from "node:crypto";
-import { compareUtf16CodeUnits, isRelativePosixPath } from "@reforce/primitives";
-
 type DevBuildAssetRole = "entry" | "chunk" | "source-map" | "hot-update";
 
 export interface DevBuildAsset {
   readonly path: string;
-  readonly bytes: Uint8Array;
   readonly role: DevBuildAssetRole;
 }
 
-export interface CreateDevBuildIdInput {
-  readonly statsHash?: string;
-  readonly assets: readonly DevBuildAsset[];
-}
-
-function validateAssetPath(path: string): void {
-  if (!isRelativePosixPath(path)) {
-    throw new Error(`Development asset path is not relative POSIX: ${path}`);
+export function createDevBuildId(statsHash: string | undefined): string {
+  // rspack 每次 seal 都产出非空 compilation.hash，拿不到 hash 只可能是这次构建根本没走到产出。
+  // 这里不再退回自己算的字节哈希：那条兜底在真实 watch 路径上永远不可达，却逼着调用方每次重建把整棵
+  // dev 产物读进内存再丢掉（Issue #111）。宁可报错，也不拿编出来的 id 冒充一次健康构建。
+  if (!statsHash?.trim()) {
+    throw new Error("Development build did not produce an Rspack compilation hash.");
   }
-}
-
-export function createDevBuildId(input: CreateDevBuildIdInput): string {
-  if (input.statsHash?.trim()) {
-    return `rspack:${input.statsHash}`;
-  }
-  const runtimeAssets = input.assets
-    .filter((asset) => asset.role === "entry" || asset.role === "chunk")
-    .toSorted((left, right) => compareUtf16CodeUnits(left.path, right.path));
-  if (!runtimeAssets.some((asset) => asset.role === "entry" && asset.path === "main.mjs")) {
-    throw new Error("Development assets do not contain main.mjs.");
-  }
-  const seen = new Set<string>();
-  const hash = createHash("sha256");
-  for (const asset of runtimeAssets) {
-    validateAssetPath(asset.path);
-    if (seen.has(asset.path)) {
-      throw new Error(`Development asset path is duplicated: ${asset.path}`);
-    }
-    seen.add(asset.path);
-    hash.update(asset.path, "utf8");
-    hash.update("\0", "utf8");
-    hash.update(String(asset.bytes.byteLength), "utf8");
-    hash.update("\0", "utf8");
-    hash.update(asset.bytes);
-  }
-  return `sha256:${hash.digest("hex")}`;
+  return `rspack:${statsHash}`;
 }

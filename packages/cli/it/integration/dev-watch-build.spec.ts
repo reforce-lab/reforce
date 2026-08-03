@@ -237,6 +237,38 @@ test("Rsbuild watch emits source maps for the Bun ESM entry", async () => {
   ).toContain('"version":3');
 });
 
+// createDevBuildId 之所以能只认 rspack hash、不再自己按字节兜底，前提是真实 watch 路径上每次编译
+// （首次和重建都算）都拿得到非空 compilation.hash。这条前提没有单测能覆盖——只有真的跑起 rspack
+// watcher 才谈得上 hash（Issue #111）。
+test("every development build identifies itself by the Rspack compilation hash", async () => {
+  const compilations = recordCompilations();
+  const project = await setupWatch(async (compilation) => {
+    compilations.accept(compilation);
+  });
+  await compilations.untilCount(1);
+  const devOutputRoot = join(project.projectRoot, ".reforce", "dev");
+
+  await writeFile(
+    join(project.projectRoot, "src", "application.ts"),
+    `import { Injectable } from "@reforce/context";
+
+@Injectable()
+export class ApplicationService {
+  value(): string {
+    return "rebuilt";
+  }
+}
+`,
+  );
+  await untilObserved(compilations, () => developmentOutputContains(devOutputRoot, "rebuilt"));
+
+  const buildIds = compilations.all.map((compilation) =>
+    compilation.status === "success" ? compilation.buildId : "<failed compilation>",
+  );
+  expect(buildIds.length).toBeGreaterThanOrEqual(2);
+  expect(buildIds.filter((buildId) => !buildId.startsWith("rspack:"))).toEqual([]);
+});
+
 test("a source edit rebuilds without invalidating generated output", async () => {
   const compilations = recordCompilations();
   const invalidations: Array<string | null> = [];

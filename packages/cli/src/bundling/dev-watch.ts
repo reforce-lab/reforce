@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import nodePath, { join, relative } from "node:path";
 import {
   compareUtf16CodeUnits,
@@ -157,7 +157,7 @@ async function collectAssets(root: string, directory = root): Promise<readonly D
       throw new Error(`Development output must contain ordinary files: ${absolutePath}`);
     }
     const path = toPortablePath(relative(root, absolutePath));
-    assets.push({ path, bytes: await readFile(absolutePath), role: assetRole(path) });
+    assets.push({ path, role: assetRole(path) });
   }
   return assets.sort((left, right) => compareUtf16CodeUnits(left.path, right.path));
 }
@@ -395,10 +395,19 @@ export async function startDevWatchBuild(
       await reportError(buildError);
       return;
     }
+    let buildId: string;
+    try {
+      buildId = createDevBuildId(statsHash(stats));
+    } catch (error) {
+      // 缺 hash 是「构建没走到产出」的一种，和上面几条一样按失败上报；让它从 onAfterBuild 逃出去只会
+      // 变成一条无人处理的 rejection，dev 会话既不上报也不退出（Issue #111）。
+      await reportError(error);
+      return;
+    }
     const assets = await collectAssets(devOutputRoot);
     await options.onCompilation({
       status: "success",
-      buildId: createDevBuildId({ statsHash: statsHash(stats), assets }),
+      buildId,
       validateAssets: async () => {
         if (!assets.some((asset) => asset.path === "main.mjs" && asset.role === "entry")) {
           throw new Error("Development output does not contain main.mjs.");
