@@ -29,11 +29,14 @@ export interface StartDevWatchBuildOptions {
   readonly onInvalidated?: (path: string | null) => void;
 }
 
-// This filter and the watchOptions.ignored glob list below cover the same directory names on
-// purpose, but with different semantics: here only the top-level segment counts because gate
-// watch inputs are project-rooted, while ignored matches those names at any depth. The two
-// lists must stay coupled so that every gate watch input passing this filter is never matched
-// by ignored — otherwise the watcher would never report it and waitForRspackWatcher times out.
+// 「哪些目录不看」只允许有这一份定义：它同时喂给下面的 isProjectWatchFile 和 watchOptions.ignored。
+// 两处以前各写各的，过滤器只比较 projectRoot 相对路径的首段、ignored 用的 `**/x/**` 却匹配任意深度，
+// 于是 `<projectRoot>/packages/ui/dist/index.d.ts` 这类输入既通过过滤器又被 watcher 忽略，
+// waitForRspackWatcher 永远等不到它，dev 启动 10 秒后判死（Issue #102）。
+const unwatchedDirectoryNames: readonly string[] = [".reforce", ".git", "dist", "node_modules"];
+
+// 必须按**绝对路径**的整段判定，不能按 projectRoot 相对路径：watchpack 把 `**/x/**` 编译成锚在绝对
+// 路径 `^` 的正则，projectRoot 自身路径里的 `dist` / `node_modules` 段一样会命中（Issue #102）。
 //
 // Exported only so the containment rule can be unit tested: reaching it through
 // startDevWatchBuild needs a live rspack watcher, and the Windows cross-drive case cannot be
@@ -48,13 +51,8 @@ export function isProjectWatchFile(
   if (!isPathStrictlyContained(projectRoot, path, semantics)) {
     return false;
   }
-  const firstSegment = semantics.relative(projectRoot, path).split(semantics.sep)[0];
-  return (
-    firstSegment !== ".reforce" &&
-    firstSegment !== ".git" &&
-    firstSegment !== "dist" &&
-    firstSegment !== "node_modules"
-  );
+  const segments = path.split(semantics.sep);
+  return !segments.some((segment) => unwatchedDirectoryNames.includes(segment));
 }
 
 // 每轮之间让出的时间。原实现用 setImmediate，那不是「等待」而是热自旋：它以 event loop 的循环
@@ -361,16 +359,7 @@ export async function startDevWatchBuild(
           config.watchOptions = {
             ...config.watchOptions,
             aggregateTimeout: 200,
-            ignored: [
-              "**/.reforce",
-              "**/.reforce/**",
-              "**/.git",
-              "**/.git/**",
-              "**/dist",
-              "**/dist/**",
-              "**/node_modules",
-              "**/node_modules/**",
-            ],
+            ignored: unwatchedDirectoryNames.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
           };
         },
       },
