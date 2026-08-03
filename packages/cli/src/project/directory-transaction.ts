@@ -186,19 +186,22 @@ export class DirectoryTransactionError extends Error {
   }
 }
 
-function assertRelativeFilePath(path: string): void {
-  if (!isRelativePosixPath(path)) {
-    throw new Error(`Invalid transaction file path: ${path}`);
-  }
+// collectTreeEntries 用它区分「这棵树不是合法的事务树」和「这棵树根本没读成」：只有前者可以被
+// validateTreeAgainstSnapshot 降级成「与快照不符」（Issue #105）。
+class TreeShapeError extends Error {}
+
+function boundaryViolationMessage(target: string): string {
+  return `Transaction path is outside its required boundary: ${target}`;
 }
 
-// 严格变体：root 自身必须判为越界。removeTree 校验通过后就开始逐条递归删除，若 staging 路径 realpath
-// 后等于项目根，放行就是把用户项目根删空（Issue #55）。
+// 严格变体：root 自身必须判为越界（同 removeTree，理由见那里的 Issue #55 注释）。
+// create() 专用，所以抛普通 Error：那一步还没有任何事务，没有 kind 可归属；事务内部的越界必须带 kind
+// 抛 DirectoryTransactionError，否则会绕过 commit 的错误归类（Issue #105）。
 function assertContained(root: string, target: string): void {
   if (isPathStrictlyContained(root, target)) {
     return;
   }
-  throw new Error(`Transaction path is outside its required boundary: ${target}`);
+  throw new Error(boundaryViolationMessage(target));
 }
 
 function createFileHash(bytes: Uint8Array): string {
@@ -224,14 +227,14 @@ async function collectTreeEntries(root: string, directory = root): Promise<reado
   for (const entry of entries) {
     const absolutePath = join(directory, entry.name);
     if (entry.isSymbolicLink()) {
-      throw new Error(`Transaction trees cannot contain symbolic links: ${absolutePath}`);
+      throw new TreeShapeError(`Transaction trees cannot contain symbolic links: ${absolutePath}`);
     }
     if (entry.isDirectory()) {
       collected.push(...(await collectTreeEntries(root, absolutePath)));
       continue;
     }
     if (!entry.isFile()) {
-      throw new Error(`Transaction trees only support ordinary files: ${absolutePath}`);
+      throw new TreeShapeError(`Transaction trees only support ordinary files: ${absolutePath}`);
     }
     collected.push({
       path: toPortablePath(relative(root, absolutePath)),
@@ -334,8 +337,14 @@ async function validateTreeAgainstSnapshot(
       return false;
     }
     return validateTreeStructure(kind, entries);
-  } catch {
-    return false;
+  } catch (error) {
+    // 只有「树不存在」和「树的形状本身不合法」才等价于「与快照不符」。EACCES/EIO/EMFILE 说明这棵树根本
+    // 没读成，把它压成 false 会让 recoverPublished 把完好的新一代当成不匹配、删掉后回滚到上一代
+    // （Issue #105，规则见 fs-error.ts）。
+    if (isMissingPathError(error) || error instanceof TreeShapeError) {
+      return false;
+    }
+    throw error;
   }
 }
 
@@ -577,7 +586,9 @@ export class DirectoryTransactions {
         throw new DirectoryTransactionError("dist", "Dist output must include main.mjs.");
       }
       for (const path of expectedFiles) {
-        assertRelativeFilePath(path);
+        if (!isRelativePosixPath(path)) {
+          throw new DirectoryTransactionError("dist", `Invalid transaction file path: ${path}`);
+        }
       }
       try {
         await this.commitPrepared("dist", options.transactionToken, paths, expectedFiles);
@@ -1009,9 +1020,15 @@ export class DirectoryTransactions {
       temporaryPath,
     );
     const writtenJournal = new TextDecoder().decode(written);
+    // 字节比较必须排在解析前：截断正是这次回读要抓的情况（见上方协议注释），而截断的文件几乎不是合法
+    // JSON，先解析会把它变成裸 SyntaxError，从 recover() → recoverJournal → adoptJournal 一路无 catch
+    // 逃出模块、绕过错误分类（Issue #105）。比较通过后 writtenJournal 就等于 serializedJournal，
+    // JSON.parse 不会抛。
+    if (writtenJournal !== serializedJournal) {
+      throw new DirectoryTransactionError(journal.kind, "Transaction journal verification failed.");
+    }
     const parsed = parseJournal(JSON.parse(writtenJournal), journal.kind, journal.transactionToken);
     if (
-      writtenJournal !== serializedJournal ||
       !parsed ||
       parsed.state !== journal.state ||
       parsed.leaseOwnerToken !== journal.leaseOwnerToken
@@ -1095,7 +1112,12 @@ export class DirectoryTransactions {
       realpath(target),
       realpath(this.boundaryFor(kind, target)),
     ]);
-    assertContained(canonicalBoundary, canonicalTarget);
+    // 严格包含：校验通过后就开始逐条递归删除，若 target realpath 后等于边界本身，放行就是把用户项目根
+    // 删空（Issue #55）。这里跑在 commitDist/commitGenerated 的 catch 里，裸 Error 会从那层 catch
+    // 逃出去、绕过错误归类，所以带 kind 抛（Issue #105）。
+    if (!isPathStrictlyContained(canonicalBoundary, canonicalTarget)) {
+      throw new DirectoryTransactionError(kind, boundaryViolationMessage(canonicalTarget));
+    }
     await this.removeDirectoryContents(target, kind, transactionToken);
   }
 
