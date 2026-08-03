@@ -2,13 +2,13 @@ import type { CompilerDiagnostic } from "@reforce/compiler";
 import type { DevChildSupervisor } from "@/dev/child-supervisor";
 import { createFailureEvent, type Reporter } from "@/reporter";
 
-export interface FailedDevCompilation {
+interface FailedDevCompilation {
   readonly status: "failure";
   readonly diagnostics: readonly CompilerDiagnostic[];
   readonly error?: unknown;
 }
 
-export interface SuccessfulDevCompilation {
+interface SuccessfulDevCompilation {
   readonly status: "success";
   readonly buildId: string;
   readonly validateAssets: () => Promise<void>;

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 
-export type DevBuildAssetRole = "entry" | "chunk" | "source-map" | "hot-update";
+type DevBuildAssetRole = "entry" | "chunk" | "source-map" | "hot-update";
 
 export interface DevBuildAsset {
   readonly path: string;

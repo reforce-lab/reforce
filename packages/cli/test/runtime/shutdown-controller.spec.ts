@@ -80,20 +80,10 @@ describe("shutdown controller", () => {
 
   test("preserves runtime failure details from a bootstrap cause", async () => {
     const reporter = new RecordingReporter();
-    const sourceSpan = Object.freeze({
-      fileId: "src/application.ts",
-      start: Object.freeze({ offset: 4, line: 1, character: 2 }),
-      end: Object.freeze({ offset: 9, line: 1, character: 7 }),
+    const runtimeError = new ApplicationStartError({
+      cause: new InvalidGeneratedDefinitionError("runtime bootstrap failed"),
+      errors: [],
     });
-    const runtimeError = Object.assign(
-      new ApplicationStartError({
-        cause: new InvalidGeneratedDefinitionError("runtime bootstrap failed"),
-        errors: [],
-      }),
-      {
-        sourceSpan,
-      },
-    );
     const controller = new ShutdownController({ command: "start", reporter });
 
     await controller.start(async () => {

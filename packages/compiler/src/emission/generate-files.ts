@@ -199,7 +199,7 @@ function qualifierModuleGroups(
 function renderQualifiers(providers: readonly ProviderModel[], generatedDirectory: string): string {
   const interfaces = qualifierGroups(providers, generatedDirectory);
   if (interfaces.length === 0) {
-    return `import type { QualifiedBean } from "${contextModuleSpecifier}";\n\nexport {};\n`;
+    return "export {};\n";
   }
   const imports = interfaces.map(
     (group) =>

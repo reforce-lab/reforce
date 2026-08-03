@@ -1,10 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { GeneratedFile } from "@reforce/compiler";
 import { isObject } from "radashi";
-import {
-  DirectoryTransactions,
-  type GeneratedTransactionFile,
-} from "@/project/directory-transaction";
+import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectLease } from "@/project/lease";
 import type { LeaseParticipant } from "@/project/lease-endpoint";
 
@@ -41,7 +39,7 @@ function parseParticipant(value: unknown): LeaseParticipant | undefined {
   return { participantToken, host, port, challenge, role };
 }
 
-function generatedFiles(generation: string): readonly GeneratedTransactionFile[] {
+function generatedFiles(generation: string): readonly GeneratedFile[] {
   return [
     { path: "beans.ts", content: `export const generation = ${JSON.stringify(generation)};\n` },
     { path: "bootstrap.ts", content: "export async function bootstrap() {}\n" },
