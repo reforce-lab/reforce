@@ -6,7 +6,9 @@ export async function withTimeout<T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new Error(message)), milliseconds);
-    // The timeout alone must not keep the process alive.
+    // 挂起的 promise 不该把 CLI 多吊住整个超时预算，所以定时器 unref。代价是它自己撑不住 event
+    // loop：调用方必须另有 ref 住的句柄（当前所有调用点都在等一个活着的子进程），否则进程会在
+    // 超时触发前直接退出，这条 reject 永远不会发生。
     timer.unref();
   });
   try {
