@@ -398,8 +398,12 @@ async function listReaderOwners(paths: LeasePaths): Promise<readonly OwnerSnapsh
   entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
   const readers: OwnerSnapshot[] = [];
   for (const entry of entries) {
+    // readers/ 下只有 lease 自己 rename 进来的 owner 目录；普通文件（Finder 的 .DS_Store、同步盘副本）
+    // 不可能是 reader。抛错会让 dev/build 的 writer 抢锁永久失败，而且抛的不是 ProjectBusyError，
+    // 会被 reportCommandFailure 报成 BUILD_FAILED，把用户指向自己的构建。缺 record.json 的残缺
+    // 目录本来就是跳过语义（readOwner 返回 undefined）。
     if (!entry.isDirectory()) {
-      throw new Error(`Invalid reader lease entry: ${entry.name}`);
+      continue;
     }
     const reader = await readOwner(join(paths.readersRoot, entry.name), paths.projectRoot);
     if (reader) {
@@ -457,13 +461,17 @@ async function recoverConflictingOwners(
   },
   probeTimeoutMilliseconds: number,
 ): Promise<readonly string[]> {
+  // reader 绝不能隔离 writer 记录，哪怕探测判定它已经死了：隔离死 writer 才会产出
+  // recoveredWriterTokens，而那是下一个 writer 用 adoptJournal 接管半发布事务的唯一凭据
+  // （directory-transaction.ts 的 canRecoverWriterToken）。reader 抢先隔离掉，事务就永远无法 adopt。
+  // 因此探测结果对 reader 没有意义，先判死再省下探测。
+  if (mode === "reader" && conflicts.writer) {
+    throw new ProjectBusyError(paths.projectRoot);
+  }
   const statuses = await Promise.all(
     conflicts.owners.map((conflict) => probeOwner(conflict.record, probeTimeoutMilliseconds)),
   );
   if (statuses.some((status) => status !== "dead")) {
-    throw new ProjectBusyError(paths.projectRoot);
-  }
-  if (mode === "reader" && conflicts.writer) {
     throw new ProjectBusyError(paths.projectRoot);
   }
 
@@ -622,7 +630,14 @@ export class ProjectLease {
   }
 
   release(): Promise<void> {
-    this.releasePromise ??= this.performRelease();
+    // memo 只用于合并 in-flight 的并发调用，不记录终态：释放失败是瞬时的（child participant 还在收尾、
+    // gate 竞争），owner 记录仍在盘上，之后的调用必须重跑而不是重放这次 rejection。`??=` 的赋值在
+    // rejection handler 之前同步完成，所以并发调用仍然拿到同一个 promise。重试时 endpoint.close()
+    // 是 no-op（LivenessEndpoint 自身也 memo 已 resolve 的 close）。
+    this.releasePromise ??= this.performRelease().catch((error: unknown) => {
+      this.releasePromise = undefined;
+      throw error;
+    });
     return this.releasePromise;
   }
 

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
-import type { LeaseParticipant } from "@/project/lease-endpoint";
+import { createChildLeaseParticipant, type LeaseParticipant } from "@/project/lease-endpoint";
 import { spawnBunIpcHarness } from "../support/process/bun-ipc-harness";
 
 interface FakeGateEndpoint {
@@ -263,6 +264,36 @@ describe("project lease", () => {
 
     expect(first).toBe(second);
     await first;
+  });
+
+  test("ignores a stray non-directory entry under readers/", async () => {
+    const project = await temporaryProject();
+    const readersRoot = join(project.projectRoot, ".reforce", "lease", "readers");
+    await mkdir(readersRoot, { recursive: true });
+    await writeFile(join(readersRoot, ".DS_Store"), "finder\n");
+
+    const lease = await ProjectLease.acquire({
+      projectRoot: project.projectRoot,
+      mode: "writer",
+    });
+    leases.push(lease);
+
+    expect(lease.mode).toBe("writer");
+  });
+
+  test("retries a release that failed while a child participant was still live", async () => {
+    const project = await temporaryProject();
+    const lease = await ProjectLease.acquire({ projectRoot: project.projectRoot, mode: "writer" });
+    const child = await createChildLeaseParticipant(lease.leaseToken);
+    await lease.addParticipant(child.participant);
+    await expect(lease.release()).rejects.toBeInstanceOf(ProjectBusyError);
+    await child.close();
+
+    await lease.release();
+
+    expect(
+      existsSync(join(project.projectRoot, ".reforce", "lease", "writer", "record.json")),
+    ).toBe(false);
   });
 
   test("does not treat a matching or reused PID as ownership proof", async () => {
