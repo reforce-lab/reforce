@@ -14,4 +14,5 @@ export {
   type TemporaryProject,
   writeProjectTree,
 } from "@/project-tree";
+export { testStallBudgetMilliseconds, waitUntil } from "@/stall";
 export { normalizeTerminalOutput } from "@/terminal";

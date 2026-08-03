@@ -7,6 +7,7 @@ import {
   createTemporaryProject,
   readProjectTree,
   type TemporaryProject,
+  testStallBudgetMilliseconds,
 } from "@reforce/tooling-testing";
 import {
   DirectoryTransactionError,
@@ -209,21 +210,16 @@ async function activeDistGeneration(projectRoot: string): Promise<string> {
   return generation;
 }
 
-// 墙钟预算在这里的正当职责是抓「卡死」，不是管「慢」：唯一真正的时钟是 CI job 的
-// timeout-minutes（Issue #75），bun test 只是要求每条用例给个数字。所以本文件的预算一律按
-// 「只有真卡死才够得着」标定，而不是按预期耗时。按预期耗时标定的旧值在 windows-latest 上
-// 会定期把「正常但偏慢」判成失败——同一个 commit 两次运行，同一条用例 30.8s 与 >60s 都出现过
-// （Issue #81）。
-const hangDetectionBudgetMilliseconds = 300_000;
-const harnessExitHangBudgetMilliseconds = 60_000;
-
+// 每条用例的击杀钟统一由包级 `bun test --timeout` 提供，spec 里不再各自声明（Issue #92）；
+// 这里只保留 harness 退出这一个内层诊断钟——它先于外层触发，把「泛泛的用例超时」换成
+// 「harness 没退出」的现场信息。预算沿用共享停滞常量：抓「卡死」不是管「慢」（Issue #75、#81）。
 async function waitForHarnessExit(
   harness: BunIpcHarness,
   timeoutMessage: string,
 ): Promise<IpcProcessOutcome> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(timeoutMessage)), harnessExitHangBudgetMilliseconds);
+    timer = setTimeout(() => reject(new Error(timeoutMessage)), testStallBudgetMilliseconds);
     timer.unref();
   });
   try {
@@ -1013,97 +1009,85 @@ describe("directory transactions", () => {
     await expect(recovery.recover()).rejects.toBeInstanceOf(DirectoryTransactionError);
   });
 
-  test(
-    "recovers a complete generation across the first half of crash boundaries",
-    async () => {
-      await verifyGeneratedCrashBoundaryHalf("first");
-    },
-    hangDetectionBudgetMilliseconds,
-  );
+  test("recovers a complete generation across the first half of crash boundaries", async () => {
+    await verifyGeneratedCrashBoundaryHalf("first");
+  });
 
-  test(
-    "recovers a complete generation across the second half of crash boundaries",
-    async () => {
-      await verifyGeneratedCrashBoundaryHalf("second");
-    },
-    hangDetectionBudgetMilliseconds,
-  );
+  test("recovers a complete generation across the second half of crash boundaries", async () => {
+    await verifyGeneratedCrashBoundaryHalf("second");
+  });
 
-  test(
-    "recovers a complete dist after every instrumented crash boundary",
-    async () => {
-      const baseline = await setupWriter();
-      await commitDistGeneration(baseline.transactions, "pre");
-      const observedPoints: string[] = [];
-      const traced = await DirectoryTransactions.create({
-        projectRoot: baseline.project.projectRoot,
-        lease: baseline.lease,
-        faultInjector(point, context) {
-          observedPoints.push(`${point}:${context.path ?? ""}`);
-        },
-      });
-      await commitDistGeneration(traced, "post");
-      await baseline.lease.release();
-      leases.splice(leases.indexOf(baseline.lease), 1);
-      await baseline.project.cleanup();
-      projects.splice(projects.indexOf(baseline.project), 1);
-      expect(observedPoints.length).toBeGreaterThan(20);
+  test("recovers a complete dist after every instrumented crash boundary", async () => {
+    const baseline = await setupWriter();
+    await commitDistGeneration(baseline.transactions, "pre");
+    const observedPoints: string[] = [];
+    const traced = await DirectoryTransactions.create({
+      projectRoot: baseline.project.projectRoot,
+      lease: baseline.lease,
+      faultInjector(point, context) {
+        observedPoints.push(`${point}:${context.path ?? ""}`);
+      },
+    });
+    await commitDistGeneration(traced, "post");
+    await baseline.lease.release();
+    leases.splice(leases.indexOf(baseline.lease), 1);
+    await baseline.project.cleanup();
+    projects.splice(projects.indexOf(baseline.project), 1);
+    expect(observedPoints.length).toBeGreaterThan(20);
 
-      for (const faultIndex of shuffledIndexes(observedPoints.length)) {
-        const project = await createTemporaryProject();
-        let replacement: ProjectLease | undefined;
-        try {
-          const initialLease = await ProjectLease.acquire({
-            projectRoot: project.projectRoot,
-            mode: "writer",
-          });
-          const initialTransactions = await DirectoryTransactions.create({
-            projectRoot: project.projectRoot,
-            lease: initialLease,
-          });
-          await commitDistGeneration(initialTransactions, "pre");
-          await initialLease.release();
+    for (const faultIndex of shuffledIndexes(observedPoints.length)) {
+      const project = await createTemporaryProject();
+      let replacement: ProjectLease | undefined;
+      try {
+        const initialLease = await ProjectLease.acquire({
+          projectRoot: project.projectRoot,
+          mode: "writer",
+        });
+        const initialTransactions = await DirectoryTransactions.create({
+          projectRoot: project.projectRoot,
+          lease: initialLease,
+        });
+        await commitDistGeneration(initialTransactions, "pre");
+        await initialLease.release();
 
-          const crashedWriterToken = await spawnTransactionCrash(
-            project.projectRoot,
-            { faultIndex },
-            "dist",
-            observedPoints[faultIndex],
+        const crashedWriterToken = await spawnTransactionCrash(
+          project.projectRoot,
+          { faultIndex },
+          "dist",
+          observedPoints[faultIndex],
+        );
+        replacement = await ProjectLease.acquire({
+          projectRoot: project.projectRoot,
+          mode: "writer",
+        });
+        expect(replacement.recoveredWriterTokens).toEqual([crashedWriterToken]);
+        const recovery = await DirectoryTransactions.create({
+          projectRoot: project.projectRoot,
+          lease: replacement,
+        });
+        await recovery.recover();
+
+        const active = await activeDistGeneration(project.projectRoot);
+        expect(["pre", "post"]).toContain(active);
+        expect(
+          (await readProjectTree(join(project.projectRoot, "dist"))).map((entry) => entry.path),
+        ).toEqual([`chunks/${active}.mjs`, "main.mjs"]);
+        expect(
+          await readdir(join(project.projectRoot, ".reforce", "transactions", "dist")),
+        ).toEqual([]);
+        const projectEntries = await readdir(project.projectRoot);
+        const transactionLeftovers = projectEntries.filter(
+          (entry) => entry.startsWith("dist.staging-") || entry.startsWith("dist.backup-"),
+        );
+        if (transactionLeftovers.length > 0) {
+          throw new Error(
+            `Crash boundary ${faultIndex} (${observedPoints[faultIndex]}) left ${transactionLeftovers.join(", ")}.`,
           );
-          replacement = await ProjectLease.acquire({
-            projectRoot: project.projectRoot,
-            mode: "writer",
-          });
-          expect(replacement.recoveredWriterTokens).toEqual([crashedWriterToken]);
-          const recovery = await DirectoryTransactions.create({
-            projectRoot: project.projectRoot,
-            lease: replacement,
-          });
-          await recovery.recover();
-
-          const active = await activeDistGeneration(project.projectRoot);
-          expect(["pre", "post"]).toContain(active);
-          expect(
-            (await readProjectTree(join(project.projectRoot, "dist"))).map((entry) => entry.path),
-          ).toEqual([`chunks/${active}.mjs`, "main.mjs"]);
-          expect(
-            await readdir(join(project.projectRoot, ".reforce", "transactions", "dist")),
-          ).toEqual([]);
-          const projectEntries = await readdir(project.projectRoot);
-          const transactionLeftovers = projectEntries.filter(
-            (entry) => entry.startsWith("dist.staging-") || entry.startsWith("dist.backup-"),
-          );
-          if (transactionLeftovers.length > 0) {
-            throw new Error(
-              `Crash boundary ${faultIndex} (${observedPoints[faultIndex]}) left ${transactionLeftovers.join(", ")}.`,
-            );
-          }
-        } finally {
-          await replacement?.release();
-          await project.cleanup();
         }
+      } finally {
+        await replacement?.release();
+        await project.cleanup();
       }
-    },
-    hangDetectionBudgetMilliseconds,
-  );
+    }
+  });
 });
