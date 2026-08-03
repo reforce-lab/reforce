@@ -1,5 +1,5 @@
 import { lstat, readdir, readFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import nodePath, { join, relative } from "node:path";
 import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
 import { createDevBuildId, type DevBuildAsset } from "@/bundling/build-id";
@@ -19,17 +19,33 @@ export interface StartDevWatchBuildOptions {
   readonly onInvalidated?: (path: string | null) => void;
 }
 
+type PathSemantics = Pick<typeof nodePath, "isAbsolute" | "relative" | "sep">;
+
 // This filter and the watchOptions.ignored glob list below cover the same directory names on
 // purpose, but with different semantics: here only the top-level segment counts because gate
 // watch inputs are project-rooted, while ignored matches those names at any depth. The two
 // lists must stay coupled so that every gate watch input passing this filter is never matched
 // by ignored — otherwise the watcher would never report it and waitForRspackWatcher times out.
-function isProjectWatchFile(projectRoot: string, path: string): boolean {
-  const pathFromRoot = relative(projectRoot, path);
-  if (pathFromRoot === "" || pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`)) {
+//
+// Exported only so the containment rule can be unit tested: reaching it through
+// startDevWatchBuild needs a live rspack watcher, and the Windows cross-drive case cannot be
+// produced on the runner at all. semantics is injectable for the same reason — a non-Windows
+// runner has to be able to exercise win32 path rules; the default keeps callers unaware.
+export function isProjectWatchFile(
+  projectRoot: string,
+  path: string,
+  semantics: PathSemantics = nodePath,
+): boolean {
+  const pathFromRoot = semantics.relative(projectRoot, path);
+  if (
+    pathFromRoot === "" ||
+    semantics.isAbsolute(pathFromRoot) ||
+    pathFromRoot === ".." ||
+    pathFromRoot.startsWith(`..${semantics.sep}`)
+  ) {
     return false;
   }
-  const firstSegment = pathFromRoot.split(sep)[0];
+  const firstSegment = pathFromRoot.split(semantics.sep)[0];
   return (
     firstSegment !== ".reforce" &&
     firstSegment !== ".git" &&
