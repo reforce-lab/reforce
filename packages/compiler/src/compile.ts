@@ -55,7 +55,7 @@ export async function compile(
     state.parsedConfig.config.compilerOptions?.customConditions,
   );
   const analysis = analyzeProject(parsed.sources, linker);
-  const watchInputs = mergeWatchInputs(parsed.watchInputs, linker);
+  const watchInputs = mergeWatchInputs(parsed.watchInputs, linker.collectWatchInputs());
   if (analysis.status === "failure") {
     return failure(analysis.diagnostics, watchInputs);
   }
