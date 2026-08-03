@@ -1,5 +1,6 @@
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@/api";
-import { compareUtf16CodeUnits, stableStructuralKey } from "@/determinism";
+import { stableStructuralKey } from "@/determinism";
 import type { SourceSpan } from "@/parser/source-location";
 
 type DiagnosticCause = NonNullable<CompilerDiagnostic["cause"]>;

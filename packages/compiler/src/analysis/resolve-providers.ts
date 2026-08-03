@@ -1,3 +1,4 @@
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
 import {
   type PendingDependency,
@@ -8,7 +9,6 @@ import {
   sourceReference,
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
-import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
 import type { NamespaceExportedMember } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";

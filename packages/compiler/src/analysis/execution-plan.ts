@@ -1,6 +1,6 @@
 import { alg, Graph } from "@dagrejs/graphlib";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { DependencyModel, ExecutionPlansModel } from "@/analysis/model";
-import { compareUtf16CodeUnits } from "@/determinism";
 
 type PlanDependency = Pick<DependencyModel, "mode" | "parameterIndex" | "targetId">;
 

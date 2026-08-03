@@ -1,8 +1,8 @@
 import path from "node:path";
+import { toPortablePath } from "@reforce/primitives";
 import type { TsConfigJsonResolved } from "get-tsconfig";
 import { glob } from "tinyglobby";
 import { sortNativePaths } from "@/determinism";
-import { toPortablePath } from "@/project/path-identity";
 
 export const sourceSuffixPattern = /\.(?:ts|tsx|mts|cts)$/u;
 export const declarationSuffixPattern = /\.d\.(?:ts|mts|cts)$/u;

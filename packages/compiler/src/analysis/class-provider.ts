@@ -1,3 +1,4 @@
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import {
   type PendingDependency,
   type ProviderDraft,
@@ -7,7 +8,6 @@ import {
   sourceReference,
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
-import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol, ProjectLinker } from "@/linking/project-linker";
 import type {

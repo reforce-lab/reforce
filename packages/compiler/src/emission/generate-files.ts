@@ -1,11 +1,10 @@
 import path from "node:path";
+import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import stableStringify from "json-stable-stringify";
 import { type ExecutionPlansModel, type ProviderModel, sourceReference } from "@/analysis/model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
-import { compareUtf16CodeUnits } from "@/determinism";
 import type { LinkedSymbol } from "@/linking/project-linker";
 import { generatedDirectoryPath } from "@/project/generated-paths";
-import { toPortablePath } from "@/project/path-identity";
 
 const contextModuleSpecifier = "@reforce/context";
 const contextRuntimeModuleSpecifier = "@reforce/context/generated-runtime";

@@ -1,8 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { isObject, sleep } from "radashi";
-import { compareUtf16CodeUnits } from "@/determinism";
 import {
   type LeaseParticipant,
   type LeaseProbeResult,

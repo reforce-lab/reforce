@@ -1,4 +1,5 @@
-import { compareUtf16CodeUnits, stableStructuralKey } from "@/determinism";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { stableStructuralKey } from "@/determinism";
 import type { SourceSpan } from "@/parser/source-location";
 
 interface SpannedRecord {

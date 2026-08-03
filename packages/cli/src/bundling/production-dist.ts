@@ -1,15 +1,11 @@
 import { lstat, readdir } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join, relative } from "node:path";
+import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { type BuildResult, createRsbuild, rspack } from "@rsbuild/core";
 import { isObject } from "radashi";
 import { renderProductionEntry } from "@/bundling/production-entry";
 import type { ResolvedProject } from "@/compiler-types";
-import { compareUtf16CodeUnits } from "@/determinism";
 import { resolveCliSupportModule } from "@/runtime-module-path";
-
-function toPortablePath(path: string): string {
-  return path.split(sep).join("/");
-}
 
 function assertAssetPath(path: string): void {
   const segments = path.split("/");

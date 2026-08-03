@@ -38,6 +38,7 @@
       "dependencies": {
         "@reforce/compiler": "workspace:*",
         "@reforce/context": "workspace:*",
+        "@reforce/primitives": "workspace:*",
         "@rsbuild/core": "^2.1.9",
         "@swc/helpers": "catalog:",
         "commander": "^15.0.0",
@@ -58,6 +59,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@dagrejs/graphlib": "^4.0.1",
+        "@reforce/primitives": "workspace:*",
         "@swc/helpers": "catalog:",
         "enhanced-resolve": "^5.24.5",
         "estree-util-is-identifier-name": "^3.0.0",
@@ -109,6 +111,22 @@
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
         "type-fest": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/primitives": {
+      "name": "@reforce/primitives",
+      "version": "0.0.0",
+      "dependencies": {
+        "@swc/helpers": "catalog:",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@microsoft/api-extractor": "catalog:",
+        "@reforce/tooling-tsconfig": "workspace:*",
+        "@rslib/core": "catalog:",
+        "@types/bun": "catalog:",
+        "fast-check": "^4.9.0",
         "typescript": "catalog:",
       },
     },
@@ -180,6 +198,7 @@
       "name": "@reforce/tooling-testing",
       "version": "0.0.0",
       "dependencies": {
+        "@reforce/primitives": "workspace:*",
         "@swc/helpers": "catalog:",
         "execa": "^10.0.1",
         "strip-ansi": "^7.2.0",
@@ -324,6 +343,8 @@
     "@reforce/platform-fastify": ["@reforce/platform-fastify@workspace:platforms/fastify"],
 
     "@reforce/platform-hono": ["@reforce/platform-hono@workspace:platforms/hono"],
+
+    "@reforce/primitives": ["@reforce/primitives@workspace:packages/primitives"],
 
     "@reforce/testing": ["@reforce/testing@workspace:packages/testing"],
 

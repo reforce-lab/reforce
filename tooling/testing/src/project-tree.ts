@@ -1,5 +1,6 @@
 import { cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { temporaryDirectory } from "tempy";
 
 export type ProjectTree = {
@@ -14,17 +15,6 @@ export interface ProjectTreeEntry {
 export interface TemporaryProject {
   readonly projectRoot: string;
   cleanup(): Promise<void>;
-}
-
-function compareUtf16CodeUnits(left: string, right: string): number {
-  const sharedLength = Math.min(left.length, right.length);
-  for (let index = 0; index < sharedLength; index += 1) {
-    const difference = left.charCodeAt(index) - right.charCodeAt(index);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return left.length - right.length;
 }
 
 function assertContained(root: string, target: string): void {

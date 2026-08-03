@@ -1,7 +1,7 @@
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { CompilerDiagnostic, GeneratedFile } from "@reforce/compiler";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
-import { compareUtf16CodeUnits } from "@/determinism";
 
 interface GeneratedOutputCommitter {
   commitGenerated(files: readonly GeneratedFile[]): Promise<void>;
