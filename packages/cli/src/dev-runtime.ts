@@ -1,15 +1,15 @@
 import { requireBunExecutable } from "@/bun-runtime";
-import { DevEntryController } from "@/dev-entry";
-import type { RspackHmrRuntime } from "@/dev-hmr-manager";
 import {
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
   isDevChildLeaseParticipantAcknowledgement,
   writerLeaseTokenEnvironmentVariable,
 } from "@/dev-ipc";
-import { createChildLeaseParticipant } from "@/lease-endpoint";
+import { createChildLeaseParticipant } from "@/project/lease-endpoint";
 import { PlainTextReporter, reportShutdownFailure } from "@/reporter";
-import type { ShutdownResult } from "@/shutdown-controller";
+import { DevEntryController } from "@/runtime/dev-entry";
+import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
+import type { ShutdownResult } from "@/runtime/shutdown-controller";
 import { withTimeout } from "@/with-timeout";
 
 export interface DevelopmentBootstrapModule {

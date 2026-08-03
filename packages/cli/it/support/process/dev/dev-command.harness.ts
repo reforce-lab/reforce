@@ -1,4 +1,4 @@
-import { runDevCommand } from "@/dev-command";
+import { runDevCommand } from "@/commands/dev";
 import { PlainTextReporter } from "@/reporter";
 
 const cwd = process.argv[2];

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { createCompiler, type GeneratedFile } from "@reforce/compiler";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
-import { DevCompilerGate } from "@/dev-compiler-gate";
+import { DevCompilerGate } from "@/dev/compiler-gate";
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 let application: TemporaryProject | undefined;

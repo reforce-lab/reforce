@@ -13,8 +13,8 @@ import {
   DirectoryTransactions,
   type GeneratedTransactionFile,
   type TransactionKind,
-} from "@/directory-transaction";
-import { ProjectBusyError, ProjectLease } from "@/project-lease";
+} from "@/project/directory-transaction";
+import { ProjectBusyError, ProjectLease } from "@/project/lease";
 import {
   type BunIpcHarness,
   type IpcProcessOutcome,

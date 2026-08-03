@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCompiler } from "@reforce/compiler";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { buildProductionDist, closeProductionBuild } from "@/production-build";
+import { buildProductionDist, closeProductionBuild } from "@/bundling/production-dist";
 
 async function arrangeApplicationBuild() {
   const temporaryProject = await createTemporaryProject({

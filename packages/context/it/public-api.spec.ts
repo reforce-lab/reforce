@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { GeneratedClassHooks, GeneratedFactoryRegistration } from "@/generated-contracts";
+import type { GeneratedClassHooks, GeneratedFactoryRegistration } from "@/generated/contracts";
 import { factoryBean } from "@/generated-runtime";
 import { defineBean, Injectable, Primary, Qualifier, ReforceRuntimeError } from "@/index";
 

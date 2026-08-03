@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { RspackHmrRuntime } from "@/dev-hmr-manager";
 import { createRspackHmrRuntime } from "@/dev-runtime";
+import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 function rejectingRuntime(error: unknown): RspackHmrRuntime {
   return {

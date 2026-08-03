@@ -4,11 +4,11 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCompiler } from "@reforce/compiler";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { DevCompilerGate } from "@/dev-compiler-gate";
-import { startDevWatchBuild } from "@/dev-watch-build";
-import type { DevCompilation } from "@/dev-watch-coordinator";
-import { DirectoryTransactions } from "@/directory-transaction";
-import { ProjectLease } from "@/project-lease";
+import { startDevWatchBuild } from "@/bundling/dev-watch";
+import { DevCompilerGate } from "@/dev/compiler-gate";
+import type { DevCompilation } from "@/dev/watch-coordinator";
+import { DirectoryTransactions } from "@/project/directory-transaction";
+import { ProjectLease } from "@/project/lease";
 
 const workspaceRoot = resolve("../..");
 const contextRoot = join(workspaceRoot, "packages", "context");

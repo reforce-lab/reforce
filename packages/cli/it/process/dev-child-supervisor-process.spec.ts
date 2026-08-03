@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { resolveBunExecutable } from "@reforce/tooling-testing";
 import { execa } from "execa";
-import { DevChildSupervisor, type ManagedDevChild } from "@/dev-child-supervisor";
+import { DevChildSupervisor, type ManagedDevChild } from "@/dev/child-supervisor";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-exit.harness.ts", import.meta.url),

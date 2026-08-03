@@ -3,8 +3,8 @@ import { readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import type { LeaseParticipant } from "@/lease-endpoint";
-import { ProjectBusyError, ProjectLease } from "@/project-lease";
+import { ProjectBusyError, ProjectLease } from "@/project/lease";
+import type { LeaseParticipant } from "@/project/lease-endpoint";
 import { spawnBunIpcHarness } from "../support/process/bun-ipc-harness";
 
 const leases: ProjectLease[] = [];

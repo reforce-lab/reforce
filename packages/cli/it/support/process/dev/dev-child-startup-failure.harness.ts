@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { createChildLeaseParticipant } from "@/lease-endpoint";
+import { createChildLeaseParticipant } from "@/project/lease-endpoint";
 
 const mode = process.argv[2];
 const observationPath = process.argv[3];

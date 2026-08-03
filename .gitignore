@@ -35,6 +35,7 @@ coverage/
 /AGENTS.md
 /CLAUDE.md
 .worktrees
+.kimi-code
 .agents
 .claude
 .codex
