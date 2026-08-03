@@ -199,6 +199,25 @@ describe("compiler diagnostics", () => {
     expect(result.diagnostics.map((item) => item.code)).toContain("SOURCE_FILE_ID_COLLISION");
   });
 
+  test("rejects a defineBean declared inside a function body", async () => {
+    // Arrange
+    const source = [
+      'import { defineBean } from "@reforce/context";',
+      "export class Resource {}",
+      "export function setup(): void {",
+      "  const resource = defineBean<Resource>({ create: () => new Resource() });",
+      "  void resource;",
+      "}",
+      "",
+    ].join("\n");
+
+    // Act
+    const result = await compileSource(source);
+
+    // Assert
+    expect(result.diagnostics.map((item) => item.code)).toContain("INVALID_DEFINE_BEAN");
+  });
+
   test("rejects defineBean calls with multiple explicit type arguments", async () => {
     const result = await compileSource(
       [
