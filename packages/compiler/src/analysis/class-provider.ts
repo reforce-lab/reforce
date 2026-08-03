@@ -1,10 +1,11 @@
 import {
   type PendingDependency,
   type ProviderDraft,
+  providerId,
   type QualifierModel,
+  reportUnsupportedType,
   sourceReference,
 } from "@/analysis/model";
-import { reportUnsupportedType } from "@/analysis/resolve-providers";
 import type { CompilerDiagnostic } from "@/api";
 import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
@@ -97,15 +98,15 @@ function validLifecycleMethod(methods: readonly ClassMethodDeclaration[], name: 
     return false;
   }
   const candidates = methods.filter((method) => methodName(method) === name);
+  const candidate = candidates.length === 1 ? candidates[0] : undefined;
   return (
-    candidates.length === 1 &&
-    candidates[0]?.static === false &&
-    candidates[0]?.accessibility === "public" &&
-    candidates[0]?.generator === false &&
-    candidates[0]?.optional === false &&
-    candidates[0]?.implementation === true &&
-    candidates[0]?.parameterCount === 0 &&
-    validLifecycleReturn(candidates[0])
+    candidate?.static === false &&
+    candidate.accessibility === "public" &&
+    candidate.generator === false &&
+    candidate.optional === false &&
+    candidate.implementation === true &&
+    candidate.parameterCount === 0 &&
+    validLifecycleReturn(candidate)
   );
 }
 
@@ -138,6 +139,8 @@ function expandProvidedInterface(
     return [];
   }
   const parents = symbol.declaration.extends.flatMap((type) => {
+    // linker.resolveType already records its own diagnostic when it fails; only add
+    // TYPE_LINK_FAILED when it didn't, or the same parent type gets reported twice.
     const diagnosticCount = linker.diagnostics.length;
     const linked = linker.resolveType(source, type);
     if (linked === undefined) {
@@ -607,7 +610,7 @@ export function analyzeClassProvider(
   );
   const provides = dedupeSymbols(contracts.provided);
   const qualifiers = classQualifiers(provides, exportName, selection, declaration, diagnostics);
-  const id = `${source.fileId}#${exportName}`;
+  const id = providerId(source.fileId, exportName);
   return {
     provider: {
       kind: "class",

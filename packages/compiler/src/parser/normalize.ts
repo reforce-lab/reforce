@@ -6,7 +6,7 @@ interface SpannedRecord {
   readonly kind: string;
 }
 
-export function compareSpanned(left: SpannedRecord, right: SpannedRecord): number {
+function compareSpanned(left: SpannedRecord, right: SpannedRecord): number {
   const start = left.span.start.offset - right.span.start.offset;
   if (start !== 0) {
     return start;

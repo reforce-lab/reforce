@@ -1,7 +1,4 @@
-import * as nodeFileSystem from "node:fs";
 import { isBuiltin } from "node:module";
-import path from "node:path";
-import enhancedResolve from "enhanced-resolve";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { compareUtf16CodeUnits } from "@/determinism";
@@ -10,6 +7,14 @@ import {
   type ExternalDeclaration,
   readExternalDeclarations,
 } from "@/linking/external-declarations";
+import {
+  createModuleResolver,
+  type ImportReference,
+  type ModuleRecord,
+  type ModuleResolver,
+  moduleKey,
+  type ResolvedModule,
+} from "@/linking/module-resolver";
 import type {
   ClassDeclaration,
   EntityName,
@@ -18,8 +23,9 @@ import type {
   TypeNode,
 } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";
-import { isPathContained } from "@/project/path-identity";
 import type { ParsedSource } from "@/project/source-files";
+
+const contextModuleSpecifier = "@reforce/context";
 
 type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
 
@@ -41,23 +47,6 @@ export interface LinkedType {
   readonly span: SourceSpan;
 }
 
-interface ImportReference {
-  readonly moduleSpecifier: string;
-  readonly imported: string;
-  readonly namespace: boolean;
-}
-
-interface ModuleRecord {
-  readonly source: ParsedSource;
-  readonly localSymbols: ReadonlyMap<string, LinkedSymbol>;
-  readonly imports: ReadonlyMap<string, ImportReference>;
-}
-
-interface ResolvedModule {
-  readonly physicalPath: string;
-  readonly record?: ModuleRecord;
-}
-
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
   readonly fileDependencies: readonly string[];
@@ -73,14 +62,6 @@ export interface ProjectLinker {
 
 function entityText(entity: EntityName): string {
   return entity.kind === "identifier" ? entity.name : `${entityText(entity.left)}.${entity.right}`;
-}
-
-function moduleKey(file: string): string {
-  try {
-    return nodeFileSystem.realpathSync(file);
-  } catch {
-    return path.resolve(file);
-  }
 }
 
 function createLocalSymbol(
@@ -189,12 +170,6 @@ function referencedModuleSpecifiers(source: ParsedSource): readonly string[] {
   return [...specifiers];
 }
 
-type ModuleResolver = (
-  source: ParsedSource,
-  specifier: string,
-  reportFailure?: boolean,
-) => ResolvedModule | undefined;
-
 async function loadExternalDeclarations(
   sources: readonly ParsedSource[],
   resolveModule: ModuleResolver,
@@ -204,7 +179,7 @@ async function loadExternalDeclarations(
   for (const source of sources) {
     for (const specifier of referencedModuleSpecifiers(source)) {
       const target =
-        specifier === "@reforce/context" || isBuiltin(specifier)
+        specifier === contextModuleSpecifier || isBuiltin(specifier)
           ? undefined
           : resolveModule(source, specifier, false);
       if (target !== undefined && target.record === undefined) {
@@ -219,48 +194,6 @@ async function loadExternalDeclarations(
   return result;
 }
 
-function isStrictAncestor(directory: string, target: string): boolean {
-  const pathFromDirectory = path.relative(directory, target);
-  return (
-    pathFromDirectory !== "" &&
-    !path.isAbsolute(pathFromDirectory) &&
-    pathFromDirectory !== ".." &&
-    !pathFromDirectory.startsWith(`..${path.sep}`)
-  );
-}
-
-function shouldWatchResolverDirectory(directory: string, projectRoot: string): boolean {
-  if (isPathContained(projectRoot, directory)) {
-    return true;
-  }
-  if (isStrictAncestor(directory, projectRoot)) {
-    return false;
-  }
-  return !isStrictAncestor(nodeFileSystem.realpathSync(directory), projectRoot);
-}
-
-function classifyResolverDependencies(
-  resolverDependencies: ReadonlySet<string>,
-  projectRoot: string,
-  fileDependencies: Set<string>,
-  contextDependencies: Set<string>,
-  missingDependencies: Set<string>,
-): void {
-  for (const dependency of resolverDependencies) {
-    try {
-      if (!nodeFileSystem.statSync(dependency).isDirectory()) {
-        fileDependencies.add(dependency);
-        continue;
-      }
-      if (shouldWatchResolverDirectory(dependency, projectRoot)) {
-        contextDependencies.add(dependency);
-      }
-    } catch {
-      missingDependencies.add(dependency);
-    }
-  }
-}
-
 export async function createProjectLinker(
   sources: readonly ParsedSource[],
   project: ResolvedApplicationProject,
@@ -270,123 +203,19 @@ export async function createProjectLinker(
   const records = new Map<string, ModuleRecord>();
   const recordsByFileId = new Map<string, ModuleRecord>();
   const diagnostics: CompilerDiagnostic[] = [];
-  const fileDependencies = new Set<string>();
-  const contextDependencies = new Set<string>();
-  const missingDependencies = new Set<string>();
-  const resolverFileDependencies = new Set<string>();
-  const resolverContextDependencies = new Set<string>();
   for (const source of sources) {
     const record = createModuleRecord(source);
     records.set(moduleKey(source.absolutePath), record);
     recordsByFileId.set(source.fileId, record);
   }
-  const resolverOptions = {
-    descriptionFiles: ["package.json"],
-    exportsFields: ["exports"],
-    importsFields: ["imports"],
-    extensions: [".ts", ".tsx", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts", ".js", ".mjs", ".cjs"],
-    extensionAlias: {
-      ".js": [".ts", ".tsx", ".d.ts", ".js"],
-      ".mjs": [".mts", ".d.mts", ".mjs"],
-      ".cjs": [".cts", ".d.cts", ".cjs"],
-    },
-    extensionAliasForExports: true,
-    fileSystem: nodeFileSystem,
-    mainFields: ["types", "typings", "module", "main"],
-    symlinks: true,
-    tsconfig: project.tsconfigPath,
-    useSyncFileSystemCalls: true,
-  };
-  const resolveImportTypeModule = enhancedResolve.create.sync({
-    ...resolverOptions,
-    conditionNames: ["types", ...customConditions, "import", "default"],
-  });
-  const resolveRequireTypeModule = enhancedResolve.create.sync({
-    ...resolverOptions,
-    conditionNames: ["types", ...customConditions, "require", "default"],
-  });
-
-  const resolutionContext = {
-    fileDependencies: resolverFileDependencies,
-    contextDependencies: resolverContextDependencies,
-    missingDependencies,
-  };
-  const resolvedModules = new Map<string, ResolvedModule | false>();
-  const reportedFailures = new Set<string>();
-
-  function resolutionKey(containing: ParsedSource, specifier: string): string {
-    return `${containing.absolutePath}\0${specifier}`;
-  }
-
-  function resolveUncachedModule(
-    containing: ParsedSource,
-    specifier: string,
-  ): ResolvedModule | false {
-    let resolved: string | false;
-    try {
-      const resolveTypeModule = ["cts", "d.cts"].includes(containing.sourceKind)
-        ? resolveRequireTypeModule
-        : resolveImportTypeModule;
-      resolved = resolveTypeModule(
-        path.dirname(containing.absolutePath),
-        specifier,
-        resolutionContext,
-      );
-    } catch {
-      resolved = false;
-    }
-    if (resolved === false) {
-      return false;
-    }
-    resolverFileDependencies.add(resolved);
-    const physicalPath = moduleKey(resolved);
-    const record = records.get(physicalPath);
-    return record === undefined ? { physicalPath } : { physicalPath, record };
-  }
-
-  function resolveModule(
-    containing: ParsedSource,
-    specifier: string,
-    reportFailure = true,
-  ): ResolvedModule | undefined {
-    const key = resolutionKey(containing, specifier);
-    let result = resolvedModules.get(key);
-    if (result === undefined) {
-      result = resolveUncachedModule(containing, specifier);
-      resolvedModules.set(key, result);
-    }
-    if (result === false) {
-      if (!reportFailure || reportedFailures.has(key)) {
-        return undefined;
-      }
-      reportedFailures.add(key);
-      diagnostics.push(
-        diagnostic({
-          code: "MODULE_RESOLUTION_FAILED",
-          message: `Cannot resolve ${specifier} from ${containing.fileId}.`,
-          help: "Fix the import, package exports, paths, or moduleResolution configuration.",
-        }),
-      );
-      return undefined;
-    }
-    return result;
-  }
-
+  const { resolveModule, collectWatchDependencies } = createModuleResolver(
+    records,
+    diagnostics,
+    project,
+    customConditions,
+  );
   const externalDeclarations = await loadExternalDeclarations(sources, resolveModule, cache);
-  classifyResolverDependencies(
-    resolverFileDependencies,
-    project.projectRoot,
-    fileDependencies,
-    contextDependencies,
-    missingDependencies,
-  );
-  classifyResolverDependencies(
-    resolverContextDependencies,
-    project.projectRoot,
-    fileDependencies,
-    contextDependencies,
-    missingDependencies,
-  );
+  const { fileDependencies, contextDependencies, missingDependencies } = collectWatchDependencies();
 
   interface NamedExportResolution {
     readonly matched: boolean;
@@ -599,7 +428,7 @@ export async function createProjectLinker(
       key: `context:${name}`,
       kind: "context",
       name,
-      moduleSpecifier: "@reforce/context",
+      moduleSpecifier: contextModuleSpecifier,
       generic: name === "Lazy",
     });
   }
@@ -607,10 +436,10 @@ export async function createProjectLinker(
   function resolveImport(
     record: ModuleRecord,
     reference: ImportReference,
-    importedName = reference.imported,
+    importedName: string,
     visited = new Set<string>(),
   ): LinkedSymbol | undefined {
-    if (reference.moduleSpecifier === "@reforce/context") {
+    if (reference.moduleSpecifier === contextModuleSpecifier) {
       return contextSymbol(importedName);
     }
     const target = resolveModule(record.source, reference.moduleSpecifier);
@@ -751,6 +580,9 @@ export async function createProjectLinker(
   }
 
   return {
+    // diagnostics must stay the live array: resolveType/resolveExport keep pushing diagnostics
+    // while analysis runs, and analysis reads linker.diagnostics only after it finishes — a
+    // snapshot here would silently drop those late diagnostics.
     get diagnostics() {
       return diagnostics;
     },

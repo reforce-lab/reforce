@@ -63,6 +63,8 @@ async function reportCliFailure(
       cause: error,
     }),
   );
+  // Already on the failure-reporting path: if flushing that report also fails, no other channel
+  // remains to report through, so the flush error is swallowed.
   try {
     await reporter.flush();
   } catch {}
@@ -88,7 +90,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     result = await runBuildCommand({
       cwd,
       projectDirectory: commandOptions.project,
-      ...(commandOptions.tsconfig === undefined ? {} : { tsconfigPath: commandOptions.tsconfig }),
+      tsconfigPath: commandOptions.tsconfig,
       reporter,
     });
   });
@@ -100,7 +102,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     result = await runDevCommand({
       cwd,
       projectDirectory: commandOptions.project,
-      ...(commandOptions.tsconfig === undefined ? {} : { tsconfigPath: commandOptions.tsconfig }),
+      tsconfigPath: commandOptions.tsconfig,
       reporter,
     });
   });

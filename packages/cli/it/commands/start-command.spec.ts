@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { createChildLeaseParticipant } from "@/project-lease";
+import { createChildLeaseParticipant } from "@/lease-endpoint";
 import type { CliReporterEvent, Reporter } from "@/reporter";
 import { runStartCommand } from "@/start-command";
 

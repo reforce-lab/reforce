@@ -1,3 +1,8 @@
+// generated 树发布前的信任边界：directory-transaction 在发布（含崩溃恢复接管 staging 树）
+// .reforce/generated 之前，用本文件的 validateGeneratedManifestBytes 校验 manifest.json 字节。
+// 产物可能被手改、或来自与当前 CLI 错配的 compiler 版本，因此每条不变量都镜像契约生产方
+// packages/compiler/src/emission/generate-files.ts 的 renderManifest 输出形状；schemaVersion、
+// bean id 格式、lifecycle 归属、plans 三数组皆为线上协议，改动任一条都必须与生产方同步。
 import { isObject } from "radashi";
 
 interface ManifestSourcePosition {
@@ -93,6 +98,7 @@ function isRelativePosixPath(value: string): boolean {
     .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
+// bean id 的线上格式为 `file#exportName`：恰好一个 "#"，且 file 必须是规范相对 posix 路径。
 function beanIdParts(
   value: unknown,
 ): { readonly file: string; readonly exportName: string } | undefined {
@@ -292,9 +298,12 @@ function isManifestBean(value: unknown): value is ManifestBean {
   ) {
     return false;
   }
+  // factory bean 的 create 被 compiler 强制为零参数同步函数，故 dependencies 恒为空；
+  // start/close 只属于 class 实例的生命周期方法，factory 仅有 dispose。
   if (kind === "factory") {
     return dependencies.length === 0 && !lifecycle.start && !lifecycle.close;
   }
+  // class bean 必须把类自身列入 provides（实例按自身类型注册）；dispose 只属于 factory。
   return (
     !lifecycle.dispose &&
     provides.some(
@@ -306,13 +315,11 @@ function isManifestBean(value: unknown): value is ManifestBean {
 }
 
 function isPlans(value: unknown): value is ManifestPlans {
-  if (
-    !isObject(value) ||
-    !hasExactKeys(value, ["constructionOrder", "startActionOrder", "cleanupActionOrder"])
-  ) {
+  const keys = ["constructionOrder", "startActionOrder", "cleanupActionOrder"] as const;
+  if (!isObject(value) || !hasExactKeys(value, keys)) {
     return false;
   }
-  return ["constructionOrder", "startActionOrder", "cleanupActionOrder"].every((key) => {
+  return keys.every((key) => {
     const entries = Reflect.get(value, key);
     return Array.isArray(entries) && entries.every((entry) => typeof entry === "string");
   });
@@ -372,6 +379,8 @@ function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): bo
   );
 }
 
+// 源路径的大小写不敏感冲突检测：macOS/Windows 默认文件系统上，仅大小写不同的两个文件会
+// 互相覆盖，因此路径按 lowerCase 归一后必须唯一。compiler 编译期已拒绝此类冲突，此处对产物复检。
 function registerSourcePath(
   source: ManifestSourceReference,
   portablePaths: Map<string, string>,
@@ -406,6 +415,7 @@ function hasPortableSourcePaths(beans: readonly ManifestBean[]): boolean {
 }
 
 function isGeneratedManifest(value: unknown): boolean {
+  // schemaVersion 是硬版本门：无法识别的 schema 直接拒绝，不按错版契约解释产物字节。
   if (
     !isObject(value) ||
     !hasExactKeys(value, ["schemaVersion", "beans", "plans"]) ||
@@ -418,6 +428,8 @@ function isGeneratedManifest(value: unknown): boolean {
   if (!Array.isArray(beans) || !beans.every(isManifestBean) || !isPlans(plans)) {
     return false;
   }
+  // bean id 与源路径同规则：除精确唯一外，按 lowerCase 归一后（portable id）也必须唯一，
+  // 与 packages/context 的运行时校验互为双保险。
   const ids = beans.map((bean) => bean.id);
   const portableIds = ids.map((id) => id.toLowerCase());
   const knownIds = new Set(ids);

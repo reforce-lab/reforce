@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import type { LRUCache } from "lru-cache";
 import { parseSource } from "@/parser/parse-source";
 import type { ClassDeclaration, InterfaceDeclaration, SourceFileIr } from "@/parser/source-ir";
+import { sourceKindOf } from "@/parser/source-kind";
 import type { CanonicalFileId } from "@/parser/source-location";
-import { sourceKindOf } from "@/project/source-files";
 
 export interface ExternalDeclaration {
   readonly kind: "class" | "interface";
@@ -127,17 +127,13 @@ export async function readExternalDeclarations(
   const sourceHash = createHash("sha256").update(sourceText, "utf8").digest("hex");
   const cacheKey = JSON.stringify([fileId, sourceKind, sourceHash]);
   const cached = cache.get(cacheKey);
-  const parsed =
-    cached === undefined ? parseSource({ file: fileId, sourceKind, sourceText }) : undefined;
-  if (parsed?.status === "failure") {
+  if (cached !== undefined) {
+    return directExports(cached);
+  }
+  const parsed = parseSource({ file: fileId, sourceKind, sourceText });
+  if (parsed.status === "failure") {
     return undefined;
   }
-  const unit = cached ?? parsed?.unit;
-  if (unit === undefined) {
-    return undefined;
-  }
-  if (cached === undefined) {
-    cache.set(cacheKey, unit);
-  }
-  return directExports(unit);
+  cache.set(cacheKey, parsed.unit);
+  return directExports(parsed.unit);
 }

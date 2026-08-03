@@ -8,8 +8,7 @@ import {
   type TemporaryProject,
 } from "@reforce/tooling-testing";
 import { spawnDevChild } from "@/dev-child-process";
-import { probeLeaseEndpoint } from "@/lease-endpoint";
-import type { LeaseParticipant } from "@/project-lease";
+import { type LeaseParticipant, probeLeaseEndpoint } from "@/lease-endpoint";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-shutdown.harness.ts", import.meta.url),

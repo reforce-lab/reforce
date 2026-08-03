@@ -1,5 +1,10 @@
-import { type ProviderDraft, type QualifierModel, sourceReference } from "@/analysis/model";
-import { reportUnsupportedType } from "@/analysis/resolve-providers";
+import {
+  type ProviderDraft,
+  providerId,
+  type QualifierModel,
+  reportUnsupportedType,
+  sourceReference,
+} from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol, ProjectLinker } from "@/linking/project-linker";
@@ -7,7 +12,6 @@ import type {
   DefineBeanDeclaration,
   DefineBeanOptionProperty,
   FunctionDescriptor,
-  TypeNode,
 } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
@@ -19,12 +23,8 @@ function functionOption(
   const property = properties.find((item) => item.kind === kind);
   if (
     property?.kind !== kind ||
-    property.value.kind === "string-literal" ||
-    property.value.kind === "boolean-literal"
+    (property.value.kind !== "arrow" && property.value.kind !== "function")
   ) {
-    return undefined;
-  }
-  if (property.value.kind === "unsupported") {
     return undefined;
   }
   return property.value;
@@ -55,12 +55,8 @@ function resolveFactoryProvidedType(
   create: FunctionDescriptor,
   linker: ProjectLinker,
 ): FactoryProvidedType | undefined {
-  let candidate: TypeNode | undefined;
-  if (declaration.typeArguments.length === 1) {
-    candidate = declaration.typeArguments[0];
-  } else if (declaration.typeArguments.length === 0) {
-    candidate = create.returnType;
-  }
+  const candidate =
+    declaration.typeArguments.length === 1 ? declaration.typeArguments[0] : create.returnType;
   if (candidate !== undefined) {
     const linked = linker.resolveType(source, candidate);
     return linked === undefined
@@ -313,7 +309,7 @@ export function analyzeFactoryProvider(
   return {
     provider: {
       kind: "factory",
-      id: `${source.fileId}#${exportName}`,
+      id: providerId(source.fileId, exportName),
       source,
       exportName,
       declarationSource: sourceReference(declaration.span),

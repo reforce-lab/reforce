@@ -5,6 +5,11 @@ import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { PlainTextReporter, type Reporter, reportShutdownFailure } from "@/reporter";
 import { installProcessShutdownHandlers, ShutdownController } from "@/shutdown-controller";
 
+// Receiver half of the production-wire acknowledgement sent by start-command.ts. The dev wire's
+// `DevChildLeaseParticipantAcknowledgement` (dev-ipc.ts) looks similar but carries an `ok` field;
+// the production parent's ack has none (it only acks after a successful `addParticipant`), so
+// this guard must not require `ok` — reusing the dev-ipc guard here would make every handshake
+// time out.
 interface LeaseParticipantAck {
   readonly type: "reforce:lease-participant-ack";
   readonly participantToken: string;

@@ -4,7 +4,7 @@ export type CanonicalFileId = string & {
   readonly [canonicalFileIdBrand]: true;
 };
 
-export interface SourcePosition {
+interface SourcePosition {
   readonly offset: number;
   readonly line: number;
   readonly character: number;

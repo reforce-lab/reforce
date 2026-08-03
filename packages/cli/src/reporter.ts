@@ -5,7 +5,7 @@ import { isObject } from "radashi";
 
 export type CliCommandName = "cli" | "dev" | "build" | "start";
 
-export type CliFailurePhase =
+export type CliCommandPhase =
   | "argv"
   | "project"
   | "compiler"
@@ -29,34 +29,33 @@ export type CliFailureCode =
   | "CHILD_FAILED"
   | "SHUTDOWN_FAILED";
 
-export interface CliStatusEvent {
+interface CliStatusEvent {
   readonly kind: "status";
   readonly command: CliCommandName;
-  readonly phase: CliFailurePhase;
+  readonly phase: CliCommandPhase;
   readonly message: string;
 }
 
-export interface CliDiagnosticEvent {
+interface CliDiagnosticEvent {
   readonly kind: "diagnostic";
   readonly command: "dev" | "build";
   readonly phase: "project" | "compiler";
   readonly diagnostic: CompilerDiagnostic;
 }
 
-export interface CliSuccessEvent {
+interface CliSuccessEvent {
   readonly kind: "success";
   readonly command: CliCommandName;
   readonly message: string;
 }
 
-export interface CliFailureEvent {
+interface CliFailureEvent {
   readonly kind: "failure";
   readonly command: CliCommandName;
-  readonly phase: CliFailurePhase;
+  readonly phase: CliCommandPhase;
   readonly message: string;
   readonly cause: unknown;
   readonly code: CliFailureCode | CompilerDiagnosticCode | RuntimeErrorCode;
-  readonly sourceSpan?: CompilerDiagnostic["sourceSpan"];
 }
 
 export type CliReporterEvent =
@@ -69,9 +68,6 @@ export interface Reporter {
   report(event: CliReporterEvent): void;
   flush(): Promise<void>;
 }
-
-type FailureSourceSpan = NonNullable<CompilerDiagnostic["sourceSpan"]>;
-type FailureSourcePosition = FailureSourceSpan["start"];
 
 function isCompilerFailureCause(value: unknown): value is object {
   return (
@@ -90,77 +86,25 @@ function isCauseFailureCode(cause: unknown, value: unknown): value is CliFailure
   if (cause instanceof ReforceRuntimeError) {
     return value === cause.code;
   }
+  // compiler 分支只校验形态（非空白字符串）、不做成员校验：compiler 包只导出
+  // CompilerDiagnosticCode 类型，没有运行时成员列表可穷举，只能信任 compiler 产出的
+  // code 原样透传。改成严格校验会把未列出的 code 打成 fallback，属行为变更。
   return isCompilerFailureCause(cause);
-}
-
-function isSourcePosition(value: unknown): value is FailureSourcePosition {
-  if (!isObject(value)) {
-    return false;
-  }
-  const offset = Reflect.get(value, "offset");
-  const line = Reflect.get(value, "line");
-  const character = Reflect.get(value, "character");
-  return (
-    typeof offset === "number" &&
-    Number.isInteger(offset) &&
-    offset >= 0 &&
-    typeof line === "number" &&
-    Number.isInteger(line) &&
-    line >= 0 &&
-    typeof character === "number" &&
-    Number.isInteger(character) &&
-    character >= 0
-  );
-}
-
-function isCanonicalFileId(value: unknown): value is FailureSourceSpan["fileId"] {
-  if (
-    typeof value !== "string" ||
-    value.length === 0 ||
-    value.includes("\\") ||
-    value.startsWith("/") ||
-    /^[A-Za-z]:/u.test(value)
-  ) {
-    return false;
-  }
-  return value
-    .split("/")
-    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
-}
-
-function isSourceSpan(value: unknown): value is FailureSourceSpan {
-  if (!isObject(value)) {
-    return false;
-  }
-  const fileId = Reflect.get(value, "fileId");
-  const start = Reflect.get(value, "start");
-  const end = Reflect.get(value, "end");
-  return (
-    isCanonicalFileId(fileId) &&
-    isSourcePosition(start) &&
-    isSourcePosition(end) &&
-    end.offset >= start.offset
-  );
 }
 
 function resolveFailureDetails(cause: unknown): {
   readonly code?: CliFailureEvent["code"];
-  readonly sourceSpan?: FailureSourceSpan;
 } {
   if (!(cause instanceof ReforceRuntimeError) && !isCompilerFailureCause(cause)) {
     return {};
   }
   const code = Reflect.get(cause, "code");
-  const sourceSpan = Reflect.get(cause, "sourceSpan");
-  return {
-    ...(isCauseFailureCode(cause, code) ? { code } : {}),
-    ...(isSourceSpan(sourceSpan) ? { sourceSpan } : {}),
-  };
+  return isCauseFailureCode(cause, code) ? { code } : {};
 }
 
 export function createFailureEvent(input: {
   readonly command: CliCommandName;
-  readonly phase: CliFailurePhase;
+  readonly phase: CliCommandPhase;
   readonly fallbackCode: CliFailureCode;
   readonly message: string;
   readonly cause: unknown;
@@ -173,7 +117,6 @@ export function createFailureEvent(input: {
     code: details.code ?? input.fallbackCode,
     message: input.message,
     cause: input.cause,
-    ...(details.sourceSpan === undefined ? {} : { sourceSpan: details.sourceSpan }),
   };
 }
 
@@ -182,10 +125,11 @@ export async function reportShutdownFailure(input: {
   readonly command: CliCommandName;
   readonly errors: readonly unknown[];
 }): Promise<void> {
+  const message = `${input.command} command shutdown failed.`;
   const cause =
     input.errors.length === 1
       ? input.errors[0]
-      : new AggregateError(input.errors, `${input.command} command shutdown failed.`, {
+      : new AggregateError(input.errors, message, {
           cause: input.errors[0],
         });
   input.reporter.report(
@@ -193,7 +137,7 @@ export async function reportShutdownFailure(input: {
       command: input.command,
       phase: "shutdown",
       fallbackCode: "SHUTDOWN_FAILED",
-      message: `${input.command} command shutdown failed.`,
+      message,
       cause,
     }),
   );
@@ -202,7 +146,7 @@ export async function reportShutdownFailure(input: {
   } catch {}
 }
 
-export interface PlainTextReporterOptions {
+interface PlainTextReporterOptions {
   readonly output?: Writable;
 }
 
@@ -234,6 +178,8 @@ export class PlainTextReporter implements Reporter {
 
   report(event: CliReporterEvent): void {
     const line = `${renderEvent(event)}\n`;
+    // 已知行为隐患，保留现状待 owner 决策：队列不挂 catch，首次写失败后 pending 永久
+    // rejected，此后每次 report 的写入都会丢失并产生无 handler 的 rejection。
     this.pending = this.pending.then(
       () =>
         new Promise<void>((resolve, reject) => {

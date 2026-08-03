@@ -3,13 +3,13 @@ import {
   type PendingDependency,
   type ProviderDraft,
   type ProviderModel,
+  providerId,
   type QualifierModel,
   sourceReference,
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
-import type { LinkedSymbol } from "@/linking/project-linker";
 import type { NamespaceExportedMember } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";
 
@@ -66,21 +66,6 @@ const strictModuleReservedNames = new Set([
 
 function validQualifierName(name: string): boolean {
   return isIdentifierName(name) && !strictModuleReservedNames.has(name);
-}
-
-export function reportUnsupportedType(
-  diagnostics: CompilerDiagnostic[],
-  symbol: LinkedSymbol,
-  span: SourceSpan,
-): void {
-  diagnostics.push(
-    diagnostic({
-      code: "UNSUPPORTED_TYPE_DECLARATION",
-      message: `${symbol.name} resolves to a declaration kind that Reforce cannot use as a Bean contract.`,
-      sourceSpan: span,
-      help: "Use a directly linked non-generic class or interface as the Bean contract.",
-    }),
-  );
 }
 
 function validateBeanIdentities(
@@ -153,6 +138,10 @@ function qualifierAvailabilityRelated(
   );
 }
 
+function qualifierIndexKey(symbolKey: string, member: string): string {
+  return `${symbolKey}\0${member}`;
+}
+
 function indexQualifiers(
   drafts: readonly ProviderDraft[],
   diagnostics: CompilerDiagnostic[],
@@ -171,7 +160,7 @@ function indexQualifiers(
         );
         continue;
       }
-      const key = `${qualifier.interfaceSymbol.key}\0${qualifier.member}`;
+      const key = qualifierIndexKey(qualifier.interfaceSymbol.key, qualifier.member);
       const namespaceMember = qualifierNamespaceMember(qualifier);
       if (namespaceMember !== undefined && !reportedNamespaceCollisions.has(key)) {
         reportedNamespaceCollisions.add(key);
@@ -259,7 +248,9 @@ function qualifiedDependencyProvider(
   if (qualifierMember === undefined) {
     return undefined;
   }
-  const selected = qualifierIndex.get(`${pending.linkedType.symbol.key}\0${qualifierMember}`);
+  const selected = qualifierIndex.get(
+    qualifierIndexKey(pending.linkedType.symbol.key, qualifierMember),
+  );
   if (selected !== undefined) {
     return selected;
   }
@@ -284,7 +275,7 @@ function unqualifiedDependencyProvider(
   if (pending.linkedType.symbol.kind === "class") {
     const source = pending.linkedType.symbol.source;
     const ownId =
-      source === undefined ? undefined : `${source.fileId}#${pending.linkedType.symbol.name}`;
+      source === undefined ? undefined : providerId(source.fileId, pending.linkedType.symbol.name);
     const ownProvider = available.find(
       (provider) => provider.kind === "class" && provider.id === ownId,
     );

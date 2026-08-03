@@ -1,8 +1,8 @@
-import { isObject } from "radashi";
+import { isShutdownRequestMessage, type ShutdownAckMessage } from "@/dev-ipc";
 import {
   type CliCommandName,
+  type CliCommandPhase,
   type CliFailureCode,
-  type CliFailurePhase,
   createFailureEvent,
   type Reporter,
 } from "@/reporter";
@@ -16,7 +16,7 @@ export interface CloseableApplication {
 export interface ShutdownFailure {
   readonly error: unknown;
   readonly code: CliFailureCode;
-  readonly phase: CliFailurePhase;
+  readonly phase: CliCommandPhase;
   readonly message: string;
 }
 
@@ -26,31 +26,9 @@ export interface ShutdownResult {
   readonly errors: readonly unknown[];
 }
 
-export interface ShutdownRequestMessage {
-  readonly type: "reforce:shutdown";
-  readonly requestId: string;
-}
-
-export interface ShutdownAckMessage {
-  readonly type: "reforce:shutdown-ack";
-  readonly requestId: string;
-  readonly ok: boolean;
-  readonly code?: "SHUTDOWN_FAILED";
-}
-
 interface ShutdownControllerOptions {
   readonly command: CliCommandName;
   readonly reporter: Reporter;
-}
-
-function isShutdownRequestMessage(value: unknown): value is ShutdownRequestMessage {
-  if (!isObject(value)) {
-    return false;
-  }
-  return (
-    Reflect.get(value, "type") === "reforce:shutdown" &&
-    typeof Reflect.get(value, "requestId") === "string"
-  );
 }
 
 export class ShutdownController {
@@ -203,7 +181,7 @@ export class ShutdownController {
   }
 }
 
-export function installProcessShutdownHandlers(controller: ShutdownController): () => void {
+export function installProcessShutdownHandlers(controller: ShutdownController): void {
   const signalNames: NodeJS.Signals[] =
     process.platform === "win32" ? ["SIGINT", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
   const onSignal = () => {
@@ -232,5 +210,4 @@ export function installProcessShutdownHandlers(controller: ShutdownController): 
     process.off("disconnect", onDisconnect);
   };
   controller.setHandlerCleanup(detach);
-  return detach;
 }

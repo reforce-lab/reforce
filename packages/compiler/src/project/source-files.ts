@@ -7,7 +7,9 @@ import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
 import { parseSource } from "@/parser/parse-source";
 import type { SourceFileIr, SourceKind } from "@/parser/source-ir";
+import { sourceKindOf } from "@/parser/source-kind";
 import type { CanonicalFileId } from "@/parser/source-location";
+import { generatedDirectoryFragment } from "@/project/generated-paths";
 import { isPathContained, toPortablePath } from "@/project/path-identity";
 import type { ProjectState } from "@/project/project-config";
 import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
@@ -32,28 +34,6 @@ interface ParseProjectFailure {
 }
 
 type ParseProjectResult = ParseProjectSuccess | ParseProjectFailure;
-
-export function sourceKindOf(file: string): SourceKind | undefined {
-  if (file.endsWith(".d.mts")) {
-    return "d.mts";
-  }
-  if (file.endsWith(".d.cts")) {
-    return "d.cts";
-  }
-  if (file.endsWith(".d.ts")) {
-    return "d.ts";
-  }
-  if (file.endsWith(".tsx")) {
-    return "tsx";
-  }
-  if (file.endsWith(".mts")) {
-    return "mts";
-  }
-  if (file.endsWith(".cts")) {
-    return "cts";
-  }
-  return file.endsWith(".ts") ? "ts" : undefined;
-}
 
 function canonicalFileId(value: string): CanonicalFileId {
   return value as CanonicalFileId; // The opaque brand records the validation performed by source discovery.
@@ -101,7 +81,7 @@ async function inspectSourceCandidate(
   const portableConfigured = configuredPath.replaceAll("\\", "/");
   if (
     sourceKindOf(configuredPath) === undefined ||
-    portableConfigured.includes("/.reforce/generated/") ||
+    portableConfigured.includes(generatedDirectoryFragment) ||
     portableConfigured.includes("/node_modules/")
   ) {
     return { status: "ignored" };
@@ -215,6 +195,8 @@ async function parsePhysicalSource(
 ): Promise<ParsedPhysicalSourceSuccess | ParsedPhysicalSourceFailure> {
   const kind = sourceKindOf(absolutePath);
   if (kind === undefined) {
+    // Only reachable when a configured path is a symlink to a differently-named non-source file:
+    // discovery already accepted the configured name's suffix.
     return { status: "success" };
   }
   const sourceText = await readFile(absolutePath, "utf8");

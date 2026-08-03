@@ -85,6 +85,7 @@ export class LivenessEndpoint {
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => {
       request += chunk;
+      // Cap the buffered request so a malicious or corrupt peer cannot grow memory without bound.
       if (request.length > 8_192) {
         socket.destroy();
         return;
@@ -135,6 +136,7 @@ export async function probeLeaseEndpoint(
     });
     socket.on("data", (chunk: string) => {
       response += chunk;
+      // Same inbound cap as the accepting side: an unbounded response must not grow memory.
       if (response.length > 8_192) {
         settle("unknown");
         return;

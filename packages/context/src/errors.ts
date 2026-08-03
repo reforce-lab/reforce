@@ -20,13 +20,14 @@ export abstract class ReforceRuntimeError<
   Code extends RuntimeErrorCode = RuntimeErrorCode,
 > extends Error {
   abstract readonly code: Code;
-  override readonly cause?: unknown;
+  // TS disallows combining declare with override; declare alone already keeps the
+  // field type-only, so super(message, { cause }) is not clobbered by a field init.
+  declare readonly cause?: unknown;
   readonly errors?: readonly unknown[];
 
   protected constructor(message: string, options: RuntimeErrorOptions = {}) {
     super(message, { cause: options.cause });
     this.name = new.target.name;
-    this.cause = options.cause;
     this.errors = options.errors;
   }
 }
@@ -98,8 +99,8 @@ export type CleanupActionError = BeanLifecycleError | BeanDisposalError;
 
 export class ApplicationStartError extends ReforceRuntimeError<"APPLICATION_START_FAILED"> {
   readonly code = "APPLICATION_START_FAILED" as const;
-  override readonly cause: ReforceRuntimeError;
-  override readonly errors: readonly CleanupActionError[];
+  declare readonly cause: ReforceRuntimeError;
+  declare readonly errors: readonly CleanupActionError[];
 
   constructor(input: {
     readonly cause: ReforceRuntimeError;
@@ -110,19 +111,16 @@ export class ApplicationStartError extends ReforceRuntimeError<"APPLICATION_STAR
       cause: input.cause,
       errors,
     });
-    this.cause = input.cause;
-    this.errors = errors;
   }
 }
 
 export class ApplicationCleanupError extends ReforceRuntimeError<"APPLICATION_CLEANUP_FAILED"> {
   readonly code = "APPLICATION_CLEANUP_FAILED" as const;
-  override readonly errors: readonly CleanupActionError[];
+  declare readonly errors: readonly CleanupActionError[];
 
   constructor(errors: readonly CleanupActionError[]) {
     const snapshot = Object.freeze([...errors]);
     super("Application Context cleanup failed.", { errors: snapshot });
-    this.errors = snapshot;
   }
 }
 

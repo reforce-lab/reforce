@@ -101,7 +101,14 @@ export async function closeProductionBuild(
   }
 }
 
-async function collectOutputFiles(root: string, directory = root): Promise<readonly string[]> {
+async function collectOutputFiles(root: string): Promise<readonly string[]> {
+  // Only the top-level result needs sorting: inner levels are spread into the parent list, so
+  // their order is discarded anyway. The per-directory `entries.sort` below is kept because it
+  // fixes traversal order, which decides which error is thrown first when several entries are bad.
+  return (await collectOutputFilesInto(root, root)).sort(compareUtf16CodeUnits);
+}
+
+async function collectOutputFilesInto(root: string, directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
   const files: string[] = [];
@@ -111,7 +118,7 @@ async function collectOutputFiles(root: string, directory = root): Promise<reado
       throw new Error(`Production output cannot contain a symbolic link: ${absolutePath}`);
     }
     if (entry.isDirectory()) {
-      files.push(...(await collectOutputFiles(root, absolutePath)));
+      files.push(...(await collectOutputFilesInto(root, absolutePath)));
       continue;
     }
     const metadata = await lstat(absolutePath);
@@ -120,7 +127,7 @@ async function collectOutputFiles(root: string, directory = root): Promise<reado
     }
     files.push(toPortablePath(relative(root, absolutePath)));
   }
-  return files.sort(compareUtf16CodeUnits);
+  return files;
 }
 
 export async function buildProductionDist(input: {
@@ -194,7 +201,7 @@ export async function buildProductionDist(input: {
       },
     },
   });
-  let buildResult: Awaited<ReturnType<typeof rsbuild.build>> | undefined;
+  let buildResult: BuildResult | undefined;
   let expectedFiles: readonly string[] | undefined;
   const buildFailures: unknown[] = [];
   try {
@@ -210,6 +217,9 @@ export async function buildProductionDist(input: {
     buildFailures.push(error);
   }
   await closeProductionBuild(buildResult, buildFailures);
+  // Unreachable at runtime: closeProductionBuild always throws when the try block above failed
+  // before assigning expectedFiles. The check only narrows the `let` for TypeScript, which cannot
+  // see that guarantee across the call.
   if (!expectedFiles) {
     throw new Error("Production build asset validation did not complete.");
   }

@@ -54,7 +54,9 @@ function requireFunction(value: unknown, path: string): void {
 }
 
 function requireNonNegativeInteger(value: unknown, path: string): number {
-  if (!Number.isInteger(value) || typeof value !== "number" || value < 0) {
+  // The typeof check is runtime-redundant (Number.isInteger implies it) but
+  // required for TypeScript narrowing, so it stays first to narrow value.
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     return fail(`${path} must be a non-negative integer.`);
   }
   return value;
@@ -76,7 +78,7 @@ function validateRelativePosixPath(value: string, path: string): void {
   }
 }
 
-export function validateGeneratedBeanId(value: unknown, path: string): string {
+function validateGeneratedBeanId(value: unknown, path: string): string {
   const id = requireString(value, path);
   const separator = id.indexOf("#");
   if (separator <= 0 || separator !== id.lastIndexOf("#") || separator === id.length - 1) {
@@ -97,7 +99,7 @@ function validateSourcePosition(
   requireNonNegativeInteger(Reflect.get(position, "character"), `${path}.character`);
 }
 
-export function validateSourceReference(
+function validateSourceReference(
   value: unknown,
   path: string,
 ): asserts value is GeneratedSourceReference {
@@ -157,7 +159,7 @@ function validateHooks(value: unknown, path: string): void {
   }
 }
 
-export function validateClassRegistrationLocal(
+function validateClassRegistrationLocal(
   value: unknown,
   path = "class registration",
 ): asserts value is GeneratedClassRegistration {
@@ -178,7 +180,7 @@ export function validateClassRegistrationLocal(
   validateHooks(Reflect.get(registration, "hooks"), `${path}.hooks`);
 }
 
-export function validateFactoryRegistrationLocal(
+function validateFactoryRegistrationLocal(
   value: unknown,
   path = "factory registration",
 ): asserts value is GeneratedFactoryRegistration {
@@ -370,7 +372,7 @@ function validateDependencyTargets(
   }
 }
 
-export function validateApplicationDefinition(
+function validateApplicationDefinition(
   value: unknown,
 ): asserts value is GeneratedApplicationDefinition {
   const definition = requireObject(value, "definition");
@@ -418,6 +420,9 @@ function cloneDependency(dependency: GeneratedDependency): GeneratedDependency {
   });
 }
 
+// cloneClassRegistration and cloneErasedClassRegistration below are field-for-field
+// identical; the erased-union invariance (covered by it/public-api.spec.ts) blocks a
+// shared implementation without casts. Keep the two bodies in sync.
 function cloneClassRegistration<T extends object>(
   registration: GeneratedClassRegistration<T>,
 ): GeneratedClassRegistration<T> {
@@ -435,6 +440,9 @@ function cloneClassRegistration<T extends object>(
   });
 }
 
+// cloneFactoryRegistration and cloneErasedFactoryRegistration below are field-for-field
+// identical; the erased-union invariance (covered by it/public-api.spec.ts) blocks a
+// shared implementation without casts. Keep the two bodies in sync.
 function cloneFactoryRegistration<T extends object>(
   registration: GeneratedFactoryRegistration<T>,
 ): GeneratedFactoryRegistration<T> {
@@ -452,6 +460,7 @@ function cloneFactoryRegistration<T extends object>(
   return Object.freeze({ ...common, dispose: registration.dispose });
 }
 
+// Mirror of cloneClassRegistration for the erased union member; keep in sync.
 function cloneErasedClassRegistration(
   registration: Extract<GeneratedBeanRegistration, { readonly kind: "class" }>,
 ): Extract<GeneratedBeanRegistration, { readonly kind: "class" }> {
@@ -469,6 +478,7 @@ function cloneErasedClassRegistration(
   });
 }
 
+// Mirror of cloneFactoryRegistration for the erased union member; keep in sync.
 function cloneErasedFactoryRegistration(
   registration: Extract<GeneratedBeanRegistration, { readonly kind: "factory" }>,
 ): Extract<GeneratedBeanRegistration, { readonly kind: "factory" }> {

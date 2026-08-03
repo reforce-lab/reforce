@@ -16,6 +16,10 @@ interface MissingDestinationPublishOperations extends WindowsRenameRetryOperatio
   readonly destinationExists?: DestinationExistsOperation;
 }
 
+// On Windows, antivirus scanners and search indexers briefly hold handles on files and
+// directories, so a rename can fail spuriously with EPERM/EBUSY/ENOTEMPTY. These errors are
+// retried with the short backoff in retryDelays to ride out the transient lock; any other
+// error is a real failure.
 function isRetryableWindowsRenameError(error: unknown): boolean {
   if (!(error instanceof Error) || !("code" in error)) {
     return false;
@@ -39,6 +43,10 @@ async function destinationExists(destination: string): Promise<boolean> {
   }
 }
 
+// rename publishes a directory only while the destination does not exist: EEXIST/ENOTEMPTY
+// means another writer won the atomic claim, which is a collision, not an error. EPERM/EBUSY
+// is ambiguous on Windows (transient lock vs. lost race), so the destination is re-checked
+// before deciding collision vs. retry.
 async function missingDestinationFailureDisposition(
   error: unknown,
   destination: string,

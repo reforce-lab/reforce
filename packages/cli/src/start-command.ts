@@ -4,7 +4,13 @@ import { lstat, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isObject } from "radashi";
 import { requireBunExecutable } from "@/bun-runtime";
-import { type LeaseParticipant, ProjectBusyError, ProjectLease } from "@/project-lease";
+import {
+  isShutdownAcknowledgementMessage,
+  isShutdownRequestMessage,
+  type ShutdownRequestMessage,
+} from "@/dev-ipc";
+import type { LeaseParticipant } from "@/lease-endpoint";
+import { ProjectBusyError, ProjectLease } from "@/project-lease";
 import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
 
 export interface StartCommandOptions {
@@ -30,17 +36,6 @@ const defaultDependencies: StartCommandDependencies = {
   releaseLease: (lease) => lease.release(),
   removeParticipant: (lease, participantToken) => lease.removeParticipant(participantToken),
 };
-
-interface ShutdownAck {
-  readonly type: "reforce:shutdown-ack";
-  readonly requestId: string;
-  readonly ok: boolean;
-}
-
-interface ShutdownRequest {
-  readonly type: "reforce:shutdown";
-  readonly requestId: string;
-}
 
 class ArtifactInvalidError extends Error {
   readonly code = "ARTIFACT_INVALID" as const;
@@ -93,34 +88,21 @@ function parseParticipant(value: unknown): LeaseParticipant | undefined {
   return { participantToken, host, port, challenge, role };
 }
 
-function isShutdownAck(value: unknown, requestId: string): value is ShutdownAck {
-  return (
-    isObject(value) &&
-    Reflect.get(value, "type") === "reforce:shutdown-ack" &&
-    Reflect.get(value, "requestId") === requestId &&
-    typeof Reflect.get(value, "ok") === "boolean"
-  );
-}
-
-function isShutdownRequest(value: unknown): value is ShutdownRequest {
-  return (
-    isObject(value) &&
-    Reflect.get(value, "type") === "reforce:shutdown" &&
-    typeof Reflect.get(value, "requestId") === "string"
-  );
-}
-
 interface ProductionChildResult {
   readonly exitCode?: number;
 }
 
 interface ProductionChild {
   getOneMessage(): Promise<unknown>;
-  sendMessage(message: ShutdownRequest | LeaseParticipantAck): Promise<void>;
+  sendMessage(message: ShutdownRequestMessage | LeaseParticipantAck): Promise<void>;
   kill(signal: NodeJS.Signals): void;
   wait(): Promise<ProductionChildResult>;
 }
 
+// Sender half of the production-wire acknowledgement validated by `isLeaseParticipantAck` in
+// production-runtime.ts. Unlike the dev wire's `DevChildLeaseParticipantAcknowledgement`
+// (dev-ipc.ts), it carries no `ok`: this parent only acks after `lease.addParticipant` has
+// succeeded, and a failure there fails the command instead of nacking the child.
 interface LeaseParticipantAck {
   readonly type: "reforce:lease-participant-ack";
   readonly participantToken: string;
@@ -173,7 +155,7 @@ class BunProductionChild implements ProductionChild {
     return new Promise((resolve, reject) => this.messageWaiters.push({ resolve, reject }));
   }
 
-  async sendMessage(message: ShutdownRequest | LeaseParticipantAck): Promise<void> {
+  async sendMessage(message: ShutdownRequestMessage | LeaseParticipantAck): Promise<void> {
     if (!this.process.connected) {
       throw new Error("The production child IPC channel is unavailable.");
     }
@@ -240,12 +222,16 @@ async function nextMessage(child: ProductionChild, timeoutMilliseconds: number):
   }
 }
 
+// Windows has no POSIX signal semantics: `child.kill("SIGTERM")` there maps to TerminateProcess
+// and the child gets no chance to shut down gracefully. On win32 shutdown must instead go through
+// the IPC handshake (`reforce:shutdown` out, `reforce:shutdown-ack` back), so the child can run
+// its own shutdown path; the `win32` branches in `startProductionChild` exist for the same reason.
 async function requestWindowsShutdown(child: ProductionChild): Promise<void> {
   const requestId = randomUUID();
   await child.sendMessage({ type: "reforce:shutdown", requestId });
   for (;;) {
     const message = await nextMessage(child, 30_000);
-    if (isShutdownAck(message, requestId)) {
+    if (isShutdownAcknowledgementMessage(message) && message.requestId === requestId) {
       if (!message.ok) {
         throw new Error("The production child reported a shutdown failure.");
       }
@@ -410,7 +396,7 @@ async function startProductionChild(input: {
     shutdownPromise ??=
       process.platform === "win32"
         ? requestWindowsShutdown(child)
-        : Promise.resolve(child.kill(queuedSignal)).then(() => undefined);
+        : Promise.resolve(child.kill(queuedSignal));
     void shutdownPromise.catch(() => undefined);
   };
   const signalNames: NodeJS.Signals[] =
@@ -421,7 +407,7 @@ async function startProductionChild(input: {
     return { signal, handler };
   });
   const onParentMessage = (message: unknown) => {
-    if (!isShutdownRequest(message)) {
+    if (!isShutdownRequestMessage(message)) {
       return;
     }
     input.state.parentShutdownRequestIds.push(message.requestId);

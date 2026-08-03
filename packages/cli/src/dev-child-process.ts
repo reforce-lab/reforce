@@ -1,21 +1,23 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { isObject } from "radashi";
 import type { DevChildExit, ManagedDevChild } from "@/dev-child-supervisor";
 import {
+  type DevChildLeaseParticipantAcknowledgement,
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
   isDevChildLeaseParticipantMessage,
   isDevChildReadyMessage,
+  isShutdownAcknowledgementMessage,
+  type ShutdownAckMessage,
+  type ShutdownRequestMessage,
 } from "@/dev-ipc";
-import type { LeaseParticipant } from "@/project-lease";
-import type { ShutdownAckMessage } from "@/shutdown-controller";
+import type { LeaseParticipant } from "@/lease-endpoint";
+import { withTimeout } from "@/with-timeout";
 
 export interface SpawnDevChildOptions {
   readonly entryPath: string;
   readonly cwd: string;
   readonly bunExecutable?: string;
-  readonly bunArguments?: readonly string[];
   readonly applicationArguments?: readonly string[];
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly platform?: NodeJS.Platform;
@@ -27,37 +29,7 @@ export interface SpawnDevChildOptions {
   };
 }
 
-function isShutdownAcknowledgementMessage(value: unknown): value is ShutdownAckMessage {
-  if (!isObject(value)) {
-    return false;
-  }
-  return (
-    Reflect.get(value, "type") === "reforce:shutdown-ack" &&
-    typeof Reflect.get(value, "requestId") === "string" &&
-    typeof Reflect.get(value, "ok") === "boolean"
-  );
-}
-
 type ShutdownAcknowledgementWaiter = ReturnType<typeof Promise.withResolvers<ShutdownAckMessage>>;
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  milliseconds: number,
-  message: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), milliseconds);
-    timer.unref();
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-}
 
 function sendMessage(child: ChildProcess, message: object): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -77,6 +49,8 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   const ready = Promise.withResolvers<DevChildReadyMessage>();
   const acknowledgements = new Map<string, ShutdownAcknowledgementWaiter>();
   let ipcClosedError: Error | undefined;
+  // Attach rejection handlers up front: if the child exits before these promises are awaited,
+  // their rejection must not surface as an unhandled rejection.
   void participant.promise.catch(() => undefined);
   void ready.promise.catch(() => undefined);
   const onMessage = (message: unknown) => {
@@ -99,7 +73,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   };
   const child = spawn(
     options.bunExecutable ?? process.execPath,
-    [...(options.bunArguments ?? []), options.entryPath, ...(options.applicationArguments ?? [])],
+    [options.entryPath, ...(options.applicationArguments ?? [])],
     {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
@@ -120,6 +94,8 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   const closed = new Promise<void>((resolve) => {
     child.once("close", () => resolve());
   });
+  // Once the child exits the IPC channel is dead; settle every pending handshake and shutdown
+  // acknowledgement with the same error so no waiter hangs until its own timeout fires.
   void baseExited.then((result) => {
     const error =
       result.error instanceof Error
@@ -151,7 +127,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
         type: "reforce:lease-participant-ack",
         participantToken,
         ok: true,
-      });
+      } satisfies DevChildLeaseParticipantAcknowledgement);
     }
     if (options.waitForReady) {
       await withTimeout(
@@ -208,7 +184,10 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
         options.ipcTimeoutMilliseconds ?? 5_000,
       );
       void acknowledgement.catch(() => undefined);
-      await sendMessage(child, { type: "reforce:shutdown", requestId });
+      await sendMessage(child, {
+        type: "reforce:shutdown",
+        requestId,
+      } satisfies ShutdownRequestMessage);
       const message = await acknowledgement;
       if (!message.ok) {
         throw new Error("Development child reported shutdown failure.");

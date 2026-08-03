@@ -1,5 +1,5 @@
 import { isObject } from "radashi";
-import type { LeaseParticipant } from "@/project-lease";
+import type { LeaseParticipant } from "@/lease-endpoint";
 
 export const writerLeaseTokenEnvironmentVariable = "REFORCE_WRITER_LEASE_TOKEN";
 
@@ -16,6 +16,18 @@ export interface DevChildLeaseParticipantAcknowledgement {
 
 export interface DevChildReadyMessage {
   readonly type: "reforce:dev-ready";
+}
+
+export interface ShutdownRequestMessage {
+  readonly type: "reforce:shutdown";
+  readonly requestId: string;
+}
+
+export interface ShutdownAckMessage {
+  readonly type: "reforce:shutdown-ack";
+  readonly requestId: string;
+  readonly ok: boolean;
+  readonly code?: "SHUTDOWN_FAILED";
 }
 
 export function isDevChildLeaseParticipantMessage(
@@ -47,4 +59,25 @@ export function isDevChildLeaseParticipantAcknowledgement(
 
 export function isDevChildReadyMessage(value: unknown): value is DevChildReadyMessage {
   return isObject(value) && Reflect.get(value, "type") === "reforce:dev-ready";
+}
+
+export function isShutdownRequestMessage(value: unknown): value is ShutdownRequestMessage {
+  if (!isObject(value)) {
+    return false;
+  }
+  return (
+    Reflect.get(value, "type") === "reforce:shutdown" &&
+    typeof Reflect.get(value, "requestId") === "string"
+  );
+}
+
+export function isShutdownAcknowledgementMessage(value: unknown): value is ShutdownAckMessage {
+  if (!isObject(value)) {
+    return false;
+  }
+  return (
+    Reflect.get(value, "type") === "reforce:shutdown-ack" &&
+    typeof Reflect.get(value, "requestId") === "string" &&
+    typeof Reflect.get(value, "ok") === "boolean"
+  );
 }

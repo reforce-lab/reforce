@@ -1,6 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { access, lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { isObject, sleep } from "radashi";
 import { compareUtf16CodeUnits } from "@/determinism";
@@ -15,11 +14,9 @@ import {
   renameWithWindowsRetry,
 } from "@/windows-rename-retry";
 
-export { createChildLeaseParticipant, type LeaseParticipant } from "@/lease-endpoint";
+type ProjectLeaseMode = "writer" | "reader";
 
-export type ProjectLeaseMode = "writer" | "reader";
-
-export interface LeaseOwnerRecord {
+interface LeaseOwnerRecord {
   readonly schemaVersion: 1;
   readonly mode: ProjectLeaseMode;
   readonly leaseToken: string;
@@ -27,7 +24,7 @@ export interface LeaseOwnerRecord {
   readonly pid?: number;
 }
 
-export interface AcquireProjectLeaseOptions {
+interface AcquireProjectLeaseOptions {
   readonly projectRoot: string;
   readonly mode: ProjectLeaseMode;
   readonly probeTimeoutMilliseconds?: number;
@@ -79,6 +76,8 @@ async function safeRemoveDirectory(target: string, boundary: string): Promise<vo
   }
 }
 
+// "wx" refuses to overwrite an existing record; fsync guarantees the record survives a crash
+// so other processes can read it before the publisher continues.
 async function writeJsonClosed(path: string, value: unknown): Promise<void> {
   const handle = await open(path, "wx");
   try {
@@ -94,10 +93,10 @@ function hasExactObjectKeys(
   required: readonly string[],
   optional: readonly string[] = [],
 ): boolean {
-  const keys = Object.keys(value).sort(compareUtf16CodeUnits);
-  const allowed = [...required, ...optional].sort(compareUtf16CodeUnits);
+  const allowed = new Set([...required, ...optional]);
   return (
-    required.every((key) => Object.hasOwn(value, key)) && keys.every((key) => allowed.includes(key))
+    required.every((key) => Object.hasOwn(value, key)) &&
+    Object.keys(value).every((key) => allowed.has(key))
   );
 }
 
@@ -152,15 +151,19 @@ function parseOwnerRecord(value: unknown): LeaseOwnerRecord | undefined {
   ) {
     return undefined;
   }
-  const participants = participantsValue.map(parseParticipant);
-  if (participants.some((participant) => participant === undefined)) {
-    return undefined;
+  const participants: LeaseParticipant[] = [];
+  for (const entry of participantsValue) {
+    const participant = parseParticipant(entry);
+    if (!participant) {
+      return undefined;
+    }
+    participants.push(participant);
   }
   return {
     schemaVersion,
     mode,
     leaseToken,
-    participants: participants.filter((participant) => participant !== undefined),
+    participants,
     ...(pid === undefined ? {} : { pid }),
   };
 }
@@ -283,10 +286,6 @@ async function quarantineDirectory(
   await safeRemoveDirectory(destination, paths.quarantineRoot);
 }
 
-async function tryPublishGate(staging: string, gateRoot: string): Promise<boolean> {
-  return await publishMissingDestinationWithWindowsRetry(staging, gateRoot);
-}
-
 async function inspectExistingGate(
   paths: LeasePaths,
   probeTimeoutMilliseconds: number,
@@ -306,10 +305,13 @@ async function inspectExistingGate(
     throw new ProjectBusyError(paths.projectRoot);
   }
   if (status === "live") {
+    // The gate is held by a live owner; back off briefly before retrying the publish race.
     await sleep(10);
     return;
   }
   const current = await readJson(join(paths.gateRoot, "record.json"));
+  // Only quarantine when the record is byte-identical to the snapshot taken before probing;
+  // a concurrent acquirer may have published a fresh gate in between and must not be removed (TOCTOU).
   if (current?.raw === gateSnapshot.raw) {
     await quarantineDirectory(paths, paths.gateRoot, `gate-${gateRecord.gateToken}`);
   }
@@ -354,7 +356,7 @@ async function withAcquisitionGate<T>(
   let ownsGate = false;
   try {
     while (!ownsGate) {
-      ownsGate = await tryPublishGate(staging, paths.gateRoot);
+      ownsGate = await publishMissingDestinationWithWindowsRetry(staging, paths.gateRoot);
       if (!ownsGate) {
         await inspectExistingGate(paths, probeTimeoutMilliseconds, deadline);
       }
@@ -472,10 +474,13 @@ async function recoverConflictingOwners(
   return [...new Set(recovered)].sort(compareUtf16CodeUnits);
 }
 
+function ownerDirectory(paths: LeasePaths, mode: ProjectLeaseMode, leaseToken: string): string {
+  return mode === "writer" ? paths.writerRoot : join(paths.readersRoot, leaseToken);
+}
+
 async function publishOwnerRecord(paths: LeasePaths, record: LeaseOwnerRecord): Promise<void> {
   const staging = join(paths.leaseRoot, `.owner-${record.leaseToken}`);
-  const destination =
-    record.mode === "writer" ? paths.writerRoot : join(paths.readersRoot, record.leaseToken);
+  const destination = ownerDirectory(paths, record.mode, record.leaseToken);
   await mkdir(staging);
   await writeJsonClosed(join(staging, "record.json"), record);
   await renameWithWindowsRetry(staging, destination);
@@ -625,10 +630,7 @@ export class ProjectLease {
       this.probeTimeoutMilliseconds,
       this.gateWaitMilliseconds,
       async () => {
-        const directory =
-          this.mode === "writer"
-            ? this.paths.writerRoot
-            : join(this.paths.readersRoot, this.leaseToken);
+        const directory = ownerDirectory(this.paths, this.mode, this.leaseToken);
         const current = await readOwner(directory, this.projectRoot);
         if (current?.record.leaseToken === this.leaseToken) {
           const childParticipants = current.record.participants.filter(
@@ -656,10 +658,7 @@ export class ProjectLease {
       this.probeTimeoutMilliseconds,
       this.gateWaitMilliseconds,
       async () => {
-        const directory =
-          this.mode === "writer"
-            ? this.paths.writerRoot
-            : join(this.paths.readersRoot, this.leaseToken);
+        const directory = ownerDirectory(this.paths, this.mode, this.leaseToken);
         const current = await readOwner(directory, this.projectRoot);
         if (current?.record.leaseToken !== this.leaseToken) {
           throw new ProjectBusyError(this.projectRoot);
@@ -674,20 +673,5 @@ export class ProjectLease {
         });
       },
     );
-  }
-}
-
-export async function leaseRecordExists(
-  projectRoot: string,
-  mode: ProjectLeaseMode,
-  leaseToken?: string,
-): Promise<boolean> {
-  const paths = await prepareLeasePaths(projectRoot);
-  const target = mode === "writer" ? paths.writerRoot : join(paths.readersRoot, leaseToken ?? "");
-  try {
-    await access(join(target, "record.json"), constants.F_OK);
-    return true;
-  } catch {
-    return false;
   }
 }

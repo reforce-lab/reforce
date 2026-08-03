@@ -1,38 +1,38 @@
 import path from "node:path";
 import stableStringify from "json-stable-stringify";
-import type {
-  ExecutionPlansModel,
-  GeneratedSourceReferenceModel,
-  ProviderModel,
-} from "@/analysis/model";
+import { type ExecutionPlansModel, type ProviderModel, sourceReference } from "@/analysis/model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
 import { compareUtf16CodeUnits } from "@/determinism";
 import type { LinkedSymbol } from "@/linking/project-linker";
+import { generatedDirectoryPath } from "@/project/generated-paths";
+import { toPortablePath } from "@/project/path-identity";
+
+const contextModuleSpecifier = "@reforce/context";
+const contextRuntimeModuleSpecifier = "@reforce/context/generated-runtime";
+
+// Ordered most- to least-specific: "x.d.mts" also ends with ".mts", so the declaration suffixes
+// must be matched before their plain counterparts.
+const runtimeExtensionMap = [
+  [".d.mts", ".mjs"],
+  [".d.cts", ".cjs"],
+  [".d.ts", ".js"],
+  [".mts", ".mjs"],
+  [".cts", ".cjs"],
+  [".tsx", ".js"],
+  [".ts", ".js"],
+] as const;
 
 function runtimeSuffix(file: string): string {
-  if (file.endsWith(".d.mts")) {
-    return `${file.slice(0, -6)}.mjs`;
+  for (const [sourceExtension, runtimeExtension] of runtimeExtensionMap) {
+    if (file.endsWith(sourceExtension)) {
+      return `${file.slice(0, -sourceExtension.length)}${runtimeExtension}`;
+    }
   }
-  if (file.endsWith(".d.cts")) {
-    return `${file.slice(0, -6)}.cjs`;
-  }
-  if (file.endsWith(".d.ts")) {
-    return `${file.slice(0, -5)}.js`;
-  }
-  if (file.endsWith(".mts")) {
-    return `${file.slice(0, -4)}.mjs`;
-  }
-  if (file.endsWith(".cts")) {
-    return `${file.slice(0, -4)}.cjs`;
-  }
-  if (file.endsWith(".tsx")) {
-    return `${file.slice(0, -4)}.js`;
-  }
-  return file.endsWith(".ts") ? `${file.slice(0, -3)}.js` : file;
+  return file;
 }
 
 function runtimeSpecifier(generatedDirectory: string, sourceFile: string): string {
-  const relative = path.relative(generatedDirectory, sourceFile).split(path.sep).join("/");
+  const relative = toPortablePath(path.relative(generatedDirectory, sourceFile));
   const withPrefix = relative.startsWith(".") ? relative : `./${relative}`;
   return runtimeSuffix(withPrefix);
 }
@@ -53,23 +53,13 @@ function indent(value: string, spaces: number): string {
     .join("\n");
 }
 
-function sourceReferenceForSymbol(symbol: LinkedSymbol): GeneratedSourceReferenceModel | undefined {
+function inlineJson(value: unknown, spaces: number): string {
+  return indent(json(value), spaces).trimStart();
+}
+
+function sourceReferenceForSymbol(symbol: LinkedSymbol) {
   const span = symbol.declaration?.span;
-  return span === undefined
-    ? undefined
-    : {
-        file: span.fileId,
-        start: {
-          offset: span.start.offset,
-          line: span.start.line,
-          character: span.start.character,
-        },
-        end: {
-          offset: span.end.offset,
-          line: span.end.line,
-          character: span.end.character,
-        },
-      };
+  return span === undefined ? undefined : sourceReference(span);
 }
 
 function symbolReference(
@@ -91,9 +81,8 @@ function symbolReference(
 
 function registrationExpression(provider: ProviderModel, index: number): string {
   const alias = `beanTarget${index}`;
-  const dependencies = json(provider.dependencies);
   if (provider.kind === "factory") {
-    return `const registration${index} = factoryBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${indent(json(provider.declarationSource), 2).trimStart()},\n  definition: ${alias},\n});`;
+    return `const registration${index} = factoryBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  definition: ${alias},\n});`;
   }
   const argumentsList = provider.dependencies
     .toSorted((left, right) => left.parameterIndex - right.parameterIndex)
@@ -109,7 +98,7 @@ function registrationExpression(provider: ProviderModel, index: number): string 
   ];
   const hooksBlock =
     hooks.length === 0 ? "{}" : `{\n${hooks.map((line) => `    ${line}`).join("\n")}\n  }`;
-  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${indent(json(provider.declarationSource), 2).trimStart()},\n  target: ${alias},\n  dependencies: ${indent(dependencies, 2).trimStart()},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
+  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  target: ${alias},\n  dependencies: ${inlineJson(provider.dependencies, 2)},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
 }
 
 function renderBeans(
@@ -124,15 +113,15 @@ function renderBeans(
   const registrations = providers.map(registrationExpression);
   const names = providers.map((_, index) => `registration${index}`).join(", ");
   return `${[
-    'import { classBean, factoryBean } from "@reforce/context/generated-runtime";',
-    'import type { GeneratedApplicationDefinition } from "@reforce/context/generated-runtime";',
+    `import { classBean, factoryBean } from "${contextRuntimeModuleSpecifier}";`,
+    `import type { GeneratedApplicationDefinition } from "${contextRuntimeModuleSpecifier}";`,
     ...imports,
     "",
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
     "  schemaVersion: 1,",
     `  registrations: [${names}],`,
-    `  plans: ${indent(json(plans), 2).trimStart()},`,
+    `  plans: ${inlineJson(plans, 2)},`,
     "} as const satisfies GeneratedApplicationDefinition;",
   ].join("\n")}\n`;
 }
@@ -211,7 +200,7 @@ function qualifierModuleGroups(
 function renderQualifiers(providers: readonly ProviderModel[], generatedDirectory: string): string {
   const interfaces = qualifierGroups(providers, generatedDirectory);
   if (interfaces.length === 0) {
-    return 'import type { QualifiedBean } from "@reforce/context";\n\nexport {};\n';
+    return `import type { QualifiedBean } from "${contextModuleSpecifier}";\n\nexport {};\n`;
   }
   const imports = interfaces.map(
     (group) =>
@@ -228,7 +217,7 @@ function renderQualifiers(providers: readonly ProviderModel[], generatedDirector
     return `declare module ${JSON.stringify(module.specifier)} {\n${namespaces.join("\n\n")}\n}`;
   });
   return `${[
-    'import type { QualifiedBean } from "@reforce/context";',
+    `import type { QualifiedBean } from "${contextModuleSpecifier}";`,
     ...imports,
     "",
     ...declarations.flatMap((declaration) => [declaration, ""]),
@@ -267,7 +256,7 @@ function renderManifest(
 }
 
 function renderBootstrap(): string {
-  return `import { createApplicationContext } from "@reforce/context/generated-runtime";\nimport { applicationDefinition } from "./beans.js";\n\nexport async function bootstrap() {\n  const application = createApplicationContext(applicationDefinition);\n  await application.start();\n  return application;\n}\n`;
+  return `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";\nimport { applicationDefinition } from "./beans.js";\n\nexport async function bootstrap() {\n  const application = createApplicationContext(applicationDefinition);\n  await application.start();\n  return application;\n}\n`;
 }
 
 export function generateFiles(
@@ -275,7 +264,7 @@ export function generateFiles(
   providers: readonly ProviderModel[],
   plans: ExecutionPlansModel,
 ): readonly GeneratedFile[] {
-  const generatedDirectory = path.join(project.projectRoot, ".reforce", "generated");
+  const generatedDirectory = generatedDirectoryPath(project.projectRoot);
   return Object.freeze([
     {
       path: "beans.ts",

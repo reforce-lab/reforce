@@ -59,6 +59,12 @@ export function readBeanDefinitionOptions<T extends object>(
   return OwnedBeanDefinition.read(definition);
 }
 
+// Injectable/Primary/Qualifier are compile-time markers: the compiler reads them
+// statically and emits the registrations, so their runtime implementations must stay
+// no-ops — a compiled application must not depend on decorator side effects.
+// Qualifier still validates its name at runtime because uncompiled callers (plain
+// JS, or ts without the Reforce compiler) get no compile-time diagnostic and would
+// otherwise only fail much later with a confusing resolution error.
 export function Injectable(): <T extends BeanClass>(
   value: T,
   context: ClassDecoratorContext<T>,
