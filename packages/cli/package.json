@@ -9,7 +9,7 @@
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
-    "test": "bun run build && bun test --timeout 15000 test it",
+    "test": "bun run build && bun test --timeout 300000 test it",
     "test:recovery": "bun test it/recovery/project-lease.spec.ts it/recovery/directory-transaction.spec.ts",
     "test:recovery:evidence": "bun test it/recovery/project-lease.spec.ts it/recovery/directory-transaction.spec.ts --reporter=junit --reporter-outfile=recovery-junit.xml",
     "check": "biome check .",

@@ -7,6 +7,7 @@ import {
   createTemporaryProject,
   resolveBunExecutable,
   type TemporaryProject,
+  waitUntil,
 } from "@reforce/tooling-testing";
 import { spawnDevChild } from "@/dev/child-process";
 import { type LeaseParticipant, probeLeaseEndpoint } from "@/project/lease-endpoint";
@@ -35,13 +36,7 @@ interface FailureObservation {
 }
 
 async function waitForFile(path: string): Promise<void> {
-  const deadline = Date.now() + 5_000;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) {
-      throw new Error(`Timed out waiting for ${path}`);
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
+  await waitUntil(() => existsSync(path), `Timed out waiting for ${path}`);
 }
 
 async function readFailureObservation(path: string): Promise<FailureObservation> {

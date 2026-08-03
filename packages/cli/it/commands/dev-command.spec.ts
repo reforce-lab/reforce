@@ -9,6 +9,7 @@ import {
   readProjectTree,
   resolveBunExecutable,
   type TemporaryProject,
+  waitUntil,
 } from "@reforce/tooling-testing";
 import { execa, type ResultPromise } from "execa";
 
@@ -142,7 +143,10 @@ async function startHmrApplication(): Promise<{
   subprocess.stderr?.on("data", (chunk) => {
     stderr += String(chunk);
   });
-  await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:one"));
+  await waitUntil(
+    async () => (await readEvents(project.projectRoot)).includes("start:one"),
+    "Timed out waiting for the first application start event.",
+  );
   return { project, subprocess, stderr: () => stderr };
 }
 
@@ -168,16 +172,6 @@ const updatedHmrApplicationSource = initialHmrApplicationSource.replace(
   'const generation = "one";',
   'const generation = "two";',
 );
-
-async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 20_000;
-  while (!(await predicate())) {
-    if (Date.now() >= deadline) {
-      throw new Error("Timed out waiting for the development command.");
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-  }
-}
 
 async function readEvents(projectRoot: string): Promise<readonly string[]> {
   try {
@@ -219,7 +213,10 @@ async function runScenario(input: {
   const subprocess = spawnDevCommandHarness([input.cwd, input.projectDirectory]);
   processes.push(subprocess);
   try {
-    await waitUntil(() => existsSync(join(input.projectRoot, "started.txt")));
+    await waitUntil(
+      () => existsSync(join(input.projectRoot, "started.txt")),
+      "Timed out waiting for the application to write started.txt.",
+    );
   } catch {
     subprocess.kill();
     const failed = await subprocess;
@@ -259,7 +256,10 @@ describe("development command", () => {
     const project = await createApplicationProject(applicationProjectTree());
     const subprocess = spawnDevCommandHarness([project.projectRoot, ".", "", "fail-release"]);
     processes.push(subprocess);
-    await waitUntil(() => existsSync(join(project.projectRoot, "started.txt")));
+    await waitUntil(
+      () => existsSync(join(project.projectRoot, "started.txt")),
+      "Timed out waiting for the application to write started.txt.",
+    );
 
     await requestGracefulShutdown(subprocess);
     const result = await subprocess;
@@ -297,7 +297,10 @@ describe("development command", () => {
       updatedHmrApplicationSource,
     );
     try {
-      await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:two"));
+      await waitUntil(
+        async () => (await readEvents(project.projectRoot)).includes("start:two"),
+        "Timed out waiting for the second application start event.",
+      );
     } catch (error) {
       throw new Error(
         `Development command did not recover. events=${JSON.stringify(await readEvents(project.projectRoot))} stderr=${stderr()}`,
@@ -335,7 +338,10 @@ describe("development command", () => {
 
     const applicationPath = join(project.projectRoot, "src", "application.ts");
     await writeFile(applicationPath, "export class Broken {\n");
-    await waitUntil(async () => stderr().includes("PARSER_SYNTAX_ERROR"));
+    await waitUntil(
+      async () => stderr().includes("PARSER_SYNTAX_ERROR"),
+      "Timed out waiting for PARSER_SYNTAX_ERROR on stderr.",
+    );
 
     const eventsAfterFailure = await readEvents(project.projectRoot);
     const assetsAfterFailure = await snapshotFiles(devOutputRoot);
@@ -348,7 +354,10 @@ describe("development command", () => {
 
     await writeFile(applicationPath, updatedHmrApplicationSource);
     try {
-      await waitUntil(async () => (await readEvents(project.projectRoot)).includes("start:two"));
+      await waitUntil(
+        async () => (await readEvents(project.projectRoot)).includes("start:two"),
+        "Timed out waiting for the second application start event.",
+      );
     } catch (error) {
       throw new Error(
         `Development command did not recover after a failed compilation. events=${JSON.stringify(await readEvents(project.projectRoot))} stderr=${stderr()}`,

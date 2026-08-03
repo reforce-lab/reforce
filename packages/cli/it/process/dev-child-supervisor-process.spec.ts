@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { resolveBunExecutable } from "@reforce/tooling-testing";
+import { resolveBunExecutable, waitUntil } from "@reforce/tooling-testing";
 import { execa } from "execa";
 import { DevChildSupervisor, type ManagedDevChild } from "@/dev/child-supervisor";
 
@@ -8,16 +8,6 @@ const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-exit.harness.ts", import.meta.url),
 );
 const bunExecutable = await resolveBunExecutable();
-
-async function waitUntil(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 10_000;
-  while (!predicate()) {
-    if (Date.now() >= deadline) {
-      throw new Error("Timed out waiting for development child state.");
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 10));
-  }
-}
 
 test("real child processes obey restart budget and never overlap", async () => {
   const exitCodes = [1, 1, 0];
@@ -61,12 +51,15 @@ test("real child processes obey restart budget and never overlap", async () => {
   });
 
   await supervisor.acceptSuccessfulBuild("rspack:first");
-  await waitUntil(() => spawnCount === 2 && !supervisor.hasLiveChild);
+  await waitUntil(
+    () => spawnCount === 2 && !supervisor.hasLiveChild,
+    "Timed out waiting for the crashed child to be respawned once.",
+  );
   await supervisor.acceptSuccessfulBuild("rspack:first");
   expect(spawnCount).toBe(2);
 
   await supervisor.acceptSuccessfulBuild("rspack:second");
-  await waitUntil(() => naturalExits === 1);
+  await waitUntil(() => naturalExits === 1, "Timed out waiting for the child to exit naturally.");
 
   expect(spawnCount).toBe(3);
   expect(maximumLiveChildren).toBe(1);
