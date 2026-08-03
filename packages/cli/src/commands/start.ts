@@ -12,7 +12,8 @@ import {
   type ShutdownRequestMessage,
 } from "@/dev-ipc";
 import { installTerminationSignalHandlers } from "@/process-signals";
-import { ProjectBusyError, ProjectLease } from "@/project/lease";
+import { findIncompleteDistTransaction } from "@/project/directory-transaction";
+import { ProjectBusyError, ProjectLease, parseParticipant } from "@/project/lease";
 import type { LeaseParticipant } from "@/project/lease-endpoint";
 import {
   captureFailure,
@@ -63,33 +64,15 @@ function assertContained(root: string, target: string): void {
   throw new Error(`Production entry resolves outside projectRoot: ${target}`);
 }
 
-function parseParticipant(value: unknown): LeaseParticipant | undefined {
-  if (!isObject(value)) {
+// 只负责信封：participant 本身的字段规则由 @/project/lease 的 parseParticipant 独占。
+function parseChildParticipantMessage(value: unknown): LeaseParticipant | undefined {
+  if (!isObject(value) || Reflect.get(value, "type") !== "reforce:lease-participant") {
     return undefined;
   }
-  const messageType = Reflect.get(value, "type");
-  const participantValue = Reflect.get(value, "participant");
-  if (messageType !== "reforce:lease-participant" || !isObject(participantValue)) {
-    return undefined;
-  }
-  const participantToken = Reflect.get(participantValue, "participantToken");
-  const host = Reflect.get(participantValue, "host");
-  const port = Reflect.get(participantValue, "port");
-  const challenge = Reflect.get(participantValue, "challenge");
-  const role = Reflect.get(participantValue, "role");
-  if (
-    typeof participantToken !== "string" ||
-    host !== "127.0.0.1" ||
-    typeof port !== "number" ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65_535 ||
-    typeof challenge !== "string" ||
-    role !== "child"
-  ) {
-    return undefined;
-  }
-  return { participantToken, host, port, challenge, role };
+  const participant = parseParticipant(Reflect.get(value, "participant"));
+  // parent 角色的记录只可能是本进程自己写进 lease 的，不会从子进程 IPC 回来；收到就说明对端不是
+  // 我们 spawn 的那个生产运行时。
+  return participant?.role === "child" ? participant : undefined;
 }
 
 interface ProductionChildResult {
@@ -99,9 +82,15 @@ interface ProductionChildResult {
 interface ProductionChild {
   getOneMessage(): Promise<unknown>;
   sendMessage(message: ShutdownRequestMessage | LeaseParticipantAck): Promise<void>;
+  // 「请关停」的唯一入口：用什么手段关停由子进程句柄决定，调用方不做平台判断。
+  requestShutdown(signal: NodeJS.Signals): Promise<void>;
   kill(signal: NodeJS.Signals): void;
   wait(): Promise<ProductionChildResult>;
 }
+
+// 父进程转达的默认终止信号。Windows 上没有 SIGTERM，取 SIGBREAK（与 process-signals 所监听的一致）。
+const parentTerminationSignal: NodeJS.Signals =
+  process.platform === "win32" ? "SIGBREAK" : "SIGTERM";
 
 // Sender half of the production-wire acknowledgement validated by `isLeaseParticipantAck` in
 // production-runtime.ts. Unlike the dev wire's `DevChildLeaseParticipantAcknowledgement`
@@ -174,6 +163,29 @@ class BunProductionChild implements ProductionChild {
     });
   }
 
+  // Windows has no POSIX signal semantics: `child.kill("SIGTERM")` there maps to TerminateProcess
+  // and the child gets no chance to shut down gracefully. On win32 shutdown must instead go through
+  // the IPC handshake (`reforce:shutdown` out, `reforce:shutdown-ack` back), so the child can run
+  // its own shutdown path. The branch belongs here rather than in the command flow: callers only
+  // ever want "shut this child down", and a platform check in the caller gets copied by the next one.
+  async requestShutdown(signal: NodeJS.Signals): Promise<void> {
+    if (process.platform !== "win32") {
+      this.kill(signal);
+      return;
+    }
+    const requestId = randomUUID();
+    await this.sendMessage({ type: "reforce:shutdown", requestId });
+    for (;;) {
+      const message = await nextMessage(this, 30_000);
+      if (isShutdownAcknowledgementMessage(message) && message.requestId === requestId) {
+        if (!message.ok) {
+          throw new Error("The production child reported a shutdown failure.");
+        }
+        return;
+      }
+    }
+  }
+
   kill(signal: NodeJS.Signals): void {
     this.process.kill(signal);
   }
@@ -215,24 +227,6 @@ function nextMessage(child: ProductionChild, timeoutMilliseconds: number): Promi
   );
 }
 
-// Windows has no POSIX signal semantics: `child.kill("SIGTERM")` there maps to TerminateProcess
-// and the child gets no chance to shut down gracefully. On win32 shutdown must instead go through
-// the IPC handshake (`reforce:shutdown` out, `reforce:shutdown-ack` back), so the child can run
-// its own shutdown path; the `win32` branches in `startProductionChild` exist for the same reason.
-async function requestWindowsShutdown(child: ProductionChild): Promise<void> {
-  const requestId = randomUUID();
-  await child.sendMessage({ type: "reforce:shutdown", requestId });
-  for (;;) {
-    const message = await nextMessage(child, 30_000);
-    if (isShutdownAcknowledgementMessage(message) && message.requestId === requestId) {
-      if (!message.ok) {
-        throw new Error("The production child reported a shutdown failure.");
-      }
-      return;
-    }
-  }
-}
-
 async function resolveProjectRoot(projectDirectory: string): Promise<string> {
   const projectRoot = await realpath(projectDirectory);
   const rootMetadata = await lstat(projectRoot);
@@ -242,34 +236,19 @@ async function resolveProjectRoot(projectDirectory: string): Promise<string> {
   return projectRoot;
 }
 
-function isMissingPath(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
 async function assertNoIncompleteDistTransaction(projectRoot: string): Promise<void> {
-  const transactionRoot = join(projectRoot, ".reforce", "transactions", "dist");
-  try {
-    const transactionEntries = await readdir(transactionRoot);
-    if (transactionEntries.length > 0) {
-      throw new ArtifactInvalidError(
-        "Production artifact has an incomplete dist transaction; run reforce build to recover it.",
-      );
-    }
-  } catch (error) {
-    if (!isMissingPath(error)) {
-      throw error;
-    }
+  const incomplete = await findIncompleteDistTransaction(projectRoot);
+  if (incomplete === undefined) {
+    return;
   }
-
-  const projectEntries = await readdir(projectRoot);
-  const transactionArtifact = projectEntries.find(
-    (entry) => entry.startsWith("dist.staging-") || entry.startsWith("dist.backup-"),
-  );
-  if (transactionArtifact !== undefined) {
+  if (incomplete.reason === "journal") {
     throw new ArtifactInvalidError(
-      `Production artifact has incomplete transaction output: ${transactionArtifact}`,
+      "Production artifact has an incomplete dist transaction; run reforce build to recover it.",
     );
   }
+  throw new ArtifactInvalidError(
+    `Production artifact has incomplete transaction output: ${incomplete.entryName}`,
+  );
 }
 
 async function assertOrdinaryArtifactTree(directory: string): Promise<void> {
@@ -326,26 +305,36 @@ async function resolveProductionEntry(projectRoot: string): Promise<string> {
 }
 
 function reportStartFailure(reporter: Reporter, error: unknown): void {
-  const busy = error instanceof ProjectBusyError;
-  const artifactInvalid = error instanceof ArtifactInvalidError;
-  let phase: "project" | "build" | "child" = "child";
-  let code: "PROJECT_BUSY" | "ARTIFACT_INVALID" | "CHILD_FAILED" = "CHILD_FAILED";
-  let message = "Production application failed.";
-  if (busy) {
-    phase = "project";
-    code = "PROJECT_BUSY";
-    message = error.message;
-  } else if (artifactInvalid) {
-    phase = "build";
-    code = "ARTIFACT_INVALID";
-    message = error.message;
+  if (error instanceof ProjectBusyError) {
+    reporter.report(
+      createFailureEvent({
+        command: "start",
+        phase: "project",
+        fallbackCode: "PROJECT_BUSY",
+        message: error.message,
+        cause: error,
+      }),
+    );
+    return;
+  }
+  if (error instanceof ArtifactInvalidError) {
+    reporter.report(
+      createFailureEvent({
+        command: "start",
+        phase: "build",
+        fallbackCode: "ARTIFACT_INVALID",
+        message: error.message,
+        cause: error,
+      }),
+    );
+    return;
   }
   reporter.report(
     createFailureEvent({
       command: "start",
-      phase,
-      fallbackCode: code,
-      message,
+      phase: "child",
+      fallbackCode: "CHILD_FAILED",
+      message: "Production application failed.",
       cause: error,
     }),
   );
@@ -386,10 +375,7 @@ async function startProductionChild(input: {
     if (!childHandshakeReady) {
       return;
     }
-    shutdownPromise ??=
-      process.platform === "win32"
-        ? requestWindowsShutdown(child)
-        : Promise.resolve(child.kill(queuedSignal));
+    shutdownPromise ??= child.requestShutdown(queuedSignal);
     void shutdownPromise.catch(() => undefined);
   };
   const detachSignalHandlers = installTerminationSignalHandlers(requestShutdown);
@@ -398,10 +384,10 @@ async function startProductionChild(input: {
       return;
     }
     input.state.parentShutdownRequestIds.push(message.requestId);
-    requestShutdown(process.platform === "win32" ? "SIGBREAK" : "SIGTERM");
+    requestShutdown(parentTerminationSignal);
   };
   const onParentDisconnect = () => {
-    requestShutdown(process.platform === "win32" ? "SIGBREAK" : "SIGTERM");
+    requestShutdown(parentTerminationSignal);
   };
   process.on("message", onParentMessage);
   process.on("disconnect", onParentDisconnect);
@@ -411,7 +397,7 @@ async function startProductionChild(input: {
     process.off("disconnect", onParentDisconnect);
   };
 
-  const participant = parseParticipant(await nextMessage(child, 10_000));
+  const participant = parseChildParticipantMessage(await nextMessage(child, 10_000));
   if (participant === undefined) {
     throw new Error("The production child sent an invalid lease participant record.");
   }

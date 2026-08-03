@@ -11,6 +11,11 @@ import { createDevBuildId, type DevBuildAsset } from "@/bundling/build-id";
 import type { ResolvedProject } from "@/compiler-types";
 import type { DevCompilerGate, DevCompilerGateResult } from "@/dev/compiler-gate";
 import type { DevCompilation } from "@/dev/watch-coordinator";
+import {
+  hotUpdateChunkFilename,
+  hotUpdateDirectory,
+  hotUpdateManifestFilename,
+} from "@/dev-hot-update";
 import { resolveCliSupportModule } from "@/runtime-module-path";
 
 export interface DevWatchBuild {
@@ -130,7 +135,7 @@ function assetRole(path: string): DevBuildAsset["role"] {
   if (path.endsWith(".map")) {
     return "source-map";
   }
-  if (path.includes("hot-update") || path.startsWith("updates/")) {
+  if (path.includes("hot-update") || path.startsWith(hotUpdateDirectory)) {
     return "hot-update";
   }
   return "chunk";
@@ -328,15 +333,8 @@ export async function startDevWatchBuild(
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
           config.output.publicPath = "./";
-          config.output.hotUpdateChunkFilename = "updates/[id].[fullhash].hot-update.mjs";
-          // The manifest is fetched by the `import` chunk-loading runtime, which reads
-          // `obj.default` — i.e. its content is an ES module (`export default {...}`), not JSON.
-          // Bun picks a loader from the extension, so a `.json` name makes every hot update die
-          // with `JSON Parse error: Unexpected identifier "export"`. The stem must also differ
-          // from hotUpdateChunkFilename: `[runtime]` and the entry chunk `[id]` are both `main`,
-          // so sharing the `hot-update.mjs` suffix would make the two emits overwrite each other.
-          config.output.hotUpdateMainFilename =
-            "updates/[runtime].[fullhash].hot-update-manifest.mjs";
+          config.output.hotUpdateChunkFilename = hotUpdateChunkFilename;
+          config.output.hotUpdateMainFilename = hotUpdateManifestFilename;
           config.plugins.push(
             gatePlugin,
             new rspack.experiments.VirtualModulesPlugin({
@@ -380,13 +378,12 @@ export async function startDevWatchBuild(
   });
 
   rsbuild.onAfterBuild(async ({ stats }) => {
+    // 诊断只有 gate 的 failure 分支拿得到；其余失败都是「编译没走到产出这一步」，统一按空诊断上报。
+    const reportError = (error: unknown) =>
+      options.onCompilation({ status: "failure", diagnostics: [], error });
     const gateResult = gatePlugin.current;
     if (!gateResult) {
-      await options.onCompilation({
-        status: "failure",
-        diagnostics: [],
-        error: new Error("Development compiler gate result is unavailable."),
-      });
+      await reportError(new Error("Development compiler gate result is unavailable."));
       return;
     }
     if (gateResult.status === "failure") {
@@ -397,20 +394,16 @@ export async function startDevWatchBuild(
       return;
     }
     if (gateResult.status === "error") {
-      await options.onCompilation({ status: "failure", diagnostics: [], error: gateResult.error });
+      await reportError(gateResult.error);
       return;
     }
     if (!stats) {
-      await options.onCompilation({
-        status: "failure",
-        diagnostics: [],
-        error: new Error("Development build did not return compilation statistics."),
-      });
+      await reportError(new Error("Development build did not return compilation statistics."));
       return;
     }
     const buildError = statsError(stats);
     if (buildError) {
-      await options.onCompilation({ status: "failure", diagnostics: [], error: buildError });
+      await reportError(buildError);
       return;
     }
     const assets = await collectAssets(devOutputRoot);

@@ -72,6 +72,9 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
       waiter.resolve(message);
     }
   };
+  // 一次解析：下面四个等待点（participant / ready / shutdown ack / 强杀后退出）共用同一个上限，
+  // 各写各的 `?? 5_000` 意味着调整默认值时会漏掉其中几处。
+  const ipcTimeout = options.ipcTimeoutMilliseconds ?? 5_000;
   const child = spawn(
     options.bunExecutable ?? process.execPath,
     [options.entryPath, ...(options.applicationArguments ?? [])],
@@ -118,7 +121,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     if (options.leaseParticipant) {
       const registration = await withTimeout(
         participant.promise,
-        options.ipcTimeoutMilliseconds ?? 5_000,
+        ipcTimeout,
         "Development child did not publish its lease participant.",
       );
       participantToken = registration.participant.participantToken;
@@ -131,11 +134,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
       } satisfies DevChildLeaseParticipantAcknowledgement);
     }
     if (options.waitForReady) {
-      await withTimeout(
-        ready.promise,
-        options.ipcTimeoutMilliseconds ?? 5_000,
-        "Development child did not report readiness.",
-      );
+      await withTimeout(ready.promise, ipcTimeout, "Development child did not report readiness.");
     }
   } catch (error) {
     const cleanupErrors = await cleanupFailedChild();
@@ -224,10 +223,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   async function requestShutdownAcknowledgement(): Promise<Error | undefined> {
     try {
       const requestId = randomUUID();
-      const acknowledgement = waitForShutdownAcknowledgement(
-        requestId,
-        options.ipcTimeoutMilliseconds ?? 5_000,
-      );
+      const acknowledgement = waitForShutdownAcknowledgement(requestId, ipcTimeout);
       void acknowledgement.catch(() => undefined);
       await sendMessage(child, {
         type: "reforce:shutdown",
@@ -270,7 +266,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     try {
       await withTimeout(
         closed,
-        options.ipcTimeoutMilliseconds ?? 5_000,
+        ipcTimeout,
         "Development child did not exit after forced termination.",
       );
     } catch (error) {

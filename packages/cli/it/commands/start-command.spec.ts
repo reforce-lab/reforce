@@ -138,6 +138,9 @@ test("start reports participant removal failure after the child exits", async ()
           kill() {
             completion.resolve({ exitCode: 1 });
           },
+          async requestShutdown() {
+            completion.resolve({ exitCode: 1 });
+          },
           wait: () => completion.promise,
         };
       },

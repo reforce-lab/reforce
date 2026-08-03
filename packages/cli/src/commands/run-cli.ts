@@ -1,7 +1,4 @@
 import { Command, CommanderError } from "commander";
-import { runBuildCommand } from "@/commands/build";
-import { runDevCommand } from "@/commands/dev";
-import { runStartCommand } from "@/commands/start";
 import {
   type CliCommandName,
   createFailureEvent,
@@ -71,6 +68,10 @@ async function reportCliFailure(
   return 1;
 }
 
+// 命令实现按需加载：build/dev 会把 bundler 与 compiler 拉进模块图（本机实测 dist 下 import
+// commands/build.js 约 83ms，本模块自身约 17ms），而 `reforce start`、`--help` 和任何 argv 报错都
+// 用不到它们。静态 import 会让这三条路径都先付这份代价，而 Commander 在进入 action 之前就已经确定
+// 了要跑哪个命令。
 export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
   const argv = [...(options.argv ?? process.argv)];
   const cwd = options.cwd ?? process.cwd();
@@ -87,6 +88,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     program.command("build").description("build a production application"),
   ).action(async (commandOptions: CompileProjectOptions) => {
     selectedCommand = "build";
+    const { runBuildCommand } = await import("@/commands/build");
     result = await runBuildCommand({
       cwd,
       projectDirectory: commandOptions.project,
@@ -99,6 +101,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     program.command("dev").description("watch and run an application"),
   ).action(async (commandOptions: CompileProjectOptions) => {
     selectedCommand = "dev";
+    const { runDevCommand } = await import("@/commands/dev");
     result = await runDevCommand({
       cwd,
       projectDirectory: commandOptions.project,
@@ -111,6 +114,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     program.command("start").description("start a production application"),
   ).action(async (commandOptions: ProjectOptions) => {
     selectedCommand = "start";
+    const { runStartCommand } = await import("@/commands/start");
     result = await runStartCommand({
       cwd,
       projectDirectory: commandOptions.project,

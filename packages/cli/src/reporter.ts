@@ -79,27 +79,22 @@ function isCompilerFailureCause(value: unknown): value is object {
   );
 }
 
-function isCauseFailureCode(cause: unknown, value: unknown): value is CliFailureEvent["code"] {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return false;
-  }
-  if (cause instanceof ReforceRuntimeError) {
-    return value === cause.code;
-  }
-  // compiler 分支只校验形态（非空白字符串）、不做成员校验：compiler 包只导出
-  // CompilerDiagnosticCode 类型，没有运行时成员列表可穷举，只能信任 compiler 产出的
-  // code 原样透传。改成严格校验会把未列出的 code 打成 fallback，属行为变更。
-  return isCompilerFailureCause(cause);
+// 只校验形态（非空白字符串）、不做成员校验：compiler 包只导出 CompilerDiagnosticCode 类型，没有
+// 运行时成员列表可穷举，只能信任 compiler 产出的 code 原样透传。改成严格校验会把未列出的 code 打成
+// fallback，属行为变更。
+function isCompilerDiagnosticCode(value: unknown): value is CompilerDiagnosticCode {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
-function resolveFailureDetails(cause: unknown): {
-  readonly code?: CliFailureEvent["code"];
-} {
-  if (!(cause instanceof ReforceRuntimeError) && !isCompilerFailureCause(cause)) {
-    return {};
+function resolveFailureCode(cause: unknown): CliFailureEvent["code"] | undefined {
+  if (cause instanceof ReforceRuntimeError) {
+    return cause.code;
+  }
+  if (!isCompilerFailureCause(cause)) {
+    return undefined;
   }
   const code = Reflect.get(cause, "code");
-  return isCauseFailureCode(cause, code) ? { code } : {};
+  return isCompilerDiagnosticCode(code) ? code : undefined;
 }
 
 export function createFailureEvent(input: {
@@ -109,12 +104,11 @@ export function createFailureEvent(input: {
   readonly message: string;
   readonly cause: unknown;
 }): CliFailureEvent {
-  const details = resolveFailureDetails(input.cause);
   return {
     kind: "failure",
     command: input.command,
     phase: input.phase,
-    code: details.code ?? input.fallbackCode,
+    code: resolveFailureCode(input.cause) ?? input.fallbackCode,
     message: input.message,
     cause: input.cause,
   };
