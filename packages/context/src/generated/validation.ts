@@ -5,7 +5,6 @@ import type {
   GeneratedBeanRegistration,
   GeneratedClassRegistration,
   GeneratedDependency,
-  GeneratedExecutionPlans,
   GeneratedFactoryRegistration,
   GeneratedSourcePosition,
   GeneratedSourceReference,
@@ -260,10 +259,7 @@ function requireSameSet(
   }
 }
 
-function validatePlans(
-  value: unknown,
-  registrations: readonly GeneratedBeanRegistration[],
-): asserts value is GeneratedExecutionPlans {
+function validatePlans(value: unknown, registrations: readonly GeneratedBeanRegistration[]): void {
   const plans = requireObject(value, "plans");
   requireExactKeys(plans, ["constructionOrder", "startActionOrder", "cleanupActionOrder"], "plans");
   const knownIds = new Set(registrations.map((registration) => registration.id));
@@ -277,8 +273,11 @@ function validatePlans(
   const constructionIndex = new Map(constructionOrder.map((id, index) => [id, index]));
   for (const registration of registrations) {
     const consumerIndex = constructionIndex.get(registration.id);
+    // Unreachable at runtime (requireSameSet above already proved the plan covers every
+    // registration), but Map.get is typed `number | undefined` and the comparison below
+    // needs a number, so this guard exists to narrow it.
     if (consumerIndex === undefined) {
-      return fail(`plans.constructionOrder omits "${registration.id}".`);
+      fail(`plans.constructionOrder omits "${registration.id}".`);
     }
     for (const dependency of registration.dependencies) {
       if (dependency.mode !== "eager") {
@@ -286,7 +285,7 @@ function validatePlans(
       }
       const dependencyIndex = constructionIndex.get(dependency.targetId);
       if (dependencyIndex === undefined || dependencyIndex >= consumerIndex) {
-        return fail(
+        fail(
           `plans.constructionOrder must place eager dependency "${dependency.targetId}" before "${registration.id}".`,
         );
       }
@@ -372,13 +371,11 @@ function validateDependencyTargets(
   }
 }
 
-function validateApplicationDefinition(
-  value: unknown,
-): asserts value is GeneratedApplicationDefinition {
+function validateApplicationDefinition(value: unknown): void {
   const definition = requireObject(value, "definition");
   requireExactKeys(definition, ["schemaVersion", "registrations", "plans"], "definition");
   if (Reflect.get(definition, "schemaVersion") !== 1) {
-    return fail("definition.schemaVersion must be 1.");
+    fail("definition.schemaVersion must be 1.");
   }
   const registrationCandidates = requireArray(
     Reflect.get(definition, "registrations"),
@@ -420,12 +417,9 @@ function cloneDependency(dependency: GeneratedDependency): GeneratedDependency {
   });
 }
 
-// cloneClassRegistration and cloneErasedClassRegistration below are field-for-field
-// identical; the erased-union invariance (covered by it/public-api.spec.ts) blocks a
-// shared implementation without casts. Keep the two bodies in sync.
-function cloneClassRegistration<T extends object>(
-  registration: GeneratedClassRegistration<T>,
-): GeneratedClassRegistration<T> {
+function cloneClassRegistration<T extends object, THook extends object>(
+  registration: GeneratedClassRegistration<T, THook>,
+): GeneratedClassRegistration<T, THook> {
   return Object.freeze({
     kind: "class",
     id: registration.id,
@@ -440,48 +434,9 @@ function cloneClassRegistration<T extends object>(
   });
 }
 
-// cloneFactoryRegistration and cloneErasedFactoryRegistration below are field-for-field
-// identical; the erased-union invariance (covered by it/public-api.spec.ts) blocks a
-// shared implementation without casts. Keep the two bodies in sync.
-function cloneFactoryRegistration<T extends object>(
-  registration: GeneratedFactoryRegistration<T>,
-): GeneratedFactoryRegistration<T> {
-  const common = {
-    kind: "factory" as const,
-    id: registration.id,
-    source: cloneSource(registration.source),
-    definition: registration.definition,
-    dependencies: [] as const,
-    create: registration.create,
-  };
-  if (!registration.dispose) {
-    return Object.freeze(common);
-  }
-  return Object.freeze({ ...common, dispose: registration.dispose });
-}
-
-// Mirror of cloneClassRegistration for the erased union member; keep in sync.
-function cloneErasedClassRegistration(
-  registration: Extract<GeneratedBeanRegistration, { readonly kind: "class" }>,
-): Extract<GeneratedBeanRegistration, { readonly kind: "class" }> {
-  return Object.freeze({
-    kind: "class",
-    id: registration.id,
-    source: cloneSource(registration.source),
-    target: registration.target,
-    dependencies: Object.freeze(registration.dependencies.map(cloneDependency)),
-    create: registration.create,
-    hooks: Object.freeze({
-      ...(registration.hooks.start ? { start: registration.hooks.start } : {}),
-      ...(registration.hooks.close ? { close: registration.hooks.close } : {}),
-    }),
-  });
-}
-
-// Mirror of cloneFactoryRegistration for the erased union member; keep in sync.
-function cloneErasedFactoryRegistration(
-  registration: Extract<GeneratedBeanRegistration, { readonly kind: "factory" }>,
-): Extract<GeneratedBeanRegistration, { readonly kind: "factory" }> {
+function cloneFactoryRegistration<T extends object, TDispose extends object>(
+  registration: GeneratedFactoryRegistration<T, TDispose>,
+): GeneratedFactoryRegistration<T, TDispose> {
   const common = {
     kind: "factory" as const,
     id: registration.id,
@@ -498,9 +453,9 @@ function cloneErasedFactoryRegistration(
 
 function cloneRegistration(registration: GeneratedBeanRegistration): GeneratedBeanRegistration {
   if (registration.kind === "class") {
-    return cloneErasedClassRegistration(registration);
+    return cloneClassRegistration(registration);
   }
-  return cloneErasedFactoryRegistration(registration);
+  return cloneFactoryRegistration(registration);
 }
 
 export function snapshotClassRegistration<T extends object>(

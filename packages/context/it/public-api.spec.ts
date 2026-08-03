@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import type { GeneratedClassHooks, GeneratedFactoryRegistration } from "@/generated/contracts";
+import type {
+  GeneratedBeanRegistration,
+  GeneratedClassHooks,
+  GeneratedFactoryRegistration,
+} from "@/generated/contracts";
 import { factoryBean } from "@/generated-runtime";
 import { defineBean, Injectable, Primary, Qualifier, ReforceRuntimeError } from "@/index";
 
@@ -27,6 +31,24 @@ function verifyGeneratedCallbackInputsAreContravariant(): void {
 }
 
 void verifyGeneratedCallbackInputsAreContravariant;
+
+// The erased union promises nothing about instance types, so its callback inputs stay
+// pinned to `never`. Widening them would silently let a caller feed any object to a
+// hook written for a specific class; tsc reports these directives as unused if that
+// happens (Issue #106).
+function verifyErasedRegistrationsHideTheirInstanceType(
+  registration: GeneratedBeanRegistration,
+): void {
+  if (registration.kind === "class") {
+    // @ts-expect-error An erased registration promises nothing about its instance type.
+    registration.hooks.start?.({});
+    return;
+  }
+  // @ts-expect-error An erased registration promises nothing about its instance type.
+  registration.dispose?.({});
+}
+
+void verifyErasedRegistrationsHideTheirInstanceType;
 
 const source = {
   file: "src/resource.ts",
