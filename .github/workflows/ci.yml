@@ -6,7 +6,33 @@ on:
   pull_request:
 
 jobs:
+  # 纯 .md 变更跳过三平台 verify（Issue #43）。verify 是 required check，
+  # 不能用 workflow 级 paths-ignore：被过滤掉的 workflow 不上报 check，
+  # required 状态会永远 pending 卡住合并；job 级 if 跳过则以 skipped 结论
+  # 上报，分支保护视同通过。
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # predicate-quantifier: every 使 "**" + "!**/*.md" 表示
+      # 「存在至少一个非 Markdown 的变更文件」；push 到 main 时以
+      # default branch 为 base 比对（action 默认行为）。
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - "**"
+              - "!**/*.md"
+
   verify:
+    needs: changes
+    # fail-safe：changes 自身失败时 verify 照常执行，探测故障不得放行（Issue #43）。
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     strategy:
       fail-fast: false
       matrix:
