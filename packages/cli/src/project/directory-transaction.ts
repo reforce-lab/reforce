@@ -16,7 +16,7 @@ import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
 import { ProjectBusyError, type ProjectLease } from "@/project/lease";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
 
-export type TransactionKind = "generated" | "dist";
+type TransactionKind = "generated" | "dist";
 type TransactionState = "prepared" | "backup-published" | "active-published" | "verified";
 
 interface TransactionFileRecord {
@@ -99,8 +99,6 @@ interface TransactionLayout {
   readonly activeParent: string;
   // Root under `.reforce/transactions` holding this kind's journal metadata.
   readonly transactionRoot: string;
-  // Containment boundary removeTree enforces for this kind's owned paths.
-  readonly cleanupBoundary: string;
 }
 
 interface TreeSnapshot {
@@ -279,16 +277,19 @@ function sameFileRecords(
   );
 }
 
+function sameSortedPaths(actual: readonly string[], expected: readonly string[]): boolean {
+  return (
+    actual.length === expected.length && expected.every((path, index) => actual[index] === path)
+  );
+}
+
 // 接收已经收好的 entries 而不是自己再遍历一遍：调用方无一例外都是先 snapshot 再校验结构，
 // 各自读一遍等于把整棵树的 readFile 和 sha256 做两次——dist 树是整个应用产物，generated 树在
 // dev 下每次文件改动都要过一遍。
 function validateTreeStructure(kind: TransactionKind, entries: readonly TreeEntry[]): boolean {
   const paths = entries.map((entry) => entry.path);
   if (kind === "generated") {
-    if (
-      paths.length !== generatedFilePaths.length ||
-      !generatedFilePaths.every((path, index) => paths[index] === path)
-    ) {
+    if (!sameSortedPaths(paths, generatedFilePaths)) {
       return false;
     }
     const manifest = entries.find((entry) => entry.path === "manifest.json");
@@ -538,8 +539,10 @@ export class DirectoryTransactions {
         compareUtf16CodeUnits(left.path, right.path),
       );
       if (
-        sortedFiles.length !== generatedFilePaths.length ||
-        !generatedFilePaths.every((path, index) => sortedFiles[index]?.path === path)
+        !sameSortedPaths(
+          sortedFiles.map((file) => file.path),
+          generatedFilePaths,
+        )
       ) {
         throw new DirectoryTransactionError(
           "generated",
@@ -668,8 +671,10 @@ export class DirectoryTransactions {
     const stagingEntries = await collectTreeEntries(paths.staging);
     const snapshot = summarizeTree(stagingEntries);
     if (
-      snapshot.files.length !== expectedFiles.length ||
-      !snapshot.files.every((file, index) => file.path === expectedFiles[index]) ||
+      !sameSortedPaths(
+        snapshot.files.map((file) => file.path),
+        expectedFiles,
+      ) ||
       !validateTreeStructure(kind, stagingEntries)
     ) {
       throw new DirectoryTransactionError(
@@ -1157,13 +1162,15 @@ export class DirectoryTransactions {
 
   private boundaryFor(kind: TransactionKind, target: string): string {
     const layout = this.layoutFor(kind);
-    // Journal metadata lives under `.reforce/transactions/<kind>`, outside the kind's own active
-    // parent, so it answers to reforceRoot instead. Containment rather than a string prefix: a
-    // prefix test also matches a sibling that merely starts with the same characters.
+    // Journal metadata always lives under `.reforce/transactions/<kind>`, so it answers to
+    // reforceRoot regardless of kind: for dist that tightens the boundary from projectRoot down to
+    // `.reforce`, for generated it is the same directory activeParent already names. Containment
+    // rather than a string prefix: a prefix test also matches a sibling that merely starts with
+    // the same characters.
     if (isPathContained(layout.transactionRoot, target)) {
       return this.reforceRoot;
     }
-    return layout.cleanupBoundary;
+    return layout.activeParent;
   }
 
   private paths(kind: TransactionKind, transactionToken: string): TransactionPaths {
@@ -1200,13 +1207,11 @@ export class DirectoryTransactions {
         return {
           activeParent: this.reforceRoot,
           transactionRoot: this.generatedTransactionRoot,
-          cleanupBoundary: this.reforceRoot,
         };
       case "dist":
         return {
           activeParent: this.projectRoot,
           transactionRoot: this.distTransactionRoot,
-          cleanupBoundary: this.projectRoot,
         };
     }
   }
