@@ -71,7 +71,7 @@ bun run test:e2e
 bun packages/cli/dist/reforce.js --help
 ```
 
-每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，`tsconfig.node.json` 管理源码与 Rslib/tooling 配置；两者都继承 `@reforce/tooling-tsconfig/base.json` 的 `noEmit: true`，不使用 project references。Rslib 自动读取源码配置并负责生成 Bun 可执行的服务端 ESM 和根级 bundleless d.ts。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
+每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，`tsconfig.node.json` 管理源码与 Rslib/tooling 配置；两者都继承 `@reforce/tooling-tsconfig/base.json` 的 `noEmit: true`，不使用 project references。Rslib 自动读取源码配置并负责生成 Bun 可执行的服务端 ESM 和 d.ts；两者都是 bundleless，`dist/` 与 `src/` 1:1 对应。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
 
 包级单元测试位于 `test/`，路径严格镜像 `src`；跨模块、filesystem、子进程和 Worker 行为位于 `it/`。两个目录各自维护 `tsconfig.json`。默认 `bun run test` 运行 unit 与 IT；独立的 `@reforce/e2e` workspace 通过 `bun run test:e2e` 从构建后的 CLI 验证完整用户链路。
 
