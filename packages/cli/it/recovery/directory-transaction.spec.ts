@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, readdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  symlink,
+  truncate,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GeneratedFile } from "@reforce/compiler";
@@ -15,6 +24,7 @@ import {
   snapshotTree,
   type TransactionKind,
 } from "@/project/directory-transaction";
+import { errorCode, isMissingPathError } from "@/project/fs-error";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
 import {
   type BunIpcHarness,
@@ -208,6 +218,18 @@ async function activeDistGeneration(projectRoot: string): Promise<string> {
     throw new Error("Expected a dist generation marker.");
   }
   return generation;
+}
+
+// 注入过 chmod 000 的文件要在断言前恢复可读，否则读取它的断言自己先失败。容忍 ENOENT：
+// 事务如果把这棵树删掉了（正是 Issue #105 要证伪的回滚），恢复目标就不再存在。
+async function restoreReadableIfPresent(path: string): Promise<void> {
+  try {
+    await chmod(path, 0o644);
+  } catch (error) {
+    if (!isMissingPathError(error)) {
+      throw error;
+    }
+  }
 }
 
 // 每条用例的击杀钟统一由包级 `bun test --timeout` 提供，spec 里不再各自声明（Issue #92）；
@@ -798,6 +820,94 @@ describe("directory transactions", () => {
 
     await expect(commit).rejects.toBeInstanceOf(DirectoryTransactionError);
     expect(await readFile(join(project.projectRoot, "dist", "main.mjs"), "utf8")).toContain("pre");
+  });
+
+  test("rejects a dist file path that is not a relative POSIX path", async () => {
+    const { transactions } = await setupWriter();
+    const prepared = await transactions.prepareDist();
+    await writeFile(join(prepared.stagingDirectory, "main.mjs"), "export {};\n");
+
+    const commit = transactions.commitDist({
+      ...prepared,
+      expectedFiles: ["../escape.mjs", "main.mjs"],
+    });
+
+    await expect(commit).rejects.toBeInstanceOf(DirectoryTransactionError);
+  });
+
+  test("classifies a cleanup boundary escape as a dist transaction failure", async () => {
+    const { lease, transactions } = await setupWriter();
+    const stagingDirectory = join(lease.projectRoot, "dist.staging-classifyboundary");
+    await symlink(
+      lease.projectRoot,
+      stagingDirectory,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const commit = transactions.commitDist({
+      transactionToken: "classifyboundary",
+      stagingDirectory,
+      expectedFiles: ["main.mjs"],
+    });
+
+    await expect(commit).rejects.toBeInstanceOf(DirectoryTransactionError);
+  });
+
+  test("rejects a truncated journal as a journal verification failure", async () => {
+    const { project, lease } = await setupWriter();
+    const faulty = await DirectoryTransactions.create({
+      projectRoot: project.projectRoot,
+      lease,
+      async faultInjector(point, context) {
+        if (point === "before:journal-verification-read" && context.path !== undefined) {
+          await truncate(context.path, 12);
+        }
+      },
+    });
+
+    const commit = faulty.commitGenerated(generatedFiles("pre"));
+
+    await expect(commit).rejects.toThrow("Transaction journal verification failed.");
+  });
+
+  // chmod 000 在 Windows 上不阻止读取，故障注入不会生效。
+  const describeUnreadableTree = process.platform === "win32" ? describe.skip : describe;
+
+  describeUnreadableTree("when the post-publish verification read hits EACCES", () => {
+    async function publishOverUnreadableActive() {
+      const { project, lease, transactions } = await setupWriter();
+      await commitDistGeneration(transactions, "pre");
+      const activeMain = join(project.projectRoot, "dist", "main.mjs");
+      const faulty = await DirectoryTransactions.create({
+        projectRoot: project.projectRoot,
+        lease,
+        async faultInjector(point) {
+          if (point === "before:verification-read") {
+            await chmod(activeMain, 0o000);
+          }
+        },
+      });
+
+      const caught = await commitDistGeneration(faulty, "post").then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+
+      await restoreReadableIfPresent(activeMain);
+      return { project, caught };
+    }
+
+    test("surfaces the underlying errno instead of a journal mismatch", async () => {
+      const { caught } = await publishOverUnreadableActive();
+
+      expect(errorCode(caught)).toBe("EACCES");
+    });
+
+    test("keeps the published generation instead of rolling it back", async () => {
+      const { project } = await publishOverUnreadableActive();
+
+      expect(await activeDistGeneration(project.projectRoot)).toBe("post");
+    });
   });
 
   test("keeps the previous generated tree when a swap stops after backup publication", async () => {
