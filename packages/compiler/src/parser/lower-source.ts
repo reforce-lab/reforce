@@ -80,13 +80,19 @@ interface Collector {
 // （Issue #91）。同理，模块声明的判定用 `is.ModuleDeclaration` 而非手写 type 列表。
 type ClassMethod = AliasMap["Method"];
 type FunctionNode = AliasMap["Function"];
-type UnsupportedDeclaration = NodeOfType<
-  | "FunctionDeclaration"
-  | "TSDeclareFunction"
-  | "TSEnumDeclaration"
-  | "TSImportEqualsDeclaration"
-  | "TSTypeAliasDeclaration"
->;
+
+// 这 5 个节点类型在 parser 里不构成任何 alias group（Issue #91 / PR #93 已确认），只能手写一份名单。
+// 名单同时是类型来源、kind 映射和成员判定：谓词那份 `||` 链改名单时 tsc 不会报错，只有表能把三处钉死
+// （Issue #114）。
+const UNSUPPORTED_DECLARATION_KINDS = {
+  FunctionDeclaration: "function",
+  TSDeclareFunction: "function",
+  TSEnumDeclaration: "enum",
+  TSImportEqualsDeclaration: "import-alias",
+  TSTypeAliasDeclaration: "type-alias",
+} as const satisfies Record<string, UnsupportedNamedDeclarationKind>;
+
+type UnsupportedDeclaration = NodeOfType<keyof typeof UNSUPPORTED_DECLARATION_KINDS>;
 
 function declarationExportOf(
   name: Node | null | undefined,
@@ -381,19 +387,7 @@ function lowerInterface(
 }
 
 function declarationNameOf(declaration: Declaration): string | undefined {
-  switch (declaration.type) {
-    case "ClassDeclaration":
-    case "FunctionDeclaration":
-    case "TSDeclareFunction":
-    case "TSEnumDeclaration":
-    case "TSImportEqualsDeclaration":
-    case "TSInterfaceDeclaration":
-    case "TSTypeAliasDeclaration":
-    case "TSModuleDeclaration":
-      return identifierTextOf(declaration.id);
-    default:
-      return undefined;
-  }
+  return "id" in declaration ? identifierTextOf(declaration.id) : undefined;
 }
 
 function namespaceMemberKind(declaration: Declaration): NamespaceMemberKind {
@@ -615,27 +609,12 @@ function lowerUnsupported(
 }
 
 function unsupportedKind(node: UnsupportedDeclaration): UnsupportedNamedDeclarationKind {
-  switch (node.type) {
-    case "TSTypeAliasDeclaration":
-      return "type-alias";
-    case "TSEnumDeclaration":
-      return "enum";
-    case "FunctionDeclaration":
-    case "TSDeclareFunction":
-      return "function";
-    case "TSImportEqualsDeclaration":
-      return "import-alias";
-  }
+  return UNSUPPORTED_DECLARATION_KINDS[node.type];
 }
 
 function isUnsupportedDeclaration(node: Node): node is UnsupportedDeclaration {
-  return (
-    node.type === "TSTypeAliasDeclaration" ||
-    node.type === "TSEnumDeclaration" ||
-    node.type === "FunctionDeclaration" ||
-    node.type === "TSDeclareFunction" ||
-    node.type === "TSImportEqualsDeclaration"
-  );
+  // `hasOwn` 而非 `in`：避免与 Object.prototype 同名的节点类型误命中（Issue #114）。
+  return Object.hasOwn(UNSUPPORTED_DECLARATION_KINDS, node.type);
 }
 
 function visitDefaultDeclaration(
