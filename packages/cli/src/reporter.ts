@@ -171,6 +171,7 @@ function renderEvent(event: CliReporterEvent): string {
 export class PlainTextReporter implements Reporter {
   private readonly output: Writable;
   private pending = Promise.resolve();
+  private firstWriteFailure: unknown;
 
   constructor(options: PlainTextReporterOptions = {}) {
     this.output = options.output ?? process.stderr;
@@ -178,23 +179,33 @@ export class PlainTextReporter implements Reporter {
 
   report(event: CliReporterEvent): void {
     const line = `${renderEvent(event)}\n`;
-    // 已知行为隐患，保留现状待 owner 决策：队列不挂 catch，首次写失败后 pending 永久
-    // rejected，此后每次 report 的写入都会丢失并产生无 handler 的 rejection。
-    this.pending = this.pending.then(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          this.output.write(line, (error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        }),
-    );
+    // 一次写失败不能让 reporter 余生失效：链上不挂 catch 时 pending 会永久 rejected，
+    // 之后每个 report 都被静默丢弃，Bun 还会把这些无 handler 的 rejection 记成进程失败
+    // （命令本身成功也退出 1）。这里把失败降级为「记录首个错误、继续排队」，首个错误
+    // 由 flush() 交回调用方；catch 挂在链尾也顺带兜住 write 的同步抛出（#25）。
+    this.pending = this.pending
+      .then(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            this.output.write(line, (error) => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              resolve();
+            });
+          }),
+      )
+      .catch((error: unknown) => {
+        this.firstWriteFailure ??= error;
+      });
   }
 
   async flush(): Promise<void> {
     await this.pending;
+    // 记录的错误刻意是粘的：后续写成功不代表先前丢掉的输出补回来了，flush 不能改口说成功。
+    if (this.firstWriteFailure !== undefined) {
+      throw this.firstWriteFailure;
+    }
   }
 }
