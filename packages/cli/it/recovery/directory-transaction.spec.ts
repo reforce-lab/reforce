@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { GeneratedFile } from "@reforce/compiler";
 import {
   createTemporaryProject,
   readProjectTree,
@@ -11,7 +12,6 @@ import {
 import {
   DirectoryTransactionError,
   DirectoryTransactions,
-  type GeneratedTransactionFile,
   type TransactionKind,
 } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
@@ -45,7 +45,7 @@ async function setupWriter() {
   return { project, lease, transactions };
 }
 
-function generatedFiles(generation: string): readonly GeneratedTransactionFile[] {
+function generatedFiles(generation: string): readonly GeneratedFile[] {
   return [
     { path: "beans.ts", content: `export const generation = ${JSON.stringify(generation)};\n` },
     { path: "bootstrap.ts", content: "export async function bootstrap() {}\n" },
@@ -155,7 +155,7 @@ function generatedManifest(
 function generatedFilesWithManifest(
   generation: string,
   manifest: unknown,
-): readonly GeneratedTransactionFile[] {
+): readonly GeneratedFile[] {
   return generatedFiles(generation).map((file) =>
     file.path === "manifest.json" ? { ...file, content: `${JSON.stringify(manifest)}\n` } : file,
   );

@@ -3,7 +3,7 @@ import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import stableStringify from "json-stable-stringify";
 import { type ExecutionPlansModel, type ProviderModel, sourceReference } from "@/analysis/model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
-import type { LinkedSymbol } from "@/linking/project-linker";
+import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
 
 const contextModuleSpecifier = "@reforce/context";
@@ -199,7 +199,7 @@ function qualifierModuleGroups(
 function renderQualifiers(providers: readonly ProviderModel[], generatedDirectory: string): string {
   const interfaces = qualifierGroups(providers, generatedDirectory);
   if (interfaces.length === 0) {
-    return `import type { QualifiedBean } from "${contextModuleSpecifier}";\n\nexport {};\n`;
+    return "export {};\n";
   }
   const imports = interfaces.map(
     (group) =>

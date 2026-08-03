@@ -1,6 +1,6 @@
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import type { LinkedSymbol, LinkedType } from "@/linking/project-linker";
+import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 

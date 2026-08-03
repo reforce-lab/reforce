@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFile, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
@@ -189,6 +189,26 @@ describe("project lease", () => {
 
     await holder.process.sendMessage({ type: "release" });
     expect((await holder.process.wait()).exitCode).toBe(0);
+  });
+
+  test("rejects an acquisition when the gate record carries an out-of-range port", async () => {
+    const project = await temporaryProject();
+    const gateRoot = join(project.projectRoot, ".reforce", "lease", "gate");
+    await mkdir(gateRoot, { recursive: true });
+    await writeFile(
+      join(gateRoot, "record.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        gateToken: "corrupt-gate-token",
+        host: "127.0.0.1",
+        port: 70_000,
+        challenge: "corrupt-gate-challenge",
+      })}\n`,
+    );
+
+    const acquisition = ProjectLease.acquire({ projectRoot: project.projectRoot, mode: "writer" });
+
+    await expect(acquisition).rejects.toBeInstanceOf(ProjectBusyError);
   });
 
   test("a stale release cannot remove a replacement owner record", async () => {

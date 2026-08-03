@@ -23,11 +23,16 @@ export interface ShutdownRequestMessage {
   readonly requestId: string;
 }
 
+// `code` is a write-only breadcrumb: neither the guard below nor any ack reader inspects it, so the
+// union exists only to keep the two producers in one type. ShutdownController (runtime/dev-entry.ts,
+// production-runtime.ts) reports SHUTDOWN_FAILED because it *is* the process shutting itself down.
+// CHILD_FAILED comes only from commands/start.ts, which acks its own parent for a child that already
+// exited non-zero — a state no in-process controller can observe (Issue #22).
 export interface ShutdownAckMessage {
   readonly type: "reforce:shutdown-ack";
   readonly requestId: string;
   readonly ok: boolean;
-  readonly code?: "SHUTDOWN_FAILED";
+  readonly code?: "CHILD_FAILED" | "SHUTDOWN_FAILED";
 }
 
 export function isDevChildLeaseParticipantMessage(

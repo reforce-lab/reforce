@@ -7,6 +7,7 @@ import { requireBunExecutable } from "@/bun-runtime";
 import {
   isShutdownAcknowledgementMessage,
   isShutdownRequestMessage,
+  type ShutdownAckMessage,
   type ShutdownRequestMessage,
 } from "@/dev-ipc";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
@@ -457,14 +458,6 @@ async function captureFailure(operation: () => Promise<void>, failures: unknown[
   }
 }
 
-function captureSynchronousFailure(operation: () => void, failures: unknown[]): void {
-  try {
-    operation();
-  } catch (error) {
-    failures.push(error);
-  }
-}
-
 async function stopFailedChild(
   child: ProductionChild | undefined,
   exitCode: 0 | 1,
@@ -498,14 +491,23 @@ async function releaseStartLease(
 function acknowledgeParentRequests(
   requestIds: string[],
   ok: boolean,
-  code: "CHILD_FAILED" | "SHUTDOWN_FAILED",
+  code: NonNullable<ShutdownAckMessage["code"]>,
 ): void {
   for (const requestId of requestIds.splice(0)) {
     if (ok) {
-      process.send?.({ type: "reforce:shutdown-ack", requestId, ok: true });
+      process.send?.({
+        type: "reforce:shutdown-ack",
+        requestId,
+        ok: true,
+      } satisfies ShutdownAckMessage);
       continue;
     }
-    process.send?.({ type: "reforce:shutdown-ack", requestId, ok: false, code });
+    process.send?.({
+      type: "reforce:shutdown-ack",
+      requestId,
+      ok: false,
+      code,
+    } satisfies ShutdownAckMessage);
   }
 }
 
@@ -517,7 +519,11 @@ async function finalizeStartCommand(input: {
   readonly primaryFailures: readonly unknown[];
 }): Promise<0 | 1> {
   const shutdownFailures: unknown[] = [];
-  captureSynchronousFailure(input.state.detachSignals, shutdownFailures);
+  try {
+    input.state.detachSignals();
+  } catch (error) {
+    shutdownFailures.push(error);
+  }
   await stopFailedChild(input.state.child, input.exitCode, shutdownFailures);
   await captureFailure(() => input.reporter.flush(), shutdownFailures);
   await releaseStartLease(input.state, input.dependencies, shutdownFailures);

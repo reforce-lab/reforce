@@ -696,9 +696,10 @@ function visitModuleDeclaration(
       });
       return;
     default:
-      // TSNamespaceExportDeclaration (`export as namespace X`) lands here and currently produces
-      // no IR record at all; recording an unsupported-export instead would change behavior and
-      // awaits an owner decision.
+      // Only TSNamespaceExportDeclaration reaches here. `export as namespace X` declares a UMD
+      // global and adds no binding to the module graph, so DI analysis has nothing to read from it.
+      // Recording an unsupported-export would turn it into a false UNSUPPORTED_MODULE_SYNTAX error
+      // on code that compiles today (Issue #22).
       return;
   }
 }

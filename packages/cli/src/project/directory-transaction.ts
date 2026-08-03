@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
+import type { GeneratedFile } from "@reforce/compiler";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { isObject } from "radashi";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
@@ -40,11 +41,6 @@ type TransactionFaultInjector = (
   context: TransactionFaultContext,
 ) => void | Promise<void>;
 
-export interface GeneratedTransactionFile {
-  readonly path: (typeof generatedFilePaths)[number];
-  readonly content: string;
-}
-
 interface PreparedDistTransaction {
   readonly transactionToken: string;
   readonly stagingDirectory: string;
@@ -60,12 +56,24 @@ interface DirectoryTransactionOptions {
   readonly faultInjector?: TransactionFaultInjector;
 }
 
-const generatedFilePaths = [
+// The compiler owns which files land in `.reforce/generated`, and commitGenerated rejects any set
+// that is not exactly this list, so drift in either direction would only surface as a runtime
+// failure. Routing the list through this helper makes both directions typecheck failures: the
+// `const T extends` bound rejects a path the compiler never emits, and the `Exclude<...> extends
+// never` guard collapses the parameter to `never` once the compiler emits a path this list lacks
+// (Issue #22).
+function exactGeneratedFilePaths<const T extends readonly GeneratedFile["path"][]>(
+  paths: T & (Exclude<GeneratedFile["path"], T[number]> extends never ? unknown : never),
+): T {
+  return paths;
+}
+
+const generatedFilePaths = exactGeneratedFilePaths([
   "beans.ts",
   "bootstrap.ts",
   "manifest.json",
   "qualifiers.d.ts",
-] as const;
+]);
 
 interface TransactionPaths {
   readonly active: string;
@@ -354,11 +362,14 @@ function parseFileRecords(value: unknown): readonly TransactionFileRecord[] | un
   if (!Array.isArray(value)) {
     return undefined;
   }
-  const parsed = value.map(parseFileRecord);
-  if (parsed.some((file) => file === undefined)) {
-    return undefined;
+  const files: TransactionFileRecord[] = [];
+  for (const entry of value) {
+    const file = parseFileRecord(entry);
+    if (!file) {
+      return undefined;
+    }
+    files.push(file);
   }
-  const files = parsed.filter((file) => file !== undefined);
   const sortedPaths = files.map((file) => file.path).sort(compareUtf16CodeUnits);
   if (
     files.some((file, index) => file.path !== sortedPaths[index]) ||
@@ -507,7 +518,7 @@ export class DirectoryTransactions {
     });
   }
 
-  async commitGenerated(files: readonly GeneratedTransactionFile[]): Promise<void> {
+  async commitGenerated(files: readonly GeneratedFile[]): Promise<void> {
     await this.mutex.run(async () => {
       await this.lease.assertCurrentWriter();
       const transactionToken = randomUUID();

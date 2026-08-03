@@ -3,14 +3,14 @@ import path from "node:path";
 import enhancedResolve from "enhanced-resolve";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import type { LinkedSymbol } from "@/linking/project-linker";
+import type { LinkedSymbol } from "@/linking/model";
 import { isPathContained } from "@/project/path-identity";
 import type { ParsedSource } from "@/project/source-files";
 
 // enhanced-resolve module resolution for the linker: owns the resolver instances, the resolution
 // cache, resolution-failure reporting, and the watch-dependency sets that resolution feeds.
-// The mutable sets are shared with the linker by reference so late resolutions during analysis
-// keep landing in the same missingDependencies set the linker exposes.
+// collectWatchDependencies classifies whatever has been resolved so far, so the linker has to call
+// it after linking finishes instead of caching an early result (Issue #26).
 
 export interface ImportReference {
   readonly moduleSpecifier: string;

@@ -9,7 +9,8 @@ import {
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import type { LinkedSymbol, ProjectLinker } from "@/linking/project-linker";
+import type { LinkedSymbol } from "@/linking/model";
+import type { ProjectLinker } from "@/linking/project-linker";
 import type {
   ClassDeclaration,
   ClassMethodDeclaration,
