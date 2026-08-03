@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import { access, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -35,16 +36,11 @@ interface FailureObservation {
 
 async function waitForFile(path: string): Promise<void> {
   const deadline = Date.now() + 5_000;
-  for (;;) {
-    try {
-      await access(path);
-      return;
-    } catch {
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for ${path}`);
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  while (!existsSync(path)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for ${path}`);
     }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }
 }
 

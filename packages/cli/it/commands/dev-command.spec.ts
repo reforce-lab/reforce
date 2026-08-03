@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { access, cp, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { existsSync } from "node:fs";
+import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createTemporaryProject,
   type ProjectTree,
+  readProjectTree,
   resolveBunExecutable,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
@@ -167,16 +169,7 @@ const updatedHmrApplicationSource = initialHmrApplicationSource.replace(
   'const generation = "two";',
 );
 
-async function exists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function waitUntil(predicate: () => Promise<boolean>): Promise<void> {
+async function waitUntil(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 20_000;
   while (!(await predicate())) {
     if (Date.now() >= deadline) {
@@ -197,29 +190,24 @@ async function readEvents(projectRoot: string): Promise<readonly string[]> {
   }
 }
 
-async function snapshotFiles(root: string, directory = root): Promise<Map<string, Buffer>> {
-  const snapshot = new Map<string, Buffer>();
-  const entries = await readdir(directory, { withFileTypes: true });
-  entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
-  for (const entry of entries) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) {
-      for (const [nestedPath, bytes] of await snapshotFiles(root, path)) {
-        snapshot.set(nestedPath, bytes);
-      }
-      continue;
-    }
-    snapshot.set(relative(root, path).split(sep).join("/"), await readFile(path));
-  }
-  return snapshot;
+async function snapshotFiles(root: string): Promise<Map<string, Uint8Array>> {
+  const entries = await readProjectTree(root);
+  return new Map(entries.map((entry) => [entry.path, entry.bytes]));
 }
 
-function changedFiles(before: ReadonlyMap<string, Buffer>, after: ReadonlyMap<string, Buffer>) {
+function changedFiles(
+  before: ReadonlyMap<string, Uint8Array>,
+  after: ReadonlyMap<string, Uint8Array>,
+) {
   const paths = [...new Set([...before.keys(), ...after.keys()])].sort();
   return paths.filter((path) => {
     const beforeBytes = before.get(path);
     const afterBytes = after.get(path);
-    return beforeBytes === undefined || afterBytes === undefined || !beforeBytes.equals(afterBytes);
+    return (
+      beforeBytes === undefined ||
+      afterBytes === undefined ||
+      Buffer.compare(beforeBytes, afterBytes) !== 0
+    );
   });
 }
 
@@ -231,7 +219,7 @@ async function runScenario(input: {
   const subprocess = spawnDevCommandHarness([input.cwd, input.projectDirectory]);
   processes.push(subprocess);
   try {
-    await waitUntil(() => exists(join(input.projectRoot, "started.txt")));
+    await waitUntil(() => existsSync(join(input.projectRoot, "started.txt")));
   } catch {
     subprocess.kill();
     const failed = await subprocess;
@@ -250,8 +238,8 @@ async function runScenario(input: {
       `Development command exited with ${String(result.exitCode)}. stdout=${String(result.stdout)} stderr=${String(result.stderr)}`,
     );
   }
-  expect(await exists(join(input.projectRoot, "closed.txt"))).toBe(true);
-  expect(await exists(join(input.projectRoot, ".reforce", "lease", "writer", "record.json"))).toBe(
+  expect(existsSync(join(input.projectRoot, "closed.txt"))).toBe(true);
+  expect(existsSync(join(input.projectRoot, ".reforce", "lease", "writer", "record.json"))).toBe(
     false,
   );
 }
@@ -271,7 +259,7 @@ describe("development command", () => {
     const project = await createApplicationProject(applicationProjectTree());
     const subprocess = spawnDevCommandHarness([project.projectRoot, ".", "", "fail-release"]);
     processes.push(subprocess);
-    await waitUntil(() => exists(join(project.projectRoot, "started.txt")));
+    await waitUntil(() => existsSync(join(project.projectRoot, "started.txt")));
 
     await requestGracefulShutdown(subprocess);
     const result = await subprocess;
@@ -281,7 +269,7 @@ describe("development command", () => {
     expect(result.stderr).toContain("[SHUTDOWN_FAILED]");
     expect(result.stderr).not.toContain("CLI_USAGE_ERROR");
     expect(
-      await exists(join(project.projectRoot, ".reforce", "lease", "writer", "record.json")),
+      existsSync(join(project.projectRoot, ".reforce", "lease", "writer", "record.json")),
     ).toBe(false);
   }, 30_000);
 
@@ -298,7 +286,7 @@ describe("development command", () => {
       projectRoot: applicationRoot,
     });
 
-    expect(await exists(join(project.projectRoot, ".reforce"))).toBe(false);
+    expect(existsSync(join(project.projectRoot, ".reforce"))).toBe(false);
   }, 30_000);
 
   test("applies a real Bun ESM hot update only after the previous Context closes", async () => {
