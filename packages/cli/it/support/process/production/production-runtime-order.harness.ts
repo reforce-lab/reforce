@@ -1,5 +1,6 @@
 import { runProductionApplication } from "@/production-runtime";
 import type { Reporter } from "@/reporter";
+import { observeShutdownSignals } from "../signal-observer";
 
 const flushContinuation = Promise.withResolvers<void>();
 const onMessage = (message: unknown) => {
@@ -21,14 +22,7 @@ const onMessage = (message: unknown) => {
   }
 };
 process.on("message", onMessage);
-const signalNames: NodeJS.Signals[] =
-  process.platform === "win32" ? ["SIGINT", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
-const onSignal = (signal: NodeJS.Signals) => {
-  process.send?.({ type: "harness:signal-observed", signal });
-};
-for (const signal of signalNames) {
-  process.on(signal, onSignal);
-}
+const stopObservingSignals = observeShutdownSignals();
 
 const reporter: Reporter = {
   report() {},
@@ -54,9 +48,7 @@ await runProductionApplication(
   { reporter },
 );
 process.off("message", onMessage);
-for (const signal of signalNames) {
-  process.off(signal, onSignal);
-}
+stopObservingSignals();
 process.send?.({ type: "harness:returned" });
 await new Promise<void>((resolve) => setImmediate(resolve));
 if (process.connected) {

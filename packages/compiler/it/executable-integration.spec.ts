@@ -42,23 +42,12 @@ async function writeGeneratedFiles(
   );
 }
 
-test("typechecks and executes the generated application definition", async () => {
-  const input = await compiledApplication();
+// 两个用例只在入口源码和期望 stdout 上不同：先把生成物 typecheck + bundle 起来，
+// 跑通了才谈得上断言运行结果，所以前置断言留在这里（Issue #35）。
+async function typecheckBuildAndRun(projectRoot: string, entryLines: readonly string[]) {
+  await writeFile(path.join(projectRoot, "integration.ts"), [...entryLines, ""].join("\n"));
   await writeFile(
-    path.join(input.projectRoot, "integration.ts"),
-    [
-      'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
-      'import { GreetingService } from "./src/greeting.js";',
-      "",
-      "const context = await bootstrap();",
-      "const greeting = context.get(GreetingService).greet();",
-      "await context.close();",
-      "console.log(JSON.stringify({ greeting, events: GreetingService.events }));",
-      "",
-    ].join("\n"),
-  );
-  await writeFile(
-    path.join(input.projectRoot, "tsconfig.integration.json"),
+    path.join(projectRoot, "tsconfig.integration.json"),
     `${JSON.stringify(
       {
         extends: "./tsconfig.json",
@@ -70,78 +59,50 @@ test("typechecks and executes the generated application definition", async () =>
     )}\n`,
   );
   const typescriptPackage = fileURLToPath(import.meta.resolve("typescript/package.json"));
-
   const typecheck = await runCommand(
     process.execPath,
     [path.join(path.dirname(typescriptPackage), "bin", "tsc"), "-p", "tsconfig.integration.json"],
-    { cwd: input.projectRoot },
+    { cwd: projectRoot },
   );
   const build = await runCommand(
     process.execPath,
     ["build", "integration.ts", "--target=node", "--format=esm", "--outdir=dist"],
-    { cwd: input.projectRoot },
+    { cwd: projectRoot },
   );
-
   expect(typecheck.exitCode).toBe(0);
   expect(typecheck.stderr).toBe("");
   expect(build.exitCode).toBe(0);
-  const execution = await runCommand(
-    bunExecutable,
-    [path.join(input.projectRoot, "dist", "integration.js")],
-    { cwd: input.projectRoot },
-  );
+  return await runCommand(bunExecutable, [path.join(projectRoot, "dist", "integration.js")], {
+    cwd: projectRoot,
+  });
+}
+
+test("typechecks and executes the generated application definition", async () => {
+  const input = await compiledApplication();
+  const execution = await typecheckBuildAndRun(input.projectRoot, [
+    'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
+    'import { GreetingService } from "./src/greeting.js";',
+    "",
+    "const context = await bootstrap();",
+    "const greeting = context.get(GreetingService).greet();",
+    "await context.close();",
+    "console.log(JSON.stringify({ greeting, events: GreetingService.events }));",
+  ]);
   expect(execution.exitCode).toBe(0);
   expect(execution.stdout).toBe(JSON.stringify({ greeting: "hello", events: ["start", "close"] }));
 });
 
 test("executes generated Primary, qualified, and unique provider selections", async () => {
   const input = await compiledApplication({ qualifiedSelection: true });
-  await writeFile(
-    path.join(input.projectRoot, "integration.ts"),
-    [
-      'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
-      'import { QualifiedSelectionProbe } from "./src/qualified-selection.js";',
-      "",
-      "const context = await bootstrap();",
-      "const values = context.get(QualifiedSelectionProbe).values();",
-      "await context.close();",
-      "console.log(JSON.stringify(values));",
-      "",
-    ].join("\n"),
-  );
-  await writeFile(
-    path.join(input.projectRoot, "tsconfig.integration.json"),
-    `${JSON.stringify(
-      {
-        extends: "./tsconfig.json",
-        compilerOptions: { noEmit: true },
-        include: ["src", ".reforce/generated/**/*.ts", "integration.ts"],
-      },
-      undefined,
-      2,
-    )}\n`,
-  );
-  const typescriptPackage = fileURLToPath(import.meta.resolve("typescript/package.json"));
-
-  const typecheck = await runCommand(
-    process.execPath,
-    [path.join(path.dirname(typescriptPackage), "bin", "tsc"), "-p", "tsconfig.integration.json"],
-    { cwd: input.projectRoot },
-  );
-  const build = await runCommand(
-    process.execPath,
-    ["build", "integration.ts", "--target=node", "--format=esm", "--outdir=dist"],
-    { cwd: input.projectRoot },
-  );
-
-  expect(typecheck.exitCode).toBe(0);
-  expect(typecheck.stderr).toBe("");
-  expect(build.exitCode).toBe(0);
-  const execution = await runCommand(
-    bunExecutable,
-    [path.join(input.projectRoot, "dist", "integration.js")],
-    { cwd: input.projectRoot },
-  );
+  const execution = await typecheckBuildAndRun(input.projectRoot, [
+    'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
+    'import { QualifiedSelectionProbe } from "./src/qualified-selection.js";',
+    "",
+    "const context = await bootstrap();",
+    "const values = context.get(QualifiedSelectionProbe).values();",
+    "await context.close();",
+    "console.log(JSON.stringify(values));",
+  ]);
   expect(execution.exitCode).toBe(0);
   expect(execution.stdout).toBe(JSON.stringify(["preferred", "fallback", "unique"]));
 });

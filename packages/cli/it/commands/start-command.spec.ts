@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { runStartCommand } from "@/commands/start";
 import { createChildLeaseParticipant } from "@/project/lease-endpoint";
-import type { CliReporterEvent, Reporter } from "@/reporter";
+import { recordingReporter } from "../support/recording-reporter";
 
 const projects: TemporaryProject[] = [];
 
@@ -12,28 +12,15 @@ afterEach(async () => {
   await Promise.all(projects.splice(0).map((project) => project.cleanup()));
 });
 
-function recordingReporter(onFlush?: () => void): {
-  readonly events: CliReporterEvent[];
-  readonly flushCount: number;
-  readonly reporter: Reporter;
-} {
-  const events: CliReporterEvent[] = [];
-  let flushCount = 0;
-  return {
-    events,
-    get flushCount() {
-      return flushCount;
-    },
-    reporter: {
-      report(event) {
-        events.push(event);
-      },
-      async flush() {
-        onFlush?.();
-        flushCount += 1;
-      },
-    },
-  };
+// 三个用例只在「坏掉的产物长什么样」上不同，start 的调用方式和 reporter 装配完全一样。
+async function startOn(project: TemporaryProject) {
+  const output = recordingReporter();
+  const exitCode = await runStartCommand({
+    cwd: project.projectRoot,
+    projectDirectory: ".",
+    reporter: output.reporter,
+  });
+  return { exitCode, output };
 }
 
 test("start rejects an artifact while dist transaction metadata remains", async () => {
@@ -42,13 +29,7 @@ test("start rejects an artifact while dist transaction metadata remains", async 
     dist: { "main.mjs": "export {};\n" },
   });
   projects.push(project);
-  const output = recordingReporter();
-
-  const exitCode = await runStartCommand({
-    cwd: project.projectRoot,
-    projectDirectory: ".",
-    reporter: output.reporter,
-  });
+  const { exitCode, output } = await startOn(project);
 
   expect(exitCode).toBe(1);
   expect(output.events).toHaveLength(1);
@@ -61,13 +42,7 @@ test("start rejects transaction output even when its token has an invalid shape"
     dist: { "main.mjs": "export {};\n" },
   });
   projects.push(project);
-  const output = recordingReporter();
-
-  const exitCode = await runStartCommand({
-    cwd: project.projectRoot,
-    projectDirectory: ".",
-    reporter: output.reporter,
-  });
+  const { exitCode, output } = await startOn(project);
 
   expect(exitCode).toBe(1);
   expect(output.events).toHaveLength(1);
@@ -87,13 +62,7 @@ test("start rejects symbolic links anywhere in the production artifact", async (
     join(project.projectRoot, "dist", "linked"),
     process.platform === "win32" ? "junction" : "dir",
   );
-  const output = recordingReporter();
-
-  const exitCode = await runStartCommand({
-    cwd: project.projectRoot,
-    projectDirectory: ".",
-    reporter: output.reporter,
-  });
+  const { exitCode, output } = await startOn(project);
 
   expect(exitCode).toBe(1);
   expect(output.events).toHaveLength(1);

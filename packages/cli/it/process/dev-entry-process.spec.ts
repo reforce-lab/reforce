@@ -8,6 +8,12 @@ import {
   isDevChildReadyMessage,
   writerLeaseTokenEnvironmentVariable,
 } from "@/dev-ipc";
+import {
+  createSubprocessRegistry,
+  createTimeoutGuard,
+  observeTypedMessages,
+  send,
+} from "../support/process/observed-subprocess";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-entry.harness.ts", import.meta.url),
@@ -19,51 +25,13 @@ const handshakeHarnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-runtime-handshake.harness.ts", import.meta.url),
 );
 const windowsSignalHarnessPath = fileURLToPath(
-  new URL("../support/process/windows-signal.harness.ts", import.meta.url),
+  import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
 const bunExecutable = await resolveBunExecutable();
-const subprocesses: Array<{
-  readonly child: ChildProcess;
-  readonly completion: Promise<number | null>;
-}> = [];
+const subprocesses = createSubprocessRegistry();
+const withTimeout = createTimeoutGuard(5_000);
 
-afterEach(async () => {
-  for (const subprocess of subprocesses.splice(0).reverse()) {
-    subprocess.child.kill();
-    await subprocess.completion.catch(() => undefined);
-  }
-});
-
-async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(message)), 5_000);
-      }),
-    ]);
-  } finally {
-    if (timeout !== undefined) {
-      clearTimeout(timeout);
-    }
-  }
-}
-
-async function send(child: ChildProcess, message: object): Promise<void> {
-  if (child.send === undefined) {
-    throw new Error("Development harness has no IPC channel.");
-  }
-  await new Promise<void>((resolve, reject) => {
-    child.send?.(message, (error) => {
-      if (error !== null) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
-}
+afterEach(subprocesses.killAll);
 
 interface ObservedDevelopmentHarness {
   readonly child: ChildProcess;
@@ -92,8 +60,6 @@ function spawnObservedDevelopmentHarness(
   const closed = Promise.withResolvers<void>();
   const shutdownAcknowledged = Promise.withResolvers<void>();
   const signalObserved = Promise.withResolvers<void>();
-  const barriers = new Map<string, () => void>();
-  const counts = new Map<string, number>();
   const child = spawn(
     bunExecutable,
     [
@@ -114,38 +80,25 @@ function spawnObservedDevelopmentHarness(
     child.once("error", reject);
     child.once("exit", resolve);
   });
-  const messageHandlers = new Map<string, (message: object) => void>([
-    ["harness:bootstrap", () => bootstrap.resolve()],
-    ["harness:closed", () => closed.resolve()],
-    ["reforce:shutdown-ack", () => shutdownAcknowledged.resolve()],
-    ["harness:signal-observed", () => signalObserved.resolve()],
-    [
-      "harness:barrier-ack",
-      (message) => {
-        const requestId = Reflect.get(message, "requestId");
-        if (typeof requestId === "string") {
-          barriers.get(requestId)?.();
-          barriers.delete(requestId);
-        }
-      },
-    ],
-  ]);
-  child.on("message", (message: unknown) => {
-    if (isDevChildLeaseParticipantMessage(message)) {
+  const observer = observeTypedMessages({
+    child,
+    withTimeout,
+    barrierTimeoutMessage: "Development harness barrier timed out.",
+    consume(message) {
+      if (!isDevChildLeaseParticipantMessage(message)) {
+        return false;
+      }
       participant.resolve(message.participant);
-      return;
-    }
-    if (typeof message !== "object" || message === null) {
-      return;
-    }
-    const type = Reflect.get(message, "type");
-    if (typeof type !== "string") {
-      return;
-    }
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-    messageHandlers.get(type)?.(message);
+      return true;
+    },
+    handlers: new Map([
+      ["harness:bootstrap", () => bootstrap.resolve()],
+      ["harness:closed", () => closed.resolve()],
+      ["reforce:shutdown-ack", () => shutdownAcknowledged.resolve()],
+      ["harness:signal-observed", () => signalObserved.resolve()],
+    ]),
   });
-  subprocesses.push({ child, completion });
+  subprocesses.track(child, completion);
   return {
     child,
     completion,
@@ -154,22 +107,9 @@ function spawnObservedDevelopmentHarness(
     closed: closed.promise,
     shutdownAcknowledged: shutdownAcknowledged.promise,
     signalObserved: signalObserved.promise,
-    messageCount: (type) => counts.get(type) ?? 0,
-    async barrier() {
-      const requestId = randomUUID();
-      const acknowledgement = Promise.withResolvers<void>();
-      barriers.set(requestId, acknowledgement.resolve);
-      await send(child, { type: "harness:barrier", requestId });
-      await withTimeout(acknowledgement.promise, "Development harness barrier timed out.");
-    },
+    messageCount: observer.messageCount,
+    barrier: observer.barrier,
   };
-}
-
-function forgetSubprocess(child: ChildProcess): void {
-  const index = subprocesses.findIndex((subprocess) => subprocess.child === child);
-  if (index >= 0) {
-    subprocesses.splice(index, 1);
-  }
 }
 
 function parseObservation(output: string): Record<string, unknown> {
@@ -321,7 +261,7 @@ test("development queues parent IPC shutdown while the lease acknowledgement is 
     "Development harness did not acknowledge queued IPC shutdown.",
   );
   expect(await withTimeout(harness.completion, "Development harness did not exit.")).toBe(0);
-  forgetSubprocess(harness.child);
+  subprocesses.forget(harness.child);
 
   expect(harness.messageCount("harness:closed")).toBe(1);
   expect(harness.messageCount("reforce:dev-ready")).toBe(0);
@@ -349,7 +289,7 @@ test("development queues a platform signal while the lease acknowledgement is de
   await withTimeout(harness.bootstrap, "Development harness did not bootstrap.");
   await withTimeout(harness.closed, "Development harness did not close after queued SIGINT.");
   expect(await withTimeout(harness.completion, "Development harness did not exit.")).toBe(0);
-  forgetSubprocess(harness.child);
+  subprocesses.forget(harness.child);
 
   expect(harness.messageCount("harness:closed")).toBe(1);
   expect(harness.messageCount("harness:signal-observed")).toBe(1);

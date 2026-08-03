@@ -23,7 +23,7 @@ const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const windowsSignalFixture = fileURLToPath(
-  new URL("../support/windows-signal.harness.ts", import.meta.url),
+  import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
 const commandTimeout = 120_000;
 const bunExecutable = await resolveBunExecutable();
@@ -479,6 +479,32 @@ function spawnStartCommand(input: {
   });
 }
 
+// leaf 选择的核心断言：只有被选中的 app 产出 dist 与 generated，monorepo 根和 sibling app 一片空白。
+async function expectLeafOnlyBuild(
+  monorepoRoot: string,
+  builtApplication: string,
+  untouchedApplication: string,
+): Promise<void> {
+  const appRoot = join(monorepoRoot, "apps", builtApplication);
+  const untouchedRoot = join(monorepoRoot, "apps", untouchedApplication);
+  expect(await pathExists(join(appRoot, "dist", "main.mjs"))).toBe(true);
+  expect(await pathExists(join(appRoot, ".reforce", "generated", "beans.ts"))).toBe(true);
+  expect(await pathExists(join(monorepoRoot, "dist"))).toBe(false);
+  expect(await pathExists(join(monorepoRoot, ".reforce"))).toBe(false);
+  expect(await pathExists(join(untouchedRoot, ".reforce"))).toBe(false);
+  expect(await pathExists(join(untouchedRoot, "dist"))).toBe(false);
+}
+
+// ready/closed 标记文件各自只应有一行：多写一行就说明 Context 被关了不止一次。
+async function expectGracefulClose(
+  started: StartedApplication,
+  result: ProcessOutcome,
+): Promise<void> {
+  expect(result.exitCode, processFailure(started, result)).toBe(0);
+  expect(await readFile(started.readyPath, "utf8")).toBe(`${started.marker}:ready\n`);
+  expect(await readFile(started.closedPath, "utf8")).toBe(`${started.marker}:closed\n`);
+}
+
 async function startApplication(
   projectRoot: string,
   marker = projectRoot,
@@ -783,8 +809,6 @@ describe.serial("built Reforce CLI", () => {
     async () => {
       const monorepo = await createMonorepoProject();
       try {
-        const appRoot = join(monorepo.projectRoot, "apps", "api service");
-
         const result = await runCommand(
           bunExecutable,
           [cliEntry, "build", "--project", join("apps", "api service")],
@@ -792,16 +816,7 @@ describe.serial("built Reforce CLI", () => {
         );
 
         expect(result.exitCode, commandFailure(result)).toBe(0);
-        expect(await pathExists(join(appRoot, "dist", "main.mjs"))).toBe(true);
-        expect(await pathExists(join(appRoot, ".reforce", "generated", "beans.ts"))).toBe(true);
-        expect(await pathExists(join(monorepo.projectRoot, "dist"))).toBe(false);
-        expect(await pathExists(join(monorepo.projectRoot, ".reforce"))).toBe(false);
-        expect(
-          await pathExists(join(monorepo.projectRoot, "apps", "admin service", ".reforce")),
-        ).toBe(false);
-        expect(await pathExists(join(monorepo.projectRoot, "apps", "admin service", "dist"))).toBe(
-          false,
-        );
+        await expectLeafOnlyBuild(monorepo.projectRoot, "api service", "admin service");
       } finally {
         await monorepo.cleanup();
       }
@@ -814,8 +829,6 @@ describe.serial("built Reforce CLI", () => {
     async () => {
       const monorepo = await createMonorepoProject();
       try {
-        const appRoot = join(monorepo.projectRoot, "apps", "admin service");
-
         const result = await runCommand(
           bunExecutable,
           [
@@ -830,16 +843,7 @@ describe.serial("built Reforce CLI", () => {
         );
 
         expect(result.exitCode, commandFailure(result)).toBe(0);
-        expect(await pathExists(join(appRoot, "dist", "main.mjs"))).toBe(true);
-        expect(await pathExists(join(appRoot, ".reforce", "generated", "beans.ts"))).toBe(true);
-        expect(await pathExists(join(monorepo.projectRoot, "dist"))).toBe(false);
-        expect(await pathExists(join(monorepo.projectRoot, ".reforce"))).toBe(false);
-        expect(
-          await pathExists(join(monorepo.projectRoot, "apps", "api service", ".reforce")),
-        ).toBe(false);
-        expect(await pathExists(join(monorepo.projectRoot, "apps", "api service", "dist"))).toBe(
-          false,
-        );
+        await expectLeafOnlyBuild(monorepo.projectRoot, "admin service", "api service");
       } finally {
         await monorepo.cleanup();
       }
@@ -1271,9 +1275,7 @@ describe.serial("built Reforce CLI", () => {
         const result = await shutdownWithInjectedSignalEvent(started, "SIGINT");
         stopped = true;
 
-        expect(result.exitCode, processFailure(started, result)).toBe(0);
-        expect(await readFile(started.readyPath, "utf8")).toBe(`${marker}:ready\n`);
-        expect(await readFile(started.closedPath, "utf8")).toBe(`${marker}:closed\n`);
+        await expectGracefulClose(started, result);
       } finally {
         if (!stopped) {
           await forceCleanup(started);
@@ -1301,9 +1303,7 @@ describe.serial("built Reforce CLI", () => {
           const result = await shutdownWithSignal(started, signal);
           stopped = true;
 
-          expect(result.exitCode, processFailure(started, result)).toBe(0);
-          expect(await readFile(started.readyPath, "utf8")).toBe(`${marker}:ready\n`);
-          expect(await readFile(started.closedPath, "utf8")).toBe(`${marker}:closed\n`);
+          await expectGracefulClose(started, result);
         } finally {
           if (!stopped) {
             await forceCleanup(started);
