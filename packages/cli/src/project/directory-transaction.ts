@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { isObject } from "radashi";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
 import { ProjectBusyError, type ProjectLease } from "@/project/lease";
@@ -131,10 +131,6 @@ function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-function toPosixPath(path: string): string {
-  return path.split(sep).join("/");
-}
-
 function assertRelativeFilePath(path: string): void {
   const segments = path.split("/");
   if (
@@ -221,7 +217,7 @@ async function collectTreeEntries(
       throw new Error(`Transaction trees only support ordinary files: ${absolutePath}`);
     }
     collected.push({
-      path: toPosixPath(relative(root, absolutePath)),
+      path: toPortablePath(relative(root, absolutePath)),
       bytes: await readFileClosed(absolutePath),
     });
   }
