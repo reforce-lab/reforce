@@ -406,6 +406,82 @@ test("classifies unsupported syntax for Compiler diagnostics", () => {
   ]);
 });
 
+test("lowers a class declared inside a function body as non-top-level", () => {
+  const unit = parseFile("function build(): void { @Injectable() class Hidden {} }");
+
+  expect(unit.classes.map((declaration) => [declaration.name, declaration.topLevel])).toEqual([
+    ["Hidden", false],
+  ]);
+});
+
+test("lowers a class declared inside a method body as non-top-level", () => {
+  const unit = parseFile(
+    ["export class Outer {", "  build(): void { @Injectable() class Inner {} }", "}"].join("\n"),
+  );
+
+  expect(unit.classes.map((declaration) => [declaration.name, declaration.topLevel])).toEqual([
+    ["Outer", true],
+    ["Inner", false],
+  ]);
+});
+
+test("lowers a defineBean declared inside an arrow function body as non-top-level", () => {
+  const unit = parseFile(
+    [
+      "const build = (): void => {",
+      "  const hidden = defineBean<Resource>({ create: () => new Resource() });",
+      "};",
+    ].join("\n"),
+  );
+
+  expect(unit.beanFactories.map((declaration) => [declaration.name, declaration.topLevel])).toEqual(
+    [["hidden", false]],
+  );
+});
+
+test("lowers classes declared in every branch of a try statement as non-top-level", () => {
+  const unit = parseFile(
+    [
+      "try { class Attempted {} }",
+      "catch { class Caught {} }",
+      "finally { class Finalized {} }",
+    ].join("\n"),
+  );
+
+  expect(unit.classes.map((declaration) => [declaration.name, declaration.topLevel])).toEqual([
+    ["Attempted", false],
+    ["Caught", false],
+    ["Finalized", false],
+  ]);
+});
+
+test("keeps an ambient module body out of the lowered unit", () => {
+  const unit = parseFile(
+    'declare module "untyped-lib" { export class Widget {} export interface Port {} }',
+    "d.ts",
+  );
+
+  expect({
+    classes: unit.classes,
+    interfaces: unit.interfaces,
+    unsupported: unit.unsupportedDeclarations.map((declaration) => declaration.declarationKind),
+  }).toEqual({ classes: [], interfaces: [], unsupported: ["module-augmentation"] });
+});
+
+test("lowers declarations inside a dotted namespace as non-top-level", () => {
+  const unit = parseFile("export namespace Outer.Inner { export class Service {} }");
+
+  expect(unit.classes.map((declaration) => [declaration.name, declaration.topLevel])).toEqual([
+    ["Service", false],
+  ]);
+});
+
+test("does not record a dotted namespace as a module augmentation", () => {
+  const unit = parseFile("export namespace Outer.Inner { export class Service {} }");
+
+  expect(unit.unsupportedDeclarations).toEqual([]);
+});
+
 test("rejects a source file when syntax is incomplete", () => {
   const input = {
     file: canonicalFileId("src/broken.ts"),

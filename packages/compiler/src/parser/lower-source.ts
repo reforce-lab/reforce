@@ -79,6 +79,7 @@ interface Collector {
 // 别名组由 parser 的 AST 定义生成，parser 新增方法节点类型时这里自动跟随；手写成员列表会漂移
 // （Issue #91）。同理，模块声明的判定用 `is.ModuleDeclaration` 而非手写 type 列表。
 type ClassMethod = AliasMap["Method"];
+type FunctionNode = AliasMap["Function"];
 type UnsupportedDeclaration = NodeOfType<
   | "FunctionDeclaration"
   | "TSDeclareFunction"
@@ -353,6 +354,9 @@ function lowerClass(
       context,
     ),
   });
+  for (const method of methods) {
+    visitFunctionBody(method.value, collector, context);
+  }
 }
 
 function lowerInterface(
@@ -440,19 +444,26 @@ function lowerNamespace(
   collector: Collector,
   context: LoweringContext,
 ): void {
-  const name = identifierTextOf(node.id);
-  if (name === undefined) {
+  if (node.id.type === "Literal") {
+    // `declare module "pkg" { … }` 描述的是另一个模块的形状。在这里 lower 它的 body 会把那些声明登记到本
+    // 文件名下（project-linker 按 source.fileId 组织 localSymbols），于是 compiler 会链接到被增强模块
+    // 根本没导出的名字。让它停在 unsupported 上，用户至少拿到可操作的 TYPE_LINK_FAILED（Issue #113）。
     lowerUnsupported(node, "module-augmentation", topLevel, mode, collector, context);
     return;
   }
-  collector.namespaces.push({
-    kind: "namespace",
-    topLevel,
-    name,
-    export: declarationExportOf(node.id, mode, context),
-    exportedMembers: namespaceMembersOf(node, context),
-    span: sourceKeywordSpan(node, node.id, "namespace", context),
-  });
+  // 只有点号命名空间（`namespace A.B { … }`，id 是 TSQualifiedName）没有单一承载名。它不是 augmentation，
+  // body 就是普通的文件内代码，照 `namespace A { namespace B { … } }` 的方式遍历（Issue #113）。
+  const name = identifierTextOf(node.id);
+  if (name !== undefined) {
+    collector.namespaces.push({
+      kind: "namespace",
+      topLevel,
+      name,
+      export: declarationExportOf(node.id, mode, context),
+      exportedMembers: namespaceMembersOf(node, context),
+      span: sourceKeywordSpan(node, node.id, "namespace", context),
+    });
+  }
   for (const statement of node.body?.body ?? []) {
     visitStatement(statement, false, { kind: "none" }, collector, context);
   }
@@ -646,6 +657,9 @@ function visitDefaultDeclaration(
   if (isUnsupportedDeclaration(declaration)) {
     lowerUnsupported(declaration, unsupportedKind(declaration), topLevel, mode, collector, context);
   }
+  if (is.Function(declaration)) {
+    visitFunctionBody(declaration, collector, context);
+  }
 }
 
 function visitModuleDeclaration(
@@ -718,13 +732,19 @@ function visitStatement(
     case "VariableDeclaration":
       for (const declarator of node.declarations) {
         lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
+        if (is.Function(declarator.init)) {
+          visitFunctionBody(declarator.init, collector, context);
+        }
       }
       return;
     case "TSTypeAliasDeclaration":
     case "TSEnumDeclaration":
+      lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
+      return;
     case "FunctionDeclaration":
     case "TSDeclareFunction":
       lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
+      visitFunctionBody(node, collector, context);
       return;
     case "TSImportEqualsDeclaration":
       // `import Alias = require(...)` is recorded both as an unsupported import and as an
@@ -735,6 +755,24 @@ function visitStatement(
     default:
       visitNestedStatements(node, collector, context);
       return;
+  }
+}
+
+// 函数体里的声明永远不可能是 provider，但对它保持沉默就复刻了 Issue #54 要根除的静默丢弃：用户在注入点
+// 拿到 MISSING_BEAN，而不是在放错位置的声明处拿到 INVALID_DEFINE_BEAN。照非顶层 lower 下来，让分析层去
+// 点名真正的错误（Issue #113）。
+function visitFunctionBody(
+  node: FunctionNode,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  const body = node.body;
+  // 重载签名与 `declare function` 没有 body；箭头函数的表达式体里没有声明位置。
+  if (body?.type !== "BlockStatement") {
+    return;
+  }
+  for (const statement of body.body) {
+    visitStatement(statement, false, { kind: "none" }, collector, context);
   }
 }
 
