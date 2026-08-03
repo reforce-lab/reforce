@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# 分支保护是 strict: true，main 每前进一次所有未合分支都要 rebase 重推，旧 run 不取消就会同时
+# 挂着好几轮抢 windows 名额。只对 PR 取消：push 到 main 的 run 是该 commit 唯一的验证记录，
+# 取消它会让某个 main commit 永久失去证据（Issue #75）。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # 纯 .md 变更跳过三平台 verify（Issue #43）。verify 是 required check，
   # 不能用 workflow 级 paths-ignore：被过滤掉的 workflow 不上报 check，
@@ -12,6 +19,7 @@ jobs:
   # 上报，分支保护视同通过。
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -38,6 +46,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    # 正常一轮 3 分钟（ubuntu ~55s / macos ~60s / windows 2m38s–3m23s）；冷缓存留足余量后仍远
+    # 小于 GitHub 默认的 6 小时。挂死的测试必须快速失败，而不是把 runner 占一上午（Issue #75）。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -120,6 +131,7 @@ jobs:
   commitlint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
