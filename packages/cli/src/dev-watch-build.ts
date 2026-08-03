@@ -4,10 +4,13 @@ import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
 import type { ResolvedProject } from "@/compiler-types";
 import { compareUtf16CodeUnits } from "@/determinism";
 import { createDevBuildId, type DevBuildAsset } from "@/dev-build-id";
-import type { DevWatchBuild } from "@/dev-command";
 import type { DevCompilerGate, DevCompilerGateResult } from "@/dev-compiler-gate";
 import type { DevCompilation } from "@/dev-watch-coordinator";
 import { resolveCliSupportModule } from "@/runtime-module-path";
+
+export interface DevWatchBuild {
+  close(): Promise<void>;
+}
 
 export interface StartDevWatchBuildOptions {
   readonly project: ResolvedProject;
@@ -16,6 +19,11 @@ export interface StartDevWatchBuildOptions {
   readonly onInvalidated?: (path: string | null) => void;
 }
 
+// This filter and the watchOptions.ignored glob list below cover the same directory names on
+// purpose, but with different semantics: here only the top-level segment counts because gate
+// watch inputs are project-rooted, while ignored matches those names at any depth. The two
+// lists must stay coupled so that every gate watch input passing this filter is never matched
+// by ignored — otherwise the watcher would never report it and waitForRspackWatcher times out.
 function isProjectWatchFile(projectRoot: string, path: string): boolean {
   const pathFromRoot = relative(projectRoot, path);
   if (pathFromRoot === "" || pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`)) {
@@ -30,6 +38,11 @@ function isProjectWatchFile(projectRoot: string, path: string): boolean {
   );
 }
 
+// startDevWatchBuild must not resolve until the rspack watcher has registered every gate watch
+// input in fileTimeInfoEntries; that invariant guarantees a file modification made immediately
+// after startup triggers a rebuild instead of being silently missed. The watcher reports its
+// inputs asynchronously, so poll with setImmediate. Missing files never appear in the watcher,
+// so after 5s this fails hard rather than degrading into a watch session that loses changes.
 async function waitForRspackWatcher(
   plugin: ReforceCompilerGatePlugin,
   projectRoot: string,
@@ -55,7 +68,7 @@ async function waitForRspackWatcher(
   }
 }
 
-export function renderDevelopmentEntry(): string {
+function renderDevelopmentEntry(): string {
   return `import { createRspackHmrRuntime, runDevelopmentApplication } from "reforce:dev-runtime";
 
 const hot = import.meta.webpackHot;
@@ -233,20 +246,11 @@ class ReforceCompilerGatePlugin {
 export async function startDevWatchBuild(
   options: StartDevWatchBuildOptions,
 ): Promise<DevWatchBuild> {
-  const virtualEntryPath = join(
-    options.project.projectRoot,
-    ".reforce",
-    "virtual",
-    "dev-entry.mjs",
-  );
-  const devOutputRoot = join(options.project.projectRoot, ".reforce", "dev");
-  const generatedBootstrapPath = join(
-    options.project.projectRoot,
-    ".reforce",
-    "generated",
-    "bootstrap.ts",
-  );
-  const generatedBeansPath = join(options.project.projectRoot, ".reforce", "generated", "beans.ts");
+  const { projectRoot } = options.project;
+  const virtualEntryPath = join(projectRoot, ".reforce", "virtual", "dev-entry.mjs");
+  const devOutputRoot = join(projectRoot, ".reforce", "dev");
+  const generatedBootstrapPath = join(projectRoot, ".reforce", "generated", "bootstrap.ts");
+  const generatedBeansPath = join(projectRoot, ".reforce", "generated", "beans.ts");
   const devRuntimePath = resolveCliSupportModule({
     supportModuleName: "dev-runtime",
     invokedEntryPath: process.argv[1],
@@ -256,7 +260,7 @@ export async function startDevWatchBuild(
     generatedBeansPath,
   ]);
   const rsbuild = await createRsbuild({
-    cwd: options.project.projectRoot,
+    cwd: projectRoot,
     callerName: "reforce-cli",
     config: {
       mode: "development",
@@ -284,8 +288,6 @@ export async function startDevWatchBuild(
         rspack(config) {
           config.optimization ??= {};
           config.optimization.emitOnErrors = false;
-          config.watchOptions ??= {};
-          config.watchOptions.aggregateTimeout = 200;
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
@@ -316,7 +318,8 @@ export async function startDevWatchBuild(
             });
           }
           config.watchOptions = {
-            ...(config.watchOptions ?? {}),
+            ...config.watchOptions,
+            aggregateTimeout: 200,
             ignored: [
               "**/.reforce",
               "**/.reforce/**",
@@ -387,7 +390,7 @@ export async function startDevWatchBuild(
   try {
     watch = await rsbuild.build({ watch: true });
     devWatch = createDevWatchBuild(watch, gatePlugin.compiler);
-    await waitForRspackWatcher(gatePlugin, options.project.projectRoot);
+    await waitForRspackWatcher(gatePlugin, projectRoot);
   } catch (error) {
     try {
       await devWatch?.close();

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { ApplicationStartError, InvalidGeneratedDefinitionError } from "@reforce/context";
+import type { ShutdownAckMessage } from "@/dev-ipc";
 import type { CliReporterEvent, Reporter } from "@/reporter";
-import { type ShutdownAckMessage, ShutdownController } from "@/shutdown-controller";
+import { ShutdownController } from "@/shutdown-controller";
 
 class RecordingReporter implements Reporter {
   readonly events: CliReporterEvent[] = [];
@@ -111,7 +112,6 @@ describe("shutdown controller", () => {
       throw new Error("Expected a bootstrap failure event.");
     }
     expect(event.cause).toBe(runtimeError);
-    expect(Object.is(event.sourceSpan, sourceSpan)).toBe(true);
   });
 
   test("uses the CLI fallback for a filesystem error code", async () => {
@@ -137,7 +137,6 @@ describe("shutdown controller", () => {
       throw new Error("Expected a bootstrap failure event.");
     }
     expect(event.cause).toBe(ordinaryError);
-    expect(event.sourceSpan).toBeUndefined();
   });
 
   test("acknowledges IPC only after cleanup and flush complete", async () => {

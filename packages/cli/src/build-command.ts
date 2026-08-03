@@ -122,8 +122,9 @@ function reportUnexpectedFailure(reporter: Reporter, error: unknown): void {
 
 export async function runBuildCommand(
   options: BuildCommandOptions,
-  dependencies: BuildCommandDependencies = defaultDependencies,
+  dependencyOverrides: Partial<BuildCommandDependencies> = {},
 ): Promise<0 | 1> {
+  const dependencies = { ...defaultDependencies, ...dependencyOverrides };
   const compiler = createCompiler();
   let lease: ProjectLease | undefined;
   let exitCode: 0 | 1 = 1;
@@ -132,7 +133,7 @@ export async function runBuildCommand(
   try {
     const resolution = await compiler.resolveProject({
       projectDirectory: resolve(options.cwd, options.projectDirectory),
-      ...(options.tsconfigPath === undefined ? {} : { tsconfigPath: options.tsconfigPath }),
+      tsconfigPath: options.tsconfigPath,
     });
     if (resolution.status === "failure") {
       reportCompilerDiagnostics(options.reporter, "project", resolution.diagnostics);

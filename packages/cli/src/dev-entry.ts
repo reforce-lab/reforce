@@ -73,9 +73,3 @@ export class DevEntryController {
     });
   }
 }
-
-export async function runDevEntry(options: DevEntryOptions): Promise<ShutdownResult> {
-  const entry = new DevEntryController(options);
-  await entry.start();
-  return await entry.finished;
-}

@@ -8,15 +8,15 @@ import { ProjectBusyError, type ProjectLease } from "@/project-lease";
 import { renameWithWindowsRetry } from "@/windows-rename-retry";
 
 export type TransactionKind = "generated" | "dist";
-export type TransactionState = "prepared" | "backup-published" | "active-published" | "verified";
+type TransactionState = "prepared" | "backup-published" | "active-published" | "verified";
 
-export interface TransactionFileRecord {
+interface TransactionFileRecord {
   readonly path: string;
   readonly byteLength: number;
   readonly sha256: string;
 }
 
-export interface TransactionJournal {
+interface TransactionJournal {
   readonly schemaVersion: 1;
   readonly transactionToken: string;
   readonly leaseOwnerToken: string;
@@ -29,32 +29,32 @@ export interface TransactionJournal {
   readonly previousAggregateSha256: string | null;
 }
 
-export interface TransactionFaultContext {
+interface TransactionFaultContext {
   readonly kind: TransactionKind;
   readonly transactionToken: string;
   readonly path?: string;
 }
 
-export type TransactionFaultInjector = (
+type TransactionFaultInjector = (
   point: string,
   context: TransactionFaultContext,
 ) => void | Promise<void>;
 
 export interface GeneratedTransactionFile {
-  readonly path: "beans.ts" | "qualifiers.d.ts" | "manifest.json" | "bootstrap.ts";
+  readonly path: (typeof generatedFilePaths)[number];
   readonly content: string;
 }
 
-export interface PreparedDistTransaction {
+interface PreparedDistTransaction {
   readonly transactionToken: string;
   readonly stagingDirectory: string;
 }
 
-export interface CommitDistOptions extends PreparedDistTransaction {
+interface CommitDistOptions extends PreparedDistTransaction {
   readonly expectedFiles: readonly string[];
 }
 
-export interface DirectoryTransactionOptions {
+interface DirectoryTransactionOptions {
   readonly projectRoot: string;
   readonly lease: ProjectLease;
   readonly faultInjector?: TransactionFaultInjector;
@@ -74,6 +74,18 @@ interface TransactionPaths {
   readonly journalFile: string;
   readonly staging: string;
   readonly transactionRoot: string;
+}
+
+// On-disk layout per transaction kind. The directory names and the `<kind>.staging-` /
+// `<kind>.backup-` prefixes derived from it are disk protocol: recovery scans parent
+// directories for exactly these prefixes, so they must stay byte-for-byte stable.
+interface TransactionLayout {
+  // Directory holding the active tree and its staging/backup siblings.
+  readonly activeParent: string;
+  // Root under `.reforce/transactions` holding this kind's journal metadata.
+  readonly transactionRoot: string;
+  // Containment boundary removeTree enforces for this kind's owned paths.
+  readonly cleanupBoundary: string;
 }
 
 interface TreeSnapshot {
@@ -505,8 +517,7 @@ export class DirectoryTransactions {
       );
       if (
         sortedFiles.length !== generatedFilePaths.length ||
-        !generatedFilePaths.every((path, index) => sortedFiles[index]?.path === path) ||
-        new Set(sortedFiles.map((file) => file.path)).size !== generatedFilePaths.length
+        !generatedFilePaths.every((path, index) => sortedFiles[index]?.path === path)
       ) {
         throw new DirectoryTransactionError(
           "generated",
@@ -572,7 +583,7 @@ export class DirectoryTransactions {
     await this.mutex.run(async () => {
       await this.lease.assertCurrentWriter();
       for (const kind of ["generated", "dist"] as const) {
-        const transactionRoot = this.transactionRoot(kind);
+        const { transactionRoot } = this.layoutFor(kind);
         const entries = await readdir(transactionRoot, { withFileTypes: true });
         entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
         for (const entry of entries) {
@@ -595,9 +606,9 @@ export class DirectoryTransactions {
   }
 
   private async recoverUnjournaledStaging(kind: TransactionKind): Promise<void> {
-    const parent = kind === "generated" ? this.reforceRoot : this.projectRoot;
-    const prefix = kind === "generated" ? "generated.staging-" : "dist.staging-";
-    const entries = await readdir(parent, { withFileTypes: true });
+    const layout = this.layoutFor(kind);
+    const prefix = `${kind}.staging-`;
+    const entries = await readdir(layout.activeParent, { withFileTypes: true });
     entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
     for (const entry of entries) {
       if (!entry.name.startsWith(prefix)) {
@@ -664,6 +675,10 @@ export class DirectoryTransactions {
       previousFiles: previousSnapshot?.files ?? [],
       previousAggregateSha256: previousSnapshot?.aggregateSha256 ?? null,
     };
+    // The journal is always written BEFORE the disk mutation it announces: state advances
+    // prepared → backup-published → active-published → verified, and recoverJournal mirrors
+    // this order, resuming from the last persisted state after a crash. Reordering the
+    // write/rename pairs below breaks crash recovery.
     await this.writeJournal(paths, journal);
 
     if (hadActiveBefore) {
@@ -725,12 +740,19 @@ export class DirectoryTransactions {
       activeMatchesPrevious,
       backupMatchesPrevious,
     };
-    if (journal.state === "prepared") {
-      await this.recoverPrepared(journal, paths, validations);
-    } else if (journal.state === "backup-published") {
-      await this.recoverBackupPublished(journal, paths, validations);
-    } else {
-      await this.recoverPublished(journal, paths, validations);
+    switch (journal.state) {
+      case "prepared":
+        await this.recoverPrepared(journal, paths, validations);
+        break;
+      case "backup-published":
+        await this.recoverBackupPublished(journal, paths, validations);
+        break;
+      // Both post-publish states share one recovery path: the new generation is already
+      // active, or the backup has to be restored.
+      case "active-published":
+      case "verified":
+        await this.recoverPublished(journal, paths, validations);
+        break;
     }
     await this.validateRecoveredActive(journal, paths);
     await this.cleanupRecoveredTransaction(journal, paths);
@@ -936,6 +958,9 @@ export class DirectoryTransactions {
     return journal;
   }
 
+  // Durability protocol: the journal is serialized to a fresh temporary file, read back and
+  // verified byte-for-byte, then published with an atomic rename, so a crash can never leave
+  // a truncated or half-written journal.json behind.
   private async writeJournal(paths: TransactionPaths, journal: TransactionJournal): Promise<void> {
     await this.lease.assertCurrentWriter();
     await this.hit(
@@ -1001,6 +1026,10 @@ export class DirectoryTransactions {
   ): Promise<void> {
     await this.hit(`before:${label}-write`, kind, transactionToken, path);
     const handle = await open(path, "wx");
+    // Errors are accumulated with ??= instead of thrown immediately so that the
+    // before/after:*-close fault-injection points and handle.close() still run in this fixed
+    // order after a write failure; it/recovery evidence tests inject faults at exactly these
+    // points, and reordering them invalidates the recovery evidence.
     let operationError: unknown;
     try {
       await handle.writeFile(content);
@@ -1050,6 +1079,9 @@ export class DirectoryTransactions {
     ownershipRoot: string,
   ): Promise<void> {
     await this.lease.assertCurrentWriter();
+    // Safety boundary against deleting the wrong tree: target and boundary are both
+    // canonicalized (defeating symlink swaps between check and delete), and the target must
+    // realpath to exactly the path this transaction created for the token.
     const [canonicalTarget, canonicalBoundary] = await Promise.all([
       realpath(target),
       realpath(this.boundaryFor(kind, target)),
@@ -1099,33 +1131,25 @@ export class DirectoryTransactions {
   }
 
   private boundaryFor(kind: TransactionKind, target: string): string {
-    if (target.startsWith(join(this.reforceRoot, "transactions")) || kind === "generated") {
+    // Journal metadata lives under `.reforce/transactions` for both kinds, so a journal
+    // target is always contained by reforceRoot regardless of the kind's own boundary.
+    if (target.startsWith(join(this.reforceRoot, "transactions"))) {
       return this.reforceRoot;
     }
-    return this.projectRoot;
+    return this.layoutFor(kind).cleanupBoundary;
   }
 
   private paths(kind: TransactionKind, transactionToken: string): TransactionPaths {
     if (!/^[A-Za-z0-9-]+$/u.test(transactionToken)) {
       throw new DirectoryTransactionError(kind, "Transaction token has an invalid shape.");
     }
-    const transactionRoot = this.transactionRoot(kind);
-    const journalDirectory = join(transactionRoot, transactionToken);
-    if (kind === "generated") {
-      return {
-        active: join(this.reforceRoot, "generated"),
-        staging: join(this.reforceRoot, `generated.staging-${transactionToken}`),
-        backup: join(this.reforceRoot, `generated.backup-${transactionToken}`),
-        transactionRoot,
-        journalDirectory,
-        journalFile: join(journalDirectory, "journal.json"),
-      };
-    }
+    const layout = this.layoutFor(kind);
+    const journalDirectory = join(layout.transactionRoot, transactionToken);
     return {
-      active: join(this.projectRoot, "dist"),
-      staging: join(this.projectRoot, `dist.staging-${transactionToken}`),
-      backup: join(this.projectRoot, `dist.backup-${transactionToken}`),
-      transactionRoot,
+      active: join(layout.activeParent, kind),
+      staging: join(layout.activeParent, `${kind}.staging-${transactionToken}`),
+      backup: join(layout.activeParent, `${kind}.backup-${transactionToken}`),
+      transactionRoot: layout.transactionRoot,
       journalDirectory,
       journalFile: join(journalDirectory, "journal.json"),
     };
@@ -1144,7 +1168,20 @@ export class DirectoryTransactions {
     });
   }
 
-  private transactionRoot(kind: TransactionKind): string {
-    return kind === "generated" ? this.generatedTransactionRoot : this.distTransactionRoot;
+  private layoutFor(kind: TransactionKind): TransactionLayout {
+    switch (kind) {
+      case "generated":
+        return {
+          activeParent: this.reforceRoot,
+          transactionRoot: this.generatedTransactionRoot,
+          cleanupBoundary: this.reforceRoot,
+        };
+      case "dist":
+        return {
+          activeParent: this.projectRoot,
+          transactionRoot: this.distTransactionRoot,
+          cleanupBoundary: this.projectRoot,
+        };
+    }
   }
 }

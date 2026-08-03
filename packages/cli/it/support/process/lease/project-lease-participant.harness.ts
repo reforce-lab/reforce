@@ -1,4 +1,4 @@
-import { createChildLeaseParticipant } from "@/project-lease";
+import { createChildLeaseParticipant } from "@/lease-endpoint";
 
 const leaseToken = process.argv[2];
 if (!leaseToken) {

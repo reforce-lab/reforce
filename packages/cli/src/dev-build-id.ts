@@ -27,7 +27,7 @@ function validateAssetPath(path: string): void {
 }
 
 export function createDevBuildId(input: CreateDevBuildIdInput): string {
-  if (input.statsHash && input.statsHash.trim().length > 0) {
+  if (input.statsHash?.trim()) {
     return `rspack:${input.statsHash}`;
   }
   const runtimeAssets = input.assets

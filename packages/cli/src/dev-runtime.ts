@@ -1,13 +1,16 @@
 import { requireBunExecutable } from "@/bun-runtime";
-import { createDevChildLeaseEndpoint, type DevChildLeaseEndpoint } from "@/dev-child-liveness";
 import { DevEntryController } from "@/dev-entry";
 import type { RspackHmrRuntime } from "@/dev-hmr-manager";
 import {
+  type DevChildLeaseParticipantMessage,
+  type DevChildReadyMessage,
   isDevChildLeaseParticipantAcknowledgement,
   writerLeaseTokenEnvironmentVariable,
 } from "@/dev-ipc";
+import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { PlainTextReporter, reportShutdownFailure } from "@/reporter";
 import type { ShutdownResult } from "@/shutdown-controller";
+import { withTimeout } from "@/with-timeout";
 
 export interface DevelopmentBootstrapModule {
   bootstrap(): Promise<{ close(): Promise<void> }>;
@@ -19,6 +22,10 @@ export interface RunDevelopmentApplicationOptions {
   readonly ipcTimeoutMilliseconds?: number;
 }
 
+// rspack keeps only the latest compilation's hot-update output, so the manifest for the hash
+// this client last saw can be gone after a rebuild and check() then fails with a 404-like error.
+// Swallowing it as "no update" keeps polling alive; any other failure must propagate because
+// DevHmrManager treats a rejected check as fatal and shuts the child down.
 function isMissingHotUpdateManifest(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
@@ -54,19 +61,6 @@ export function createRspackHmrRuntime(hot: RspackHmrRuntime): RspackHmrRuntime 
       return await hot.apply();
     },
   };
-}
-
-function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), milliseconds);
-    timer.unref();
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  });
 }
 
 function sendToParent(message: object): Promise<void> {
@@ -124,7 +118,7 @@ export async function runDevelopmentApplication(
   requireBunExecutable();
   const reporter = new PlainTextReporter();
   const leaseToken = process.env[writerLeaseTokenEnvironmentVariable];
-  let endpoint: DevChildLeaseEndpoint | undefined;
+  let endpoint: Awaited<ReturnType<typeof createChildLeaseParticipant>> | undefined;
   let participantRegistered = false;
 
   const joinWriterLease = async () => {
@@ -134,7 +128,7 @@ export async function runDevelopmentApplication(
     if (!leaseToken) {
       throw new Error("Development child did not receive its writer lease identity.");
     }
-    endpoint = await createDevChildLeaseEndpoint(leaseToken);
+    endpoint = await createChildLeaseParticipant(leaseToken);
     const acknowledgement = waitForParticipantAcknowledgement(
       endpoint.participant.participantToken,
       options.ipcTimeoutMilliseconds ?? 5_000,
@@ -142,7 +136,7 @@ export async function runDevelopmentApplication(
     await sendToParent({
       type: "reforce:lease-participant",
       participant: endpoint.participant,
-    });
+    } satisfies DevChildLeaseParticipantMessage);
     await acknowledgement;
     participantRegistered = true;
   };
@@ -161,7 +155,7 @@ export async function runDevelopmentApplication(
     try {
       await entry.start();
       if (entry.state === "running") {
-        await sendToParent({ type: "reforce:dev-ready" });
+        await sendToParent({ type: "reforce:dev-ready" } satisfies DevChildReadyMessage);
       }
       return await entry.finished;
     } catch (error) {
@@ -186,6 +180,8 @@ export async function runDevelopmentApplication(
     });
     exitCode = 1;
   }
+  // Yield one event-loop tick so IPC messages already sent (dev-ready, lease registration)
+  // flush to the parent before the channel is disconnected.
   await new Promise<void>((resolve) => setImmediate(resolve));
   if (process.connected) {
     process.disconnect?.();

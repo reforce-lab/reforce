@@ -2,20 +2,14 @@ import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
 import { requireBunExecutable } from "@/bun-runtime";
 import { spawnDevChild } from "@/dev-child-process";
-import type { DevChildSupervisor } from "@/dev-child-supervisor";
-import { DevChildSupervisor as ChildSupervisor } from "@/dev-child-supervisor";
+import { DevChildSupervisor } from "@/dev-child-supervisor";
 import { DevCompilerGate } from "@/dev-compiler-gate";
 import { writerLeaseTokenEnvironmentVariable } from "@/dev-ipc";
-import { startDevWatchBuild } from "@/dev-watch-build";
-import type { DevCompilation, DevWatchCoordinator } from "@/dev-watch-coordinator";
-import { DevWatchCoordinator as WatchCoordinator } from "@/dev-watch-coordinator";
+import { type DevWatchBuild, startDevWatchBuild } from "@/dev-watch-build";
+import { type DevCompilation, DevWatchCoordinator } from "@/dev-watch-coordinator";
 import { DirectoryTransactions } from "@/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project-lease";
 import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
-
-export interface DevWatchBuild {
-  close(): Promise<void>;
-}
 
 export interface DevCommandOptions {
   readonly cwd: string;
@@ -32,6 +26,10 @@ const defaultDependencies: DevCommandDependencies = {
   releaseLease: (lease) => lease.release(),
 };
 
+// The controller must be wired (signal handlers, supervisor callbacks) before the real watch
+// handle exists, because those callbacks can trigger a shutdown while startDevWatchBuild is
+// still in flight. This placeholder makes the controller closable from the start and accepts
+// the real watch exactly once, so an early shutdown never hangs waiting for the build.
 class DeferredDevWatch implements DevWatchBuild {
   private readonly watch: Promise<DevWatchBuild>;
   private readonly resolveWatch: (watch: DevWatchBuild) => void;
@@ -182,23 +180,17 @@ async function captureFailure(operation: () => Promise<void>, failures: unknown[
   }
 }
 
-function captureSynchronousFailure(operation: () => void, failures: unknown[]): void {
-  try {
-    operation();
-  } catch (error) {
-    failures.push(error);
-  }
-}
-
 export async function runDevCommand(
   options: DevCommandOptions,
   dependencies: DevCommandDependencies = defaultDependencies,
 ): Promise<0 | 1> {
   const projectDirectory = resolve(options.cwd, options.projectDirectory);
+  const tsconfigPath =
+    options.tsconfigPath === undefined ? {} : { tsconfigPath: options.tsconfigPath };
   const compiler = createCompiler();
   const resolution = await compiler.resolveProject({
     projectDirectory,
-    ...(options.tsconfigPath === undefined ? {} : { tsconfigPath: options.tsconfigPath }),
+    ...tsconfigPath,
   });
   if (resolution.status === "failure") {
     return await reportProjectResolutionFailure(options.reporter, resolution.diagnostics);
@@ -225,7 +217,7 @@ export async function runDevCommand(
     const gate = new DevCompilerGate({
       compiler,
       projectDirectory,
-      ...(options.tsconfigPath === undefined ? {} : { tsconfigPath: options.tsconfigPath }),
+      ...tsconfigPath,
       project: resolution.project,
       initialWatchInputs: resolution.watchInputs,
       generatedOutput: transactions,
@@ -234,18 +226,18 @@ export async function runDevCommand(
 
     const { promise: completion, resolve: resolveCompletion } = Promise.withResolvers<0 | 1>();
     let finishPromise: Promise<void> | undefined;
-    const finish = (exitCode: 0 | 1, signal?: NodeJS.Signals) => {
+    const finish = (code: 0 | 1, signal?: NodeJS.Signals) => {
       finishPromise ??= (async () => {
         try {
           await controller?.shutdown(signal);
-          resolveCompletion(exitCode);
+          resolveCompletion(code);
         } catch {
           resolveCompletion(1);
         }
       })();
       return finishPromise;
     };
-    const supervisor = new ChildSupervisor({
+    const supervisor = new DevChildSupervisor({
       spawn: async () =>
         await spawnDevChild({
           entryPath: resolve(resolution.project.projectRoot, ".reforce", "dev", "main.mjs"),
@@ -282,7 +274,7 @@ export async function runDevCommand(
         void finish(0);
       },
     });
-    const coordinator = new WatchCoordinator({ reporter: options.reporter, supervisor });
+    const coordinator = new DevWatchCoordinator({ reporter: options.reporter, supervisor });
     deferredWatch = new DeferredDevWatch();
     controller = new DevCommandController({
       watch: deferredWatch,
@@ -302,6 +294,8 @@ export async function runDevCommand(
       });
       deferredWatch.attach(watch);
     } catch (error) {
+      // Attach a noop watch so a shutdown already in flight can finish closing instead of
+      // hanging on a real watch that will never arrive.
       deferredWatch.attach({ close: async () => undefined });
       throw error;
     }
@@ -319,7 +313,11 @@ export async function runDevCommand(
     exitCode = 1;
   }
 
-  captureSynchronousFailure(detachSignals, shutdownFailures);
+  try {
+    detachSignals();
+  } catch (error) {
+    shutdownFailures.push(error);
+  }
   if (lease !== undefined) {
     await captureFailure(() => dependencies.releaseLease(lease), shutdownFailures);
   }

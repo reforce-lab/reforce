@@ -3,7 +3,7 @@ import type { CompilerDiagnostic, GeneratedFile } from "@reforce/compiler";
 import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
 import { compareUtf16CodeUnits } from "@/determinism";
 
-export interface GeneratedOutputCommitter {
+interface GeneratedOutputCommitter {
   commitGenerated(files: readonly GeneratedFile[]): Promise<void>;
 }
 
@@ -23,7 +23,7 @@ export type DevCompilerGateResult =
       readonly watchInputs: CompilerWatchInputs;
     };
 
-export interface DevCompilerGateOptions {
+interface DevCompilerGateOptions {
   readonly compiler: Compiler;
   readonly projectDirectory: string;
   readonly tsconfigPath?: string;

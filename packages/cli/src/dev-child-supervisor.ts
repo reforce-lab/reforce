@@ -16,6 +16,8 @@ export interface DevChildSupervisorOptions {
   readonly onNaturalExit?: () => void;
 }
 
+const maximumRestartsPerBuild = 1;
+
 export class DevChildSupervisor {
   private readonly onChildFailure: (failure: DevChildExit) => void;
   private readonly onNaturalExit: () => void;
@@ -64,13 +66,15 @@ export class DevChildSupervisor {
       if (this.child) {
         return;
       }
-      if (!buildChanged && this.restartCountValue >= 1) {
+      if (!buildChanged && this.restartCountValue >= maximumRestartsPerBuild) {
         return;
       }
       await this.spawnCurrentBuild();
     });
   }
 
+  // A failed build needs no supervisor action of its own; enqueueing an empty step keeps the
+  // returned promise behind any in-flight spawn or shutdown so callers settle events in order.
   acceptBuildFailure(): Promise<void> {
     return this.enqueue(async () => undefined);
   }
@@ -148,13 +152,14 @@ export class DevChildSupervisor {
 
   private async handleChildFailure(failure: DevChildExit): Promise<void> {
     this.onChildFailure(failure);
-    if (this.restartCountValue >= 1 || !this.currentBuildIdValue || this.shuttingDown) {
-      if (this.restartCountValue >= 1 && this.currentBuildIdValue && !this.shuttingDown) {
-        this.onTerminalFailure(failure);
-      }
+    const restartBudgetExhausted = this.restartCountValue >= maximumRestartsPerBuild;
+    if (!restartBudgetExhausted && this.currentBuildIdValue && !this.shuttingDown) {
+      this.restartCountValue += 1;
+      await this.spawnCurrentBuild();
       return;
     }
-    this.restartCountValue += 1;
-    await this.spawnCurrentBuild();
+    if (restartBudgetExhausted && this.currentBuildIdValue && !this.shuttingDown) {
+      this.onTerminalFailure(failure);
+    }
   }
 }

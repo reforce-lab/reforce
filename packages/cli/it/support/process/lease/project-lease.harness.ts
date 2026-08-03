@@ -2,7 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isObject } from "radashi";
 import { DirectoryTransactions, type GeneratedTransactionFile } from "@/directory-transaction";
-import { type LeaseParticipant, ProjectLease } from "@/project-lease";
+import type { LeaseParticipant } from "@/lease-endpoint";
+import { ProjectLease } from "@/project-lease";
 
 const projectRootArgument = process.argv[2];
 const modeArgument = process.argv[3];
