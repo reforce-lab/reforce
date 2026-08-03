@@ -1,10 +1,10 @@
 import * as nodeFileSystem from "node:fs";
 import path from "node:path";
+import { isPathContained, isPathStrictlyContained } from "@reforce/primitives";
 import enhancedResolve from "enhanced-resolve";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
-import { isPathContained } from "@/project/path-identity";
 import type { ParsedSource } from "@/project/source-files";
 
 // enhanced-resolve module resolution for the linker: owns the resolver instances, the resolution
@@ -43,24 +43,16 @@ export function moduleKey(file: string): string {
   }
 }
 
-function isStrictAncestor(directory: string, target: string): boolean {
-  const pathFromDirectory = path.relative(directory, target);
-  return (
-    pathFromDirectory !== "" &&
-    !path.isAbsolute(pathFromDirectory) &&
-    pathFromDirectory !== ".." &&
-    !pathFromDirectory.startsWith(`..${path.sep}`)
-  );
-}
-
 function shouldWatchResolverDirectory(directory: string, projectRoot: string): boolean {
   if (isPathContained(projectRoot, directory)) {
     return true;
   }
-  if (isStrictAncestor(directory, projectRoot)) {
+  // 严格变体：directory === projectRoot 的情形已被上面的含自身判定接住，这里问的是"directory 是不是
+  // projectRoot 的真祖先"——真祖先（比如仓库根、`/`）改动跟本项目无关，不该进 watch 集。
+  if (isPathStrictlyContained(directory, projectRoot)) {
     return false;
   }
-  return !isStrictAncestor(nodeFileSystem.realpathSync(directory), projectRoot);
+  return !isPathStrictlyContained(nodeFileSystem.realpathSync(directory), projectRoot);
 }
 
 function classifyResolverDependencies(

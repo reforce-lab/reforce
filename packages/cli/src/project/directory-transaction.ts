@@ -1,8 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { join, relative } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
-import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
+import {
+  compareUtf16CodeUnits,
+  isPathStrictlyContained,
+  toPortablePath,
+} from "@reforce/primitives";
 import { isObject } from "radashi";
 import { hasExactKeys } from "@/project/exact-keys";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
@@ -146,14 +150,10 @@ function assertRelativeFilePath(path: string): void {
   }
 }
 
+// 严格变体：root 自身必须判为越界。removeTree 校验通过后就开始逐条递归删除，若 staging 路径 realpath
+// 后等于项目根，放行就是把用户项目根删空（Issue #55）。
 function assertContained(root: string, target: string): void {
-  const pathFromRoot = relative(root, target);
-  if (
-    pathFromRoot !== "" &&
-    !isAbsolute(pathFromRoot) &&
-    pathFromRoot !== ".." &&
-    !pathFromRoot.startsWith(`..${sep}`)
-  ) {
+  if (isPathStrictlyContained(root, target)) {
     return;
   }
   throw new Error(`Transaction path is outside its required boundary: ${target}`);

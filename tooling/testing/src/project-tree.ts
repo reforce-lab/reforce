@@ -1,6 +1,6 @@
 import { cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { relative, resolve, sep } from "node:path";
+import { compareUtf16CodeUnits, isPathContained } from "@reforce/primitives";
 import { temporaryDirectory } from "tempy";
 
 export type ProjectTree = {
@@ -17,12 +17,10 @@ export interface TemporaryProject {
   cleanup(): Promise<void>;
 }
 
+// 含自身变体，与原实现同极性。调用点的 target 都是 resolve(root, <已排除空串与 `.` 的单段名>)，
+// 等值分支不可达，这里只是不去改动现有语义。
 function assertContained(root: string, target: string): void {
-  const pathFromRoot = relative(root, target);
-  if (
-    pathFromRoot === "" ||
-    (!isAbsolute(pathFromRoot) && pathFromRoot !== ".." && !pathFromRoot.startsWith(`..${sep}`))
-  ) {
+  if (isPathContained(root, target)) {
     return;
   }
   throw new Error(`Project path escapes its root: ${target}`);

@@ -1,5 +1,6 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { isPathContained } from "@reforce/primitives";
 import {
   type ProjectResolutionResult,
   type ResolvedApplicationProject,
@@ -8,7 +9,6 @@ import {
 } from "@/api";
 import { sortNativePaths } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
-import { isPathContained } from "@/project/path-identity";
 import {
   type ConfigCandidateResult,
   inspectProjectConfigCandidate,

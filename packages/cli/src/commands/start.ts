@@ -1,7 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, readdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
+import { isPathStrictlyContained } from "@reforce/primitives";
 import { isObject } from "radashi";
 import { requireBunExecutable } from "@/bun-runtime";
 import {
@@ -47,14 +48,9 @@ class ArtifactInvalidError extends Error {
   }
 }
 
+// 严格变体：projectRoot 自身不可能是生产入口文件，等值一律拒绝。
 function assertContained(root: string, target: string): void {
-  const pathFromRoot = relative(root, target);
-  if (
-    pathFromRoot !== "" &&
-    !isAbsolute(pathFromRoot) &&
-    pathFromRoot !== ".." &&
-    !pathFromRoot.startsWith(`..${sep}`)
-  ) {
+  if (isPathStrictlyContained(root, target)) {
     return;
   }
   throw new Error(`Production entry resolves outside projectRoot: ${target}`);

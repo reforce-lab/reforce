@@ -165,6 +165,27 @@ describe("project lease", () => {
     await expect(acquisition).rejects.toThrow("outside its required boundary");
   });
 
+  // The containment check in this file is deliberately strict: `.reforce` resolving to the
+  // project root itself must stay a rejection, because the same check gates
+  // safeRemoveDirectory's `rm(recursive)`. Relaxing it to "contained or equal" would let the
+  // collapsed layout through here and hand lease cleanup a target equal to its own boundary,
+  // i.e. recursive deletion of the user's project root (#55).
+  test("rejects a lease namespace that resolves to the project root itself", async () => {
+    const project = await temporaryProject();
+    await symlink(
+      project.projectRoot,
+      join(project.projectRoot, ".reforce"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const acquisition = ProjectLease.acquire({
+      projectRoot: project.projectRoot,
+      mode: "writer",
+    });
+
+    await expect(acquisition).rejects.toThrow("outside its required boundary");
+  });
+
   test("shares one token-checked release operation", async () => {
     const project = await temporaryProject();
     const lease = await ProjectLease.acquire({ projectRoot: project.projectRoot, mode: "writer" });

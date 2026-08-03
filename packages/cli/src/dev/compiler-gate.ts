@@ -1,6 +1,6 @@
-import { isAbsolute, join, relative, sep } from "node:path";
+import { join } from "node:path";
 import type { CompilerDiagnostic, GeneratedFile } from "@reforce/compiler";
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { compareUtf16CodeUnits, isPathContained } from "@reforce/primitives";
 import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
 
 interface GeneratedOutputCommitter {
@@ -32,14 +32,6 @@ interface DevCompilerGateOptions {
   readonly generatedOutput: GeneratedOutputCommitter;
 }
 
-function isInside(root: string, target: string): boolean {
-  const pathFromRoot = relative(root, target);
-  return (
-    pathFromRoot === "" ||
-    (!isAbsolute(pathFromRoot) && pathFromRoot !== ".." && !pathFromRoot.startsWith(`..${sep}`))
-  );
-}
-
 function dedupeSorted(paths: readonly string[]): readonly string[] {
   return [...new Set(paths)].sort(compareUtf16CodeUnits);
 }
@@ -49,7 +41,8 @@ function mergeWatchInputs(
   ...inputs: readonly CompilerWatchInputs[]
 ): CompilerWatchInputs {
   const generatedRoot = join(projectRoot, ".reforce");
-  const keep = (path: string) => !isInside(generatedRoot, path);
+  // 含自身变体：`.reforce` 目录本身也要被排除出 watch inputs，否则生成物写入会自触发重编译。
+  const keep = (path: string) => !isPathContained(generatedRoot, path);
   return {
     fileDependencies: dedupeSorted(inputs.flatMap((input) => input.fileDependencies).filter(keep)),
     contextDependencies: dedupeSorted(
