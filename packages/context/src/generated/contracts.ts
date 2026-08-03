@@ -33,24 +33,31 @@ export interface GeneratedClassHooks<T extends object> {
   readonly close?: (instance: T) => void | Promise<void>;
 }
 
-export interface GeneratedClassRegistration<T extends object = object> {
+// The callback input type is a separate parameter from the instance type so that the
+// erased union below can pin it to `never` without needing a second, hand-mirrored copy
+// of every registration helper. It defaults to `T`, which is what every declaring
+// caller (classBean, factoryBean, the emitted applications) wants (Issue #106).
+export interface GeneratedClassRegistration<T extends object = object, THook extends object = T> {
   readonly kind: "class";
   readonly id: GeneratedBeanId;
   readonly source: GeneratedSourceReference;
   readonly target: BeanClass<T>;
   readonly dependencies: readonly GeneratedDependency[];
   readonly create: (resolver: GeneratedResolver) => T;
-  readonly hooks: GeneratedClassHooks<T>;
+  readonly hooks: GeneratedClassHooks<THook>;
 }
 
-export interface GeneratedFactoryRegistration<T extends object = object> {
+export interface GeneratedFactoryRegistration<
+  T extends object = object,
+  TDispose extends object = T,
+> {
   readonly kind: "factory";
   readonly id: GeneratedBeanId;
   readonly source: GeneratedSourceReference;
   readonly definition: BeanDefinition<T>;
   readonly dependencies: readonly [];
   readonly create: () => T;
-  readonly dispose?: (instance: T) => void | Promise<void>;
+  readonly dispose?: (instance: TDispose) => void | Promise<void>;
 }
 
 export interface GeneratedFactoryBeanInput<T extends object> {
@@ -59,13 +66,12 @@ export interface GeneratedFactoryBeanInput<T extends object> {
   readonly definition: BeanDefinition<T>;
 }
 
+// A registration held by the runtime says nothing about which instance type it produces,
+// so its callbacks accept `never`: only the code that declared the registration knows
+// what may be passed to them.
 export type GeneratedBeanRegistration =
-  | (Omit<GeneratedClassRegistration<object>, "hooks"> & {
-      readonly hooks: GeneratedClassHooks<never>;
-    })
-  | (Omit<GeneratedFactoryRegistration<object>, "dispose"> & {
-      readonly dispose?: (instance: never) => void | Promise<void>;
-    });
+  | GeneratedClassRegistration<object, never>
+  | GeneratedFactoryRegistration<object, never>;
 
 export interface GeneratedExecutionPlans {
   readonly constructionOrder: readonly GeneratedBeanId[];

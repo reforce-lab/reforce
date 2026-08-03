@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import type { GeneratedBeanRegistration, GeneratedDependency } from "@/generated/contracts";
+import { snapshotApplicationDefinition } from "@/generated/validation";
 import { classBean, createApplicationContext } from "@/generated-runtime";
-import { InvalidGeneratedDefinitionError } from "@/index";
+import { defineBean, InvalidGeneratedDefinitionError } from "@/index";
 import { testDefinition, testDependency, testSource } from "../support/test-definition";
 
 describe("generated definition validation", () => {
@@ -171,5 +173,82 @@ describe("generated definition validation", () => {
     });
 
     expect(creations).toBe(0);
+  });
+});
+
+describe("generated definition snapshots", () => {
+  function mutablePosition(offset: number) {
+    return { offset, line: 0, character: offset };
+  }
+
+  test("a snapshot keeps its own copy of a class registration's dependency list", () => {
+    class Resource {}
+    const dependencies: GeneratedDependency[] = [];
+    const registration: GeneratedBeanRegistration = {
+      kind: "class",
+      id: "src/resource.ts#Resource",
+      source: testSource("resource"),
+      target: Resource,
+      dependencies,
+      create: () => new Resource(),
+      hooks: {},
+    };
+
+    const snapshot = snapshotApplicationDefinition(testDefinition([registration]));
+    dependencies.push(testDependency(0, "src/resource.ts#Resource", "cycle-proxy"));
+
+    expect(snapshot.registrations[0]?.dependencies).toEqual([]);
+  });
+
+  test("a snapshot keeps its own copy of a class registration's source positions", () => {
+    class Resource {}
+    const start = mutablePosition(0);
+    const registration: GeneratedBeanRegistration = {
+      kind: "class",
+      id: "src/resource.ts#Resource",
+      source: { file: "src/resource.ts", start, end: mutablePosition(8) },
+      target: Resource,
+      dependencies: [],
+      create: () => new Resource(),
+      hooks: {},
+    };
+
+    const snapshot = snapshotApplicationDefinition(testDefinition([registration]));
+    start.offset = 99;
+
+    expect(snapshot.registrations[0]?.source.start.offset).toBe(0);
+  });
+
+  test("a snapshot keeps its own copy of a factory registration's source positions", () => {
+    const start = mutablePosition(0);
+    const registration: GeneratedBeanRegistration = {
+      kind: "factory",
+      id: "src/resource.ts#resource",
+      source: { file: "src/resource.ts", start, end: mutablePosition(8) },
+      definition: defineBean({ create: () => ({ connected: true }) }),
+      dependencies: [],
+      create: () => ({ connected: true }),
+    };
+
+    const snapshot = snapshotApplicationDefinition(testDefinition([registration]));
+    start.offset = 99;
+
+    expect(snapshot.registrations[0]?.source.start.offset).toBe(0);
+  });
+
+  test("a snapshot freezes every cloned registration", () => {
+    class Resource {}
+    const registration = classBean({
+      id: "src/resource.ts#Resource",
+      source: testSource("resource"),
+      target: Resource,
+      dependencies: [],
+      create: () => new Resource(),
+      hooks: {},
+    });
+
+    const snapshot = snapshotApplicationDefinition(testDefinition([registration]));
+
+    expect(Object.isFrozen(snapshot.registrations[0])).toBe(true);
   });
 });
