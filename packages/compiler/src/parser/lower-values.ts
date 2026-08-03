@@ -412,15 +412,17 @@ export function functionDescriptorOf(
 
 export function sourceKeywordSpan(
   node: BaseNode,
-  name: BaseNode | null | undefined,
+  follower: BaseNode,
   keyword: string,
   context: LoweringContext,
 ): SourceSpan {
   // node.start lands on a leading decorator or the `export` modifier, but the IR contract pins
   // declaration spans to the declaration keyword (class/interface/namespace), so locate the
-  // keyword by searching backwards from the declaration name.
-  const before = name?.start ?? node.end;
-  const start = context.sourceText.lastIndexOf(keyword, before);
+  // keyword by searching backwards from the first child that must follow it. The bound has to be
+  // a child that always exists: an anonymous class has no name, and widening the window to
+  // node.end lets the class body win the match ("classify", "className", a doc comment) — see
+  // issue #107.
+  const start = context.sourceText.lastIndexOf(keyword, follower.start);
   if (start < node.start) {
     return spanOf(node, context);
   }

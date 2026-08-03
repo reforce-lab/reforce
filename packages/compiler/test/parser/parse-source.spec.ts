@@ -365,6 +365,24 @@ test("counts astral Unicode characters as two UTF-16 code units", () => {
   expect(unit.classes[0]?.span.start).toEqual({ offset: 28, line: 1, character: 7 });
 });
 
+test("pins an anonymous default-exported class span to the class keyword", () => {
+  const unit = parseFile("export default class {\n  classify(): void {}\n}");
+
+  expect(unit.classes[0]?.span.start).toEqual({ offset: 15, line: 0, character: 15 });
+});
+
+test("pins a decorated anonymous class span to the class keyword", () => {
+  const unit = parseFile("export default @Injectable() class {\n  classify(): void {}\n}");
+
+  expect(unit.classes[0]?.span.start).toEqual({ offset: 29, line: 0, character: 29 });
+});
+
+test("pins an anonymous class span to the class keyword past an implements clause", () => {
+  const unit = parseFile("export default class implements Subclass {\n  run(): void {}\n}");
+
+  expect(unit.classes[0]?.span.start).toEqual({ offset: 15, line: 0, character: 15 });
+});
+
 test("classifies unsupported syntax for Compiler diagnostics", () => {
   const unit = parseFile(
     [

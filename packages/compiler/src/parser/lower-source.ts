@@ -346,7 +346,12 @@ function lowerClass(
         return declaration === undefined ? [] : [declaration];
       }),
     ),
-    span: sourceKeywordSpan(node, node.id, "class", context),
+    span: sourceKeywordSpan(
+      node,
+      node.id ?? node.typeParameters ?? node.superClass ?? node.implements?.[0] ?? node.body,
+      "class",
+      context,
+    ),
   });
 }
 
