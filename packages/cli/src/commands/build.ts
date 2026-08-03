@@ -4,7 +4,12 @@ import { buildProductionDist } from "@/bundling/production-dist";
 import type { Compiler, ResolvedProject } from "@/compiler-types";
 import { DirectoryTransactionError, DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
+import {
+  captureFailure,
+  createFailureEvent,
+  type Reporter,
+  reportShutdownFailure,
+} from "@/reporter";
 
 export interface BuildCommandOptions {
   readonly cwd: string;
@@ -74,14 +79,6 @@ async function buildResolvedProject(input: {
     message: `Built ${input.project.projectRoot}.`,
   });
   return 0;
-}
-
-async function captureFailure(operation: () => Promise<void>, failures: unknown[]): Promise<void> {
-  try {
-    await operation();
-  } catch (error) {
-    failures.push(error);
-  }
 }
 
 function reportUnexpectedFailure(reporter: Reporter, error: unknown): void {

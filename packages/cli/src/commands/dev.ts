@@ -7,9 +7,15 @@ import { DevChildSupervisor } from "@/dev/child-supervisor";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 import { type DevCompilation, DevWatchCoordinator } from "@/dev/watch-coordinator";
 import { writerLeaseTokenEnvironmentVariable } from "@/dev-ipc";
+import { installTerminationSignalHandlers } from "@/process-signals";
 import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
+import {
+  captureFailure,
+  createFailureEvent,
+  type Reporter,
+  reportShutdownFailure,
+} from "@/reporter";
 
 export interface DevCommandOptions {
   readonly cwd: string;
@@ -129,22 +135,6 @@ export class DevCommandController {
   }
 }
 
-function installParentSignalHandlers(onSignal: (signal: NodeJS.Signals) => void): () => void {
-  const signals: NodeJS.Signals[] =
-    process.platform === "win32" ? ["SIGINT", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
-  const handlers = new Map<NodeJS.Signals, () => void>();
-  for (const signal of signals) {
-    const handler = () => onSignal(signal);
-    handlers.set(signal, handler);
-    process.on(signal, handler);
-  }
-  return () => {
-    for (const [signal, handler] of handlers) {
-      process.off(signal, handler);
-    }
-  };
-}
-
 function reportCommandFailure(reporter: Reporter, error: unknown): void {
   const busy = error instanceof ProjectBusyError;
   reporter.report(
@@ -176,14 +166,6 @@ async function reportProjectResolutionFailure(
     await reportShutdownFailure({ reporter, command: "dev", errors: shutdownFailures });
   }
   return 1;
-}
-
-async function captureFailure(operation: () => Promise<void>, failures: unknown[]): Promise<void> {
-  try {
-    await operation();
-  } catch (error) {
-    failures.push(error);
-  }
 }
 
 export async function runDevCommand(
@@ -288,7 +270,7 @@ export async function runDevCommand(
       supervisor,
       reporter: options.reporter,
     });
-    detachSignals = installParentSignalHandlers((signal) => {
+    detachSignals = installTerminationSignalHandlers((signal) => {
       void finish(0, signal);
     });
     try {

@@ -120,6 +120,20 @@ export function createFailureEvent(input: {
   };
 }
 
+// 关停步骤必须全部跑完：前一步抛错不能跳过后面的释放动作，所以错误先攒进数组，最后交给
+// reportShutdownFailure 聚合。数组是 unknown[] 而不是 Error[]——throw 的值不保证是 Error，
+// 换成 Error[] 等于在没有校验的情况下收窄类型。
+export async function captureFailure(
+  operation: () => Promise<void>,
+  failures: unknown[],
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    failures.push(error);
+  }
+}
+
 export async function reportShutdownFailure(input: {
   readonly reporter: Reporter;
   readonly command: CliCommandName;

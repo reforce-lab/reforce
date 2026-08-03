@@ -1,4 +1,5 @@
 import { isShutdownRequestMessage, type ShutdownAckMessage } from "@/dev-ipc";
+import { installTerminationSignalHandlers } from "@/process-signals";
 import {
   type CliCommandName,
   type CliCommandPhase,
@@ -182,11 +183,6 @@ export class ShutdownController {
 }
 
 export function installProcessShutdownHandlers(controller: ShutdownController): void {
-  const signalNames: NodeJS.Signals[] =
-    process.platform === "win32" ? ["SIGINT", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
-  const onSignal = () => {
-    void controller.requestShutdown();
-  };
   const onMessage = (message: unknown) => {
     controller.receiveIpcMessage(message, (acknowledgement) => {
       process.send?.(acknowledgement);
@@ -196,18 +192,16 @@ export function installProcessShutdownHandlers(controller: ShutdownController): 
     void controller.requestShutdown();
   };
 
-  for (const signalName of signalNames) {
-    process.on(signalName, onSignal);
-  }
+  // 这里刻意忽略回调传回的信号名：controller 的关停路径对 SIGINT / SIGTERM / SIGBREAK 一视同仁。
+  const detachSignalHandlers = installTerminationSignalHandlers(() => {
+    void controller.requestShutdown();
+  });
   process.on("message", onMessage);
   process.on("disconnect", onDisconnect);
 
-  const detach = () => {
-    for (const signalName of signalNames) {
-      process.off(signalName, onSignal);
-    }
+  controller.setHandlerCleanup(() => {
+    detachSignalHandlers();
     process.off("message", onMessage);
     process.off("disconnect", onDisconnect);
-  };
-  controller.setHandlerCleanup(detach);
+  });
 }

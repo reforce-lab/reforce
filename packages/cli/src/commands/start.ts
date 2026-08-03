@@ -11,9 +11,16 @@ import {
   type ShutdownAckMessage,
   type ShutdownRequestMessage,
 } from "@/dev-ipc";
+import { installTerminationSignalHandlers } from "@/process-signals";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
 import type { LeaseParticipant } from "@/project/lease-endpoint";
-import { createFailureEvent, type Reporter, reportShutdownFailure } from "@/reporter";
+import {
+  captureFailure,
+  createFailureEvent,
+  type Reporter,
+  reportShutdownFailure,
+} from "@/reporter";
+import { withTimeout } from "@/with-timeout";
 
 export interface StartCommandOptions {
   readonly cwd: string;
@@ -200,23 +207,12 @@ function spawnProductionChild(input: {
   );
 }
 
-async function nextMessage(child: ProductionChild, timeoutMilliseconds: number): Promise<unknown> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      child.getOneMessage(),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error("The production child IPC handshake timed out.")),
-          timeoutMilliseconds,
-        );
-      }),
-    ]);
-  } finally {
-    if (timeout !== undefined) {
-      clearTimeout(timeout);
-    }
-  }
+function nextMessage(child: ProductionChild, timeoutMilliseconds: number): Promise<unknown> {
+  return withTimeout(
+    child.getOneMessage(),
+    timeoutMilliseconds,
+    "The production child IPC handshake timed out.",
+  );
 }
 
 // Windows has no POSIX signal semantics: `child.kill("SIGTERM")` there maps to TerminateProcess
@@ -396,13 +392,7 @@ async function startProductionChild(input: {
         : Promise.resolve(child.kill(queuedSignal));
     void shutdownPromise.catch(() => undefined);
   };
-  const signalNames: NodeJS.Signals[] =
-    process.platform === "win32" ? ["SIGINT", "SIGBREAK"] : ["SIGINT", "SIGTERM"];
-  const signalHandlers = signalNames.map((signal) => {
-    const handler = () => requestShutdown(signal);
-    process.on(signal, handler);
-    return { signal, handler };
-  });
+  const detachSignalHandlers = installTerminationSignalHandlers(requestShutdown);
   const onParentMessage = (message: unknown) => {
     if (!isShutdownRequestMessage(message)) {
       return;
@@ -416,9 +406,7 @@ async function startProductionChild(input: {
   process.on("message", onParentMessage);
   process.on("disconnect", onParentDisconnect);
   input.state.detachSignals = () => {
-    for (const { signal, handler } of signalHandlers) {
-      process.off(signal, handler);
-    }
+    detachSignalHandlers();
     process.off("message", onParentMessage);
     process.off("disconnect", onParentDisconnect);
   };
@@ -444,14 +432,6 @@ async function startProductionChild(input: {
     throw new Error(`Production child exited with code ${result.exitCode ?? "unknown"}.`);
   }
   return projectRoot;
-}
-
-async function captureFailure(operation: () => Promise<void>, failures: unknown[]): Promise<void> {
-  try {
-    await operation();
-  } catch (error) {
-    failures.push(error);
-  }
 }
 
 async function stopFailedChild(
