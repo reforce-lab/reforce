@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
-import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
+import { compareUtf16CodeUnits, isPathContained, toPortablePath } from "@reforce/primitives";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
@@ -10,7 +10,6 @@ import type { SourceFileIr, SourceKind } from "@/parser/source-ir";
 import { sourceKindOf } from "@/parser/source-kind";
 import type { CanonicalFileId } from "@/parser/source-location";
 import { generatedDirectoryFragment } from "@/project/generated-paths";
-import { isPathContained } from "@/project/path-identity";
 import type { ProjectState } from "@/project/project-config";
 import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
 

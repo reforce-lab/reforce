@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { join } from "node:path";
+import { compareUtf16CodeUnits, isPathStrictlyContained } from "@reforce/primitives";
 import { isObject, sleep } from "radashi";
 import { hasExactKeys } from "@/project/exact-keys";
 import {
@@ -44,14 +44,10 @@ function randomToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+// 严格变体：root 自身必须判为越界。safeRemoveDirectory 校验通过后直接 rm -r，若 `.reforce` 是指向
+// 项目根的 symlink，realpath 后 target 与 root 相等，放行就是递归删掉用户项目根（Issue #55）。
 function assertContained(root: string, target: string): void {
-  const pathFromRoot = relative(root, target);
-  if (
-    pathFromRoot !== "" &&
-    !isAbsolute(pathFromRoot) &&
-    pathFromRoot !== ".." &&
-    !pathFromRoot.startsWith(`..${sep}`)
-  ) {
+  if (isPathStrictlyContained(root, target)) {
     return;
   }
   throw new Error(`Lease path is outside its required boundary: ${target}`);

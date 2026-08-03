@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import path from "node:path";
-import { toPortablePath } from "@reforce/primitives";
+import { isPathContained, toPortablePath } from "@reforce/primitives";
 import { parseTsconfig, type TsConfigJsonResolved } from "get-tsconfig";
 import type { CompilerDiagnostic, CompilerWatchInputs } from "@/api";
 import { diagnostic } from "@/diagnostics";
@@ -12,7 +12,6 @@ import {
 import { type ConfigGraphObservation, collectConfigGraph } from "@/project/config-graph";
 import { generatedDeclarationsAreIncluded } from "@/project/config-pattern-coverage";
 import { generatedDeclarationsFile, generatedDirectoryFragment } from "@/project/generated-paths";
-import { isPathContained } from "@/project/path-identity";
 import { createProjectSnapshot, type ProjectSnapshotEntry } from "@/project/project-snapshot";
 import type { RawConfig } from "@/project/tsconfig-jsonc";
 import { createWatchInputs } from "@/project/watch-inputs";

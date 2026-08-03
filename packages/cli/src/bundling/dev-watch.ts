@@ -1,6 +1,11 @@
 import { lstat, readdir, readFile } from "node:fs/promises";
 import nodePath, { join, relative } from "node:path";
-import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
+import {
+  compareUtf16CodeUnits,
+  isPathStrictlyContained,
+  type PathSemantics,
+  toPortablePath,
+} from "@reforce/primitives";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
 import { createDevBuildId, type DevBuildAsset } from "@/bundling/build-id";
 import type { ResolvedProject } from "@/compiler-types";
@@ -19,8 +24,6 @@ export interface StartDevWatchBuildOptions {
   readonly onInvalidated?: (path: string | null) => void;
 }
 
-type PathSemantics = Pick<typeof nodePath, "isAbsolute" | "relative" | "sep">;
-
 // This filter and the watchOptions.ignored glob list below cover the same directory names on
 // purpose, but with different semantics: here only the top-level segment counts because gate
 // watch inputs are project-rooted, while ignored matches those names at any depth. The two
@@ -36,16 +39,11 @@ export function isProjectWatchFile(
   path: string,
   semantics: PathSemantics = nodePath,
 ): boolean {
-  const pathFromRoot = semantics.relative(projectRoot, path);
-  if (
-    pathFromRoot === "" ||
-    semantics.isAbsolute(pathFromRoot) ||
-    pathFromRoot === ".." ||
-    pathFromRoot.startsWith(`..${semantics.sep}`)
-  ) {
+  // Strict containment: projectRoot itself is a directory, never a watched file.
+  if (!isPathStrictlyContained(projectRoot, path, semantics)) {
     return false;
   }
-  const firstSegment = pathFromRoot.split(semantics.sep)[0];
+  const firstSegment = semantics.relative(projectRoot, path).split(semantics.sep)[0];
   return (
     firstSegment !== ".reforce" &&
     firstSegment !== ".git" &&
