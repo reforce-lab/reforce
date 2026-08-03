@@ -468,6 +468,30 @@ describe("directory transactions", () => {
     await expect(creation).rejects.toThrow("outside its required boundary");
   });
 
+  // commitDist derives every path from the caller-supplied token, so a leftover
+  // `dist.staging-<token>` symlink pointing at the project root reaches removeTree with a target
+  // that canonicalizes to removeTree's own boundary. The containment check must keep treating
+  // "target equals boundary" as an escape: it is the only thing standing between this state and
+  // removeDirectoryContents wiping the user's project root (#55).
+  test("refuses to clean a dist staging path that resolves to the project root", async () => {
+    const { project, lease, transactions } = await setupWriter();
+    const stagingDirectory = join(lease.projectRoot, "dist.staging-equalboundary");
+    await symlink(
+      lease.projectRoot,
+      stagingDirectory,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const commit = transactions.commitDist({
+      transactionToken: "equalboundary",
+      stagingDirectory,
+      expectedFiles: ["main.mjs"],
+    });
+
+    await expect(commit).rejects.toThrow("outside its required boundary");
+    expect(await readdir(project.projectRoot)).toContain(".reforce");
+  });
+
   test("publishes an exact generated tree and removes the previous generation", async () => {
     const { project, transactions } = await setupWriter();
     await transactions.commitGenerated(generatedFiles("pre"));
