@@ -1,18 +1,9 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { lstat, readdir, realpath } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { isPathStrictlyContained } from "@reforce/primitives";
+import { lstat, realpath } from "node:fs/promises";
+import { resolve } from "node:path";
 import { isObject } from "radashi";
 import { requireBunExecutable } from "@/bun-runtime";
-import {
-  isShutdownAcknowledgementMessage,
-  isShutdownRequestMessage,
-  type ShutdownAckMessage,
-  type ShutdownRequestMessage,
-} from "@/dev-ipc";
+import { isShutdownRequestMessage, type ShutdownAckMessage } from "@/dev-ipc";
 import { installTerminationSignalHandlers } from "@/process-signals";
-import { findIncompleteDistTransaction } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease, parseParticipant } from "@/project/lease";
 import type { LeaseParticipant } from "@/project/lease-endpoint";
 import {
@@ -21,7 +12,8 @@ import {
   type Reporter,
   reportShutdownFailure,
 } from "@/reporter";
-import { withTimeout } from "@/with-timeout";
+import { ArtifactInvalidError, resolveProductionEntry } from "@/start/artifact";
+import { nextMessage, type ProductionChild, spawnProductionChild } from "@/start/child-process";
 
 export interface StartCommandOptions {
   readonly cwd: string;
@@ -51,29 +43,12 @@ const defaultDependencies: StartCommandDependencies = {
   shutdownGraceMilliseconds: 30_000,
 };
 
-class ArtifactInvalidError extends Error {
-  readonly code = "ARTIFACT_INVALID" as const;
-
-  constructor(message: string, options: { readonly cause?: unknown } = {}) {
-    super(message, options);
-    this.name = "ArtifactInvalidError";
-  }
-}
-
 // 握手完成前收到终止信号时用它中止等待，而不是把信号排队到握手结束（Issue #103）。
 class TerminationRequestedError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TerminationRequestedError";
   }
-}
-
-// 严格变体：projectRoot 自身不可能是生产入口文件，等值一律拒绝。
-function assertContained(root: string, target: string): void {
-  if (isPathStrictlyContained(root, target)) {
-    return;
-  }
-  throw new Error(`Production entry resolves outside projectRoot: ${target}`);
 }
 
 // 只负责信封：participant 本身的字段规则由 @/project/lease 的 parseParticipant 独占。
@@ -87,157 +62,9 @@ function parseChildParticipantMessage(value: unknown): LeaseParticipant | undefi
   return participant?.role === "child" ? participant : undefined;
 }
 
-interface ProductionChildResult {
-  readonly exitCode?: number;
-}
-
-interface ProductionChild {
-  getOneMessage(): Promise<unknown>;
-  sendMessage(message: ShutdownRequestMessage | LeaseParticipantAck): Promise<void>;
-  // 「请关停」的唯一入口：用什么手段关停由子进程句柄决定，调用方不做平台判断。
-  requestShutdown(signal: NodeJS.Signals): Promise<void>;
-  kill(signal: NodeJS.Signals): void;
-  wait(): Promise<ProductionChildResult>;
-}
-
 // 父进程转达的默认终止信号。Windows 上没有 SIGTERM，取 SIGBREAK（与 process-signals 所监听的一致）。
 const parentTerminationSignal: NodeJS.Signals =
   process.platform === "win32" ? "SIGBREAK" : "SIGTERM";
-
-// Sender half of the production-wire acknowledgement validated by `isLeaseParticipantAck` in
-// production-runtime.ts. Unlike the dev wire's `DevChildLeaseParticipantAcknowledgement`
-// (dev-ipc.ts), it carries no `ok`: this parent only acks after `lease.addParticipant` has
-// succeeded, and a failure there fails the command instead of nacking the child.
-interface LeaseParticipantAck {
-  readonly type: "reforce:lease-participant-ack";
-  readonly participantToken: string;
-}
-
-class BunProductionChild implements ProductionChild {
-  private readonly completion: Promise<ProductionChildResult>;
-  private readonly messages: unknown[] = [];
-  private readonly messageWaiters: Array<{
-    readonly reject: (error: Error) => void;
-    readonly resolve: (message: unknown) => void;
-  }> = [];
-  private readonly process: ChildProcess;
-  private terminalError: Error | undefined;
-
-  constructor(process: ChildProcess) {
-    this.process = process;
-    process.on("message", (message: unknown) => {
-      const waiter = this.messageWaiters.shift();
-      if (waiter) {
-        waiter.resolve(message);
-        return;
-      }
-      this.messages.push(message);
-    });
-    this.completion = new Promise((resolve, reject) => {
-      process.once("error", (error) => {
-        this.closeInbox(error);
-        reject(error);
-      });
-      process.once("exit", (exitCode, signal) => {
-        this.closeInbox(
-          new Error(
-            `Production child exited before its IPC message (code ${exitCode ?? "null"}, signal ${signal ?? "none"}).`,
-          ),
-        );
-        resolve(exitCode === null ? {} : { exitCode });
-      });
-    });
-  }
-
-  getOneMessage(): Promise<unknown> {
-    const message = this.messages.shift();
-    if (message !== undefined) {
-      return Promise.resolve(message);
-    }
-    if (this.terminalError) {
-      return Promise.reject(this.terminalError);
-    }
-    return new Promise((resolve, reject) => this.messageWaiters.push({ resolve, reject }));
-  }
-
-  async sendMessage(message: ShutdownRequestMessage | LeaseParticipantAck): Promise<void> {
-    if (!this.process.connected) {
-      throw new Error("The production child IPC channel is unavailable.");
-    }
-    await new Promise<void>((resolve, reject) => {
-      this.process.send(message, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
-  }
-
-  // Windows has no POSIX signal semantics: `child.kill("SIGTERM")` there maps to TerminateProcess
-  // and the child gets no chance to shut down gracefully. On win32 shutdown must instead go through
-  // the IPC handshake (`reforce:shutdown` out, `reforce:shutdown-ack` back), so the child can run
-  // its own shutdown path. The branch belongs here rather than in the command flow: callers only
-  // ever want "shut this child down", and a platform check in the caller gets copied by the next one.
-  async requestShutdown(signal: NodeJS.Signals): Promise<void> {
-    if (process.platform !== "win32") {
-      this.kill(signal);
-      return;
-    }
-    const requestId = randomUUID();
-    await this.sendMessage({ type: "reforce:shutdown", requestId });
-    for (;;) {
-      const message = await nextMessage(this, 30_000);
-      if (isShutdownAcknowledgementMessage(message) && message.requestId === requestId) {
-        if (!message.ok) {
-          throw new Error("The production child reported a shutdown failure.");
-        }
-        return;
-      }
-    }
-  }
-
-  kill(signal: NodeJS.Signals): void {
-    this.process.kill(signal);
-  }
-
-  wait(): Promise<ProductionChildResult> {
-    return this.completion;
-  }
-
-  private closeInbox(error: Error): void {
-    this.terminalError ??= error;
-    for (const waiter of this.messageWaiters.splice(0)) {
-      waiter.reject(this.terminalError);
-    }
-  }
-}
-
-function spawnProductionChild(input: {
-  readonly executable: string;
-  readonly entryPath: string;
-  readonly projectRoot: string;
-  readonly leaseToken: string;
-}): ProductionChild {
-  return new BunProductionChild(
-    spawn(input.executable, [input.entryPath], {
-      cwd: input.projectRoot,
-      env: { ...process.env, REFORCE_LEASE_TOKEN: input.leaseToken },
-      shell: false,
-      stdio: ["inherit", "inherit", "inherit", "ipc"],
-      windowsHide: true,
-    }),
-  );
-}
-
-function nextMessage(child: ProductionChild, timeoutMilliseconds: number): Promise<unknown> {
-  return withTimeout(
-    child.getOneMessage(),
-    timeoutMilliseconds,
-    "The production child IPC handshake timed out.",
-  );
-}
 
 async function resolveProjectRoot(projectDirectory: string): Promise<string> {
   const projectRoot = await realpath(projectDirectory);
@@ -246,79 +73,6 @@ async function resolveProjectRoot(projectDirectory: string): Promise<string> {
     throw new Error(`Project root is not a directory: ${projectDirectory}`);
   }
   return projectRoot;
-}
-
-async function assertNoIncompleteDistTransaction(projectRoot: string): Promise<void> {
-  const incomplete = await findIncompleteDistTransaction(projectRoot);
-  if (incomplete === undefined) {
-    return;
-  }
-  if (incomplete.reason === "journal") {
-    throw new ArtifactInvalidError(
-      "Production artifact has an incomplete dist transaction; run reforce build to recover it.",
-    );
-  }
-  throw new ArtifactInvalidError(
-    `Production artifact has incomplete transaction output: ${incomplete.entryName}`,
-  );
-}
-
-async function assertOrdinaryArtifactTree(directory: string): Promise<void> {
-  const entries = await readdir(directory, { withFileTypes: true });
-  for (const entry of entries) {
-    const entryPath = join(directory, entry.name);
-    if (entry.isSymbolicLink()) {
-      throw new ArtifactInvalidError(
-        `Production artifact cannot contain a symbolic link: ${entryPath}`,
-      );
-    }
-    if (entry.isDirectory()) {
-      await assertOrdinaryArtifactTree(entryPath);
-      continue;
-    }
-    if (!entry.isFile()) {
-      throw new ArtifactInvalidError(
-        `Production artifact must contain only ordinary files: ${entryPath}`,
-      );
-    }
-  }
-}
-
-async function resolveProductionEntry(projectRoot: string): Promise<string> {
-  await assertNoIncompleteDistTransaction(projectRoot);
-  const distRoot = join(projectRoot, "dist");
-  try {
-    const distMetadata = await lstat(distRoot);
-    // lstat 不跟随链接，符号链接的 isDirectory() 恒为 false，所以 symlink 必须先判：放在后面
-    // 只会让链接到目录的 dist 拿到「不是目录」这句与事实不符的文案（Issue #103）。
-    if (distMetadata.isSymbolicLink()) {
-      throw new ArtifactInvalidError(`Production artifact cannot be a symbolic link: ${distRoot}`);
-    }
-    if (!distMetadata.isDirectory()) {
-      throw new ArtifactInvalidError(`Production artifact is not a directory: ${distRoot}`);
-    }
-    await assertOrdinaryArtifactTree(distRoot);
-  } catch (cause) {
-    if (cause instanceof ArtifactInvalidError) {
-      throw cause;
-    }
-    throw new ArtifactInvalidError(`Production artifact is unavailable: ${distRoot}`, { cause });
-  }
-  const requestedEntry = join(projectRoot, "dist", "main.mjs");
-  let entryPath: string;
-  try {
-    entryPath = await realpath(requestedEntry);
-  } catch (cause) {
-    throw new ArtifactInvalidError(`Production artifact is unavailable: ${requestedEntry}`, {
-      cause,
-    });
-  }
-  assertContained(projectRoot, entryPath);
-  const entryMetadata = await lstat(entryPath);
-  if (!entryMetadata.isFile()) {
-    throw new ArtifactInvalidError(`Production entry is not an ordinary file: ${requestedEntry}`);
-  }
-  return entryPath;
 }
 
 function reportStartFailure(reporter: Reporter, error: unknown): void {
