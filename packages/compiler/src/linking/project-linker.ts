@@ -195,7 +195,6 @@ export async function createProjectLinker(
     customConditions,
   );
   const externalDeclarations = await loadExternalDeclarations(sources, resolveModule, cache);
-  const { fileDependencies, contextDependencies, missingDependencies } = collectWatchDependencies();
 
   interface NamedExportResolution {
     readonly matched: boolean;
@@ -566,14 +565,18 @@ export async function createProjectLinker(
     get diagnostics() {
       return diagnostics;
     },
+    // Watch inputs must be collected on read for the same reason: the closures above keep resolving
+    // modules while analysis runs — a re-export of the context specifier is resolved there for the
+    // first time, because loadExternalDeclarations skips it — and compile() reads these getters only
+    // after analysis finishes, so an early snapshot dropped those dependencies (Issue #26).
     get fileDependencies() {
-      return [...fileDependencies];
+      return [...collectWatchDependencies().fileDependencies];
     },
     get contextDependencies() {
-      return [...contextDependencies];
+      return [...collectWatchDependencies().contextDependencies];
     },
     get missingDependencies() {
-      return [...missingDependencies];
+      return [...collectWatchDependencies().missingDependencies];
     },
     resolveEntity,
     resolveType,

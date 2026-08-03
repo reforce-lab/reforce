@@ -238,6 +238,52 @@ describe("module resolution watch inputs", () => {
     expect(result.watchInputs.contextDependencies).toContain(packageDirectory);
   });
 
+  test("includes a declaration endpoint resolved only while linking a star re-export", async () => {
+    // The fixture depends on loadExternalDeclarations skipping "@reforce/context": that skip is what
+    // leaves the star re-export below unresolved until analysis runs, which is the only way to reach
+    // a link-phase resolution. Watch inputs used to be snapshotted before analysis and dropped it
+    // (Issue #26). If the skip ever goes away this test silently degrades into an early-resolution
+    // case and stops guarding the regression.
+    const { project, result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      node_modules: {
+        "@reforce": {
+          context: {
+            "package.json": `${JSON.stringify({
+              name: "@reforce/context",
+              version: "1.0.0",
+              type: "module",
+              exports: { ".": { types: "./index.d.ts", default: "./index.js" } },
+            })}\n`,
+            "index.d.ts": "export interface ContextOnlyPort {}\n",
+            "index.js": "export {};\n",
+          },
+        },
+      },
+      src: {
+        "application.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import type { Port } from "./barrel";',
+          "@Injectable()",
+          "export class Provider implements Port {}",
+          "",
+        ].join("\n"),
+        "barrel.ts": ['export * from "@reforce/context";', 'export * from "./ports";', ""].join(
+          "\n",
+        ),
+        "ports.ts": "export interface Port {}\n",
+      },
+    });
+    const contextDirectory = path.join(project.projectRoot, "node_modules", "@reforce", "context");
+
+    expect(result.watchInputs.fileDependencies).toContain(
+      path.join(contextDirectory, "package.json"),
+    );
+    expect(result.watchInputs.fileDependencies).toContain(
+      path.join(contextDirectory, "index.d.ts"),
+    );
+  });
+
   test("includes unresolved package candidates", async () => {
     const { project, result } = await compile(applicationTree("missing-contract"));
 
