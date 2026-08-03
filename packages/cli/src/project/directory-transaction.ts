@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
 import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { isObject } from "radashi";
+import { hasExactKeys } from "@/project/exact-keys";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
 import { ProjectBusyError, type ProjectLease } from "@/project/lease";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
@@ -253,19 +254,6 @@ function sameFileRecords(
         entry.byteLength === right[index]?.byteLength &&
         entry.sha256 === right[index]?.sha256,
     )
-  );
-}
-
-function hasExactKeys(
-  value: object,
-  required: readonly string[],
-  optional: readonly string[] = [],
-): boolean {
-  const actual = Object.keys(value).sort(compareUtf16CodeUnits);
-  const allowed = [...required, ...optional].sort(compareUtf16CodeUnits);
-  return (
-    required.every((key) => Object.hasOwn(value, key)) &&
-    actual.every((key) => allowed.includes(key))
   );
 }
 

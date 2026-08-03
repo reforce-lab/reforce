@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/pro
 import { isAbsolute, join, relative, sep } from "node:path";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { isObject, sleep } from "radashi";
+import { hasExactKeys } from "@/project/exact-keys";
 import {
   type LeaseParticipant,
   type LeaseProbeResult,
@@ -88,18 +89,6 @@ async function writeJsonClosed(path: string, value: unknown): Promise<void> {
   }
 }
 
-function hasExactObjectKeys(
-  value: object,
-  required: readonly string[],
-  optional: readonly string[] = [],
-): boolean {
-  const allowed = new Set([...required, ...optional]);
-  return (
-    required.every((key) => Object.hasOwn(value, key)) &&
-    Object.keys(value).every((key) => allowed.has(key))
-  );
-}
-
 // A record that survives parsing is handed straight to probeLeaseEndpoint, and node:net rejects an
 // out-of-range port by throwing ERR_SOCKET_BAD_PORT synchronously. A corrupt lease record must
 // surface as ProjectBusyError, so the range is enforced here rather than at the socket (#24).
@@ -111,7 +100,7 @@ function parseParticipant(value: unknown): LeaseParticipant | undefined {
   if (!isObject(value)) {
     return undefined;
   }
-  if (!hasExactObjectKeys(value, ["participantToken", "host", "port", "challenge", "role"])) {
+  if (!hasExactKeys(value, ["participantToken", "host", "port", "challenge", "role"])) {
     return undefined;
   }
   const participantToken = Reflect.get(value, "participantToken");
@@ -135,9 +124,7 @@ function parseOwnerRecord(value: unknown): LeaseOwnerRecord | undefined {
   if (!isObject(value)) {
     return undefined;
   }
-  if (
-    !hasExactObjectKeys(value, ["schemaVersion", "mode", "leaseToken", "participants"], ["pid"])
-  ) {
+  if (!hasExactKeys(value, ["schemaVersion", "mode", "leaseToken", "participants"], ["pid"])) {
     return undefined;
   }
   const schemaVersion = Reflect.get(value, "schemaVersion");
@@ -176,7 +163,7 @@ function parseGateRecord(value: unknown): GateRecord | undefined {
   if (!isObject(value)) {
     return undefined;
   }
-  if (!hasExactObjectKeys(value, ["schemaVersion", "gateToken", "host", "port", "challenge"])) {
+  if (!hasExactKeys(value, ["schemaVersion", "gateToken", "host", "port", "challenge"])) {
     return undefined;
   }
   const schemaVersion = Reflect.get(value, "schemaVersion");

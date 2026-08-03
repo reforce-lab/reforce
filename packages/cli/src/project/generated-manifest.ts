@@ -4,6 +4,7 @@
 // packages/compiler/src/emission/generate-files.ts 的 renderManifest 输出形状；schemaVersion、
 // bean id 格式、lifecycle 归属、plans 三数组皆为线上协议，改动任一条都必须与生产方同步。
 import { isObject } from "radashi";
+import { hasExactKeys } from "@/project/exact-keys";
 
 interface ManifestSourcePosition {
   readonly offset: number;
@@ -61,18 +62,6 @@ interface ManifestPlans {
   readonly constructionOrder: readonly string[];
   readonly startActionOrder: readonly string[];
   readonly cleanupActionOrder: readonly string[];
-}
-
-function hasExactKeys(
-  value: object,
-  required: readonly string[],
-  optional: readonly string[] = [],
-): boolean {
-  const allowed = new Set([...required, ...optional]);
-  const keys = Object.keys(value);
-  return (
-    required.every((key) => Object.hasOwn(value, key)) && keys.every((key) => allowed.has(key))
-  );
 }
 
 function isNonemptyString(value: unknown): value is string {
