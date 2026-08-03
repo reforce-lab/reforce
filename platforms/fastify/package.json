@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/bun": "catalog:",

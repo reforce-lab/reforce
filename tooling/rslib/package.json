@@ -1,0 +1,20 @@
+{
+  "name": "@reforce/tooling-rslib",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@rslib/core": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -9,6 +9,7 @@ applyTo: "packages/**,platforms/**,tooling/**"
 - 类私有成员使用 TypeScript `private` / `private readonly`，禁止 ES `#field` / `#method`；仅初始化一次的字段优先 `private readonly`。
 - Rslib workspace 的根 `tsconfig.json` 只管理 `src`，设置 `rootDir: "./src"`；根 `tsconfig.node.json` 管理 `src` 和 Rslib/tooling 配置。所有配置继承共享基线的 `noEmit: true`。
 - 不使用 project references、`composite` 或 `tsconfig.build.json`。`test/tsconfig.json`、`it/tsconfig.json` 继承 `../tsconfig.node.json` 并只 include 当前目录。
+- `rslib.config.ts` 统一为 `@reforce/tooling-rslib` 的 `defineLibraryConfig()`（bundleless + tsgo dts + esm + node target 基线，见 `tooling/rslib/config.ts`）；包级差异通过 overrides 全量透传给 `mergeRslibConfig`（lib 数组按 `id: "esm"` 合并），不在各包重复基线配置。
 - 普通 Rslib 配置自动读取根 `tsconfig.json`，不设置 `source.tsconfigPath`。
 - 所有 Rslib workspace（含 CLI）的 lib 条目设置 `bundle: false`：JS 与 TSGo d.ts 都是 bundleless，`dist/` 按 `src/` 结构 1:1 产出，`@/*` 由 Rslib 的 `redirect` 默认改写成带 `.js` 的相对路径（Issue #34）。d.ts 侧不设置 `dts.bundle`。**公开**声明与实现（`package.json#exports` 里列出的那些）落在 `dist/` 根目录，内部模块按 `src` 结构落在 `dist/<domain>/` 下，属预期行为。
 - bundleless 下一切 import 都是运行时 external，没有 `autoExternal` 与 chunk 概念：不要再写 `output.autoExternal`、`splitChunks` 或 `runtimeChunk` 之类只在 bundle 模式生效的配置。
