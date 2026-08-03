@@ -135,6 +135,59 @@ function recordCompilations(): {
   };
 }
 
+type CompilationRecorder = ReturnType<typeof recordCompilations>;
+
+// 等的是「这次改动的效果已经出现」，不是「又编译了第几次」。watchpack 初始扫描按
+// birthtime + FS_ACCURACY 判断目录在 watcher 启动前是否变过，而 FS_ACCURACY 从 2000ms 起、扫到带小数
+// 毫秒的文件 mtime 才收窄；集成用例是建完临时项目立刻起 watcher，所以 <root>/src 会不会被额外报一次
+// 变更、进而多出一次启动重建，取决于扫描顺序，是随机的。按次数等就会把那次噪声当成自己的重建，提前
+// 断言（Issue #86）。真实用户不会在建完项目 300ms 内跑 dev，这条噪声只影响测试。
+async function untilObserved(
+  compilations: CompilationRecorder,
+  observed: () => Promise<boolean>,
+): Promise<void> {
+  // 临时诊断：macOS CI 上「编辑源文件」那条用例等满了整个预算，本地至今复现不出来。挂住时至少要能
+  // 分清是「一次重建都没发生」还是「重建了但产物没反映改动」，否则失败信息只有一句 timed out
+  // （Issue #86）。拿到一轮 CI 数据后删掉。
+  const diagnostic = setInterval(() => {
+    console.error(`[watch-diagnostic] compilations=${compilations.all.length}`);
+  }, 15_000);
+  try {
+    while (true) {
+      // 先记住已收到的次数再检查：检查期间到达的编译不能被当成「还没来」，否则会多等一次永远不会
+      // 发生的重建。
+      const received = compilations.all.length;
+      if (await observed()) {
+        return;
+      }
+      await compilations.untilCount(received + 1);
+    }
+  } finally {
+    clearInterval(diagnostic);
+  }
+}
+
+// 这个判定会在编译进行中被调用（写完源文件后立刻查一次），此时产物目录里可能有正在写的文件。读不到
+// 就当作「还没出现」继续等下一次编译，不要把中间态当成失败。
+async function developmentOutputContains(devOutputRoot: string, marker: string): Promise<boolean> {
+  const entries = await readdir(devOutputRoot, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+    const source = await readFile(join(entry.parentPath, entry.name), "utf8").catch(() => "");
+    if (source.includes(marker)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function watchesGeneratedOutput(projectRoot: string, invalidations: readonly (string | null)[]) {
+  const generatedRoot = join(projectRoot, ".reforce");
+  return invalidations.some((path) => path?.startsWith(generatedRoot));
+}
+
 // 与 it/recovery/directory-transaction.spec.ts 同一条规则（Issue #81）：墙钟预算的职责是抓
 // 「卡死」而不是管「慢」。包级 --timeout 15000 是按快平台标定的，windows 上这些用例要起真实
 // rspack watcher 并等文件系统事件，正常耗时就可能超过它。真正的时钟是 CI job 的
@@ -199,7 +252,7 @@ test(
 );
 
 test(
-  "a source edit rebuilds once without a generated-output invalidation",
+  "a source edit rebuilds without invalidating generated output",
   async () => {
     const compilations = recordCompilations();
     const invalidations: Array<string | null> = [];
@@ -210,6 +263,7 @@ test(
       (path) => invalidations.push(path),
     );
     await compilations.untilCount(1);
+    const devOutputRoot = join(project.projectRoot, ".reforce", "dev");
 
     await writeFile(
       join(project.projectRoot, "src", "application.ts"),
@@ -223,16 +277,11 @@ export class ApplicationService {
 }
 `,
     );
-    await compilations.untilCount(2);
+    await untilObserved(compilations, () => developmentOutputContains(devOutputRoot, "updated"));
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
-    expect({
-      statuses: compilations.all.map((compilation) => compilation.status),
-      invalidations,
-    }).toEqual({
-      statuses: ["success", "success"],
-      invalidations: [join(project.projectRoot, "src", "application.ts")],
-    });
+    expect(compilations.all.every((compilation) => compilation.status === "success")).toBe(true);
+    expect(watchesGeneratedOutput(project.projectRoot, invalidations)).toBe(false);
   },
   hangDetectionBudgetMilliseconds,
 );
@@ -308,45 +357,37 @@ export class ApplicationService {}
         compilerOptions: { ...sharedConfig.compilerOptions, noImplicitOverride: true },
       })}\n`,
     );
-    await compilations.untilCount(2);
+    await untilObserved(compilations, async () => invalidations.includes(sharedConfigPath));
 
-    expect(invalidations).toContain(sharedConfigPath);
-    expect(compilations.all.map((compilation) => compilation.status)).toEqual([
-      "success",
-      "success",
-    ]);
+    expect(compilations.all.every((compilation) => compilation.status === "success")).toBe(true);
   },
   hangDetectionBudgetMilliseconds,
 );
 
 test(
-  "creating a source file rebuilds once and discovers its Bean",
+  "creating a source file rebuilds and discovers its Bean",
   async () => {
     const compilations = recordCompilations();
     const project = await setupWatch(async (compilation) => {
       compilations.accept(compilation);
     });
     await compilations.untilCount(1);
-    const createdSourcePath = join(project.projectRoot, "src", "created.ts");
+    const generatedBeansPath = join(project.projectRoot, ".reforce", "generated", "beans.ts");
 
     await writeFile(
-      createdSourcePath,
+      join(project.projectRoot, "src", "created.ts"),
       `import { Injectable } from "@reforce/context";
 
 @Injectable()
 export class CreatedService {}
 `,
     );
-    await compilations.untilCount(2);
+    await untilObserved(compilations, async () =>
+      (await readFile(generatedBeansPath, "utf8")).includes("CreatedService"),
+    );
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
-    expect(compilations.all.map((compilation) => compilation.status)).toEqual([
-      "success",
-      "success",
-    ]);
-    expect(
-      await readFile(join(project.projectRoot, ".reforce", "generated", "beans.ts"), "utf8"),
-    ).toContain("CreatedService");
+    expect(compilations.all.every((compilation) => compilation.status === "success")).toBe(true);
   },
   hangDetectionBudgetMilliseconds,
 );
@@ -378,19 +419,15 @@ export class RemovableService {}
     const generatedBeansPath = join(project.projectRoot, ".reforce", "generated", "beans.ts");
     expect(await readFile(generatedBeansPath, "utf8")).toContain("RemovableService");
 
-    const removedSourcePath = join(project.projectRoot, "src", "removable.ts");
-    await rm(removedSourcePath);
-    await compilations.untilCount(2);
+    await rm(join(project.projectRoot, "src", "removable.ts"));
+    await untilObserved(
+      compilations,
+      async () => !(await readFile(generatedBeansPath, "utf8")).includes("RemovableService"),
+    );
     await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
     expect(compilations.all.every((compilation) => compilation.status === "success")).toBe(true);
-    expect(await readFile(generatedBeansPath, "utf8")).not.toContain("RemovableService");
-    expect(invalidations).toContain(removedSourcePath);
-    expect(
-      invalidations.every(
-        (path) => path === null || !path.startsWith(join(project.projectRoot, ".reforce")),
-      ),
-    ).toBe(true);
+    expect(watchesGeneratedOutput(project.projectRoot, invalidations)).toBe(false);
   },
   hangDetectionBudgetMilliseconds,
 );
