@@ -287,7 +287,7 @@ function classDecoratorSelection(
   return {
     primary: primaryDecorators.length === 1,
     qualifierDecorators,
-    ...(explicitQualifier === undefined ? {} : { explicitQualifier }),
+    explicitQualifier,
   };
 }
 

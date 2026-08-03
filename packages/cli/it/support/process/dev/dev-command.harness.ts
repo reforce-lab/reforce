@@ -9,10 +9,12 @@ if (!cwd || !projectDirectory) {
   throw new Error("Expected an invocation directory and project selection.");
 }
 
+// argv[4] 是位置占位符：调用方要传 argv[5] 就必须先填一个空串（见 it/commands/dev-command.spec.ts
+// 的 fail-release 用例）。空串不是一个可解析的 tsconfig 路径，必须和「没传」一样折成 undefined。
 const options = {
   cwd,
   projectDirectory,
-  ...(tsconfigPath ? { tsconfigPath } : {}),
+  tsconfigPath: tsconfigPath || undefined,
   reporter: new PlainTextReporter(),
 };
 process.exitCode =

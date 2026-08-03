@@ -514,7 +514,7 @@ export class DirectoryTransactions {
       generatedTransactionRoot: canonicalGeneratedTransactionRoot,
       distTransactionRoot: canonicalDistTransactionRoot,
       lease: options.lease,
-      ...(options.faultInjector ? { faultInjector: options.faultInjector } : {}),
+      faultInjector: options.faultInjector,
     });
   }
 
@@ -1197,7 +1197,7 @@ export class DirectoryTransactions {
     await this.faultInjector?.(point, {
       kind,
       transactionToken,
-      ...(path === undefined ? {} : { path }),
+      path,
     });
   }
 

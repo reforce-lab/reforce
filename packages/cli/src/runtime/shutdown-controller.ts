@@ -108,11 +108,12 @@ export class ShutdownController {
       return false;
     }
     this.acknowledgements.push((result) => {
+      const ok = result.exitCode === 0;
       acknowledge({
         type: "reforce:shutdown-ack",
         requestId: message.requestId,
-        ok: result.exitCode === 0,
-        ...(result.exitCode === 0 ? {} : { code: "SHUTDOWN_FAILED" }),
+        ok,
+        code: ok ? undefined : "SHUTDOWN_FAILED",
       });
     });
     void this.requestShutdown();
@@ -169,7 +170,7 @@ export class ShutdownController {
 
     const result: ShutdownResult = {
       exitCode: errors.length === 0 ? 0 : 1,
-      ...(primaryError === undefined ? {} : { primaryError }),
+      primaryError,
       errors: Object.freeze(errors),
     };
     this.stateValue = "finished";

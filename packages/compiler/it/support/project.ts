@@ -117,7 +117,7 @@ export async function resolveProjectOrThrow(
 ): Promise<ResolvedProject> {
   const result = await compiler.resolveProject({
     projectDirectory,
-    ...(tsconfigPath === undefined ? {} : { tsconfigPath }),
+    tsconfigPath,
   });
   if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics));

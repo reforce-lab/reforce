@@ -74,7 +74,7 @@ function symbolReference(
     displayName: symbol.name,
     moduleSpecifier,
     exportName: symbol.name,
-    ...(declaration === undefined ? {} : { declaration }),
+    declaration,
   };
 }
 

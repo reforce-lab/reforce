@@ -24,7 +24,7 @@ function normalizeCause(cause: unknown): DiagnosticCause | undefined {
   return {
     name: cause.name,
     message: cause.message,
-    ...(typeof errorCode === "string" ? { code: errorCode } : {}),
+    code: typeof errorCode === "string" ? errorCode : undefined,
   };
 }
 
@@ -100,10 +100,10 @@ export function diagnostic(input: DiagnosticInput): CompilerDiagnostic {
     code: input.code,
     severity: "error",
     message: input.message,
-    ...(input.sourceSpan === undefined ? {} : { sourceSpan: input.sourceSpan }),
+    sourceSpan: input.sourceSpan,
     related: normalizeRelated(input.related ?? []),
-    ...(input.help === undefined ? {} : { help: input.help }),
-    ...(cause === undefined ? {} : { cause }),
+    help: input.help,
+    cause,
   });
 }
 
