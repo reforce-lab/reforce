@@ -82,7 +82,7 @@ export class ApplicationService {}
     project: resolution.project,
     gate,
     onCompilation,
-    ...(onInvalidated ? { onInvalidated } : {}),
+    onInvalidated,
   });
   watches.push(watch);
   return project;

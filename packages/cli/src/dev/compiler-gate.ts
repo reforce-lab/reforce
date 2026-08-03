@@ -108,7 +108,7 @@ export class DevCompilerGate {
     try {
       const resolution = await this.compiler.resolveProject({
         projectDirectory: this.projectDirectory,
-        ...(this.tsconfigPath === undefined ? {} : { tsconfigPath: this.tsconfigPath }),
+        tsconfigPath: this.tsconfigPath,
       });
       if (resolution.status === "failure") {
         return {

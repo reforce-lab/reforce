@@ -428,8 +428,8 @@ function cloneClassRegistration<T extends object, THook extends object>(
     dependencies: Object.freeze(registration.dependencies.map(cloneDependency)),
     create: registration.create,
     hooks: Object.freeze({
-      ...(registration.hooks.start ? { start: registration.hooks.start } : {}),
-      ...(registration.hooks.close ? { close: registration.hooks.close } : {}),
+      start: registration.hooks.start,
+      close: registration.hooks.close,
     }),
   });
 }

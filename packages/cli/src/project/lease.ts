@@ -153,7 +153,7 @@ function parseOwnerRecord(value: unknown): LeaseOwnerRecord | undefined {
     mode,
     leaseToken,
     participants,
-    ...(pid === undefined ? {} : { pid }),
+    pid,
   };
 }
 
@@ -449,7 +449,7 @@ async function conflictingOwners(
   if (mode === "writer") {
     owners.push(...(await listReaderOwners(paths)));
   }
-  return { ...(writer ? { writer } : {}), owners };
+  return { writer, owners };
 }
 
 async function recoverConflictingOwners(

@@ -91,7 +91,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     child.once("exit", (exitCode, signalName) =>
       resolve({
         exitCode,
-        ...(signalName === null ? {} : { signalName }),
+        signalName: signalName ?? undefined,
       }),
     );
   });

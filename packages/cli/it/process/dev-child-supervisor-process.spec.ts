@@ -32,7 +32,7 @@ test("real child processes obey restart budget and never overlap", async () => {
         liveChildren -= 1;
         return {
           exitCode: result.exitCode ?? null,
-          ...(result.signal === undefined ? {} : { signalName: result.signal }),
+          signalName: result.signal,
         };
       });
       return {

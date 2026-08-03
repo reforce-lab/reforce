@@ -46,7 +46,7 @@ export function factoryBean<T extends object>(
     definition: input.definition,
     dependencies: [],
     create: options.create,
-    ...(options.dispose ? { dispose: options.dispose } : {}),
+    dispose: options.dispose,
   });
 }
 
