@@ -46,6 +46,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-testing": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
@@ -73,6 +74,7 @@
       "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@reforce/context": "workspace:*",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-testing": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
@@ -90,6 +92,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -105,6 +108,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -120,6 +124,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -135,6 +140,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -150,6 +156,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -165,6 +172,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -180,10 +188,21 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
         "type-fest": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "tooling/rslib": {
+      "name": "@reforce/tooling-rslib",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@reforce/tooling-tsconfig": "workspace:*",
+        "@rslib/core": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -199,6 +218,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
@@ -338,6 +358,8 @@
     "@reforce/primitives": ["@reforce/primitives@workspace:packages/primitives"],
 
     "@reforce/testing": ["@reforce/testing@workspace:packages/testing"],
+
+    "@reforce/tooling-rslib": ["@reforce/tooling-rslib@workspace:tooling/rslib"],
 
     "@reforce/tooling-testing": ["@reforce/tooling-testing@workspace:tooling/testing"],
 

@@ -33,6 +33,7 @@
     "@biomejs/biome": "catalog:",
     "@reforce/context": "workspace:*",
     "@reforce/tooling-testing": "workspace:*",
+    "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/bun": "catalog:",

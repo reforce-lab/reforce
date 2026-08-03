@@ -1,14 +1,3 @@
-import { defineConfig } from "@rslib/core";
+import { defineLibraryConfig } from "@reforce/tooling-rslib";
 
-export default defineConfig({
-  lib: [
-    {
-      bundle: false,
-      dts: { tsgo: true },
-      externalHelpers: true,
-      format: "esm",
-      syntax: "esnext",
-    },
-  ],
-  output: { target: "node" },
-});
+export default defineLibraryConfig();
