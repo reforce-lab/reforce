@@ -1,15 +1,13 @@
 import { lstat, readdir } from "node:fs/promises";
-import nodePath, { join, relative } from "node:path";
-import {
-  compareUtf16CodeUnits,
-  isPathStrictlyContained,
-  type PathSemantics,
-  toPortablePath,
-} from "@reforce/primitives";
+import { join, relative } from "node:path";
+import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
 import { createDevBuildId, type DevBuildAsset } from "@/bundling/build-id";
+import { renderDevelopmentEntry } from "@/bundling/dev-entry";
+import { ReforceCompilerGatePlugin } from "@/bundling/dev-gate-plugin";
+import { unwatchedDirectoryNames, waitForRspackWatcher } from "@/bundling/dev-watcher-ready";
 import type { ResolvedProject } from "@/compiler-types";
-import type { DevCompilerGate, DevCompilerGateResult } from "@/dev/compiler-gate";
+import type { DevCompilerGate } from "@/dev/compiler-gate";
 import type { DevCompilation } from "@/dev/watch-coordinator";
 import {
   hotUpdateChunkFilename,
@@ -27,103 +25,6 @@ export interface StartDevWatchBuildOptions {
   readonly gate: DevCompilerGate;
   readonly onCompilation: (compilation: DevCompilation) => Promise<void>;
   readonly onInvalidated?: (path: string | null) => void;
-}
-
-// 「哪些目录不看」只允许有这一份定义：它同时喂给下面的 isProjectWatchFile 和 watchOptions.ignored。
-// 两处以前各写各的，过滤器只比较 projectRoot 相对路径的首段、ignored 用的 `**/x/**` 却匹配任意深度，
-// 于是 `<projectRoot>/packages/ui/dist/index.d.ts` 这类输入既通过过滤器又被 watcher 忽略，
-// waitForRspackWatcher 永远等不到它，dev 启动 10 秒后判死（Issue #102）。
-const unwatchedDirectoryNames: readonly string[] = [".reforce", ".git", "dist", "node_modules"];
-
-// 必须按**绝对路径**的整段判定，不能按 projectRoot 相对路径：watchpack 把 `**/x/**` 编译成锚在绝对
-// 路径 `^` 的正则，projectRoot 自身路径里的 `dist` / `node_modules` 段一样会命中（Issue #102）。
-//
-// Exported only so the containment rule can be unit tested: reaching it through
-// startDevWatchBuild needs a live rspack watcher, and the Windows cross-drive case cannot be
-// produced on the runner at all. semantics is injectable for the same reason — a non-Windows
-// runner has to be able to exercise win32 path rules; the default keeps callers unaware.
-export function isProjectWatchFile(
-  projectRoot: string,
-  path: string,
-  semantics: PathSemantics = nodePath,
-): boolean {
-  // Strict containment: projectRoot itself is a directory, never a watched file.
-  if (!isPathStrictlyContained(projectRoot, path, semantics)) {
-    return false;
-  }
-  const segments = path.split(semantics.sep);
-  return !segments.some((segment) => unwatchedDirectoryNames.includes(segment));
-}
-
-// 每轮之间让出的时间。原实现用 setImmediate，那不是「等待」而是热自旋：它以 event loop 的循环
-// 速度反复检查，实测本机空载 45ms 就绪要转 1000–5000 圈、满载 200ms 就绪要转 5000–21000 圈，
-// 开销随等待时长线性膨胀，而烧掉的正是 watcher 自己的文件系统回调所需要的 CPU。定时轮询把它
-// 降到个位数次，代价是就绪检测最多晚一个间隔（Issue #83）。
-const watcherPollIntervalMilliseconds = 10;
-
-// 判死的依据是「不再有进展」，不是「花了多久」。原实现用固定 5 秒总预算，那个数按开发机速度
-// 标定：项目更大、机器更慢、或同时跑多个 dev 时，watcher 只是还没登记完就被判成永远不会就绪，
-// 用户会拿到一个假的失败（Issue #83）。已登记数还在增长就说明它在干活，继续等；只有停滞超过
-// 下面这个窗口才说明真的卡住了。等待上限因此自动随项目规模伸缩，与平台速度无关。
-const watcherProgressStallBudgetMilliseconds = 10_000;
-
-// startDevWatchBuild must not resolve until the rspack watcher has registered every gate watch
-// input in fileTimeInfoEntries; that invariant guarantees a file modification made immediately
-// after startup triggers a rebuild instead of being silently missed.
-async function waitForRspackWatcher(
-  plugin: ReforceCompilerGatePlugin,
-  projectRoot: string,
-): Promise<void> {
-  let lastProgress = "";
-  let lastProgressAt = Date.now();
-  while (true) {
-    const projectFiles =
-      plugin.current?.watchInputs.fileDependencies.filter((path) =>
-        isProjectWatchFile(projectRoot, path),
-      ) ?? [];
-    // getInfo() 每次都会重建整张表，一轮只取一次。
-    const registeredFiles = plugin.compiler?.watching?.watcher?.getInfo().fileTimeInfoEntries;
-    const registered =
-      registeredFiles === undefined
-        ? 0
-        : projectFiles.filter((path) => registeredFiles.has(path)).length;
-    if (projectFiles.length > 0 && registered === projectFiles.length) {
-      return;
-    }
-    // watchInputs 自己也可能还在增长，所以「有进展」要同时看已登记数和待登记总数。
-    const progress = `${registered}/${projectFiles.length}`;
-    if (progress !== lastProgress) {
-      lastProgress = progress;
-      lastProgressAt = Date.now();
-    } else if (Date.now() - lastProgressAt >= watcherProgressStallBudgetMilliseconds) {
-      throw new Error("Development filesystem watcher stopped making progress.");
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, watcherPollIntervalMilliseconds));
-  }
-}
-
-function renderDevelopmentEntry(): string {
-  return `import { createRspackHmrRuntime, runDevelopmentApplication } from "reforce:dev-runtime";
-
-const hot = import.meta.webpackHot;
-if (!hot) {
-  throw new Error("Reforce development entry requires the Rspack HMR runtime.");
-}
-
-// Must stay written exactly like this — on the full \`import.meta.webpackHot\` member expression,
-// with a literal specifier, in the module that owns this hot object. rspack rewrites the accepted
-// request into a module id at build time by matching that expression shape; going through the
-// \`hot\` alias above, or passing a variable from runtime/hmr-manager.ts, leaves the raw string in
-// the output and \`_acceptedDependencies\` is then keyed by something no dependency ever matches.
-// That is why every update used to propagate past this entry and abort as "not accepted"
-// (Issue #46).
-import.meta.webpackHot.accept("reforce:application-bootstrap");
-
-process.exitCode = await runDevelopmentApplication({
-  hot: createRspackHmrRuntime(hot),
-  loadBootstrap: () => import("reforce:application-bootstrap"),
-});
-`;
 }
 
 function assetRole(path: string): DevBuildAsset["role"] {
@@ -184,27 +85,6 @@ function statsHash(stats: Rspack.Stats | Rspack.MultiStats): string | undefined 
   return hashes.length === 0 ? undefined : hashes.join(":");
 }
 
-function addWatchInputs(compilation: Rspack.Compilation, result: DevCompilerGateResult): void {
-  compilation.fileDependencies.addAll(result.watchInputs.fileDependencies);
-  compilation.contextDependencies.addAll(result.watchInputs.contextDependencies);
-  compilation.missingDependencies.addAll(result.watchInputs.missingDependencies);
-}
-
-function addGateErrors(compilation: Rspack.Compilation, result: DevCompilerGateResult): void {
-  if (result.status === "success") {
-    return;
-  }
-  if (result.status === "error") {
-    compilation.errors.push(
-      new rspack.WebpackError("Reforce compiler gate failed", { cause: result.error }),
-    );
-    return;
-  }
-  for (const diagnostic of result.diagnostics) {
-    compilation.errors.push(new rspack.WebpackError(`[${diagnostic.code}] ${diagnostic.message}`));
-  }
-}
-
 function createDevWatchBuild(
   build: DevWatchBuild,
   compiler: Rspack.Compiler | undefined,
@@ -219,67 +99,6 @@ function createDevWatchBuild(
       return closePromise;
     },
   };
-}
-
-class ReforceCompilerGatePlugin {
-  private readonly gate: DevCompilerGate;
-  private readonly generatedModules: readonly string[];
-  private currentValue: DevCompilerGateResult | undefined;
-  private compilerValue: Rspack.Compiler | undefined;
-  private knownWatchFiles = new Set<string>();
-
-  constructor(gate: DevCompilerGate, generatedModules: readonly string[]) {
-    this.gate = gate;
-    this.generatedModules = generatedModules;
-  }
-
-  get current(): DevCompilerGateResult | undefined {
-    return this.currentValue;
-  }
-
-  get compiler(): Rspack.Compiler | undefined {
-    return this.compilerValue;
-  }
-
-  apply(compiler: Rspack.Compiler): void {
-    this.compilerValue = compiler;
-    compiler.hooks.beforeCompile.tapPromise("ReforceCompilerGate", () =>
-      this.prepareCompilation(compiler),
-    );
-    compiler.hooks.thisCompilation.tap("ReforceCompilerGate", (compilation) => {
-      const current = this.currentValue;
-      if (!current) {
-        compilation.errors.push(new rspack.WebpackError("Reforce compiler gate did not run."));
-        return;
-      }
-      addWatchInputs(compilation, current);
-      addGateErrors(compilation, current);
-    });
-  }
-
-  private async prepareCompilation(compiler: Rspack.Compiler): Promise<void> {
-    const initial = this.gate.takeInitialResult();
-    this.currentValue = initial ?? (await this.gate.compileNext());
-    if (initial === undefined) {
-      this.markModifiedFiles(compiler, this.currentValue);
-    }
-    this.knownWatchFiles = new Set(this.currentValue.watchInputs.fileDependencies);
-  }
-
-  private markModifiedFiles(compiler: Rspack.Compiler, current: DevCompilerGateResult): void {
-    const modifiedFiles = new Set(compiler.modifiedFiles);
-    if (current.status === "success") {
-      for (const generatedModule of this.generatedModules) {
-        modifiedFiles.add(generatedModule);
-      }
-    }
-    for (const watchFile of current.watchInputs.fileDependencies) {
-      if (!this.knownWatchFiles.has(watchFile)) {
-        modifiedFiles.add(watchFile);
-      }
-    }
-    compiler.modifiedFiles = modifiedFiles;
-  }
 }
 
 export async function startDevWatchBuild(

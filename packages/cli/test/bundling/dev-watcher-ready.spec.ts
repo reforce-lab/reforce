@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { posix, win32 } from "node:path";
-import { isProjectWatchFile } from "@/bundling/dev-watch";
+import { isProjectWatchFile } from "@/bundling/dev-watcher-ready";
 
 test("a gate watch input inside the project is watched", () => {
   const watched = isProjectWatchFile("/project", "/project/src/service.ts", posix);
