@@ -1,30 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { CliReporterEvent, Reporter } from "@/reporter";
 import { DevEntryController } from "@/runtime/dev-entry";
-import {
-  applicationBootstrapSpecifier,
-  DevHmrManager,
-  type DevTimerScheduler,
-  type RspackHmrRuntime,
-} from "@/runtime/hmr-manager";
+import { DevHmrManager, type RspackHmrRuntime } from "@/runtime/hmr-manager";
 
-function recordingScheduler(): DevTimerScheduler & {
-  readonly callbacks: Array<() => void>;
-  clearCount: number;
-} {
-  const callbacks: Array<() => void> = [];
-  return {
-    callbacks,
-    clearCount: 0,
-    setInterval(callback) {
-      callbacks.push(callback);
-      return callback;
-    },
-    clearInterval() {
-      this.clearCount += 1;
-    },
-  };
-}
+// Stands in for whatever module id rspack reports as outdated; the manager only checks emptiness.
+const outdatedModuleId = "./.reforce/generated/bootstrap.ts";
 
 class RecordingReporter implements Reporter {
   readonly events: CliReporterEvent[] = [];
@@ -50,15 +30,11 @@ class RecordingReporter implements Reporter {
 describe("development HMR manager", () => {
   test("applies an update only after the previous Context finishes closing", async () => {
     const events: string[] = [];
-    const scheduler = recordingScheduler();
     let generation = 1;
     const hot: RspackHmrRuntime = {
-      accept(specifier) {
-        events.push(`accept:${specifier}`);
-      },
       async check(autoApply) {
         events.push(`check:${autoApply}`);
-        return [applicationBootstrapSpecifier];
+        return [outdatedModuleId];
       },
       async apply() {
         events.push("apply");
@@ -67,7 +43,6 @@ describe("development HMR manager", () => {
     };
     const manager = new DevHmrManager({
       hot,
-      scheduler,
       onFatal: () => undefined,
       bootstrap: async () => {
         const currentGeneration = generation;
@@ -83,14 +58,7 @@ describe("development HMR manager", () => {
 
     await manager.checkForUpdates();
 
-    expect(events).toEqual([
-      `accept:${applicationBootstrapSpecifier}`,
-      "bootstrap:1",
-      "check:false",
-      "close:1",
-      "apply",
-      "bootstrap:2",
-    ]);
+    expect(events).toEqual(["bootstrap:1", "check:false", "close:1", "apply", "bootstrap:2"]);
     await manager.close();
   });
 
@@ -100,7 +68,6 @@ describe("development HMR manager", () => {
     let maximumActiveChecks = 0;
     let checkCount = 0;
     const hot: RspackHmrRuntime = {
-      accept() {},
       async check() {
         checkCount += 1;
         activeChecks += 1;
@@ -113,7 +80,6 @@ describe("development HMR manager", () => {
     };
     const manager = new DevHmrManager({
       hot,
-      scheduler: recordingScheduler(),
       onFatal: () => undefined,
       bootstrap: async () => ({ close: async () => undefined }),
     });
@@ -121,7 +87,7 @@ describe("development HMR manager", () => {
 
     const first = manager.checkForUpdates();
     const second = manager.checkForUpdates();
-    firstCheck.resolve([applicationBootstrapSpecifier]);
+    firstCheck.resolve([outdatedModuleId]);
 
     expect(second).toBe(first);
     await first;
@@ -136,7 +102,6 @@ describe("development HMR manager", () => {
     let applies = 0;
     const manager = new DevHmrManager({
       hot: {
-        accept() {},
         async check() {
           return false;
         },
@@ -144,7 +109,6 @@ describe("development HMR manager", () => {
           applies += 1;
         },
       },
-      scheduler: recordingScheduler(),
       onFatal: () => undefined,
       bootstrap: async () => {
         bootstraps += 1;
@@ -171,15 +135,13 @@ describe("development HMR manager", () => {
     let closes = 0;
     const manager = new DevHmrManager({
       hot: {
-        accept() {},
         async check() {
-          return [applicationBootstrapSpecifier];
+          return [outdatedModuleId];
         },
         async apply() {
           throw fatal;
         },
       },
-      scheduler: recordingScheduler(),
       onFatal: (error) => fatalErrors.push(error),
       bootstrap: async () => ({
         async close() {
@@ -201,10 +163,8 @@ describe("development HMR manager", () => {
     const cleanup = new Error("cleanup failed");
     const flush = new Error("flush failed");
     const reporter = new RecordingReporter(flush);
-    const scheduler = recordingScheduler();
     const entry = new DevEntryController({
       hot: {
-        accept() {},
         async check() {
           throw fatal;
         },
@@ -216,7 +176,6 @@ describe("development HMR manager", () => {
         },
       }),
       reporter,
-      scheduler,
       installProcessHandlers: false,
     });
     await entry.start();
@@ -229,6 +188,5 @@ describe("development HMR manager", () => {
     expect(result.errors).toEqual([fatal, cleanup, flush]);
     expect(reporter.events).toHaveLength(2);
     expect(reporter.flushCount).toBe(1);
-    expect(scheduler.clearCount).toBe(1);
   });
 });

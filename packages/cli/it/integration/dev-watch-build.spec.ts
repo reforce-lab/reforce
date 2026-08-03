@@ -115,9 +115,15 @@ test("Rsbuild watch emits a Bun ESM entry after the compiler gate commits genera
   const result = await compiled.promise;
 
   expect(result.status).toBe("success");
-  expect(
-    await readFile(join(project.projectRoot, ".reforce", "dev", "main.mjs"), "utf8"),
-  ).toContain("reforce:application-bootstrap");
+  // rspack must have rewritten the accepted request into a real module id. Leaving the raw
+  // "reforce:application-bootstrap" specifier in the output keys _acceptedDependencies by a string
+  // no dependency matches, which silently disables every hot update (Issue #46).
+  const entrySource = await readFile(
+    join(project.projectRoot, ".reforce", "dev", "main.mjs"),
+    "utf8",
+  );
+  expect(entrySource).toContain('hot.accept("./.reforce/generated/bootstrap.ts"');
+  expect(entrySource).not.toContain('accept("reforce:application-bootstrap")');
 });
 
 test("keeps the development entry source inside the build graph", async () => {

@@ -2,6 +2,7 @@ import { requireBunExecutable } from "@/bun-runtime";
 import {
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
+  isDevBuildReadyMessage,
   isDevChildLeaseParticipantAcknowledgement,
   writerLeaseTokenEnvironmentVariable,
 } from "@/dev-ipc";
@@ -22,10 +23,15 @@ export interface RunDevelopmentApplicationOptions {
   readonly ipcTimeoutMilliseconds?: number;
 }
 
-// rspack keeps only the latest compilation's hot-update output, so the manifest for the hash
-// this client last saw can be gone after a rebuild and check() then fails with a 404-like error.
-// Swallowing it as "no update" keeps polling alive; any other failure must propagate because
+// The parent now only asks for a check once a build validated, so a missing manifest should not
+// happen. It stays guarded because rspack keeps only the latest compilation's hot-update output:
+// two builds landing back to back can still delete the manifest for the hash this child holds.
+// Swallowing that as "no update" keeps the child alive; any other failure must propagate because
 // DevHmrManager treats a rejected check as fatal and shuts the child down.
+//
+// The pattern must track output.hotUpdateMainFilename in bundling/dev-watch.ts. It is `.mjs`, not
+// `.json`: the `import` chunk-loading runtime reads `obj.default`, so the manifest is an ES module
+// and Bun would otherwise pick a JSON loader for it (Issue #46).
 function isMissingHotUpdateManifest(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
@@ -38,15 +44,14 @@ function isMissingHotUpdateManifest(error: unknown): boolean {
   return locations.some(
     (location) =>
       typeof location === "string" &&
-      /(?:^|\/)updates\/[^/]+\.hot-update\.json(?:\b|["'])/u.test(location.replaceAll("\\", "/")),
+      /(?:^|\/)updates\/[^/]+\.hot-update-manifest\.mjs(?:\b|["'])/u.test(
+        location.replaceAll("\\", "/"),
+      ),
   );
 }
 
 export function createRspackHmrRuntime(hot: RspackHmrRuntime): RspackHmrRuntime {
   return {
-    accept(specifier) {
-      hot.accept(specifier);
-    },
     async check(autoApply) {
       try {
         return await hot.check(autoApply);
@@ -151,10 +156,21 @@ export async function runDevelopmentApplication(
     },
   });
 
+  // The parent is the only side that knows a build landed and validated; asking on our own is what
+  // used to poison the HMR runtime (Issue #46). A rejected check is fatal by design, so failures
+  // reach DevHmrManager rather than being swallowed here.
+  const onBuildReady = (message: unknown) => {
+    if (!isDevBuildReadyMessage(message)) {
+      return;
+    }
+    void entry.checkForUpdates().catch(() => undefined);
+  };
+
   const runEntry = async (): Promise<ShutdownResult> => {
     try {
       await entry.start();
       if (entry.state === "running") {
+        process.on("message", onBuildReady);
         await sendToParent({ type: "reforce:dev-ready" } satisfies DevChildReadyMessage);
       }
       return await entry.finished;
@@ -169,6 +185,7 @@ export async function runDevelopmentApplication(
   };
 
   const result = await runEntry();
+  process.off("message", onBuildReady);
   let exitCode = result.exitCode;
   try {
     await endpoint?.close();

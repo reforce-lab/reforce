@@ -18,6 +18,15 @@ export interface DevChildReadyMessage {
   readonly type: "reforce:dev-ready";
 }
 
+// The child cannot discover updates on its own: whether a hot-update manifest exists depends on
+// whether the parent has finished compiling, and asking before then leaves the rspack HMR runtime
+// permanently stuck in "check" status (Issue #46). The parent is the only side that knows a build
+// landed and validated, so it is the side that speaks.
+export interface DevBuildReadyMessage {
+  readonly type: "reforce:dev-build-ready";
+  readonly buildId: string;
+}
+
 export interface ShutdownRequestMessage {
   readonly type: "reforce:shutdown";
   readonly requestId: string;
@@ -64,6 +73,16 @@ export function isDevChildLeaseParticipantAcknowledgement(
 
 export function isDevChildReadyMessage(value: unknown): value is DevChildReadyMessage {
   return isObject(value) && Reflect.get(value, "type") === "reforce:dev-ready";
+}
+
+export function isDevBuildReadyMessage(value: unknown): value is DevBuildReadyMessage {
+  if (!isObject(value)) {
+    return false;
+  }
+  return (
+    Reflect.get(value, "type") === "reforce:dev-build-ready" &&
+    typeof Reflect.get(value, "buildId") === "string"
+  );
 }
 
 export function isShutdownRequestMessage(value: unknown): value is ShutdownRequestMessage {

@@ -1,57 +1,36 @@
 import type { CloseableApplication } from "@/runtime/shutdown-controller";
 
-export const applicationBootstrapSpecifier = "reforce:application-bootstrap";
-
+// The accept boundary lives in the generated development entry, not here: rspack only rewrites an
+// accepted request into a module id when it sees the literal `import.meta.webpackHot.accept("...")`
+// expression in the module that owns the hot object (Issue #46). Anything this side could call is
+// keyed by a string no dependency matches, so the contract deliberately has no accept().
 export interface RspackHmrRuntime {
-  accept(specifier: typeof applicationBootstrapSpecifier): void;
   check(autoApply: false): Promise<false | null | readonly string[]>;
   apply(): Promise<unknown>;
-}
-
-export interface DevTimerScheduler {
-  setInterval(callback: () => void, milliseconds: number): unknown;
-  clearInterval(timer: unknown): void;
 }
 
 export interface DevHmrManagerOptions {
   readonly hot: RspackHmrRuntime;
   readonly bootstrap: () => Promise<CloseableApplication>;
   readonly onFatal: (error: unknown) => void;
-  readonly scheduler?: DevTimerScheduler;
 }
-
-const pollingIntervalMilliseconds = 250;
-
-const defaultScheduler: DevTimerScheduler = {
-  setInterval(callback, milliseconds) {
-    const timer = setInterval(callback, milliseconds);
-    timer.unref();
-    return timer;
-  },
-  clearInterval(timer) {
-    clearInterval(timer as ReturnType<typeof setInterval>); // Only this scheduler creates the opaque timer value.
-  },
-};
 
 export class DevHmrManager implements CloseableApplication {
   private readonly bootstrap: () => Promise<CloseableApplication>;
   private readonly hot: RspackHmrRuntime;
   private readonly onFatal: (error: unknown) => void;
-  private readonly scheduler: DevTimerScheduler;
   private application: CloseableApplication | undefined;
   private closePromise: Promise<void> | undefined;
   private fatalNotified = false;
   private pendingCheck = false;
   private shuttingDown = false;
   private started = false;
-  private timer: unknown;
   private updatePromise: Promise<void> | undefined;
 
   constructor(options: DevHmrManagerOptions) {
     this.bootstrap = options.bootstrap;
     this.hot = options.hot;
     this.onFatal = options.onFatal;
-    this.scheduler = options.scheduler ?? defaultScheduler;
   }
 
   async start(): Promise<void> {
@@ -59,18 +38,14 @@ export class DevHmrManager implements CloseableApplication {
       throw new Error("The development HMR manager can only start once.");
     }
     this.started = true;
-    this.hot.accept(applicationBootstrapSpecifier);
     this.application = await this.bootstrap();
     if (this.shuttingDown) {
       await this.close();
-      return;
     }
-    this.timer = this.scheduler.setInterval(() => {
-      if (this.shuttingDown) {
-        return;
-      }
-      void this.checkForUpdates().catch(() => undefined);
-    }, pollingIntervalMilliseconds);
+    // No polling here on purpose. checkForUpdates() runs only when the parent reports a validated
+    // build over IPC, which is the only moment the hot-update manifest is known to exist. Asking
+    // on a timer meant asking before the first rebuild had ever happened, and the rspack HMR
+    // runtime has no way back to "idle" once that download rejects (Issue #46).
   }
 
   checkForUpdates(): Promise<void> {
@@ -100,7 +75,6 @@ export class DevHmrManager implements CloseableApplication {
       return this.closePromise;
     }
     this.shuttingDown = true;
-    this.clearTimer();
     this.closePromise = this.finishClose();
     return this.closePromise;
   }
@@ -131,16 +105,7 @@ export class DevHmrManager implements CloseableApplication {
     }
     this.fatalNotified = true;
     this.shuttingDown = true;
-    this.clearTimer();
     this.onFatal(error);
-  }
-
-  private clearTimer(): void {
-    if (this.timer === undefined) {
-      return;
-    }
-    this.scheduler.clearInterval(this.timer);
-    this.timer = undefined;
   }
 
   private async finishClose(): Promise<void> {

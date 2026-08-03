@@ -8,10 +8,15 @@ import {
 class ManualChild implements ManagedDevChild {
   private readonly exit = Promise.withResolvers<DevChildExit>();
   readonly exited = this.exit.promise;
+  readonly buildsNotified: string[] = [];
   shutdownCount = 0;
 
   finish(exitCode: number): void {
     this.exit.resolve({ exitCode });
+  }
+
+  async notifyBuildReady(buildId: string): Promise<void> {
+    this.buildsNotified.push(buildId);
   }
 
   async requestShutdown(): Promise<void> {
@@ -131,5 +136,41 @@ describe("development child supervisor", () => {
     await first;
     expect(child.shutdownCount).toBe(1);
     expect(supervisor.hasLiveChild).toBe(false);
+  });
+
+  test("a live child is told about a new build instead of being replaced", async () => {
+    const children: ManualChild[] = [];
+    const supervisor = new DevChildSupervisor({
+      spawn: async () => {
+        const child = new ManualChild();
+        children.push(child);
+        return child;
+      },
+    });
+    await supervisor.acceptSuccessfulBuild("rspack:first");
+
+    await supervisor.acceptSuccessfulBuild("rspack:second");
+    await settleSupervisor(supervisor);
+
+    expect(children).toHaveLength(1);
+    expect(children[0]?.buildsNotified).toEqual(["rspack:second"]);
+    expect(children[0]?.shutdownCount).toBe(0);
+  });
+
+  test("a rebuild that produces the same build id does not notify the live child", async () => {
+    const children: ManualChild[] = [];
+    const supervisor = new DevChildSupervisor({
+      spawn: async () => {
+        const child = new ManualChild();
+        children.push(child);
+        return child;
+      },
+    });
+    await supervisor.acceptSuccessfulBuild("rspack:first");
+
+    await supervisor.acceptSuccessfulBuild("rspack:first");
+    await settleSupervisor(supervisor);
+
+    expect(children[0]?.buildsNotified).toEqual([]);
   });
 });
