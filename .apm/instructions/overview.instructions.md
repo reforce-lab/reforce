@@ -44,8 +44,11 @@ bun run build --filter=<pkg>
 - 产出文件变更（修改/新增/删除）前运行 `git rev-parse --git-dir --git-common-dir` 判断工作区：
   - 两者指向不同路径：当前已是 Git/Codex/Claude 管理的 worktree，直接使用，禁止嵌套创建。
   - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在
-    `~/.git-worktrees/<仓库目录名>/<分支名>` 下新建 worktree（分支名保留斜杠，路径与分支一一对应，例如
-    `fix/dev-watch-cross-drive` → `~/.git-worktrees/reforce/fix/dev-watch-cross-drive`）。必须在仓库根**之外**：
+    `~/.coding-worktrees/<仓库目录名>/<分支名>` 下新建 worktree（分支名保留斜杠，路径与分支一一对应，例如
+    `fix/dev-watch-cross-drive` → `~/.coding-worktrees/reforce/fix/dev-watch-cross-drive`）。目录名不得以 `.git`
+    开头（曾用的 `~/.git-worktrees` 即因此弃用）：tsgo 判断模块能否用包名命名时要向上找 `node_modules`，它跳过
+    git 目录用的是前缀匹配，`.git*` 全被跳过，于是每个 `rslib.config.ts` 都报 `TS2883` 要求显式类型标注——主
+    工作区与 CI 都不复现，只有按本约定建 worktree 的人会撞上（Issue #99）。必须在仓库根**之外**：
     `apm compile --clean` 的孤儿扫描是 `<仓库根>.rglob("AGENTS.md")` 加一份硬编码 skip 列表，不读 `.gitignore`
     也无配置项，worktree 只要在仓库根里面，就会被它把**被 git 跟踪**的 `AGENTS.md` 判成 orphan 删掉
     （Issue #47、#52，上游 microsoft/apm#2436）。
