@@ -34,7 +34,7 @@
     "test:e2e": "turbo run test:e2e --filter=@reforce/e2e",
     "check": "turbo run check",
     "check:write": "turbo run check:write",
-    "prepare": "lefthook install && apm install && apm compile --clean"
+    "prepare": "lefthook install && apm install && apm compile"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

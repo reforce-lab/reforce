@@ -43,15 +43,18 @@ bun run build --filter=<pkg>
 - 涉及 Issue、分支、提交或 PR 时，遵循 `CONTRIBUTING.md` 的 Issue 前置、分支命名和 PR 关联规则。
 - 产出文件变更（修改/新增/删除）前运行 `git rev-parse --git-dir --git-common-dir` 判断工作区：
   - 两者指向不同路径：当前已是 Git/Codex/Claude 管理的 worktree，直接使用，禁止嵌套创建。
-  - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在 `.worktrees` 下新建
-    worktree。
+  - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在仓库**外**的
+    `../reforce.worktrees/<slug>` 下新建 worktree。放仓库外不是偏好问题：`apm compile --clean` 的孤儿扫描是
+    `<仓库根>.rglob("AGENTS.md")` 加一份硬编码 skip 列表，不读 `.gitignore` 也无配置项，只要 worktree 在仓库根里面，
+    它就会把别的 worktree 里**被 git 跟踪**的 `AGENTS.md` 判成 orphan 删掉（Issue #47）。
   - 从对话和相关 diff 可确认任务延续当前未提交工作时，直接在当前工作区继续，不另建 worktree；仅在关联不明或可能覆盖冲突改动时询问
     owner。
   - 指定 PR、分支或 commit 时以指定引用为基线；全新任务默认基于 `main`。
-  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `bun install`；根 `prepare` 会执行 `apm install && apm compile --clean`，生成
+  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `bun install`；根 `prepare` 会执行 `apm install && apm compile`，生成
     `AGENTS.md` 及运行时配置。不要把未初始化 worktree 直接交给独立 agent。
-  - 在主工作区运行 `apm compile --clean` 前，先用 `--dry-run` 确认不会删除其他已注册 worktree 的产物；若会删除，改用不带
-    `--clean` 的编译。`--clean` 会递归清理被视为 orphan 的生成 `AGENTS.md`。
+  - `--clean` 不进 `prepare`：它是维护操作，混进安装步骤意味着任何人任何时候 `bun install` 都可能误删（Issue #47）。删除
+    instruction 后如需清理残留的生成 `AGENTS.md`，手动跑 `apm compile --clean`；仓库根 `.worktrees/` 尚未清空前，先用
+    `--dry-run` 确认删除清单。
 - 全仓库使用 TS7 (tsgo)：
   - 类型安全第一
   - 每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，根 `tsconfig.node.json` 管理源码与 Rslib/tooling 配置；测试目录各自维护 `tsconfig.json`。所有配置继承共享基线的 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`
