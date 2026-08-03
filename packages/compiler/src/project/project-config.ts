@@ -229,7 +229,7 @@ export async function inspectProjectConfigCandidate(
     };
   }
 
-  if (!generatedDeclarationsAreIncluded(loaded.parsed.config)) {
+  if (!generatedDeclarationsAreIncluded(loaded.parsed.config, canonicalConfig)) {
     return {
       status: "failure",
       diagnostics: [
