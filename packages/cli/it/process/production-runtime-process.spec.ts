@@ -3,7 +3,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolveBunExecutable } from "@reforce/tooling-testing";
-import { type LeaseParticipant, probeLeaseEndpoint } from "@/lease-endpoint";
+import { type LeaseParticipant, probeLeaseEndpoint } from "@/project/lease-endpoint";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/production/production-runtime-order.harness.ts", import.meta.url),

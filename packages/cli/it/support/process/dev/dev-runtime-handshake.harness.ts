@@ -1,5 +1,5 @@
-import type { RspackHmrRuntime } from "@/dev-hmr-manager";
 import { runDevelopmentApplication } from "@/dev-runtime";
+import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 const onMessage = (message: unknown) => {
   if (

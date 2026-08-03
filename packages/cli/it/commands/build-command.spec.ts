@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
-import { runBuildCommand } from "@/build-command";
+import { runBuildCommand } from "@/commands/build";
 import type { CliReporterEvent, Reporter } from "@/reporter";
 
 const projects: TemporaryProject[] = [];

@@ -1,5 +1,5 @@
 import type { Reporter } from "@/reporter";
-import { installProcessShutdownHandlers, ShutdownController } from "@/shutdown-controller";
+import { installProcessShutdownHandlers, ShutdownController } from "@/runtime/shutdown-controller";
 
 const reporter: Reporter = {
   report() {},
