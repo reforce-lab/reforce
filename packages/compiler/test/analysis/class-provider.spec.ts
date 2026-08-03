@@ -467,6 +467,14 @@ describe("class provider analysis", () => {
     expect(outcome.codes).toEqual(["TYPE_LINK_FAILED"]);
   });
 
+  test("reports an unlinkable implemented interface only once when the linker already recorded it", () => {
+    const declaration = classDeclaration({ implements: [typeReference("Port")] });
+
+    const outcome = analyze(declaration, createLinker({ recordsLinkFailure: true }));
+
+    expect(outcome.codes).toEqual([]);
+  });
+
   test("reports an implemented type that resolves to an unsupported declaration", () => {
     const declaration = classDeclaration({ implements: [typeReference("Alias")] });
 
@@ -789,6 +797,16 @@ describe("class provider analysis", () => {
     const outcome = analyze(declaration);
 
     expect(outcome.codes).toEqual(["UNSUPPORTED_INJECTION_TYPE"]);
+  });
+
+  test("reports an unlinkable constructor parameter type only once when the linker already recorded it", () => {
+    const declaration = classDeclaration({
+      constructors: [constructorDeclaration({ parameters: [parameter(0, typeReference("Port"))] })],
+    });
+
+    const outcome = analyze(declaration, createLinker({ recordsLinkFailure: true }));
+
+    expect(outcome.codes).toEqual([]);
   });
 
   test("rejects ApplicationContext injection", () => {

@@ -82,13 +82,29 @@ function unsupportedSymbol(name: string): LinkedSymbol {
   };
 }
 
+const linkerDiagnostic: CompilerDiagnostic = {
+  kind: "compiler",
+  code: "TYPE_LINK_FAILED",
+  severity: "error",
+  message: "The linker already reported this failure.",
+  related: [],
+};
+
+interface LinkerInput {
+  readonly recordsLinkFailure?: boolean;
+}
+
 // The real linker resolves modules and external declarations through the filesystem, so analysis
 // rules are exercised against an in-memory name table. It decides nothing about Bean selection.
-function createLinker(symbols: readonly LinkedSymbol[] = []): ProjectLinker {
+function createLinker(
+  symbols: readonly LinkedSymbol[] = [],
+  input: LinkerInput = {},
+): ProjectLinker {
   const byName = new Map(symbols.map((symbol) => [symbol.name, symbol]));
   byName.set("defineBean", contextSymbol("defineBean"));
+  const diagnostics: CompilerDiagnostic[] = [];
   return {
-    diagnostics: [],
+    diagnostics,
     collectWatchInputs: () => ({
       fileDependencies: [],
       contextDependencies: [],
@@ -102,9 +118,13 @@ function createLinker(symbols: readonly LinkedSymbol[] = []): ProjectLinker {
         return undefined;
       }
       const symbol = byName.get(type.name.name);
-      return symbol === undefined
-        ? undefined
-        : { symbol, typeArguments: type.typeArguments, lazy: false, span: type.span };
+      if (symbol === undefined) {
+        if (input.recordsLinkFailure === true) {
+          diagnostics.push(linkerDiagnostic);
+        }
+        return undefined;
+      }
+      return { symbol, typeArguments: type.typeArguments, lazy: false, span: type.span };
     },
     symbolForDeclaration() {
       return undefined;
@@ -369,6 +389,14 @@ describe("factory provider analysis", () => {
     const outcome = analyze(declaration);
 
     expect(outcome.codes).toEqual(["INVALID_DEFINE_BEAN"]);
+  });
+
+  test("reports an unresolvable provided type only once when the linker already recorded it", () => {
+    const declaration = beanDeclaration({ typeArguments: [typeReference("Missing")] });
+
+    const outcome = analyze(declaration, createLinker([], { recordsLinkFailure: true }));
+
+    expect(outcome.codes).toEqual([]);
   });
 
   test("rejects a generic provided type", () => {

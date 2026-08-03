@@ -141,7 +141,7 @@ function expandProvidedInterface(
   }
   const parents = symbol.declaration.extends.flatMap((type) => {
     // linker.resolveType already records its own diagnostic when it fails; only add
-    // TYPE_LINK_FAILED when it didn't, or the same parent type gets reported twice.
+    // TYPE_LINK_FAILED when it didn't, or the same parent type gets reported twice (#108).
     const diagnosticCount = linker.diagnostics.length;
     const linked = linker.resolveType(source, type);
     if (linked === undefined) {
@@ -369,16 +369,21 @@ function linkedClassContracts(
   let startHook = false;
   let closeHook = false;
   for (const implementedType of declaration.implements) {
+    // linker.resolveType already records its own diagnostic when it fails; only add
+    // TYPE_LINK_FAILED when it didn't, or the same implemented type gets reported twice (#108).
+    const diagnosticCount = linker.diagnostics.length;
     const linked = linker.resolveType(source, implementedType);
     if (linked === undefined) {
-      diagnostics.push(
-        diagnostic({
-          code: "TYPE_LINK_FAILED",
-          message: `Cannot link an implemented interface on ${exportName}.`,
-          sourceSpan: implementedType.span,
-          help: "Implement a directly linked non-generic named interface.",
-        }),
-      );
+      if (linker.diagnostics.length === diagnosticCount) {
+        diagnostics.push(
+          diagnostic({
+            code: "TYPE_LINK_FAILED",
+            message: `Cannot link an implemented interface on ${exportName}.`,
+            sourceSpan: implementedType.span,
+            help: "Implement a directly linked non-generic named interface.",
+          }),
+        );
+      }
       continue;
     }
     if (linked.symbol.kind === "context") {
@@ -458,16 +463,21 @@ function constructorParameterDependency(
     );
     return undefined;
   }
+  // linker.resolveType already records its own diagnostic when it fails; only add
+  // UNSUPPORTED_INJECTION_TYPE when it didn't, or one bad parameter type is reported twice (#108).
+  const diagnosticCount = linker.diagnostics.length;
   const linked = linker.resolveType(source, parameter.type);
   if (linked === undefined) {
-    diagnostics.push(
-      diagnostic({
-        code: "UNSUPPORTED_INJECTION_TYPE",
-        message: `Constructor parameter ${parameter.index} on ${exportName} is not a supported injection type.`,
-        sourceSpan: parameter.span,
-        help: "Use a named concrete class, interface, generated qualifier, or Lazy wrapper.",
-      }),
-    );
+    if (linker.diagnostics.length === diagnosticCount) {
+      diagnostics.push(
+        diagnostic({
+          code: "UNSUPPORTED_INJECTION_TYPE",
+          message: `Constructor parameter ${parameter.index} on ${exportName} is not a supported injection type.`,
+          sourceSpan: parameter.span,
+          help: "Use a named concrete class, interface, generated qualifier, or Lazy wrapper.",
+        }),
+      );
+    }
     return undefined;
   }
   if (linked.symbol.kind === "context" && linked.symbol.name === "ApplicationContext") {
