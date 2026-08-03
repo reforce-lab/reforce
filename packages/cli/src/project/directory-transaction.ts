@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { isObject } from "radashi";
+import { hasExactKeys } from "@/project/exact-keys";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
 import { ProjectBusyError, type ProjectLease } from "@/project/lease";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
@@ -131,10 +132,6 @@ function isMissing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-function toPosixPath(path: string): string {
-  return path.split(sep).join("/");
-}
-
 function assertRelativeFilePath(path: string): void {
   const segments = path.split("/");
   if (
@@ -192,15 +189,6 @@ function createAggregateHash(
   return hash.digest("hex");
 }
 
-async function readFileClosed(path: string): Promise<Uint8Array> {
-  const handle = await open(path, "r");
-  try {
-    return await handle.readFile();
-  } finally {
-    await handle.close();
-  }
-}
-
 async function collectTreeEntries(
   root: string,
   directory = root,
@@ -221,8 +209,8 @@ async function collectTreeEntries(
       throw new Error(`Transaction trees only support ordinary files: ${absolutePath}`);
     }
     collected.push({
-      path: toPosixPath(relative(root, absolutePath)),
-      bytes: await readFileClosed(absolutePath),
+      path: toPortablePath(relative(root, absolutePath)),
+      bytes: await readFile(absolutePath),
     });
   }
   collected.sort((left, right) => compareUtf16CodeUnits(left.path, right.path));
@@ -257,19 +245,6 @@ function sameFileRecords(
         entry.byteLength === right[index]?.byteLength &&
         entry.sha256 === right[index]?.sha256,
     )
-  );
-}
-
-function hasExactKeys(
-  value: object,
-  required: readonly string[],
-  optional: readonly string[] = [],
-): boolean {
-  const actual = Object.keys(value).sort(compareUtf16CodeUnits);
-  const allowed = [...required, ...optional].sort(compareUtf16CodeUnits);
-  return (
-    required.every((key) => Object.hasOwn(value, key)) &&
-    actual.every((key) => allowed.includes(key))
   );
 }
 
@@ -956,7 +931,7 @@ export class DirectoryTransactions {
     transactionToken: string,
   ): Promise<TransactionJournal> {
     await this.hit("before:journal-read", kind, transactionToken, paths.journalFile);
-    const bytes = await readFileClosed(paths.journalFile);
+    const bytes = await readFile(paths.journalFile);
     await this.hit("after:journal-close", kind, transactionToken, paths.journalFile);
     let value: unknown;
     try {
@@ -1006,7 +981,7 @@ export class DirectoryTransactions {
       journal.transactionToken,
       temporaryPath,
     );
-    const written = await readFileClosed(temporaryPath);
+    const written = await readFile(temporaryPath);
     await this.hit(
       "after:journal-verification-close",
       journal.kind,
