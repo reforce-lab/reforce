@@ -406,6 +406,52 @@ test("classifies unsupported syntax for Compiler diagnostics", () => {
   ]);
 });
 
+// `export default` 是 isUnsupportedDeclaration 谓词的唯一调用点；`export default enum` / `export
+// default type` 不是合法 TS，所以这条路径只能到达 function 一类（Issue #114）。
+test("records a default-exported function declaration as unsupported", () => {
+  const unit = parseFile("export default function helper(): void {}");
+
+  expect(
+    unit.unsupportedDeclarations.map((declaration) => [
+      declaration.declarationKind,
+      declaration.name,
+      declaration.export.kind,
+    ]),
+  ).toEqual([["function", "helper", "default-only"]]);
+});
+
+test("records a default-exported ambient function signature as unsupported", () => {
+  const unit = parseFile("export default function helper(): void;", "d.ts");
+
+  expect(
+    unit.unsupportedDeclarations.map((declaration) => [
+      declaration.declarationKind,
+      declaration.name,
+      declaration.export.kind,
+    ]),
+  ).toEqual([["function", "helper", "default-only"]]);
+});
+
+test("names every kind of declaration a namespace exports", () => {
+  const unit = parseFile(
+    [
+      "export namespace Tokens {",
+      "  export function build(): void {}",
+      "  export enum Direction { Left }",
+      "  export namespace Inner {}",
+      "  export type Alias = string;",
+      "}",
+    ].join("\n"),
+  );
+
+  expect(unit.namespaces[0]?.exportedMembers.map((member) => [member.kind, member.name])).toEqual([
+    ["value", "build"],
+    ["value", "Direction"],
+    ["namespace", "Inner"],
+    ["type", "Alias"],
+  ]);
+});
+
 test("lowers a class declared inside a function body as non-top-level", () => {
   const unit = parseFile("function build(): void { @Injectable() class Hidden {} }");
 
