@@ -22,7 +22,6 @@ import {
   DirectoryTransactionError,
   DirectoryTransactions,
   snapshotTree,
-  type TransactionKind,
 } from "@/project/directory-transaction";
 import { errorCode, isMissingPathError } from "@/project/fs-error";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
@@ -292,7 +291,7 @@ function assertTransactionCrashOutcome(
   holder: BunIpcHarness,
   result: IpcProcessOutcome,
   fault: { readonly faultPoint: string } | { readonly faultIndex: number },
-  transactionKind: TransactionKind,
+  transactionKind: "generated" | "dist",
   expectedPoint?: string,
 ): void {
   if (result.exitCode === 87) {
@@ -338,7 +337,7 @@ async function cleanupTransactionHolder(holder: BunIpcHarness): Promise<void> {
 async function spawnTransactionCrash(
   projectRoot: string,
   fault: { readonly faultPoint: string } | { readonly faultIndex: number },
-  transactionKind: TransactionKind = "generated",
+  transactionKind: "generated" | "dist" = "generated",
   expectedPoint?: string,
 ): Promise<string> {
   const harnessPath = fileURLToPath(

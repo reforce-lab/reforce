@@ -274,7 +274,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     }
   }
 
-  function forceTerminateChild(): unknown | undefined {
+  function forceTerminateChild(): unknown {
     if (child.exitCode !== null || child.signalCode !== null) {
       return undefined;
     }
@@ -288,7 +288,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   }
 
   function throwTerminationFailure(
-    terminationError: unknown | undefined,
+    terminationError: unknown,
     exitError: unknown,
     detachmentErrors: readonly unknown[],
   ): never {
