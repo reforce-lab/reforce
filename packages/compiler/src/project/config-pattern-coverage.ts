@@ -9,6 +9,8 @@ import { generatedDeclarationsPath } from "@/project/generated-paths";
 // perfectly good tsconfig. Drop one leading slash on both sides so the two agree again. Absolute
 // entries written inside a UNC tsconfig stay unmatched, which is what the previous hand-rolled
 // matcher did too. Drive-letter paths have no "//" prefix and pass through untouched.
+// Delete this once get-tsconfig ships a fix; Issue #72 records the removal conditions, upstream
+// is privatenumber/get-tsconfig#133.
 function matchablePath(portablePath: string): string {
   return portablePath.startsWith("//") ? portablePath.slice(1) : portablePath;
 }
