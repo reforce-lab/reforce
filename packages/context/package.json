@@ -26,7 +26,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@microsoft/api-extractor": "catalog:",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/bun": "catalog:",

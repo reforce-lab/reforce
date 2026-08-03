@@ -39,6 +39,8 @@ reforce/
 │   ├── cli/               # @reforce/cli —— 命令行工具
 │   ├── compiler/          # @reforce/compiler —— 内置 Yuku parser、项目解析、链接、分析与生成
 │   ├── context/           # @reforce/context —— IoC 容器 / ApplicationContext
+│   ├── contracts/         # @reforce/contracts —— 跨包共享合同（占位）
+│   ├── primitives/        # @reforce/primitives —— 跨包共享的排序与路径原语
 │   ├── testing/           # @reforce/testing —— 框架测试支持
 │   └── web/               # @reforce/web —— Web 抽象
 ├── platforms/
