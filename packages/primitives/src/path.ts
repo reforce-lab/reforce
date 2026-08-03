@@ -13,6 +13,29 @@ export function toPortablePath(nativePath: string, separator: string = sep): str
   return nativePath.split(separator).join("/");
 }
 
+// 从磁盘读回、或由 bundler stats 报上来的相对路径，在参与 join / 写进 manifest 之前必须先过这一关。
+// 拒绝的每一项都是「join 之后会跑出目标目录」或「同一份源码在不同平台得到不同 hash」的入口：绝对
+// 路径与盘符前缀会让 join 直接跳到别处，反斜杠在 POSIX 上是合法文件名字符、到 Windows 上却变成分隔符，
+// NUL 会被底层系统调用截断，`.` / `..` 段则是最直接的逃逸。
+//
+// 规则必须只有一份实现：CLI 侧的 transaction journal、stats 资产名、generated manifest 与 dev build
+// id 四个信任边界用的是同一条准入规则，此前各自持有一份副本，其中 build id 那份已经漏掉了 NUL 与盘符
+// 两项——副本一旦分头演化，收紧规则时就会漏掉其中几处。
+export function isRelativePosixPath(value: string): boolean {
+  if (
+    value.length === 0 ||
+    value.startsWith("/") ||
+    value.includes("\\") ||
+    value.includes("\0") ||
+    /^[A-Za-z]:/u.test(value)
+  ) {
+    return false;
+  }
+  return value
+    .split("/")
+    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+}
+
 // 「target 是否落在 boundary 内」在本仓库有两种极性，必须是两个函数，不能合并成带 flag 的一个
 // （Issue #55）：
 //

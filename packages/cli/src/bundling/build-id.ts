@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { compareUtf16CodeUnits, isRelativePosixPath } from "@reforce/primitives";
 
 type DevBuildAssetRole = "entry" | "chunk" | "source-map" | "hot-update";
 
@@ -15,13 +15,7 @@ export interface CreateDevBuildIdInput {
 }
 
 function validateAssetPath(path: string): void {
-  const segments = path.split("/");
-  if (
-    path.length === 0 ||
-    path.startsWith("/") ||
-    path.includes("\\") ||
-    segments.some((segment) => segment === "" || segment === "." || segment === "..")
-  ) {
+  if (!isRelativePosixPath(path)) {
     throw new Error(`Development asset path is not relative POSIX: ${path}`);
   }
 }

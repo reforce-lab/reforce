@@ -88,7 +88,6 @@ export class ShutdownController {
         phase: "bootstrap",
         message: "Application bootstrap failed.",
       };
-      this.requested = true;
       this.stateValue = "shutting-down";
       await this.beginShutdown();
     }

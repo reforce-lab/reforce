@@ -1,14 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
 import {
   compareUtf16CodeUnits,
+  isPathContained,
   isPathStrictlyContained,
+  isRelativePosixPath,
   toPortablePath,
 } from "@reforce/primitives";
 import { isObject } from "radashi";
 import { hasExactKeys } from "@/project/exact-keys";
+import { isMissingPathError, pathExists } from "@/project/fs-error";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
 import { ProjectBusyError, type ProjectLease } from "@/project/lease";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
@@ -86,7 +89,6 @@ interface TransactionPaths {
   readonly journalDirectory: string;
   readonly journalFile: string;
   readonly staging: string;
-  readonly transactionRoot: string;
 }
 
 // On-disk layout per transaction kind. The directory names and the `<kind>.staging-` /
@@ -104,6 +106,58 @@ interface TransactionLayout {
 interface TreeSnapshot {
   readonly files: readonly TransactionFileRecord[];
   readonly aggregateSha256: string;
+}
+
+interface TreeEntry {
+  readonly path: string;
+  readonly bytes: Uint8Array;
+}
+
+function transactionRootFor(reforceRoot: string, kind: TransactionKind): string {
+  return join(reforceRoot, "transactions", kind);
+}
+
+function stagingPrefix(kind: TransactionKind): string {
+  return `${kind}.staging-`;
+}
+
+function backupPrefix(kind: TransactionKind): string {
+  return `${kind}.backup-`;
+}
+
+export interface IncompleteDistTransaction {
+  // journal：`.reforce/transactions/dist` 下还留着事务记录；artifact：项目根还留着 staging/backup 目录。
+  readonly reason: "journal" | "artifact";
+  readonly entryName: string;
+}
+
+// start 命令要在启动前确认 dist 不是半个事务的产物，而判断依据是本模块的磁盘命名（见
+// TransactionLayout）。放在这里而不是由 start 自己拼路径：那边拼错或这边改名都不会让任何一方编译
+// 失败，只会让检查静默失效，于是 reforce start 直接跑在撕裂的 dist 上。
+export async function findIncompleteDistTransaction(
+  projectRoot: string,
+): Promise<IncompleteDistTransaction | undefined> {
+  const journalRoot = transactionRootFor(join(projectRoot, ".reforce"), "dist");
+  const journalEntries = await readdirIfExists(journalRoot);
+  const journalEntry = journalEntries[0];
+  if (journalEntry !== undefined) {
+    return { reason: "journal", entryName: journalEntry };
+  }
+  const artifactEntry = (await readdir(projectRoot)).find(
+    (entry) => entry.startsWith(stagingPrefix("dist")) || entry.startsWith(backupPrefix("dist")),
+  );
+  return artifactEntry === undefined ? undefined : { reason: "artifact", entryName: artifactEntry };
+}
+
+async function readdirIfExists(directory: string): Promise<readonly string[]> {
+  try {
+    return await readdir(directory);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 class FifoMutex {
@@ -132,20 +186,8 @@ export class DirectoryTransactionError extends Error {
   }
 }
 
-function isMissing(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
 function assertRelativeFilePath(path: string): void {
-  const segments = path.split("/");
-  if (
-    path.length === 0 ||
-    path.includes("\\") ||
-    path.includes("\0") ||
-    path.startsWith("/") ||
-    /^[A-Za-z]:/u.test(path) ||
-    segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
-  ) {
+  if (!isRelativePosixPath(path)) {
     throw new Error(`Invalid transaction file path: ${path}`);
   }
 }
@@ -159,25 +201,11 @@ function assertContained(root: string, target: string): void {
   throw new Error(`Transaction path is outside its required boundary: ${target}`);
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch (error) {
-    if (isMissing(error)) {
-      return false;
-    }
-    throw error;
-  }
-}
-
 function createFileHash(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function createAggregateHash(
-  entries: readonly { readonly path: string; readonly bytes: Uint8Array }[],
-): string {
+function createAggregateHash(entries: readonly TreeEntry[]): string {
   const hash = createHash("sha256");
   for (const entry of entries) {
     hash.update(Buffer.from(entry.path, "utf8"));
@@ -189,13 +217,10 @@ function createAggregateHash(
   return hash.digest("hex");
 }
 
-async function collectTreeEntries(
-  root: string,
-  directory = root,
-): Promise<readonly { readonly path: string; readonly bytes: Uint8Array }[]> {
+async function collectTreeEntries(root: string, directory = root): Promise<readonly TreeEntry[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
-  const collected: Array<{ readonly path: string; readonly bytes: Uint8Array }> = [];
+  const collected: TreeEntry[] = [];
   for (const entry of entries) {
     const absolutePath = join(directory, entry.name);
     if (entry.isSymbolicLink()) {
@@ -222,7 +247,10 @@ async function collectTreeEntries(
 // 无法构造这种状态。测试若自己重算哈希，就会把这里的拼接规则复制一份——改了聚合算法两边同步跟着改，
 // 回归测试照绿而存量 journal 已全部失效（Issue #35）。
 export async function snapshotTree(root: string): Promise<TreeSnapshot> {
-  const entries = await collectTreeEntries(root);
+  return summarizeTree(await collectTreeEntries(root));
+}
+
+function summarizeTree(entries: readonly TreeEntry[]): TreeSnapshot {
   return {
     files: entries.map((entry) => ({
       path: entry.path,
@@ -248,24 +276,22 @@ function sameFileRecords(
   );
 }
 
-async function validateTreeStructure(kind: TransactionKind, root: string): Promise<boolean> {
-  try {
-    const entries = await collectTreeEntries(root);
-    const paths = entries.map((entry) => entry.path);
-    if (kind === "generated") {
-      if (
-        paths.length !== generatedFilePaths.length ||
-        !generatedFilePaths.every((path, index) => paths[index] === path)
-      ) {
-        return false;
-      }
-      const manifest = entries.find((entry) => entry.path === "manifest.json");
-      return manifest !== undefined && validateGeneratedManifestBytes(manifest.bytes);
+// 接收已经收好的 entries 而不是自己再遍历一遍：调用方无一例外都是先 snapshot 再校验结构，
+// 各自读一遍等于把整棵树的 readFile 和 sha256 做两次——dist 树是整个应用产物，generated 树在
+// dev 下每次文件改动都要过一遍。
+function validateTreeStructure(kind: TransactionKind, entries: readonly TreeEntry[]): boolean {
+  const paths = entries.map((entry) => entry.path);
+  if (kind === "generated") {
+    if (
+      paths.length !== generatedFilePaths.length ||
+      !generatedFilePaths.every((path, index) => paths[index] === path)
+    ) {
+      return false;
     }
-    return paths.includes("main.mjs");
-  } catch {
-    return false;
+    const manifest = entries.find((entry) => entry.path === "manifest.json");
+    return manifest !== undefined && validateGeneratedManifestBytes(manifest.bytes);
   }
+  return paths.includes("main.mjs");
 }
 
 async function validateTreeAgainstJournal(
@@ -302,11 +328,12 @@ async function validateTreeAgainstSnapshot(
   aggregateSha256: string,
 ): Promise<boolean> {
   try {
-    const snapshot = await snapshotTree(root);
+    const entries = await collectTreeEntries(root);
+    const snapshot = summarizeTree(entries);
     if (!sameFileRecords(snapshot.files, files) || snapshot.aggregateSha256 !== aggregateSha256) {
       return false;
     }
-    return await validateTreeStructure(kind, root);
+    return validateTreeStructure(kind, entries);
   } catch {
     return false;
   }
@@ -325,13 +352,9 @@ function parseFileRecord(value: unknown): TransactionFileRecord | undefined {
     !Number.isInteger(byteLength) ||
     byteLength < 0 ||
     typeof sha256 !== "string" ||
-    !/^[a-f0-9]{64}$/u.test(sha256)
+    !/^[a-f0-9]{64}$/u.test(sha256) ||
+    !isRelativePosixPath(path)
   ) {
-    return undefined;
-  }
-  try {
-    assertRelativeFilePath(path);
-  } catch {
     return undefined;
   }
   return { path, byteLength, sha256 };
@@ -467,8 +490,8 @@ export class DirectoryTransactions {
     await mkdir(reforceRoot, { recursive: true });
     const canonicalReforceRoot = await realpath(reforceRoot);
     assertContained(projectRoot, canonicalReforceRoot);
-    const generatedTransactionRoot = join(canonicalReforceRoot, "transactions", "generated");
-    const distTransactionRoot = join(canonicalReforceRoot, "transactions", "dist");
+    const generatedTransactionRoot = transactionRootFor(canonicalReforceRoot, "generated");
+    const distTransactionRoot = transactionRootFor(canonicalReforceRoot, "dist");
     await mkdir(generatedTransactionRoot, { recursive: true });
     await mkdir(distTransactionRoot, { recursive: true });
     const canonicalGeneratedTransactionRoot = await realpath(generatedTransactionRoot);
@@ -597,7 +620,7 @@ export class DirectoryTransactions {
 
   private async recoverUnjournaledStaging(kind: TransactionKind): Promise<void> {
     const layout = this.layoutFor(kind);
-    const prefix = `${kind}.staging-`;
+    const prefix = stagingPrefix(kind);
     const entries = await readdir(layout.activeParent, { withFileTypes: true });
     entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
     for (const entry of entries) {
@@ -621,7 +644,7 @@ export class DirectoryTransactions {
           "Unjournaled staging output has an associated backup.",
         );
       }
-      await this.removeTree(paths.staging, kind, transactionToken, paths.staging);
+      await this.removeTree(paths.staging, kind, transactionToken);
     }
   }
 
@@ -631,11 +654,12 @@ export class DirectoryTransactions {
     paths: TransactionPaths,
     expectedFiles: readonly string[],
   ): Promise<void> {
-    const snapshot = await snapshotTree(paths.staging);
+    const stagingEntries = await collectTreeEntries(paths.staging);
+    const snapshot = summarizeTree(stagingEntries);
     if (
       snapshot.files.length !== expectedFiles.length ||
       !snapshot.files.every((file, index) => file.path === expectedFiles[index]) ||
-      !(await validateTreeStructure(kind, paths.staging))
+      !validateTreeStructure(kind, stagingEntries)
     ) {
       throw new DirectoryTransactionError(
         kind,
@@ -645,8 +669,9 @@ export class DirectoryTransactions {
     const hadActiveBefore = await pathExists(paths.active);
     let previousSnapshot: TreeSnapshot | undefined;
     if (hadActiveBefore) {
-      previousSnapshot = await snapshotTree(paths.active);
-      if (!(await validateTreeStructure(kind, paths.active))) {
+      const activeEntries = await collectTreeEntries(paths.active);
+      previousSnapshot = summarizeTree(activeEntries);
+      if (!validateTreeStructure(kind, activeEntries)) {
         throw new DirectoryTransactionError(
           kind,
           "Previous active output failed exact file-set or schema validation.",
@@ -688,9 +713,9 @@ export class DirectoryTransactions {
     }
     await this.writeJournal(paths, { ...journal, state: "verified" });
     if (hadActiveBefore) {
-      await this.removeTree(paths.backup, kind, transactionToken, paths.backup);
+      await this.removeTree(paths.backup, kind, transactionToken);
     }
-    await this.removeTree(paths.journalDirectory, kind, transactionToken, paths.journalDirectory);
+    await this.removeTree(paths.journalDirectory, kind, transactionToken);
   }
 
   private async recoverTokenIfJournalExists(
@@ -703,7 +728,7 @@ export class DirectoryTransactions {
       return;
     }
     if (await pathExists(paths.staging)) {
-      await this.removeTree(paths.staging, kind, transactionToken, paths.staging);
+      await this.removeTree(paths.staging, kind, transactionToken);
     }
     if (await pathExists(paths.journalDirectory)) {
       await this.recoverJournalOrphan(kind, transactionToken, paths);
@@ -774,7 +799,7 @@ export class DirectoryTransactions {
     },
   ): Promise<void> {
     if (await pathExists(paths.staging)) {
-      await this.removeTree(paths.staging, journal.kind, journal.transactionToken, paths.staging);
+      await this.removeTree(paths.staging, journal.kind, journal.transactionToken);
     }
     if (!journal.hadActiveBefore) {
       if (await pathExists(paths.active)) {
@@ -808,7 +833,7 @@ export class DirectoryTransactions {
   ): Promise<void> {
     if (validation.activeMatches) {
       if (await pathExists(paths.staging)) {
-        await this.removeTree(paths.staging, journal.kind, journal.transactionToken, paths.staging);
+        await this.removeTree(paths.staging, journal.kind, journal.transactionToken);
       }
       return;
     }
@@ -841,7 +866,7 @@ export class DirectoryTransactions {
       );
     }
     if (await pathExists(paths.active)) {
-      await this.removeTree(paths.active, journal.kind, journal.transactionToken, paths.active);
+      await this.removeTree(paths.active, journal.kind, journal.transactionToken);
     }
     await this.restoreBackup(journal, paths);
   }
@@ -857,7 +882,7 @@ export class DirectoryTransactions {
     label: string,
   ): Promise<void> {
     if (await pathExists(paths.active)) {
-      await this.removeTree(paths.active, journal.kind, journal.transactionToken, paths.active);
+      await this.removeTree(paths.active, journal.kind, journal.transactionToken);
     }
     await this.rename(source, paths.active, journal.kind, journal.transactionToken, label);
   }
@@ -894,15 +919,10 @@ export class DirectoryTransactions {
   ): Promise<void> {
     for (const leftover of [paths.staging, paths.backup]) {
       if (await pathExists(leftover)) {
-        await this.removeTree(leftover, journal.kind, journal.transactionToken, leftover);
+        await this.removeTree(leftover, journal.kind, journal.transactionToken);
       }
     }
-    await this.removeTree(
-      paths.journalDirectory,
-      journal.kind,
-      journal.transactionToken,
-      paths.journalDirectory,
-    );
+    await this.removeTree(paths.journalDirectory, journal.kind, journal.transactionToken);
   }
 
   private async recoverJournalOrphan(
@@ -918,10 +938,10 @@ export class DirectoryTransactions {
       );
     }
     if (await pathExists(paths.staging)) {
-      await this.removeTree(paths.staging, kind, transactionToken, paths.staging);
+      await this.removeTree(paths.staging, kind, transactionToken);
     }
     if (await pathExists(paths.journalDirectory)) {
-      await this.removeTree(paths.journalDirectory, kind, transactionToken, paths.journalDirectory);
+      await this.removeTree(paths.journalDirectory, kind, transactionToken);
     }
   }
 
@@ -1066,23 +1086,16 @@ export class DirectoryTransactions {
     target: string,
     kind: TransactionKind,
     transactionToken: string,
-    ownershipRoot: string,
   ): Promise<void> {
     await this.lease.assertCurrentWriter();
     // Safety boundary against deleting the wrong tree: target and boundary are both
-    // canonicalized (defeating symlink swaps between check and delete), and the target must
-    // realpath to exactly the path this transaction created for the token.
+    // canonicalized, so a symlink swapped in between the check and the delete resolves to its
+    // real location here and fails containment instead of escaping it.
     const [canonicalTarget, canonicalBoundary] = await Promise.all([
       realpath(target),
       realpath(this.boundaryFor(kind, target)),
     ]);
     assertContained(canonicalBoundary, canonicalTarget);
-    if (canonicalTarget !== (await realpath(ownershipRoot))) {
-      throw new DirectoryTransactionError(
-        kind,
-        "Transaction cleanup target did not match its owner path.",
-      );
-    }
     await this.removeDirectoryContents(target, kind, transactionToken);
   }
 
@@ -1121,12 +1134,14 @@ export class DirectoryTransactions {
   }
 
   private boundaryFor(kind: TransactionKind, target: string): string {
-    // Journal metadata lives under `.reforce/transactions` for both kinds, so a journal
-    // target is always contained by reforceRoot regardless of the kind's own boundary.
-    if (target.startsWith(join(this.reforceRoot, "transactions"))) {
+    const layout = this.layoutFor(kind);
+    // Journal metadata lives under `.reforce/transactions/<kind>`, outside the kind's own active
+    // parent, so it answers to reforceRoot instead. Containment rather than a string prefix: a
+    // prefix test also matches a sibling that merely starts with the same characters.
+    if (isPathContained(layout.transactionRoot, target)) {
       return this.reforceRoot;
     }
-    return this.layoutFor(kind).cleanupBoundary;
+    return layout.cleanupBoundary;
   }
 
   private paths(kind: TransactionKind, transactionToken: string): TransactionPaths {
@@ -1137,9 +1152,8 @@ export class DirectoryTransactions {
     const journalDirectory = join(layout.transactionRoot, transactionToken);
     return {
       active: join(layout.activeParent, kind),
-      staging: join(layout.activeParent, `${kind}.staging-${transactionToken}`),
-      backup: join(layout.activeParent, `${kind}.backup-${transactionToken}`),
-      transactionRoot: layout.transactionRoot,
+      staging: join(layout.activeParent, `${stagingPrefix(kind)}${transactionToken}`),
+      backup: join(layout.activeParent, `${backupPrefix(kind)}${transactionToken}`),
       journalDirectory,
       journalFile: join(journalDirectory, "journal.json"),
     };

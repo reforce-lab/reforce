@@ -92,7 +92,9 @@ function isValidPort(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65_535;
 }
 
-function parseParticipant(value: unknown): LeaseParticipant | undefined {
+// 导出给 start 命令：它从子进程 IPC 收到的 participant 与写进 lease 记录的是同一份线上结构，
+// 各自解析就等于把上面的端口范围规则（#24）抄两份，改一处不会强制另一处跟着改。
+export function parseParticipant(value: unknown): LeaseParticipant | undefined {
   if (!isObject(value)) {
     return undefined;
   }

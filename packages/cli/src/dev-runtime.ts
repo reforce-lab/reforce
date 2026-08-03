@@ -1,4 +1,5 @@
 import { requireBunExecutable } from "@/bun-runtime";
+import { hotUpdateManifestPattern } from "@/dev-hot-update";
 import {
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
@@ -43,10 +44,7 @@ function isMissingHotUpdateManifest(error: unknown): boolean {
   ];
   return locations.some(
     (location) =>
-      typeof location === "string" &&
-      /(?:^|\/)updates\/[^/]+\.hot-update-manifest\.mjs(?:\b|["'])/u.test(
-        location.replaceAll("\\", "/"),
-      ),
+      typeof location === "string" && hotUpdateManifestPattern.test(location.replaceAll("\\", "/")),
   );
 }
 

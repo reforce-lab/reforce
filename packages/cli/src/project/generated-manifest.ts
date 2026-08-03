@@ -3,6 +3,7 @@
 // 产物可能被手改、或来自与当前 CLI 错配的 compiler 版本，因此每条不变量都镜像契约生产方
 // packages/compiler/src/emission/generate-files.ts 的 renderManifest 输出形状；schemaVersion、
 // bean id 格式、lifecycle 归属、plans 三数组皆为线上协议，改动任一条都必须与生产方同步。
+import { isRelativePosixPath } from "@reforce/primitives";
 import { isObject, isString } from "radashi";
 import { hasExactKeys } from "@/project/exact-keys";
 
@@ -84,21 +85,6 @@ function isArrayOf<T>(
   }
   const items: readonly unknown[] = value;
   return items.every(isItem);
-}
-
-function isRelativePosixPath(value: string): boolean {
-  if (
-    value.length === 0 ||
-    value.startsWith("/") ||
-    value.includes("\\") ||
-    value.includes("\0") ||
-    /^[A-Za-z]:/u.test(value)
-  ) {
-    return false;
-  }
-  return value
-    .split("/")
-    .every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
 }
 
 // bean id 的线上格式为 `file#exportName`：恰好一个 "#"，且 file 必须是规范相对 posix 路径。

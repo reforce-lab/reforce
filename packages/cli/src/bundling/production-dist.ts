@@ -1,6 +1,6 @@
 import { lstat, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
+import { compareUtf16CodeUnits, isRelativePosixPath, toPortablePath } from "@reforce/primitives";
 import { type BuildResult, createRsbuild, rspack } from "@rsbuild/core";
 import { isObject } from "radashi";
 import { renderProductionEntry } from "@/bundling/production-entry";
@@ -8,15 +8,7 @@ import type { ResolvedProject } from "@/compiler-types";
 import { resolveCliSupportModule } from "@/runtime-module-path";
 
 function assertAssetPath(path: string): void {
-  const segments = path.split("/");
-  if (
-    path.length === 0 ||
-    path.includes("\\") ||
-    path.includes("\0") ||
-    path.startsWith("/") ||
-    /^[A-Za-z]:/u.test(path) ||
-    segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
-  ) {
+  if (!isRelativePosixPath(path)) {
     throw new Error(`Production stats returned an invalid asset path: ${path}`);
   }
 }

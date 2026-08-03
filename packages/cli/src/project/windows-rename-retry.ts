@@ -1,5 +1,6 @@
-import { lstat, rename } from "node:fs/promises";
+import { rename } from "node:fs/promises";
 import { sleep } from "radashi";
+import { errorCode, pathExists } from "@/project/fs-error";
 
 const retryDelays = [10, 20, 40, 80, 160] as const;
 
@@ -25,22 +26,6 @@ function isRetryableWindowsRenameError(error: unknown): boolean {
     return false;
   }
   return error.code === "EPERM" || error.code === "EBUSY" || error.code === "ENOTEMPTY";
-}
-
-function errorCode(error: unknown): unknown {
-  return error instanceof Error && "code" in error ? error.code : undefined;
-}
-
-async function destinationExists(destination: string): Promise<boolean> {
-  try {
-    await lstat(destination);
-    return true;
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") {
-      return false;
-    }
-    throw error;
-  }
 }
 
 // rename publishes a directory only while the destination does not exist: EEXIST/ENOTEMPTY
@@ -90,7 +75,7 @@ export async function publishMissingDestinationWithWindowsRetry(
 ): Promise<boolean> {
   const renameOperation = operations.rename ?? rename;
   const wait = operations.wait ?? sleep;
-  const targetExists = operations.destinationExists ?? destinationExists;
+  const targetExists = operations.destinationExists ?? pathExists;
   for (let attempt = 0; ; attempt += 1) {
     try {
       await renameOperation(source, destination);

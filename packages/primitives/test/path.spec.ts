@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import path, { posix, sep, win32 } from "node:path";
 import fc from "fast-check";
-import { isPathContained, isPathStrictlyContained, toPortablePath } from "@/path";
+import {
+  isPathContained,
+  isPathStrictlyContained,
+  isRelativePosixPath,
+  toPortablePath,
+} from "@/path";
 
 describe("toPortablePath", () => {
   test("把注入的 Windows 分隔符换成 POSIX 分隔符", () => {
@@ -188,6 +193,66 @@ describe("两个包含判定变体的关系", () => {
             isPathStrictlyContained(boundary, target, posix)
           );
         },
+      ),
+    );
+  });
+});
+
+describe("isRelativePosixPath", () => {
+  test("空串不是相对 POSIX 路径", () => {
+    expect(isRelativePosixPath("")).toBe(false);
+  });
+
+  test("POSIX 绝对路径被拒绝", () => {
+    expect(isRelativePosixPath("/etc/passwd")).toBe(false);
+  });
+
+  test("Windows 盘符前缀被拒绝", () => {
+    expect(isRelativePosixPath("C:/main.mjs")).toBe(false);
+  });
+
+  test("反斜杠被拒绝", () => {
+    expect(isRelativePosixPath("dist\\main.mjs")).toBe(false);
+  });
+
+  test("NUL 字符被拒绝", () => {
+    expect(isRelativePosixPath("dist/main.mjs\0.txt")).toBe(false);
+  });
+
+  test("上跳段被拒绝", () => {
+    expect(isRelativePosixPath("dist/../../etc/passwd")).toBe(false);
+  });
+
+  test("当前目录段被拒绝", () => {
+    expect(isRelativePosixPath("dist/./main.mjs")).toBe(false);
+  });
+
+  test("空段（连续分隔符）被拒绝", () => {
+    expect(isRelativePosixPath("dist//main.mjs")).toBe(false);
+  });
+
+  test("尾随分隔符被拒绝", () => {
+    expect(isRelativePosixPath("dist/")).toBe(false);
+  });
+
+  test("单段相对路径被接受", () => {
+    expect(isRelativePosixPath("main.mjs")).toBe(true);
+  });
+
+  test("多段相对路径被接受", () => {
+    expect(isRelativePosixPath("static/js/main.abc123.mjs")).toBe(true);
+  });
+
+  test("由合法段拼出的路径一律被接受", () => {
+    // 这里不能复用 pathSegment：它只排除了 `/`、`.` 和 `..`，仍会生成含反斜杠、NUL 或盘符前缀的段，
+    // 而那些正是本函数要拒绝的输入。
+    const portableSegment = fc
+      .array(fc.constantFrom("a", "z", "0", "9", "-", "_", "应"), { minLength: 1, maxLength: 12 })
+      .map((characters) => characters.join(""));
+
+    fc.assert(
+      fc.property(fc.array(portableSegment, { minLength: 1, maxLength: 6 }), (segments) =>
+        isRelativePosixPath(segments.join("/")),
       ),
     );
   });

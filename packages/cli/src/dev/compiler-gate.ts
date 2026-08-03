@@ -133,10 +133,11 @@ export class DevCompilerGate {
     }
   }
 
+  // 合并是并集且只增不减，构造函数已经把 initialWatchInputs 并进 stableWatchInputs，所以这里不必再带
+  // 上它——每次编译都重复过滤、去重、排序同一份初始依赖（数量级是整个 tsconfig 的 program files）。
   private rememberWatchInputs(...inputs: readonly CompilerWatchInputs[]): CompilerWatchInputs {
     this.stableWatchInputs = mergeWatchInputs(
       this.initialProject.projectRoot,
-      this.initialWatchInputs,
       this.stableWatchInputs,
       ...inputs,
     );
