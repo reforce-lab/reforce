@@ -16,6 +16,9 @@ const harnessPath = fileURLToPath(
 const startupFailureHarnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-startup-failure.harness.ts", import.meta.url),
 );
+const silentShutdownHarnessPath = fileURLToPath(
+  new URL("../support/process/dev/dev-child-silent-shutdown.harness.ts", import.meta.url),
+);
 const bunExecutable = await resolveBunExecutable();
 const projects: TemporaryProject[] = [];
 
@@ -96,6 +99,20 @@ test("Windows-style child shutdown uses IPC acknowledgement", async () => {
   const exit = await child.exited;
 
   expect(exit.exitCode).toBe(0);
+});
+
+test("a clean child exit outranks a missing shutdown acknowledgement", async () => {
+  const child = await spawnDevChild({
+    entryPath: silentShutdownHarnessPath,
+    cwd: process.cwd(),
+    bunExecutable,
+    platform: "win32",
+    waitForReady: true,
+  });
+
+  const shutdown = child.requestShutdown("SIGTERM");
+
+  await expect(shutdown).resolves.toBeUndefined();
 });
 
 test.skipIf(process.platform === "win32")(

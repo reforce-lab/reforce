@@ -88,28 +88,13 @@ export class DevCommandController {
 
   private async shutdownOnce(signal?: NodeJS.Signals): Promise<void> {
     const errors: unknown[] = [];
-    try {
-      await this.watch.close();
-    } catch (error) {
-      errors.push(error);
-    }
-    try {
-      await this.supervisor.shutdown(signal);
-    } catch (error) {
-      errors.push(error);
-    }
-    if (errors.length > 0) {
-      const primary = errors[0];
-      this.reporter.report(
-        createFailureEvent({
-          command: "dev",
-          phase: "shutdown",
-          fallbackCode: "SHUTDOWN_FAILED",
-          message: "Development shutdown failed.",
-          cause: primary,
-        }),
-      );
-    }
+    // 两个阶段各报各的文案：一行 stderr 就能看出失败的是 watcher 还是子进程（Issue #32）。
+    await this.runShutdownStage("Development watch shutdown failed.", errors, () =>
+      this.watch.close(),
+    );
+    await this.runShutdownStage("Development child shutdown failed.", errors, () =>
+      this.supervisor.shutdown(signal),
+    );
     try {
       await this.reporter.flush();
     } catch (error) {
@@ -119,6 +104,27 @@ export class DevCommandController {
       throw new AggregateError(errors, "Development shutdown failed.", {
         cause: errors[0],
       });
+    }
+  }
+
+  private async runShutdownStage(
+    message: string,
+    errors: unknown[],
+    stage: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await stage();
+    } catch (error) {
+      errors.push(error);
+      this.reporter.report(
+        createFailureEvent({
+          command: "dev",
+          phase: "shutdown",
+          fallbackCode: "SHUTDOWN_FAILED",
+          message,
+          cause: error,
+        }),
+      );
     }
   }
 }

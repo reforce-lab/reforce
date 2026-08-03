@@ -220,7 +220,11 @@ async function runScenario(input: {
   const result = await subprocess;
   processes.splice(processes.indexOf(subprocess), 1);
 
-  expect(result.exitCode).toBe(0);
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Development command exited with ${String(result.exitCode)}. stdout=${String(result.stdout)} stderr=${String(result.stderr)}`,
+    );
+  }
   expect(await exists(join(input.projectRoot, "closed.txt"))).toBe(true);
   expect(await exists(join(input.projectRoot, ".reforce", "lease", "writer", "record.json"))).toBe(
     false,

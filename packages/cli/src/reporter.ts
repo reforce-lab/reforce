@@ -150,6 +150,52 @@ interface PlainTextReporterOptions {
   readonly output?: Writable;
 }
 
+const maximumCauseDepth = 5;
+
+function nextCause(value: unknown): unknown {
+  // radashi 的 isObject 只认 plain object，Error 实例必须单独取 cause。
+  if (value instanceof Error) {
+    return value.cause;
+  }
+  return isObject(value) ? Reflect.get(value, "cause") : undefined;
+}
+
+// 折叠空白：一个事件必须恰好占一行，否则按行读 stderr 的人和断言都会被换行切断。
+function toSingleLine(description: string): string {
+  return description.replace(/\s+/g, " ").trim();
+}
+
+function describeCause(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return toSingleLine(value);
+  }
+  if (value instanceof Error) {
+    return toSingleLine(value.message);
+  }
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const message = Reflect.get(value, "message");
+  return typeof message === "string" ? toSingleLine(message) : undefined;
+}
+
+// 失败必须自我描述：CI 上往往只剩这一行 stderr，丢掉 cause 就无法区分同一个 code 底下的
+// 不同失败原因（Issue #32）。重复文案只出现一次——包装层常把同一句话既当 message 又当 cause。
+function renderFailure(event: CliFailureEvent): string {
+  const segments = [event.message];
+  const rendered = new Set(segments);
+  let cause = event.cause;
+  for (let depth = 0; depth < maximumCauseDepth && cause !== undefined; depth += 1) {
+    const description = describeCause(cause);
+    if (description !== undefined && description.length > 0 && !rendered.has(description)) {
+      rendered.add(description);
+      segments.push(description);
+    }
+    cause = nextCause(cause);
+  }
+  return `[${event.code}] ${segments.join(" <- ")}`;
+}
+
 function renderEvent(event: CliReporterEvent): string {
   switch (event.kind) {
     case "status":
@@ -164,7 +210,7 @@ function renderEvent(event: CliReporterEvent): string {
     case "success":
       return `[${event.command}] ${event.message}`;
     case "failure":
-      return `[${event.code}] ${event.message}`;
+      return renderFailure(event);
   }
 }
 
