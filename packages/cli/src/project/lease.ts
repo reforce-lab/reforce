@@ -100,6 +100,13 @@ function hasExactObjectKeys(
   );
 }
 
+// A record that survives parsing is handed straight to probeLeaseEndpoint, and node:net rejects an
+// out-of-range port by throwing ERR_SOCKET_BAD_PORT synchronously. A corrupt lease record must
+// surface as ProjectBusyError, so the range is enforced here rather than at the socket (#24).
+function isValidPort(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65_535;
+}
+
 function parseParticipant(value: unknown): LeaseParticipant | undefined {
   if (!isObject(value)) {
     return undefined;
@@ -115,10 +122,7 @@ function parseParticipant(value: unknown): LeaseParticipant | undefined {
   if (
     typeof participantToken !== "string" ||
     host !== "127.0.0.1" ||
-    typeof port !== "number" ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65_535 ||
+    !isValidPort(port) ||
     typeof challenge !== "string" ||
     (role !== "parent" && role !== "child")
   ) {
@@ -184,8 +188,7 @@ function parseGateRecord(value: unknown): GateRecord | undefined {
     schemaVersion !== 1 ||
     typeof gateToken !== "string" ||
     host !== "127.0.0.1" ||
-    typeof port !== "number" ||
-    !Number.isInteger(port) ||
+    !isValidPort(port) ||
     typeof challenge !== "string"
   ) {
     return undefined;
