@@ -75,9 +75,11 @@ function parsedSource(file: string, options: SourceOptions = {}): ParsedSource {
 function createLinker(diagnostics: readonly CompilerDiagnostic[] = []): ProjectLinker {
   return {
     diagnostics,
-    fileDependencies: [],
-    contextDependencies: [],
-    missingDependencies: [],
+    collectWatchInputs: () => ({
+      fileDependencies: [],
+      contextDependencies: [],
+      missingDependencies: [],
+    }),
     resolveEntity(_source, entity): LinkedSymbol | undefined {
       if (entity.kind !== "identifier" || entity.name !== "Injectable") {
         return undefined;

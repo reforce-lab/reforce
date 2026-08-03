@@ -174,9 +174,11 @@ function createLinker(input: LinkerInput = {}): ProjectLinker {
   const diagnostics: CompilerDiagnostic[] = [];
   return {
     diagnostics,
-    fileDependencies: [],
-    contextDependencies: [],
-    missingDependencies: [],
+    collectWatchInputs: () => ({
+      fileDependencies: [],
+      contextDependencies: [],
+      missingDependencies: [],
+    }),
     resolveEntity(_source, entity) {
       return entity.kind === "identifier" ? byName.get(entity.name) : undefined;
     },

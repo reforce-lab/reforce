@@ -1,7 +1,7 @@
 import { isBuiltin } from "node:module";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { LRUCache } from "lru-cache";
-import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
+import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import {
   type ExternalDeclaration,
@@ -24,14 +24,13 @@ import type {
   TypeNode,
 } from "@/parser/source-ir";
 import type { ParsedSource } from "@/project/source-files";
+import { createWatchInputs } from "@/project/watch-inputs";
 
 const contextModuleSpecifier = "@reforce/context";
 
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
-  readonly fileDependencies: readonly string[];
-  readonly contextDependencies: readonly string[];
-  readonly missingDependencies: readonly string[];
+  collectWatchInputs(): CompilerWatchInputs;
   resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined;
   resolveType(source: ParsedSource, type: TypeNode): LinkedType | undefined;
   symbolForDeclaration(
@@ -565,18 +564,13 @@ export async function createProjectLinker(
     get diagnostics() {
       return diagnostics;
     },
-    // Watch inputs must be collected on read for the same reason: the closures above keep resolving
-    // modules while analysis runs — a re-export of the context specifier is resolved there for the
-    // first time, because loadExternalDeclarations skips it — and compile() reads these getters only
-    // after analysis finishes, so an early snapshot dropped those dependencies (Issue #26).
-    get fileDependencies() {
-      return [...collectWatchDependencies().fileDependencies];
-    },
-    get contextDependencies() {
-      return [...collectWatchDependencies().contextDependencies];
-    },
-    get missingDependencies() {
-      return [...collectWatchDependencies().missingDependencies];
+    // Same timing constraint: the closures above keep resolving modules while analysis runs — a
+    // re-export of the context specifier is resolved there for the first time, because
+    // loadExternalDeclarations skips it — so this must be called after analysis finishes, never
+    // snapshotted before it (Issue #26). Each call re-classifies every resolver dependency, which
+    // is why compile() calls it exactly once.
+    collectWatchInputs() {
+      return createWatchInputs(collectWatchDependencies());
     },
     resolveEntity,
     resolveType,

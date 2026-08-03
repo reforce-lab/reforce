@@ -124,9 +124,11 @@ function createLinker(symbols: readonly LinkedSymbol[] = []): ProjectLinker {
   byName.set("defineBean", contextSymbol("defineBean"));
   return {
     diagnostics: [],
-    fileDependencies: [],
-    contextDependencies: [],
-    missingDependencies: [],
+    collectWatchInputs: () => ({
+      fileDependencies: [],
+      contextDependencies: [],
+      missingDependencies: [],
+    }),
     resolveEntity(_source, entity) {
       return entity.kind === "identifier" ? byName.get(entity.name) : undefined;
     },

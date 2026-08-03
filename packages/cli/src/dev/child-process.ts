@@ -176,7 +176,40 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
     },
   };
 
+  // 判据是子进程的退出码，不是 ack：`exit` 一到就会取消所有 ack waiter 并摘掉 message
+  // 监听器，而 `exit` 不代表 IPC 通道已排空（`close` 才是）。所以跑完关闭流程、干净退出的
+  // 子进程不得因为 ack 丢失或迟到被判成关闭失败；ack 只用来解释失败原因（Issue #32）。
   async function requestIpcShutdown(): Promise<void> {
+    const reason = await requestShutdownAcknowledgement();
+    if (reason === undefined) {
+      return;
+    }
+    try {
+      await terminateChildAndWait();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [reason, cleanupError],
+        "Development child shutdown and termination both failed.",
+        { cause: reason },
+      );
+    }
+    const result = await exited;
+    if (result.exitCode === 0 && result.error === undefined) {
+      return;
+    }
+    if (result.error === undefined) {
+      throw reason;
+    }
+    throw new AggregateError(
+      [reason, result.error],
+      "Development child shutdown and cleanup both failed.",
+      { cause: reason },
+    );
+  }
+
+  // 返回 undefined 表示子进程确认关闭成功；否则返回失败原因。握手丢失与子进程自报失败
+  // 用不同文案，一行 stderr 就能区分（Issue #32）。
+  async function requestShutdownAcknowledgement(): Promise<Error | undefined> {
     try {
       const requestId = randomUUID();
       const acknowledgement = waitForShutdownAcknowledgement(
@@ -189,28 +222,12 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
         requestId,
       } satisfies ShutdownRequestMessage);
       const message = await acknowledgement;
-      if (!message.ok) {
-        throw new Error("Development child reported shutdown failure.");
+      if (message.ok) {
+        return undefined;
       }
+      return new Error("Development child reported a failed shutdown.");
     } catch (error) {
-      try {
-        await terminateChildAndWait();
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [error, cleanupError],
-          "Development child shutdown and termination both failed.",
-          { cause: error },
-        );
-      }
-      const result = await exited;
-      if (result.error === undefined) {
-        throw error;
-      }
-      throw new AggregateError(
-        [error, result.error],
-        "Development child shutdown and cleanup both failed.",
-        { cause: error },
-      );
+      return new Error("Development child shutdown handshake failed.", { cause: error });
     }
   }
 

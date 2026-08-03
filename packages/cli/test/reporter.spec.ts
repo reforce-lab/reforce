@@ -56,9 +56,50 @@ describe("plain text reporter", () => {
     });
     await reporter.flush();
 
-    expect(output.chunks.join("")).toBe("[BUILD_FAILED] Compilation failed.\n");
+    expect(output.chunks.join("")).toBe("[BUILD_FAILED] Compilation failed. <- broken\n");
     expect(output.chunks.join("")).not.toContain("\u001B");
     expect(output.chunks.join("")).not.toContain("?");
+  });
+
+  test("renders the whole cause chain of a failure on one line", async () => {
+    const output = new RecordingWritable();
+    const reporter: Reporter = new PlainTextReporter({ output });
+
+    reporter.report({
+      kind: "failure",
+      command: "dev",
+      phase: "shutdown",
+      code: "SHUTDOWN_FAILED",
+      message: "Development child shutdown failed.",
+      cause: new Error("Development child shutdown handshake failed.", {
+        cause: new Error("Development child did not acknowledge shutdown."),
+      }),
+    });
+    await reporter.flush();
+
+    expect(output.chunks.join("")).toBe(
+      "[SHUTDOWN_FAILED] Development child shutdown failed. <- Development child shutdown handshake failed. <- Development child did not acknowledge shutdown.\n",
+    );
+  });
+
+  test("renders a repeated cause message only once", async () => {
+    const output = new RecordingWritable();
+    const reporter: Reporter = new PlainTextReporter({ output });
+    const primary = new Error("injected lease release failure");
+
+    reporter.report({
+      kind: "failure",
+      command: "dev",
+      phase: "shutdown",
+      code: "SHUTDOWN_FAILED",
+      message: "dev command shutdown failed.",
+      cause: new AggregateError([primary], "dev command shutdown failed.", { cause: primary }),
+    });
+    await reporter.flush();
+
+    expect(output.chunks.join("")).toBe(
+      "[SHUTDOWN_FAILED] dev command shutdown failed. <- injected lease release failure\n",
+    );
   });
 
   test("keeps writing reports after a failed write", async () => {
