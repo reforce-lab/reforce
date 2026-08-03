@@ -39,12 +39,16 @@ export interface StartCommandDependencies {
   }): ProductionChild;
   releaseLease(lease: ProjectLease): Promise<void>;
   removeParticipant(lease: ProjectLease, participantToken: string): Promise<void>;
+  // 关停请求发出后还能等子进程多久。到点强杀，否则用户应用里一个 settle 不了的 close 钩子就让
+  // reforce start 在终端里杀不掉（Issue #103）。
+  readonly shutdownGraceMilliseconds: number;
 }
 
 const defaultDependencies: StartCommandDependencies = {
   spawnChild: spawnProductionChild,
   releaseLease: (lease) => lease.release(),
   removeParticipant: (lease, participantToken) => lease.removeParticipant(participantToken),
+  shutdownGraceMilliseconds: 30_000,
 };
 
 class ArtifactInvalidError extends Error {
@@ -53,6 +57,14 @@ class ArtifactInvalidError extends Error {
   constructor(message: string, options: { readonly cause?: unknown } = {}) {
     super(message, options);
     this.name = "ArtifactInvalidError";
+  }
+}
+
+// 握手完成前收到终止信号时用它中止等待，而不是把信号排队到握手结束（Issue #103）。
+class TerminationRequestedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TerminationRequestedError";
   }
 }
 
@@ -277,7 +289,12 @@ async function resolveProductionEntry(projectRoot: string): Promise<string> {
   const distRoot = join(projectRoot, "dist");
   try {
     const distMetadata = await lstat(distRoot);
-    if (!distMetadata.isDirectory() || distMetadata.isSymbolicLink()) {
+    // lstat 不跟随链接，符号链接的 isDirectory() 恒为 false，所以 symlink 必须先判：放在后面
+    // 只会让链接到目录的 dist 拿到「不是目录」这句与事实不符的文案（Issue #103）。
+    if (distMetadata.isSymbolicLink()) {
+      throw new ArtifactInvalidError(`Production artifact cannot be a symbolic link: ${distRoot}`);
+    }
+    if (!distMetadata.isDirectory()) {
       throw new ArtifactInvalidError(`Production artifact is not a directory: ${distRoot}`);
     }
     await assertOrdinaryArtifactTree(distRoot);
@@ -367,16 +384,42 @@ async function startProductionChild(input: {
   });
   input.state.child = child;
 
+  const graceMilliseconds = input.dependencies.shutdownGraceMilliseconds;
   let shutdownPromise: Promise<void> | undefined;
   let childHandshakeReady = false;
   let queuedSignal: NodeJS.Signals | undefined;
+  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+  let forceKilled = false;
+  // 转达关停之后子进程可能永远不退出（settle 不了的 close 钩子、排不干的连接池），而 child.wait()
+  // 无界，所以必须自带宽限期（Issue #103）。unref 的理由与 with-timeout.ts 相同：活着的子进程句柄
+  // 已经撑住 event loop，这个定时器不该再额外拖住退出。
+  const armForceKill = () => {
+    if (forceKillTimer !== undefined) {
+      return;
+    }
+    forceKillTimer = setTimeout(() => {
+      forceKilled = true;
+      child.kill("SIGKILL");
+    }, graceMilliseconds);
+    forceKillTimer.unref();
+  };
+  const terminationRequested = Promise.withResolvers<never>();
+  // participant 记录已收到、childHandshakeReady 还没置位的那段（addParticipant 与 ack 之间）里，
+  // 下面的 race 早已结算，没人再等这个 promise；这条 catch 只为不让那时的 reject 变成 unhandled。
+  void terminationRequested.promise.catch(() => undefined);
   const requestShutdown = (signal: NodeJS.Signals) => {
     queuedSignal ??= signal;
     if (!childHandshakeReady) {
+      // 握手期不能直接转达：win32 的 requestShutdown 与下面的 participant 握手共用同一个 IPC
+      // 收件箱，两边会互抢消息。这里只中止等待，杀子进程交给失败路径的 stopFailedChild。
+      terminationRequested.reject(
+        new TerminationRequestedError(`Production startup stopped by ${signal}.`),
+      );
       return;
     }
     shutdownPromise ??= child.requestShutdown(queuedSignal);
     void shutdownPromise.catch(() => undefined);
+    armForceKill();
   };
   const detachSignalHandlers = installTerminationSignalHandlers(requestShutdown);
   const onParentMessage = (message: unknown) => {
@@ -397,7 +440,9 @@ async function startProductionChild(input: {
     process.off("disconnect", onParentDisconnect);
   };
 
-  const participant = parseChildParticipantMessage(await nextMessage(child, 10_000));
+  const participant = parseChildParticipantMessage(
+    await Promise.race([nextMessage(child, 10_000), terminationRequested.promise]),
+  );
   if (participant === undefined) {
     throw new Error("The production child sent an invalid lease participant record.");
   }
@@ -412,10 +457,19 @@ async function startProductionChild(input: {
     requestShutdown(queuedSignal);
   }
 
-  const result = await child.wait();
-  await shutdownPromise;
-  if (result.exitCode !== 0) {
-    throw new Error(`Production child exited with code ${result.exitCode ?? "unknown"}.`);
+  try {
+    const result = await child.wait();
+    if (forceKilled) {
+      throw new Error(
+        `Production child did not exit within ${graceMilliseconds}ms of the shutdown request and was killed.`,
+      );
+    }
+    await shutdownPromise;
+    if (result.exitCode !== 0) {
+      throw new Error(`Production child exited with code ${result.exitCode ?? "unknown"}.`);
+    }
+  } finally {
+    clearTimeout(forceKillTimer);
   }
   return projectRoot;
 }

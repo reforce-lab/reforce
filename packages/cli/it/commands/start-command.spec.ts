@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { runStartCommand } from "@/commands/start";
 import { createChildLeaseParticipant } from "@/project/lease-endpoint";
+import { createTimeoutGuard } from "../support/process/observed-subprocess";
 import { recordingReporter } from "../support/recording-reporter";
+
+// 内层判死时钟（Issue #94）：失聪窗口的回归以「哨兵先到」的形式失败，而不是把整个套件挂死在
+// bun test 的 300s 外层预算上。
+const withTimeout = createTimeoutGuard(2_000);
 
 const projects: TemporaryProject[] = [];
 
@@ -67,6 +72,26 @@ test("start rejects symbolic links anywhere in the production artifact", async (
   expect(exitCode).toBe(1);
   expect(output.events).toHaveLength(1);
   expect(output.events[0]).toMatchObject({ kind: "failure", code: "ARTIFACT_INVALID" });
+});
+
+test("start rejects a production artifact whose dist root is a symbolic link", async () => {
+  const project = await createTemporaryProject({
+    "dist-target": { "main.mjs": "export {};\n" },
+  });
+  projects.push(project);
+  await symlink(
+    join(project.projectRoot, "dist-target"),
+    join(project.projectRoot, "dist"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const { exitCode, output } = await startOn(project);
+
+  expect(exitCode).toBe(1);
+  expect(output.events[0]).toMatchObject({
+    kind: "failure",
+    code: "ARTIFACT_INVALID",
+    message: expect.stringContaining("symbolic link"),
+  });
 });
 
 test("start reports a lease release failure after the original artifact failure", async () => {
@@ -168,4 +193,97 @@ test("start reports participant removal failure after the child exits", async ()
     cause: removeError,
   });
   expect(cleanupOrder).toEqual(["flush", "remove-participant", "release", "flush"]);
+});
+
+test("a termination signal during the handshake stops the command without waiting out the handshake budget", async () => {
+  const project = await createTemporaryProject({ dist: { "main.mjs": "export {};\n" } });
+  projects.push(project);
+  const output = recordingReporter();
+  const childCalls: string[] = [];
+  const spawned = Promise.withResolvers<void>();
+
+  const command = runStartCommand(
+    {
+      cwd: project.projectRoot,
+      projectDirectory: ".",
+      reporter: output.reporter,
+    },
+    {
+      spawnChild() {
+        const completion = Promise.withResolvers<{ readonly exitCode: number }>();
+        spawned.resolve();
+        return {
+          // 失聪窗口的触发条件：子进程活着，但迟迟不发 participant 记录（Issue #103）。
+          getOneMessage: () => new Promise<never>(() => undefined),
+          async sendMessage() {},
+          async requestShutdown(signal) {
+            childCalls.push(`shutdown:${signal}`);
+          },
+          kill(signal) {
+            childCalls.push(`kill:${signal}`);
+            completion.resolve({ exitCode: 1 });
+          },
+          wait: () => completion.promise,
+        };
+      },
+    },
+  );
+  await spawned.promise;
+  process.emit("SIGINT", "SIGINT");
+  const exitCode = await withTimeout(command, "start ignored SIGINT until the handshake budget.");
+
+  expect(exitCode).toBe(1);
+  expect(childCalls).toContain("kill:SIGKILL");
+});
+
+test("start kills a production child that never exits after a shutdown request", async () => {
+  const project = await createTemporaryProject({ dist: { "main.mjs": "export {};\n" } });
+  projects.push(project);
+  const output = recordingReporter();
+  const childCalls: string[] = [];
+  const awaitingExit = Promise.withResolvers<void>();
+
+  const command = runStartCommand(
+    {
+      cwd: project.projectRoot,
+      projectDirectory: ".",
+      reporter: output.reporter,
+    },
+    {
+      shutdownGraceMilliseconds: 50,
+      spawnChild(input) {
+        const endpoint = createChildLeaseParticipant(input.leaseToken);
+        const completion = Promise.withResolvers<{ readonly exitCode: number }>();
+        return {
+          async getOneMessage() {
+            const child = await endpoint;
+            return { type: "reforce:lease-participant", participant: child.participant };
+          },
+          async sendMessage() {
+            const child = await endpoint;
+            await child.close();
+          },
+          // 关停请求被受理，子进程却永不退出——用户应用有个 settle 不了的 close 钩子时的样子。
+          async requestShutdown(signal) {
+            childCalls.push(`shutdown:${signal}`);
+          },
+          kill(signal) {
+            childCalls.push(`kill:${signal}`);
+            completion.resolve({ exitCode: 1 });
+          },
+          wait() {
+            awaitingExit.resolve();
+            return completion.promise;
+          },
+        };
+      },
+    },
+  );
+  // wait() 被调用即证明握手已完成，此刻的信号必然走转达路径而不是握手期排队。
+  await awaitingExit.promise;
+  process.emit("SIGINT", "SIGINT");
+  const exitCode = await withTimeout(command, "start waited forever for a child that never exits.");
+
+  expect(exitCode).toBe(1);
+  expect(childCalls).toContain("kill:SIGKILL");
 });
