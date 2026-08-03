@@ -498,6 +498,74 @@ describe("project linking", () => {
     expect(result.diagnostics.map((item) => item.code)).toContain("UNSUPPORTED_TYPE_DECLARATION");
   });
 
+  test("reports a cross-module inline-exported type alias as an unsupported declaration", async () => {
+    const { result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        "contract.ts": "export type ServiceContract = { readonly value: string };\n",
+        "application.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import type { ServiceContract } from "./contract";',
+          "@Injectable()",
+          "export class Service {",
+          "  constructor(contract: ServiceContract) { void contract; }",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    expect(result.diagnostics.map((item) => item.code)).toEqual(["UNSUPPORTED_TYPE_DECLARATION"]);
+  });
+
+  test("rejects an inline-exported type alias shadowing a star re-export of the same name", async () => {
+    const { result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        "other.ts": "export interface Port { readonly value: string }\n",
+        "contract.ts": [
+          "export type Port = { readonly value: string };",
+          'export * from "./other";',
+          "",
+        ].join("\n"),
+        "application.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import type { Port } from "./contract";',
+          "@Injectable()",
+          'export class Provider implements Port { readonly value = "provider"; }',
+          "",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    expect(result.diagnostics.map((item) => item.code)).toContain("UNSUPPORTED_TYPE_DECLARATION");
+  });
+
+  test("keeps a star re-export visible through a module declaring the name without exporting it", async () => {
+    const { result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        "other.ts": "export interface Port { readonly value: string }\n",
+        "contract.ts": [
+          "type Port = { readonly value: string };",
+          'export * from "./other";',
+          "",
+        ].join("\n"),
+        "application.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import type { Port } from "./contract";',
+          "@Injectable()",
+          'export class Provider implements Port { readonly value = "provider"; }',
+          "",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.status).toBe("success");
+  });
+
   test("keeps physically distinct copies of one package as distinct type identities", async () => {
     const packageManifest = `${JSON.stringify({
       name: "shared-contract",
