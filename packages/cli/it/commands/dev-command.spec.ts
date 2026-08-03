@@ -310,6 +310,11 @@ describe("development command", () => {
       "close:one",
       "start:two",
     ]);
+    // The event sequence above is identical whether the update was applied in place or the child
+    // crashed and the supervisor respawned it onto the new build. Until Issue #46 it was always the
+    // latter, so assert the hot path specifically: no fatal, no restart.
+    expect(stderr()).not.toContain("HMR_FATAL");
+    expect(stderr()).not.toContain("exited unexpectedly");
     await requestGracefulShutdown(subprocess);
     const result = await subprocess;
     processes.splice(processes.indexOf(subprocess), 1);

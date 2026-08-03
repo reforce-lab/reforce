@@ -1,9 +1,5 @@
 import type { Reporter } from "@/reporter";
-import {
-  DevHmrManager,
-  type DevTimerScheduler,
-  type RspackHmrRuntime,
-} from "@/runtime/hmr-manager";
+import { DevHmrManager, type RspackHmrRuntime } from "@/runtime/hmr-manager";
 import {
   installProcessShutdownHandlers,
   ShutdownController,
@@ -16,7 +12,6 @@ export interface DevEntryOptions {
   readonly hot: RspackHmrRuntime;
   readonly bootstrap: () => Promise<{ close(): Promise<void> }>;
   readonly reporter: Reporter;
-  readonly scheduler?: DevTimerScheduler;
   readonly installProcessHandlers?: boolean;
 }
 
@@ -32,7 +27,6 @@ export class DevEntryController {
     this.hmr = new DevHmrManager({
       hot: options.hot,
       bootstrap: options.bootstrap,
-      scheduler: options.scheduler,
       onFatal: (error) => {
         void this.shutdown.requestShutdown({
           error,

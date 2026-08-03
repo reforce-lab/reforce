@@ -47,6 +47,7 @@ test("real child processes obey restart budget and never overlap", async () => {
       });
       return {
         exited,
+        async notifyBuildReady() {},
         async requestShutdown(signal) {
           if (signal) {
             subprocess.kill(signal);

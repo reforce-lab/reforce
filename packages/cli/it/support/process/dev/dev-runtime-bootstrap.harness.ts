@@ -2,7 +2,6 @@ import { runDevelopmentApplication } from "@/dev-runtime";
 import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 const hot: RspackHmrRuntime = {
-  accept() {},
   async check() {
     return null;
   },

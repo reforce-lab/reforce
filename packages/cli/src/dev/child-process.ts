@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { DevChildExit, ManagedDevChild } from "@/dev/child-supervisor";
 import {
+  type DevBuildReadyMessage,
   type DevChildLeaseParticipantAcknowledgement,
   type DevChildLeaseParticipantMessage,
   type DevChildReadyMessage,
@@ -169,6 +170,17 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   let shutdownPromise: Promise<void> | undefined;
   return {
     exited,
+    async notifyBuildReady(buildId) {
+      // A child that already exited or lost its channel is not a failure here: the supervisor
+      // observes the exit separately and respawns on the current build.
+      if (ipcClosedError !== undefined || !child.connected) {
+        return;
+      }
+      await sendMessage(child, {
+        type: "reforce:dev-build-ready",
+        buildId,
+      } satisfies DevBuildReadyMessage);
+    },
     requestShutdown(signal) {
       shutdownPromise ??=
         platform === "win32" ? requestIpcShutdown() : requestPosixShutdown(signal ?? "SIGTERM");

@@ -92,6 +92,15 @@ if (!hot) {
   throw new Error("Reforce development entry requires the Rspack HMR runtime.");
 }
 
+// Must stay written exactly like this — on the full \`import.meta.webpackHot\` member expression,
+// with a literal specifier, in the module that owns this hot object. rspack rewrites the accepted
+// request into a module id at build time by matching that expression shape; going through the
+// \`hot\` alias above, or passing a variable from runtime/hmr-manager.ts, leaves the raw string in
+// the output and \`_acceptedDependencies\` is then keyed by something no dependency ever matches.
+// That is why every update used to propagate past this entry and abort as "not accepted"
+// (Issue #46).
+import.meta.webpackHot.accept("reforce:application-bootstrap");
+
 process.exitCode = await runDevelopmentApplication({
   hot: createRspackHmrRuntime(hot),
   loadBootstrap: () => import("reforce:application-bootstrap"),
@@ -305,7 +314,14 @@ export async function startDevWatchBuild(
           config.output.chunkLoading = "import";
           config.output.publicPath = "./";
           config.output.hotUpdateChunkFilename = "updates/[id].[fullhash].hot-update.mjs";
-          config.output.hotUpdateMainFilename = "updates/[runtime].[fullhash].hot-update.json";
+          // The manifest is fetched by the `import` chunk-loading runtime, which reads
+          // `obj.default` — i.e. its content is an ES module (`export default {...}`), not JSON.
+          // Bun picks a loader from the extension, so a `.json` name makes every hot update die
+          // with `JSON Parse error: Unexpected identifier "export"`. The stem must also differ
+          // from hotUpdateChunkFilename: `[runtime]` and the entry chunk `[id]` are both `main`,
+          // so sharing the `hot-update.mjs` suffix would make the two emits overwrite each other.
+          config.output.hotUpdateMainFilename =
+            "updates/[runtime].[fullhash].hot-update-manifest.mjs";
           config.plugins.push(
             gatePlugin,
             new rspack.experiments.VirtualModulesPlugin({

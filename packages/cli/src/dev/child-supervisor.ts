@@ -6,6 +6,7 @@ export interface DevChildExit {
 
 export interface ManagedDevChild {
   readonly exited: Promise<DevChildExit>;
+  notifyBuildReady(buildId: string): Promise<void>;
   requestShutdown(signal?: NodeJS.Signals): Promise<void>;
 }
 
@@ -63,7 +64,14 @@ export class DevChildSupervisor {
         this.currentBuildIdValue = buildId;
         this.restartCountValue = 0;
       }
-      if (this.child) {
+      const child = this.child;
+      if (child) {
+        // The live child owns the hot update. Telling it only once the build validated is what
+        // makes the manifest guaranteed to exist at check() time (Issue #46); a child that never
+        // hears from us simply keeps serving the previous build.
+        if (buildChanged) {
+          await child.notifyBuildReady(buildId);
+        }
         return;
       }
       if (!buildChanged && this.restartCountValue >= maximumRestartsPerBuild) {

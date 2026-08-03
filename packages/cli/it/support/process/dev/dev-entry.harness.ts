@@ -1,6 +1,6 @@
 import type { CliReporterEvent, Reporter } from "@/reporter";
 import { DevEntryController } from "@/runtime/dev-entry";
-import type { DevTimerScheduler, RspackHmrRuntime } from "@/runtime/hmr-manager";
+import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 const mode = process.argv[2];
 if (mode !== "strict-order" && mode !== "fatal") {
@@ -16,28 +16,6 @@ const listenerCount = () =>
   listenerEvents.reduce((count, event) => count + process.listenerCount(event), 0);
 const listenersBefore = listenerCount();
 const events: string[] = [];
-let timersCreated = 0;
-let timersCleared = 0;
-const timers = new Map<unknown, ReturnType<typeof setInterval>>();
-const scheduler: DevTimerScheduler = {
-  setInterval(callback, milliseconds) {
-    const token = Symbol("timer");
-    const timer = setInterval(callback, Math.max(milliseconds, 60_000));
-    timer.unref();
-    timers.set(token, timer);
-    timersCreated += 1;
-    return token;
-  },
-  clearInterval(token) {
-    const timer = timers.get(token);
-    if (!timer) {
-      throw new Error("Unknown development harness timer.");
-    }
-    clearInterval(timer);
-    timers.delete(token);
-    timersCleared += 1;
-  },
-};
 
 const fatalError = new Error("check fatal");
 const cleanupError = new Error("cleanup fatal");
@@ -56,9 +34,6 @@ const reporter: Reporter = {
 
 let generation = 1;
 const hot: RspackHmrRuntime = {
-  accept(specifier) {
-    events.push(`accept:${specifier}`);
-  },
   async check(autoApply) {
     events.push(`check:${autoApply}`);
     if (mode === "fatal") {
@@ -75,7 +50,6 @@ const hot: RspackHmrRuntime = {
 const entry = new DevEntryController({
   hot,
   reporter,
-  scheduler,
   bootstrap: async () => {
     const currentGeneration = generation;
     events.push(`bootstrap:${currentGeneration}`);
@@ -114,8 +88,6 @@ process.stdout.write(
           ? undefined
           : String(result.primaryError),
     errorMessages,
-    timersCreated,
-    timersCleared,
     listenerDelta: listenersAfter - listenersBefore,
   })}\n`,
 );

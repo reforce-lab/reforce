@@ -4,7 +4,6 @@ import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 function rejectingRuntime(error: unknown): RspackHmrRuntime {
   return {
-    accept() {},
     async check() {
       throw error;
     },
@@ -12,10 +11,10 @@ function rejectingRuntime(error: unknown): RspackHmrRuntime {
   };
 }
 
-test("a missing Rspack update manifest is an empty HMR polling round", async () => {
+test("a missing Rspack update manifest is a no-op HMR check", async () => {
   const error = Object.assign(new Error("missing update manifest"), {
     code: "ERR_MODULE_NOT_FOUND",
-    url: "file:///project/.reforce/dev/updates/main.abc.hot-update.json",
+    url: "file:///project/.reforce/dev/updates/main.abc.hot-update-manifest.mjs",
   });
   const runtime = createRspackHmrRuntime(rejectingRuntime(error));
 
@@ -24,10 +23,10 @@ test("a missing Rspack update manifest is an empty HMR polling round", async () 
   expect(result).toBeNull();
 });
 
-test("a Bun missing-module error for an update manifest is an empty HMR polling round", async () => {
+test("a Bun missing-module error for an update manifest is a no-op HMR check", async () => {
   const error = {
     message:
-      "Cannot find module './updates/main.abc.hot-update.json' from '/project/.reforce/dev/main.mjs'",
+      "Cannot find module './updates/main.abc.hot-update-manifest.mjs' from '/project/.reforce/dev/main.mjs'",
   };
   const runtime = createRspackHmrRuntime(rejectingRuntime(error));
 

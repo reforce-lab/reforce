@@ -25,6 +25,9 @@ function runningChild(events?: string[]): ManagedDevChild {
   });
   return {
     exited,
+    async notifyBuildReady(buildId) {
+      events?.push(`child build ready:${buildId}`);
+    },
     async requestShutdown() {
       events?.push("child shutdown");
       finish({ exitCode: 0 });

@@ -146,7 +146,6 @@ test("a real Bun process closes the old Context before applying updated ESM bind
 
   expect(result.exitCode).toBe(0);
   expect(Reflect.get(observation, "events")).toEqual([
-    "accept:reforce:application-bootstrap",
     "bootstrap:1",
     "check:false",
     "close:1",
@@ -155,8 +154,6 @@ test("a real Bun process closes the old Context before applying updated ESM bind
     "close:2",
     "flush",
   ]);
-  expect(Reflect.get(observation, "timersCreated")).toBe(1);
-  expect(Reflect.get(observation, "timersCleared")).toBe(1);
   expect(Reflect.get(observation, "listenerDelta")).toBe(0);
 });
 
@@ -171,8 +168,6 @@ test("a real Bun process keeps HMR fatal primary and exits nonzero after cleanup
     "cleanup fatal",
     "flush fatal",
   ]);
-  expect(Reflect.get(observation, "timersCreated")).toBe(1);
-  expect(Reflect.get(observation, "timersCleared")).toBe(1);
   expect(Reflect.get(observation, "listenerDelta")).toBe(0);
 });
 

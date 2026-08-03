@@ -21,7 +21,6 @@ process.on("message", onMessage);
 const stopObservingSignals = observeShutdownSignals();
 
 const hot: RspackHmrRuntime = {
-  accept() {},
   async check() {
     return null;
   },
