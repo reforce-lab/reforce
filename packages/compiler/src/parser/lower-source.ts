@@ -1,11 +1,10 @@
+import { type AliasMap, is, nameOf } from "yuku-ast";
 import type {
   BaseNode,
   Class,
   Declaration,
   ImportDeclarationSpecifier,
-  MethodDefinition,
   ModuleDeclaration,
-  ModuleExportName,
   Node,
   NodeOfType,
   ObjectPropertyKind,
@@ -17,7 +16,6 @@ import type {
   Program,
   ProgramStatement,
   StringLiteral,
-  TSAbstractMethodDefinition,
   TSModuleDeclaration,
   VariableDeclaration,
   VariableDeclarator,
@@ -78,7 +76,9 @@ interface Collector {
   readonly unsupportedDeclarations: UnsupportedNamedDeclaration[];
 }
 
-type ClassMethod = MethodDefinition | TSAbstractMethodDefinition;
+// 别名组由 parser 的 AST 定义生成，parser 新增方法节点类型时这里自动跟随；手写成员列表会漂移
+// （Issue #91）。同理，模块声明的判定用 `is.ModuleDeclaration` 而非手写 type 列表。
+type ClassMethod = AliasMap["Method"];
 type UnsupportedDeclaration = NodeOfType<
   | "FunctionDeclaration"
   | "TSDeclareFunction"
@@ -109,13 +109,6 @@ function moduleSpecifierOf(source: StringLiteral): string {
   return source.value;
 }
 
-function moduleExportNameOf(node: ModuleExportName): string {
-  if (node.type === "Identifier") {
-    return node.name;
-  }
-  return node.value;
-}
-
 function importBindingOf(
   specifier: ImportDeclarationSpecifier,
   context: LoweringContext,
@@ -129,7 +122,7 @@ function importBindingOf(
   }
   return {
     kind: "named",
-    imported: moduleExportNameOf(specifier.imported),
+    imported: nameOf(specifier.imported),
     local,
     span: spanOf(specifier, context),
   };
@@ -168,8 +161,8 @@ function lowerImport(
 
 function exportSpecifierOf(node: ParserExportSpecifier, context: LoweringContext): ExportSpecifier {
   return {
-    local: moduleExportNameOf(node.local),
-    exported: moduleExportNameOf(node.exported),
+    local: nameOf(node.local),
+    exported: nameOf(node.exported),
     span: spanOf(node, context),
   };
 }
@@ -229,7 +222,7 @@ function lowerExportAll(
   collector.exports.push({
     kind: "namespace",
     moduleSpecifier,
-    exported: moduleExportNameOf(node.exported),
+    exported: nameOf(node.exported),
     span: spanOf(node, context),
   });
 }
@@ -326,10 +319,7 @@ function lowerClass(
   context: LoweringContext,
 ): void {
   const typeParameters = typeParameterNamesOf(node);
-  const methods = node.body.body.filter(
-    (member): member is ClassMethod =>
-      member.type === "MethodDefinition" || member.type === "TSAbstractMethodDefinition",
-  );
+  const methods = node.body.body.filter(is.Method);
   const name = identifierTextOf(node.id);
   collector.classes.push({
     kind: "class",
@@ -431,7 +421,7 @@ function namespaceMembersOf(
       }
       return statement.specifiers.map((specifier) => ({
         kind: "value" as const,
-        name: moduleExportNameOf(specifier.exported),
+        name: nameOf(specifier.exported),
         span: spanOf(specifier, context),
       }));
     }),
@@ -653,17 +643,6 @@ function visitDefaultDeclaration(
   }
 }
 
-function isModuleDeclaration(node: ProgramStatement): node is ModuleDeclaration {
-  return (
-    node.type === "ImportDeclaration" ||
-    node.type === "ExportNamedDeclaration" ||
-    node.type === "ExportAllDeclaration" ||
-    node.type === "ExportDefaultDeclaration" ||
-    node.type === "TSExportAssignment" ||
-    node.type === "TSNamespaceExportDeclaration"
-  );
-}
-
 function visitModuleDeclaration(
   node: ModuleDeclaration,
   topLevel: boolean,
@@ -717,7 +696,7 @@ function visitStatement(
   collector: Collector,
   context: LoweringContext,
 ): void {
-  if (isModuleDeclaration(node)) {
+  if (is.ModuleDeclaration(node)) {
     visitModuleDeclaration(node, topLevel, collector, context);
     return;
   }

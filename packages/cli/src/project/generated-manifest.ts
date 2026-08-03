@@ -3,7 +3,7 @@
 // 产物可能被手改、或来自与当前 CLI 错配的 compiler 版本，因此每条不变量都镜像契约生产方
 // packages/compiler/src/emission/generate-files.ts 的 renderManifest 输出形状；schemaVersion、
 // bean id 格式、lifecycle 归属、plans 三数组皆为线上协议，改动任一条都必须与生产方同步。
-import { isObject } from "radashi";
+import { isObject, isString } from "radashi";
 import { hasExactKeys } from "@/project/exact-keys";
 
 interface ManifestSourcePosition {
@@ -70,6 +70,20 @@ function isNonemptyString(value: unknown): value is string {
 
 function isNonnegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+// `Array.isArray(value)` 在 value: unknown 上只窄化到 any[]，而 `every` 带类型谓词也不改变数组
+// 自身的类型，于是后续的元素字段访问全部退化成无检查的 any（Issue #91）。本文件读的是可能被手改
+// 的产物字节，元素形状恰恰是要校验的对象，因此数组字段一律经此守卫收敛到具体元素类型再访问。
+function isArrayOf<T>(
+  value: unknown,
+  isItem: (item: unknown, index: number) => item is T,
+): value is readonly T[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+  const items: readonly unknown[] = value;
+  return items.every(isItem);
 }
 
 function isRelativePosixPath(value: string): boolean {
@@ -273,15 +287,12 @@ function isManifestBean(value: unknown): value is ManifestBean {
     source.file !== idParts.file ||
     !isExportReference(runtimeExport) ||
     runtimeExport.exportName !== idParts.exportName ||
-    !Array.isArray(provides) ||
+    !isArrayOf(provides, isSymbolReference) ||
     provides.length === 0 ||
-    !provides.every(isSymbolReference) ||
     !hasUniqueSymbols(provides) ||
-    !Array.isArray(dependencies) ||
-    !dependencies.every(isDependency) ||
+    !isArrayOf(dependencies, isDependency) ||
     typeof Reflect.get(value, "primary") !== "boolean" ||
-    !Array.isArray(qualifiers) ||
-    !qualifiers.every(isQualifier) ||
+    !isArrayOf(qualifiers, isQualifier) ||
     !hasValidQualifiers(qualifiers, provides) ||
     !isLifecycle(lifecycle)
   ) {
@@ -308,10 +319,7 @@ function isPlans(value: unknown): value is ManifestPlans {
   if (!isObject(value) || !hasExactKeys(value, keys)) {
     return false;
   }
-  return keys.every((key) => {
-    const entries = Reflect.get(value, key);
-    return Array.isArray(entries) && entries.every((entry) => typeof entry === "string");
-  });
+  return keys.every((key) => isArrayOf(Reflect.get(value, key), isString));
 }
 
 function hasUniqueKnownIds(values: readonly string[], knownIds: ReadonlySet<string>): boolean {
@@ -414,7 +422,7 @@ function isGeneratedManifest(value: unknown): boolean {
   }
   const beans = Reflect.get(value, "beans");
   const plans = Reflect.get(value, "plans");
-  if (!Array.isArray(beans) || !beans.every(isManifestBean) || !isPlans(plans)) {
+  if (!isArrayOf(beans, isManifestBean) || !isPlans(plans)) {
     return false;
   }
   // bean id 与源路径同规则：除精确唯一外，按 lowerCase 归一后（portable id）也必须唯一，
