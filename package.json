@@ -43,5 +43,8 @@
     "lefthook": "^2.1.10",
     "turbo": "^2.10.8",
     "typescript": "catalog:"
+  },
+  "patchedDependencies": {
+    "get-tsconfig@4.14.1": "patches/get-tsconfig@4.14.1.patch"
   }
 }
