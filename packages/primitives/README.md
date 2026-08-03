@@ -16,3 +16,5 @@
 ## 为什么这些东西必须共享
 
 `compareUtf16CodeUnits` 和 `toPortablePath` 都直接决定生成物的字节。compiler 按它们排序和归一化后写出 `manifest.json`，CLI 再按同一套规则算 aggregate hash、dev build id 并校验 manifest。两端只要有一端改了规则，信任边界就会误判——所以它们不能是"各写一份长得一样的代码"。
+
+`isPathContained` / `isPathStrictlyContained` 决定的是"这条路径算不算越界"。它们此前在 cli、compiler、tooling-testing 里各有实现，而且两种极性混在一起：有的把 `target === boundary` 判为越界，有的判为放行。删除操作用错极性就会递归删掉用户项目根（Issue #55），所以两种极性各留一个自解释的名字，一起放在这里。

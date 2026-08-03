@@ -1,2 +1,7 @@
 export { compareUtf16CodeUnits } from "@/ordering";
-export { toPortablePath } from "@/path";
+export {
+  isPathContained,
+  isPathStrictlyContained,
+  type PathSemantics,
+  toPortablePath,
+} from "@/path";
