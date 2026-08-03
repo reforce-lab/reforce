@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { compareUtf16CodeUnits } from "@/determinism";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 
 export type DevBuildAssetRole = "entry" | "chunk" | "source-map" | "hot-update";
 

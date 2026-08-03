@@ -1,9 +1,9 @@
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
+import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
 import { createDevBuildId, type DevBuildAsset } from "@/bundling/build-id";
 import type { ResolvedProject } from "@/compiler-types";
-import { compareUtf16CodeUnits } from "@/determinism";
 import type { DevCompilerGate, DevCompilerGateResult } from "@/dev/compiler-gate";
 import type { DevCompilation } from "@/dev/watch-coordinator";
 import { resolveCliSupportModule } from "@/runtime-module-path";
@@ -81,10 +81,6 @@ process.exitCode = await runDevelopmentApplication({
   loadBootstrap: () => import("reforce:application-bootstrap"),
 });
 `;
-}
-
-function toPortablePath(path: string): string {
-  return path.split(sep).join("/");
 }
 
 function assetRole(path: string): DevBuildAsset["role"] {

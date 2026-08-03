@@ -1,10 +1,10 @@
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { analyzeClassProvider } from "@/analysis/class-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { ExecutionPlansModel, ProviderDraft, ProviderModel } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import type { CompilerDiagnostic } from "@/api";
-import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type { ParsedSource } from "@/project/source-files";

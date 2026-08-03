@@ -17,7 +17,3 @@ export function isPathContained(
     !semantics.isAbsolute(relative)
   );
 }
-
-export function toPortablePath(nativePath: string): string {
-  return nativePath.split(path.sep).join("/");
-}

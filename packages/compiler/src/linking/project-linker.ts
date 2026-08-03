@@ -1,7 +1,7 @@
 import { isBuiltin } from "node:module";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
-import { compareUtf16CodeUnits } from "@/determinism";
 import { diagnostic } from "@/diagnostics";
 import {
   type ExternalDeclaration,

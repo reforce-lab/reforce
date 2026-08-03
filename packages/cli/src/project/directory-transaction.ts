@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { isObject } from "radashi";
-import { compareUtf16CodeUnits } from "@/determinism";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
 import { ProjectBusyError, type ProjectLease } from "@/project/lease";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";

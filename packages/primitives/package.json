@@ -1,5 +1,5 @@
 {
-  "name": "@reforce/tooling-testing",
+  "name": "@reforce/primitives",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,11 +17,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/primitives": "workspace:*",
-    "@swc/helpers": "catalog:",
-    "execa": "^10.0.1",
-    "strip-ansi": "^7.2.0",
-    "tempy": "^3.2.0"
+    "@swc/helpers": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
@@ -29,7 +25,7 @@
     "@reforce/tooling-tsconfig": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/bun": "catalog:",
-    "radashi": "^12.9.1",
+    "fast-check": "^4.9.0",
     "typescript": "catalog:"
   }
 }
