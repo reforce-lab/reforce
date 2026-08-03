@@ -1,5 +1,5 @@
 import { readBeanDefinitionOptions } from "@/bean-declaration";
-import { createApplicationContext as createRuntimeApplicationContext } from "@/create-application-context";
+import { RuntimeApplicationContext } from "@/context-runtime";
 import type {
   GeneratedApplicationDefinition,
   GeneratedClassRegistration,
@@ -53,5 +53,5 @@ export function factoryBean<T extends object>(
 export function createApplicationContext(
   definition: GeneratedApplicationDefinition,
 ): ApplicationContext {
-  return createRuntimeApplicationContext(snapshotApplicationDefinition(definition));
+  return new RuntimeApplicationContext(snapshotApplicationDefinition(definition));
 }

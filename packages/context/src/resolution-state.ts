@@ -4,11 +4,11 @@ import type {
 } from "@/generated-contracts";
 import type { BeanClass, BeanDefinition, ContextState, Lazy } from "@/public-types";
 
-export interface ConstructingRecord {
+interface ConstructingRecord {
   readonly state: "constructing";
 }
 
-export interface ConstructedRecord {
+interface ConstructedRecord {
   readonly state: "constructed";
   readonly instance: object;
 }
@@ -33,10 +33,10 @@ export class ResolutionState {
   private readonly cycleProxyByTargetId = new Map<string, object>();
   private readonly lazyHandleByTargetId = new Map<string, Lazy<object>>();
   private readonly cleanupLedger = new Map<string, CleanupAction>();
-  private contextStateValue: ContextState = "created";
-  private startPromiseValue: Promise<void> | undefined;
-  private closePromiseValue: Promise<void> | undefined;
-  private cleanupPromiseValue: Promise<void> | undefined;
+  contextState: ContextState = "created";
+  startPromise: Promise<void> | undefined;
+  closePromise: Promise<void> | undefined;
+  cleanupPromise: Promise<void> | undefined;
   private closeRequestedValue = false;
 
   constructor(definition: GeneratedApplicationDefinition) {
@@ -49,38 +49,6 @@ export class ResolutionState {
         this.definitionIdentityToId.set(registration.definition, registration.id);
       }
     }
-  }
-
-  get contextState(): ContextState {
-    return this.contextStateValue;
-  }
-
-  set contextState(state: ContextState) {
-    this.contextStateValue = state;
-  }
-
-  get startPromise(): Promise<void> | undefined {
-    return this.startPromiseValue;
-  }
-
-  set startPromise(promise: Promise<void> | undefined) {
-    this.startPromiseValue = promise;
-  }
-
-  get closePromise(): Promise<void> | undefined {
-    return this.closePromiseValue;
-  }
-
-  set closePromise(promise: Promise<void> | undefined) {
-    this.closePromiseValue = promise;
-  }
-
-  get cleanupPromise(): Promise<void> | undefined {
-    return this.cleanupPromiseValue;
-  }
-
-  set cleanupPromise(promise: Promise<void> | undefined) {
-    this.cleanupPromiseValue = promise;
   }
 
   get closeRequested(): boolean {

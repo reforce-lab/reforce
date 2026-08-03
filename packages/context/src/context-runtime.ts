@@ -52,14 +52,11 @@ export class RuntimeApplicationContext implements ApplicationContext {
       this.state.closePromise = this.waitForStartBoundaryAndCleanup();
       return this.state.closePromise;
     }
-    if (
-      this.state.contextState === "created" ||
-      this.state.contextState === "running" ||
-      this.state.contextState === "failed"
-    ) {
-      this.state.contextState = "closing";
-    }
-    this.state.closePromise = this.observeCleanup(this.beginCleanup());
+    // Reaching here with no closePromise means the state is created/running/failed:
+    // every transition to closing/closed sets closePromise in the same synchronous
+    // segment, and starting is handled above.
+    this.state.contextState = "closing";
+    this.state.closePromise = this.beginCleanup();
     return this.state.closePromise;
   }
 
@@ -98,22 +95,16 @@ export class RuntimeApplicationContext implements ApplicationContext {
     try {
       await this.state.startPromise;
     } catch {
-      return await this.requireCleanupPromise();
+      // A failed start already runs its own rollback cleanup, so both outcomes
+      // join here: the close boundary is the cleanup result, not the start result.
     }
     return await this.requireCleanupPromise();
   }
 
   private ensureRollbackClosePromise(cleanupPromise: Promise<void>): void {
     if (!this.state.closePromise) {
-      this.state.closePromise = this.observeCleanup(cleanupPromise);
+      this.state.closePromise = cleanupPromise;
     }
-  }
-
-  private observeCleanup(cleanupPromise: Promise<void>): Promise<void> {
-    return cleanupPromise.then(
-      () => undefined,
-      (error: unknown) => Promise.reject(error),
-    );
   }
 
   private requireCleanupPromise(): Promise<void> {
@@ -131,9 +122,7 @@ export class RuntimeApplicationContext implements ApplicationContext {
     if (this.state.cleanupPromise) {
       return this.state.cleanupPromise;
     }
-    if (this.state.contextState !== "closing") {
-      this.state.contextState = "closing";
-    }
+    this.state.contextState = "closing";
     this.state.cleanupPromise = Promise.resolve()
       .then(() => this.lifecycle.runCleanup())
       .finally(() => {
