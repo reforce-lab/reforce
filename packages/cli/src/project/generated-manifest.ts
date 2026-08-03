@@ -131,6 +131,12 @@ function isSourceReference(value: unknown): value is ManifestSourceReference {
   );
 }
 
+// 同一条 bean 记录里 `source.file` 与 `moduleSpecifier` 松紧不同不是疏漏，是基准不同（Issue #104）：
+// source.file 相对项目根，`..` 恒不合法；moduleSpecifier 相对 <root>/.reforce/generated
+// （compiler/src/project/generated-paths.ts），指回源码必须且只需退两级。退级数因此是定值，退完剩下的
+// 部分与 source.file 同为项目根相对路径，走同一条 isRelativePosixPath。
+const GENERATED_TO_PROJECT_ROOT = "../../";
+
 function isRuntimeModuleSpecifier(value: unknown): value is string {
   if (
     !isNonemptyString(value) ||
@@ -141,18 +147,20 @@ function isRuntimeModuleSpecifier(value: unknown): value is string {
   ) {
     return false;
   }
-  const relative = value.startsWith("./") || value.startsWith("../");
-  if (!relative) {
+  if (!isRelativeRuntimeModuleSpecifier(value)) {
+    // 裸 specifier（包名）：只有 provides 里的外部 symbol 走这条分支，"." 开头必然是退级数不对的相对路径。
     return !value.startsWith(".");
   }
+  const projectRelative = value.slice(GENERATED_TO_PROJECT_ROOT.length);
   return (
-    !value.split("/").includes("node_modules") &&
+    isRelativePosixPath(projectRelative) &&
+    !projectRelative.split("/").includes("node_modules") &&
     (value.endsWith(".js") || value.endsWith(".mjs") || value.endsWith(".cjs"))
   );
 }
 
 function isRelativeRuntimeModuleSpecifier(value: string): boolean {
-  return value.startsWith("./") || value.startsWith("../");
+  return value.startsWith(GENERATED_TO_PROJECT_ROOT);
 }
 
 function isExportReference(value: unknown): value is ManifestExportReference {
@@ -316,6 +324,39 @@ function exactlyCovers(values: readonly string[], expected: ReadonlySet<string>)
   return values.length === expected.size && values.every((id) => expected.has(id));
 }
 
+function hasEagerDependenciesConstructedFirst(
+  constructionOrder: readonly string[],
+  beans: readonly ManifestBean[],
+): boolean {
+  const constructionIndexes = new Map(constructionOrder.map((id, index) => [id, index]));
+  return beans.every((bean) => {
+    const consumerIndex = constructionIndexes.get(bean.id);
+    if (consumerIndex === undefined) {
+      return false;
+    }
+    return bean.dependencies.every((dependency) => {
+      if (dependency.mode !== "eager") {
+        return true;
+      }
+      const dependencyIndex = constructionIndexes.get(dependency.targetId);
+      return dependencyIndex !== undefined && dependencyIndex < consumerIndex;
+    });
+  });
+}
+
+// startActionOrder 与 cleanupActionOrder 都是同一条 lifecycleOrder 的过滤结果，cleanup 过滤的是它的
+// 反序（compiler/src/analysis/execution-plan.ts 的 createExecutionPlans），因此两者共有的 bean 之间相对
+// 次序必须互为倒序。能校验的只有这一条：完整次序在这里复算不出来——依赖环内成员按 id 排序，eager 依赖
+// 可以合法地晚于消费者启动，把 constructionOrder 的偏序检查照搬过来会误杀所有含环的合法产物
+//（Issue #104）。
+function hasMirroredLifecycleOrder(plans: ManifestPlans): boolean {
+  const startIds = new Set(plans.startActionOrder);
+  const cleanupIds = new Set(plans.cleanupActionOrder);
+  const startShared = plans.startActionOrder.filter((id) => cleanupIds.has(id));
+  const cleanupShared = plans.cleanupActionOrder.filter((id) => startIds.has(id));
+  return startShared.every((id, index) => id === cleanupShared[cleanupShared.length - 1 - index]);
+}
+
 function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): boolean {
   const knownIds = new Set(beans.map((bean) => bean.id));
   if (
@@ -326,21 +367,8 @@ function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): bo
   ) {
     return false;
   }
-  const constructionIndexes = new Map(plans.constructionOrder.map((id, index) => [id, index]));
-  for (const bean of beans) {
-    const consumerIndex = constructionIndexes.get(bean.id);
-    if (consumerIndex === undefined) {
-      return false;
-    }
-    for (const dependency of bean.dependencies) {
-      if (dependency.mode !== "eager") {
-        continue;
-      }
-      const dependencyIndex = constructionIndexes.get(dependency.targetId);
-      if (dependencyIndex === undefined || dependencyIndex >= consumerIndex) {
-        return false;
-      }
-    }
+  if (!hasEagerDependenciesConstructedFirst(plans.constructionOrder, beans)) {
+    return false;
   }
   const expectedStart = new Set(
     beans.flatMap((bean) => (bean.kind === "class" && bean.lifecycle.start ? [bean.id] : [])),
@@ -356,10 +384,13 @@ function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): bo
       return [];
     }),
   );
-  return (
-    exactlyCovers(plans.startActionOrder, expectedStart) &&
-    exactlyCovers(plans.cleanupActionOrder, expectedCleanup)
-  );
+  if (
+    !exactlyCovers(plans.startActionOrder, expectedStart) ||
+    !exactlyCovers(plans.cleanupActionOrder, expectedCleanup)
+  ) {
+    return false;
+  }
+  return hasMirroredLifecycleOrder(plans);
 }
 
 // 源路径的大小写不敏感冲突检测：macOS/Windows 默认文件系统上，仅大小写不同的两个文件会
