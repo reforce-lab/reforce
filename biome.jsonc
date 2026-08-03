@@ -10,16 +10,23 @@
     "ignoreUnknown": true,
     "includes": [
       "**",
-      "!**/dist",
-      "!**/.turbo",
-      "!**/coverage",
-      "!bun.lock",
-      "!.lsp.json",
-      "!.mcp.json",
-      "!apm_modules",
-      "!.claude",
-      "!.codex",
-      "!.agents"
+      // `!!` 是 force-ignore：普通 `!` 只是不检查，被别的文件 import 时 scanner 仍会索引；
+      // types 域会触发全项目扫描，这些目录必须用 `!!` 彻底挡住，否则 LSP daemon 高 CPU
+      "!!**/dist",
+      "!!**/.turbo",
+      "!!**/coverage",
+      "!!**/.reforce",
+      "!!**/.idea",
+      "!!**/.worktrees",
+      "!!apm_modules",
+      "!!patches",
+      "!!.claude",
+      "!!.codex",
+      "!!.agents",
+      "!!.kimi-code",
+      "!!bun.lock",
+      "!!.lsp.json",
+      "!!.mcp.json"
     ]
   },
   "formatter": {
