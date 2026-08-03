@@ -6,6 +6,32 @@
 - 设计类问题走 **[RFC] Issue 模板**；结论被接受后直接编辑到该 issue 顶楼，打 `type: adr` 标签，并登记 Wiki 的 ADR 索引。
 - 不确定该不该做？先开 Issue 讨论，不要先写代码。
 
+## Issue 标题
+
+事务型 Issue（会落到某个包或领域的具体改动）用和 commit 同一套词汇：
+
+```
+type(scope): 描述
+```
+
+- `type` 取 Conventional Commits 的类型，且与该 Issue **最终要做的动作**一致，而不是与它的表象一致。
+  例：「某条 IT 在 macOS 上假失败」要做的是改测试断言，写 `test(cli):` 而不是 `fix(cli):`；
+  「上游有缺陷，我们先加本地补偿」写 `chore(<pkg>):`。
+- `scope` 不得为空，取实际包或领域名（仓库在用的：`context` / `compiler` / `cli` / `packages` / `tooling` / `ci` / `repo`）。
+- 描述写**已核实的事实和后果**，不写猜测。多个后果用破折号或逗号接在一句里，不为了短而丢掉判断依据。
+
+没有单一 scope 的元 Issue 保留方括号前缀，不套 `type(scope)`：
+
+| 前缀 | 用途 |
+|---|---|
+| `[EPIC] ` | 跨多个包、需要拆子 Issue 的长期主题 |
+| `[RFC] ` | 设计提案；结论被接受后标题改为 `[ADR] 000N · <决策>`，标签改 `type: adr` |
+| `[调研] ` | 结论是一份判断而非一次代码改动的调查 |
+
+> 模板里的 `title` 预填**只对网页表单生效**。`gh issue create --title` 走 API，会完全绕过模板
+> （`blank_issues_enabled: false` 同样只挡网页空白 Issue）。本仓库的 Issue 基本都由 CLI 创建，
+> 所以标题合规目前没有机械兜底，靠本节约束（Issue #97）。
+
 ## 分支与提交
 
 - 分支：`feat/<issue>-<slug>`、`fix/<issue>-<slug>`、`chore/<slug>`。
