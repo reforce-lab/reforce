@@ -47,6 +47,9 @@ export function parseSource(input: ParseSourceInput): ParseSourceResult {
     const parsed = parse(input.sourceText, {
       sourceType: sourceType(input.sourceKind),
       lang: sourceLanguage(input.sourceKind),
+      // Pinned rather than inherited: lowering is written against an AST that still contains
+      // `ParenthesizedExpression` and unwraps it itself (see `unparenthesized` in lower-values), so
+      // the flag must not follow whatever the parser happens to default to.
       preserveParens: true,
       semanticErrors: false,
       attachComments: false,

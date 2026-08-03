@@ -99,30 +99,53 @@ export function typeParameterNamesOf(owner: Node): ReadonlySet<string> {
   return new Set(declaration?.params.map((parameter) => parameter.name.name) ?? []);
 }
 
+// Parentheses change nothing about what an expression means, but the parser keeps them as their own
+// node, so a classifier that only looks at `node.type` sees `ParenthesizedExpression` and gives up:
+// `(defineBean)(...)` used to produce neither IR nor a diagnostic. Every classifier that dispatches
+// on `node.type` must therefore call this first, otherwise parentheses are transparent in one form
+// and fatal in its sibling. Only parentheses are unwrapped: the type-level wrappers (`as`,
+// `satisfies`, `!`) restate what a value is, which is exactly what provided-type inference reads, so
+// looking through them would change the DI graph in ways nobody has decided on.
+export function unparenthesized(node: Node): Node {
+  let current = node;
+  while (current.type === "ParenthesizedExpression") {
+    current = current.expression;
+  }
+  return current;
+}
+
 export function entityNameOf(
   node: Node | null | undefined,
   context: LoweringContext,
 ): EntityName | undefined {
-  if (node?.type === "Identifier") {
-    return { kind: "identifier", name: node.name, span: spanOf(node, context) };
+  if (node === null || node === undefined) {
+    return undefined;
   }
-  if (node?.type === "TSQualifiedName") {
-    const left = entityNameOf(node.left, context);
-    const right = identifierTextOf(node.right);
+  const target = unparenthesized(node);
+  if (target.type === "Identifier") {
+    return { kind: "identifier", name: target.name, span: spanOf(target, context) };
+  }
+  if (target.type === "TSQualifiedName") {
+    const left = entityNameOf(target.left, context);
+    const right = identifierTextOf(target.right);
     if (left === undefined || right === undefined) {
       return undefined;
     }
-    return { kind: "qualified", left, right, span: spanOf(node, context) };
+    return { kind: "qualified", left, right, span: spanOf(target, context) };
   }
-  if (node?.type !== "MemberExpression" || node.computed || node.property.type !== "Identifier") {
+  if (
+    target.type !== "MemberExpression" ||
+    target.computed ||
+    target.property.type !== "Identifier"
+  ) {
     return undefined;
   }
-  const left = entityNameOf(node.object, context);
-  const right = identifierTextOf(node.property);
+  const left = entityNameOf(target.object, context);
+  const right = identifierTextOf(target.property);
   if (left === undefined || right === undefined) {
     return undefined;
   }
-  return { kind: "qualified", left, right, span: spanOf(node, context) };
+  return { kind: "qualified", left, right, span: spanOf(target, context) };
 }
 
 function typeArgumentsOf(
@@ -192,31 +215,33 @@ function referenceTypeOf(
 }
 
 export function expressionKindOf(node: Node): UnsupportedExpressionKind {
-  if (node.type === "Literal") {
-    if (typeof node.value === "number") {
+  const target = unparenthesized(node);
+  if (target.type === "Literal") {
+    if (typeof target.value === "number") {
       return "numeric";
     }
-    if (typeof node.value === "bigint") {
+    if (typeof target.value === "bigint") {
       return "bigint";
     }
-    if (node.value === null) {
+    if (target.value === null) {
       return "null";
     }
   }
-  return unsupportedExpressionKinds.get(node.type) ?? "other";
+  return unsupportedExpressionKinds.get(target.type) ?? "other";
 }
 
 export function expressionValueOf(node: Node, context: LoweringContext): ExpressionValue {
-  if (node.type === "Literal" && typeof node.value === "string") {
-    return { kind: "string-literal", value: node.value, span: spanOf(node, context) };
+  const target = unparenthesized(node);
+  if (target.type === "Literal" && typeof target.value === "string") {
+    return { kind: "string-literal", value: target.value, span: spanOf(target, context) };
   }
-  if (node.type === "Literal" && typeof node.value === "boolean") {
-    return { kind: "boolean-literal", value: node.value, span: spanOf(node, context) };
+  if (target.type === "Literal" && typeof target.value === "boolean") {
+    return { kind: "boolean-literal", value: target.value, span: spanOf(target, context) };
   }
   return {
     kind: "unsupported",
-    expressionKind: expressionKindOf(node),
-    span: spanOf(node, context),
+    expressionKind: expressionKindOf(target),
+    span: spanOf(target, context),
   };
 }
 
@@ -228,24 +253,25 @@ function decoratorCalleeOf(
   readonly called: boolean;
   readonly arguments: readonly ExpressionValue[];
 } {
-  if (node.type === "CallExpression") {
-    const callee = entityNameOf(node.callee, context);
+  const target = unparenthesized(node);
+  if (target.type === "CallExpression") {
+    const callee = entityNameOf(target.callee, context);
     return {
       callee: callee ?? {
         kind: "unsupported-expression",
-        expressionKind: expressionKindOf(node.callee),
-        span: spanOf(node.callee, context),
+        expressionKind: expressionKindOf(target.callee),
+        span: spanOf(target.callee, context),
       },
       called: true,
-      arguments: node.arguments.map((argument) => expressionValueOf(argument, context)),
+      arguments: target.arguments.map((argument) => expressionValueOf(argument, context)),
     };
   }
-  const callee = entityNameOf(node, context);
+  const callee = entityNameOf(target, context);
   return {
     callee: callee ?? {
       kind: "unsupported-expression",
-      expressionKind: expressionKindOf(node),
-      span: spanOf(node, context),
+      expressionKind: expressionKindOf(target),
+      span: spanOf(target, context),
     },
     called: false,
     arguments: [],
@@ -343,8 +369,12 @@ function directNewBodyOf(
   body: Expression | NodeOfType<"BlockStatement"> | null,
   context: LoweringContext,
 ): FunctionBodyDescriptor | undefined {
-  const expression = body?.type === "BlockStatement" ? returnedExpressionOf(body) : body;
-  if (expression?.type !== "NewExpression") {
+  const returned = body?.type === "BlockStatement" ? returnedExpressionOf(body) : body;
+  if (returned === null || returned === undefined) {
+    return undefined;
+  }
+  const expression = unparenthesized(returned);
+  if (expression.type !== "NewExpression") {
     return undefined;
   }
   const callee = entityNameOf(expression.callee, context);
@@ -357,25 +387,26 @@ export function functionDescriptorOf(
   node: Node,
   context: LoweringContext,
 ): FunctionDescriptor | undefined {
-  if (node.type !== "ArrowFunctionExpression" && node.type !== "FunctionExpression") {
+  const target = unparenthesized(node);
+  if (target.type !== "ArrowFunctionExpression" && target.type !== "FunctionExpression") {
     return undefined;
   }
-  const typeParameters = typeParameterNamesOf(node);
-  const direct = directNewBodyOf(node.body, context);
-  const returnType = node.returnType?.typeAnnotation;
+  const typeParameters = typeParameterNamesOf(target);
+  const direct = directNewBodyOf(target.body, context);
+  const returnType = target.returnType?.typeAnnotation;
   return {
-    kind: node.type === "ArrowFunctionExpression" ? "arrow" : "function",
-    async: node.async,
-    parameterCount: node.params.length,
+    kind: target.type === "ArrowFunctionExpression" ? "arrow" : "function",
+    async: target.async,
+    parameterCount: target.params.length,
     ...(returnType === undefined
       ? {}
       : { returnType: typeNodeOf(returnType, context, typeParameters) }),
     body: direct ?? {
       kind: "unsupported",
-      expressionKind: node.body === null ? "other" : expressionKindOf(node.body),
-      span: node.body === null ? spanOf(node, context) : spanOf(node.body, context),
+      expressionKind: target.body === null ? "other" : expressionKindOf(target.body),
+      span: target.body === null ? spanOf(target, context) : spanOf(target.body, context),
     },
-    span: spanOf(node, context),
+    span: spanOf(target, context),
   };
 }
 

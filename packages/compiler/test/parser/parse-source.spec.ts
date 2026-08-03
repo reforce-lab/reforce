@@ -196,6 +196,134 @@ test("lowers supported defineBean options", () => {
   ]);
 });
 
+test("lowers a defineBean declaration whose callee is parenthesized", () => {
+  const unit = parseFile("export const resource = (defineBean)({ create: () => new Resource() });");
+  const declaration = unit.beanFactories[0];
+
+  expect(declaration?.name).toBe("resource");
+  expect(declaration?.callee).toMatchObject({ kind: "identifier", name: "defineBean" });
+});
+
+test("lowers a defineBean declaration whose whole call is parenthesized", () => {
+  const unit = parseFile("export const resource = (defineBean({ create: () => new Resource() }));");
+  const declaration = unit.beanFactories[0];
+
+  expect(declaration?.name).toBe("resource");
+  expect(declaration?.callee).toMatchObject({ kind: "identifier", name: "defineBean" });
+});
+
+test("reads parenthesized defineBean options as an object literal", () => {
+  const unit = parseFile("export const resource = defineBean(({ qualifier: 'resource' }));");
+
+  expect(unit.beanFactories[0]?.options).toMatchObject({
+    kind: "object",
+    properties: [{ kind: "qualifier", value: { kind: "string-literal", value: "resource" } }],
+  });
+});
+
+test("reads a parenthesized defineBean option value as its inner literal", () => {
+  const unit = parseFile('export const resource = defineBean({ qualifier: ("resource") });');
+  const options = unit.beanFactories[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineBean options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "qualifier",
+    value: { kind: "string-literal", value: "resource" },
+  });
+});
+
+test("reads a parenthesized decorator argument as its inner literal", () => {
+  const unit = parseFile('@Qualifier(("primary")) export class Service {}');
+
+  expect(unit.classes[0]?.decorators[0]?.arguments).toMatchObject([
+    { kind: "string-literal", value: "primary" },
+  ]);
+});
+
+test("reads a decorator whose whole call is parenthesized", () => {
+  const unit = parseFile('@(Qualifier("primary")) export class Service {}');
+
+  expect(unit.classes[0]?.decorators[0]).toMatchObject({
+    callee: { kind: "identifier", name: "Qualifier" },
+    called: true,
+    arguments: [{ kind: "string-literal", value: "primary" }],
+  });
+});
+
+test("resolves a parenthesized decorator callee to its entity name", () => {
+  const unit = parseFile('@(Qualifier)("primary") export class Service {}');
+
+  expect(unit.classes[0]?.decorators[0]?.callee).toMatchObject({
+    kind: "identifier",
+    name: "Qualifier",
+  });
+});
+
+test("treats a parenthesized constructor callee as a direct instantiation", () => {
+  const unit = parseFile("export const resource = defineBean({ create: () => new (Resource)() });");
+  const options = unit.beanFactories[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineBean options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "create",
+    value: { body: { kind: "direct-new", callee: { kind: "identifier", name: "Resource" } } },
+  });
+});
+
+test("treats a parenthesized instantiation as a direct instantiation", () => {
+  const unit = parseFile("export const resource = defineBean({ create: () => (new Resource()) });");
+  const options = unit.beanFactories[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineBean options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "create",
+    value: { body: { kind: "direct-new", callee: { kind: "identifier", name: "Resource" } } },
+  });
+});
+
+test("treats a parenthesized create factory as a zero-parameter arrow", () => {
+  const unit = parseFile("export const resource = defineBean({ create: (() => new Resource()) });");
+  const options = unit.beanFactories[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineBean options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "create",
+    value: { kind: "arrow", async: false, parameterCount: 0, body: { kind: "direct-new" } },
+  });
+});
+
+test("keeps a type-asserted constructor callee unsupported", () => {
+  // Only parentheses are transparent to lowering. `as` restates what a value is, and that is exactly
+  // what provided-type inference reads, so looking through it would change the DI graph. This input
+  // fails the moment the unwrapping helper is widened beyond ParenthesizedExpression.
+  const unit = parseFile(
+    "export const resource = defineBean({ create: () => new (Resource as Base)() });",
+  );
+  const options = unit.beanFactories[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineBean options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "create",
+    value: { body: { kind: "unsupported" } },
+  });
+});
+
+test("exports a parenthesized default identifier as a local binding", () => {
+  const unit = parseFile(["class Service {}", "export default (Service);"].join("\n"));
+
+  expect(unit.exports).toMatchObject([{ kind: "default-local", local: "Service" }]);
+});
+
 test("lowers ambient declaration signatures without inventing implementations", () => {
   const unit = parseFile(
     [

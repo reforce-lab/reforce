@@ -35,6 +35,7 @@ import {
   spanOf,
   typeNodeOf,
   typeParameterNamesOf,
+  unparenthesized,
 } from "@/parser/lower-values";
 import { normalizeSpanned } from "@/parser/normalize";
 import type {
@@ -238,7 +239,7 @@ function lowerDefaultExport(
   collector: Collector,
   context: LoweringContext,
 ): void {
-  const local = identifierTextOf(node.declaration);
+  const local = identifierTextOf(unparenthesized(node.declaration));
   if (local !== undefined) {
     collector.exports.push({ kind: "default-local", local, span: spanOf(node, context) });
     return;
@@ -463,17 +464,18 @@ function lowerNamespace(
 }
 
 function defineBeanOptionsOf(node: Node, context: LoweringContext): DefineBeanOptions {
-  if (node.type !== "ObjectExpression") {
+  const target = unparenthesized(node);
+  if (target.type !== "ObjectExpression") {
     return {
       kind: "unsupported",
-      expressionKind: expressionKindOf(node),
-      span: spanOf(node, context),
+      expressionKind: expressionKindOf(target),
+      span: spanOf(target, context),
     };
   }
   return {
     kind: "object",
-    properties: node.properties.map((property) => defineBeanOptionOf(property, context)),
-    span: spanOf(node, context),
+    properties: target.properties.map((property) => defineBeanOptionOf(property, context)),
+    span: spanOf(target, context),
   };
 }
 
@@ -550,8 +552,12 @@ function lowerBeanFactory(
   collector: Collector,
   context: LoweringContext,
 ): void {
-  const call = declarator.init;
-  if (call?.type !== "CallExpression") {
+  const init = declarator.init;
+  if (init === null || init === undefined) {
+    return;
+  }
+  const call = unparenthesized(init);
+  if (call.type !== "CallExpression") {
     return;
   }
   const callee = entityNameOf(call.callee, context);
