@@ -274,14 +274,29 @@ async function quarantineDirectory(
   await safeRemoveDirectory(destination, paths.quarantineRoot);
 }
 
+// 「现在还抢不到 gate」的每条出口都必须走这里：只有预算耗尽才判死，否则退避后回到 while (!ownsGate)
+// 重抢。少扣预算就是把正常竞争报成 PROJECT_BUSY，少退避就是让重试循环不受预算约束地忙等（#101）。
+async function waitForGateRetry(projectRoot: string, deadline: number): Promise<void> {
+  if (Date.now() >= deadline) {
+    throw new ProjectBusyError(projectRoot);
+  }
+  await sleep(10);
+}
+
 async function inspectExistingGate(
   paths: LeasePaths,
   probeTimeoutMilliseconds: number,
   deadline: number,
 ): Promise<void> {
   const gateSnapshot = await readJson(join(paths.gateRoot, "record.json"));
-  const gateRecord = parseGateRecord(gateSnapshot?.value);
-  if (!gateSnapshot || !gateRecord) {
+  // gate 目录整体由 rename 发布、由 quarantine 整体搬走，所以「目录在、record.json 不在」只可能是
+  // 持有者在我们抢锁失败之后释放了 gate。此刻 gate 空闲，判死就是误报（#101）。
+  if (!gateSnapshot) {
+    await waitForGateRetry(paths.projectRoot, deadline);
+    return;
+  }
+  const gateRecord = parseGateRecord(gateSnapshot.value);
+  if (!gateRecord) {
     throw new ProjectBusyError(paths.projectRoot);
   }
   const status = await probeLeaseEndpoint(
@@ -289,20 +304,20 @@ async function inspectExistingGate(
     gateRecord.gateToken,
     probeTimeoutMilliseconds,
   );
-  if (status === "unknown" || (status === "live" && Date.now() >= deadline)) {
-    throw new ProjectBusyError(paths.projectRoot);
-  }
-  if (status === "live") {
-    // The gate is held by a live owner; back off briefly before retrying the publish race.
-    await sleep(10);
+  // "unknown" 说的是探测没有结论，不是持有者活着；而释放路径关停端点时会 destroy 未完成的连接，
+  // 等待方常态会收到 ECONNRESET，所以它只能和 "live" 一样退避重试（#101）。
+  if (status === "live" || status === "unknown") {
+    await waitForGateRetry(paths.projectRoot, deadline);
     return;
   }
   const current = await readJson(join(paths.gateRoot, "record.json"));
   // Only quarantine when the record is byte-identical to the snapshot taken before probing;
   // a concurrent acquirer may have published a fresh gate in between and must not be removed (TOCTOU).
-  if (current?.raw === gateSnapshot.raw) {
-    await quarantineDirectory(paths, paths.gateRoot, `gate-${gateRecord.gateToken}`);
+  if (current?.raw !== gateSnapshot.raw) {
+    await waitForGateRetry(paths.projectRoot, deadline);
+    return;
   }
+  await quarantineDirectory(paths, paths.gateRoot, `gate-${gateRecord.gateToken}`);
 }
 
 async function releaseAcquisitionGate(
