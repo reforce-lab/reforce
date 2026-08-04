@@ -16,8 +16,10 @@ import {
 } from "../support/starter-fixture";
 import {
   type CompilationRecorder,
+  establishWatchDelivery,
   installContextDistribution,
   recordCompilations,
+  recordInvalidations,
   untilObserved,
 } from "../support/watch-harness";
 
@@ -97,17 +99,31 @@ async function setupSignalsWatch(options: {
   });
   const initial = await gate.initialize();
   const compilations = recordCompilations();
-  const invalidations: Array<string | null> = [];
+  const invalidations = recordInvalidations();
   const watch = await startDevWatchBuild({
     project: resolution.project,
     gate,
     onCompilation: async (compilation) => {
       compilations.accept(compilation);
     },
-    onInvalidated: (path) => invalidations.push(path),
+    onInvalidated: (path) => invalidations.accept(path),
   });
   watches.push(watch);
-  return { project, compilations, invalidations, initialStatus: initial.status };
+  const applicationSource = options.sources["application.ts"];
+  if (applicationSource === undefined) {
+    throw new Error(
+      "setupSignalsWatch requires an application.ts source for the delivery sentinel.",
+    );
+  }
+  // 哨兵是追加注释、不改语义，初始编译失败的项目（如 starter meta 未安装）同样适用：
+  // 投递证据取 invalid 钩子，不依赖构建成败（Issue #177）。
+  await establishWatchDelivery({
+    compilations,
+    invalidations,
+    sentinelPath: join(project.projectRoot, "src", "application.ts"),
+    sentinelBaseContent: applicationSource,
+  });
+  return { project, compilations, invalidations: invalidations.all, initialStatus: initial.status };
 }
 
 function generatedBeansPath(projectRoot: string): string {

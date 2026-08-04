@@ -10,8 +10,10 @@ import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectLease } from "@/project/lease";
 import {
   developmentOutputContains,
+  establishWatchDelivery,
   installContextDistribution,
   recordCompilations,
+  recordInvalidations,
   untilObserved,
   watchesGeneratedOutput,
 } from "../support/watch-harness";
@@ -81,13 +83,33 @@ export class ApplicationService {}
   if (initial.status !== "success") {
     throw new Error("Expected the initial compiler gate to succeed.");
   }
+  const compilations = recordCompilations();
+  const invalidations = recordInvalidations();
   const watch = await startDevWatchBuild({
     project: resolution.project,
     gate,
-    onCompilation,
-    onInvalidated,
+    onCompilation: async (compilation) => {
+      compilations.accept(compilation);
+      await onCompilation(compilation);
+    },
+    onInvalidated: (path) => {
+      invalidations.accept(path);
+      onInvalidated?.(path);
+    },
   });
   watches.push(watch);
+  const applicationSource = sourceFiles["application.ts"];
+  if (applicationSource === undefined) {
+    throw new Error("setupWatch requires an application.ts source for the delivery sentinel.");
+  }
+  // 用例的编辑必须发生在事件流已就绪之后，否则押注的是 macOS 的启动窗口而不是本包的
+  // 重建逻辑（Issue #177）。
+  await establishWatchDelivery({
+    compilations,
+    invalidations,
+    sentinelPath: join(project.projectRoot, "src", "application.ts"),
+    sentinelBaseContent: applicationSource,
+  });
   return project;
 }
 
@@ -271,17 +293,28 @@ export class ApplicationService {}
   });
   await gate.initialize();
   const compilations = recordCompilations();
-  const invalidations: Array<string | null> = [];
+  const invalidations = recordInvalidations();
   const watch = await startDevWatchBuild({
     project: resolution.project,
     gate,
     onCompilation: async (compilation) => {
       compilations.accept(compilation);
     },
-    onInvalidated: (path) => invalidations.push(path),
+    onInvalidated: (path) => invalidations.accept(path),
   });
   watches.push(watch);
-  await compilations.untilCount(1);
+  // 哨兵走 src 文件即可：屏障返回时距所有 watcher 创建已过整个重建往返，远超 ≤10ms 的
+  // 丢失窗口，监视 tsconfig.shared.json 的根目录 watcher 同样已就绪（Issue #177）。
+  await establishWatchDelivery({
+    compilations,
+    invalidations,
+    sentinelPath: join(projectRoot, "src", "application.ts"),
+    sentinelBaseContent: `import { Injectable } from "@reforce/context";
+
+@Injectable()
+export class ApplicationService {}
+`,
+  });
   const sharedConfigPath = join(project.projectRoot, "tsconfig.shared.json");
 
   await writeFile(
@@ -291,7 +324,7 @@ export class ApplicationService {}
       compilerOptions: { ...sharedConfig.compilerOptions, noImplicitOverride: true },
     })}\n`,
   );
-  await untilObserved(compilations, async () => invalidations.includes(sharedConfigPath));
+  await untilObserved(compilations, async () => invalidations.all.includes(sharedConfigPath));
 
   expect(compilations.all.every((compilation) => compilation.status === "success")).toBe(true);
 });
