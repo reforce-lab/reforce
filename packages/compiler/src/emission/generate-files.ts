@@ -2,6 +2,8 @@ import path from "node:path";
 import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import stableStringify from "json-stable-stringify";
 import {
+  type BeanProviderModel,
+  type ConfigProviderModel,
   type DependencyModel,
   type ExecutionPlansModel,
   type ProviderModel,
@@ -13,6 +15,7 @@ import { generatedDirectoryPath } from "@/project/generated-paths";
 
 const contextModuleSpecifier = "@reforce/context";
 const contextRuntimeModuleSpecifier = "@reforce/context/generated-runtime";
+const configRuntimeModuleSpecifier = "@reforce/config/generated-runtime";
 
 // 外部契约符号（starter/契约包）的 type-only import specifier 由链接层决定：meta 户口表的
 // subpath 优先，无表退化为包根探测。应用源集内的符号 emission 自己算相对路径。
@@ -166,7 +169,7 @@ function dependencyExpression(
 }
 
 function registrationExpression(
-  provider: ProviderModel,
+  provider: BeanProviderModel,
   index: number,
   contracts: ReadonlyMap<string, ContractImport>,
 ): string {
@@ -188,15 +191,28 @@ function registrationExpression(
 }
 
 function renderBeans(
-  providers: readonly ProviderModel[],
+  providers: readonly BeanProviderModel[],
+  configs: readonly ConfigProviderModel[],
   plans: ExecutionPlansModel,
   generatedDirectory: string,
   typeResolver: EmissionTypeResolver,
 ): string {
   const contracts = contractImports(providers, generatedDirectory, typeResolver);
+  const runtimeImports = [
+    `import { ${["classBean", ...(configs.length > 0 ? ["configBean"] : []), "factoryBean"].join(", ")} } from "${contextRuntimeModuleSpecifier}";`,
+    `import type { GeneratedApplicationDefinition } from "${contextRuntimeModuleSpecifier}";`,
+    // 无 config 的应用不引入 @reforce/config：该依赖只在声明了 config class 时才需要安装。
+    ...(configs.length > 0
+      ? [`import { createConfigBinding } from "${configRuntimeModuleSpecifier}";`]
+      : []),
+  ];
   const imports = providers.map((provider, index) => {
     const specifier = providerValueSpecifier(provider, generatedDirectory);
     return `import { ${provider.exportName} as beanTarget${index} } from ${JSON.stringify(specifier)};`;
+  });
+  const configImports = configs.map((config, index) => {
+    const specifier = providerValueSpecifier(config, generatedDirectory);
+    return `import { ${config.exportName} as configTarget${index} } from ${JSON.stringify(specifier)};`;
   });
   // typed-edge 的类型标注（ADR 0004 决策 8）：type-only import 编译后消失，运行时零痕迹；
   // tsc 对每条 resolve<T>() 的实参赋值做结构校验，是链接错误的最后一道背书。
@@ -204,19 +220,27 @@ function renderBeans(
     (contract) =>
       `import type { ${contract.symbol.name} as ${contract.alias} } from ${JSON.stringify(contract.specifier)};`,
   );
+  const configRegistrations = configs.map(
+    (config, index) =>
+      `const config${index} = configBean({\n  id: ${JSON.stringify(config.id)},\n  source: ${inlineJson(config.declarationSource, 2)},\n  target: configTarget${index},\n});`,
+  );
   const registrations = providers.map((provider, index) =>
     registrationExpression(provider, index, contracts),
   );
   const names = providers.map((_, index) => `registration${index}`).join(", ");
+  const configNames = configs.map((_, index) => `config${index}`).join(", ");
   return `${[
-    `import { classBean, factoryBean } from "${contextRuntimeModuleSpecifier}";`,
-    `import type { GeneratedApplicationDefinition } from "${contextRuntimeModuleSpecifier}";`,
+    ...runtimeImports,
     ...imports,
+    ...configImports,
     ...typeImports,
     "",
+    ...configRegistrations.flatMap((registration) => [registration, ""]),
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
-    "  schemaVersion: 1,",
+    "  schemaVersion: 2,",
+    `  configs: [${configNames}],`,
+    ...(configs.length > 0 ? ["  configBinding: createConfigBinding(),"] : []),
     `  registrations: [${names}],`,
     `  plans: ${inlineJson(plans, 2)},`,
     "} as const satisfies GeneratedApplicationDefinition;",
@@ -324,10 +348,17 @@ function renderQualifiers(providers: readonly ProviderModel[], generatedDirector
 }
 
 function renderManifest(
-  providers: readonly ProviderModel[],
+  providers: readonly BeanProviderModel[],
+  configs: readonly ConfigProviderModel[],
   plans: ExecutionPlansModel,
   generatedDirectory: string,
 ): string {
+  const manifestConfigs = configs.map((config) => ({
+    id: config.id,
+    prefix: config.prefix,
+    source: config.declarationSource,
+    provides: config.provides.map((symbol) => symbolReference(symbol, generatedDirectory)),
+  }));
   const beans = providers.map((provider) => ({
     id: provider.id,
     kind: provider.kind,
@@ -350,7 +381,7 @@ function renderManifest(
       dispose: provider.kind === "factory" && provider.dispose,
     },
   }));
-  return `${json({ schemaVersion: 1, beans, plans })}\n`;
+  return `${json({ schemaVersion: 2, configs: manifestConfigs, beans, plans })}\n`;
 }
 
 function renderBootstrap(): string {
@@ -359,7 +390,8 @@ function renderBootstrap(): string {
 
 export function generateFiles(
   project: ResolvedApplicationProject,
-  providers: readonly ProviderModel[],
+  providers: readonly BeanProviderModel[],
+  configs: readonly ConfigProviderModel[],
   plans: ExecutionPlansModel,
   typeResolver: EmissionTypeResolver,
 ): readonly GeneratedFile[] {
@@ -367,7 +399,7 @@ export function generateFiles(
   return Object.freeze([
     {
       path: "beans.ts",
-      content: renderBeans(providers, plans, generatedDirectory, typeResolver),
+      content: renderBeans(providers, configs, plans, generatedDirectory, typeResolver),
     },
     {
       path: "qualifiers.d.ts",
@@ -375,7 +407,7 @@ export function generateFiles(
     },
     {
       path: "manifest.json",
-      content: renderManifest(providers, plans, generatedDirectory),
+      content: renderManifest(providers, configs, plans, generatedDirectory),
     },
     { path: "bootstrap.ts", content: renderBootstrap() },
   ]);

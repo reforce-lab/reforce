@@ -3,7 +3,7 @@ import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import { contextModuleSpecifier, createExportBinder } from "@/linking/export-binding";
+import { createExportBinder, isFrameworkSpecifier } from "@/linking/export-binding";
 import { createExternalModuleStore, referencedModuleSpecifiers } from "@/linking/external-modules";
 import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import { createModuleRecord } from "@/linking/module-record";
@@ -96,13 +96,13 @@ export async function createProjectLinker(
     resolveModule,
     locatePackage,
     symbolTable: registry,
-    skipSpecifier: (specifier) => specifier === contextModuleSpecifier || isBuiltin(specifier),
+    skipSpecifier: (specifier) => isFrameworkSpecifier(specifier) || isBuiltin(specifier),
   });
   const seeds = new Set<string>();
   for (const source of sources) {
     for (const specifier of referencedModuleSpecifiers(source.unit)) {
       const target =
-        specifier === contextModuleSpecifier || isBuiltin(specifier)
+        isFrameworkSpecifier(specifier) || isBuiltin(specifier)
           ? undefined
           : resolveModule(source, specifier, false);
       if (target !== undefined && target.record === undefined) {

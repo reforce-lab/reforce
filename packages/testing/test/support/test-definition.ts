@@ -31,7 +31,8 @@ export function testDefinition(
   registrations: readonly GeneratedBeanRegistration[],
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    configs: [],
     registrations,
     plans: {
       constructionOrder: registrations.map((registration) => registration.id),

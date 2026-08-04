@@ -246,6 +246,36 @@ export interface ClassMethodDeclaration {
   readonly span: SourceSpan;
 }
 
+// extends 位置只有三种可分析形状：直接调用、实体引用、其余表达式。其余表达式不丢弃而是
+// 收集其中出现的标识符名，让链接层能发现"引用了 ConfigProperties 却不是直接调用"的写法并
+// 硬错（ADR 0005 决策 5.1，#54 教训：禁止静默跳过）。
+export type ClassHeritage =
+  | {
+      readonly kind: "call";
+      readonly callee: EntityName;
+      readonly arguments: readonly ExpressionValue[];
+      readonly parenthesized: boolean;
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "reference";
+      readonly entity: EntityName;
+      readonly parenthesized: boolean;
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "expression";
+      readonly referencedNames: readonly string[];
+      readonly span: SourceSpan;
+    };
+
+export interface ClassFieldDeclaration {
+  readonly kind: "class-field";
+  readonly name?: string;
+  readonly static: boolean;
+  readonly span: SourceSpan;
+}
+
 export interface ClassDeclaration {
   readonly kind: "class";
   readonly topLevel: boolean;
@@ -254,7 +284,9 @@ export interface ClassDeclaration {
   readonly export: DeclarationExport;
   readonly generic: boolean;
   readonly decorators: readonly DecoratorUse[];
+  readonly heritage?: ClassHeritage;
   readonly implements: readonly TypeNode[];
+  readonly fields: readonly ClassFieldDeclaration[];
   readonly constructors: readonly ConstructorDeclaration[];
   readonly methods: readonly ClassMethodDeclaration[];
   readonly span: SourceSpan;
@@ -390,6 +422,15 @@ export interface DefineApplicationDeclaration {
   readonly span: SourceSpan;
 }
 
+// 与 beanFactories 同一策略：parser 按尾名收集 ConfigProperties(...) 的变量初始化候选，
+// 来源核实留给链接层——命中 @reforce/config 的候选即"中间变量"硬错（ADR 0005 决策 5.1）。
+export interface ConfigFactoryCallDeclaration {
+  readonly kind: "config-factory-call";
+  readonly topLevel: boolean;
+  readonly callee: EntityName;
+  readonly span: SourceSpan;
+}
+
 export type UnsupportedNamedDeclarationKind =
   | "type-alias"
   | "enum"
@@ -416,5 +457,6 @@ export interface SourceFileIr {
   readonly classes: readonly ClassDeclaration[];
   readonly beanFactories: readonly DefineBeanDeclaration[];
   readonly applicationDefinitions: readonly DefineApplicationDeclaration[];
+  readonly configFactoryCalls: readonly ConfigFactoryCallDeclaration[];
   readonly unsupportedDeclarations: readonly UnsupportedNamedDeclaration[];
 }

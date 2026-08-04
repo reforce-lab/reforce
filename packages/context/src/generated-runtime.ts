@@ -1,13 +1,16 @@
 import { readBeanDefinitionOptions } from "@/bean-declaration";
+import type { ConfigBindingIssue } from "@/errors";
 import type {
   GeneratedApplicationDefinition,
   GeneratedClassRegistration,
+  GeneratedConfigRegistration,
   GeneratedFactoryBeanInput,
   GeneratedFactoryRegistration,
 } from "@/generated/contracts";
 import {
   snapshotApplicationDefinition,
   snapshotClassRegistration,
+  snapshotConfigRegistration,
   snapshotFactoryRegistration,
 } from "@/generated/validation";
 import type { ApplicationContext } from "@/public-types";
@@ -19,6 +22,9 @@ export type {
   GeneratedBeanRegistration,
   GeneratedClassHooks,
   GeneratedClassRegistration,
+  GeneratedConfigBinding,
+  GeneratedConfigBindingOutcome,
+  GeneratedConfigRegistration,
   GeneratedDependency,
   GeneratedDependencyMode,
   GeneratedExecutionPlans,
@@ -28,6 +34,7 @@ export type {
   GeneratedSourcePosition,
   GeneratedSourceReference,
 } from "@/generated/contracts";
+export type { ConfigBindingIssue };
 
 export function classBean<T extends object>(
   input: Omit<GeneratedClassRegistration<T>, "kind">,
@@ -48,6 +55,12 @@ export function factoryBean<T extends object>(
     create: options.create,
     dispose: options.dispose,
   });
+}
+
+export function configBean<T extends object>(
+  input: Omit<GeneratedConfigRegistration<T>, "kind">,
+): GeneratedConfigRegistration<T> {
+  return snapshotConfigRegistration({ kind: "config", ...input });
 }
 
 export function createApplicationContext(

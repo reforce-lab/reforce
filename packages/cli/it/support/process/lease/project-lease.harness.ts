@@ -24,7 +24,8 @@ function generatedFiles(generation: string): readonly GeneratedFile[] {
     {
       path: "manifest.json",
       content: `${JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
+        configs: [],
         beans: [],
         plans: {
           constructionOrder: [],

@@ -49,6 +49,13 @@ export class ResolutionState {
         this.definitionIdentityToId.set(registration.definition, registration.id);
       }
     }
+    for (const config of definition.configs) {
+      this.targetIdentityToId.set(config.target, config.id);
+    }
+  }
+
+  seedConstructed(id: string, instance: object): void {
+    this.recordById.set(id, { state: "constructed", instance });
   }
 
   get closeRequested(): boolean {

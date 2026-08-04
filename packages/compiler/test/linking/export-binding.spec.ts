@@ -39,6 +39,7 @@ function classDeclaration(file: string, name: string, exported: boolean): ClassD
     export: exported ? { kind: "named", exportedName: name, span: span(file) } : { kind: "none" },
     generic: false,
     decorators: [],
+    fields: [],
     implements: [],
     constructors: [],
     methods: [],
@@ -93,6 +94,7 @@ function parsedSource(file: string, shape: ModuleShape): ParsedSource {
     classes: shape.classes ?? [],
     beanFactories: [],
     applicationDefinitions: [],
+    configFactoryCalls: [],
     unsupportedDeclarations: [],
   };
   return {

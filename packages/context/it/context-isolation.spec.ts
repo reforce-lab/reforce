@@ -128,8 +128,10 @@ describe("context isolation", () => {
     });
     const registrations = [registration];
     const constructionOrder = [registration.id];
+    const configs: never[] = [];
     const definition = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
+      configs,
       registrations,
       plans: {
         constructionOrder,

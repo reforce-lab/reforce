@@ -94,6 +94,10 @@ function applyReplacements(
   }
   return {
     schemaVersion: definition.schemaVersion,
+    // config 注册与绑定 phase 原样透传（ADR 0005，#130）：替换只针对 bean 的 create，
+    // config 实例由绑定 phase 产生，替换语义待真实需求再立项。
+    configs: definition.configs,
+    ...(definition.configBinding ? { configBinding: definition.configBinding } : {}),
     registrations,
     plans: definition.plans,
   };

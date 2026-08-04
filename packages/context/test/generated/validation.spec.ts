@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { GeneratedBeanRegistration, GeneratedDependency } from "@/generated/contracts";
+import type {
+  GeneratedBeanRegistration,
+  GeneratedConfigBinding,
+  GeneratedDependency,
+} from "@/generated/contracts";
 import { snapshotApplicationDefinition } from "@/generated/validation";
-import { classBean, createApplicationContext } from "@/generated-runtime";
+import { classBean, configBean, createApplicationContext } from "@/generated-runtime";
 import { defineBean, InvalidGeneratedDefinitionError } from "@/index";
 import { testDefinition, testDependency, testSource } from "../support/test-definition";
 
@@ -173,6 +177,159 @@ describe("generated definition validation", () => {
     });
 
     expect(creations).toBe(0);
+  });
+});
+
+describe("generated definition config validation (schema v2)", () => {
+  class ServerConfig {
+    constructor(readonly values: object) {}
+  }
+  class Consumer {}
+  const serverConfigId = "src/server-config.ts#ServerConfig";
+  const consumerId = "src/consumer.ts#Consumer";
+
+  function serverConfigRegistration() {
+    return configBean({
+      id: serverConfigId,
+      source: testSource("server-config"),
+      target: ServerConfig,
+    });
+  }
+
+  function noopBinding(): GeneratedConfigBinding {
+    return {
+      bind: () => Promise.resolve({ status: "bound", instances: new Map<string, object>() }),
+    };
+  }
+
+  function consumerRegistration(dependencies: readonly GeneratedDependency[] = []) {
+    return classBean({
+      id: consumerId,
+      source: testSource("consumer"),
+      target: Consumer,
+      dependencies,
+      create: () => new Consumer(),
+      hooks: {},
+    });
+  }
+
+  function expectInvalid(definition: unknown, fragment: string): void {
+    const create = () => Reflect.apply(createApplicationContext, undefined, [definition]);
+    expect(create).toThrow(InvalidGeneratedDefinitionError);
+    expect(create).toThrow(fragment);
+  }
+
+  test("accepts a config with an eager dependency onto it and freezes the snapshot", () => {
+    const definition = testDefinition(
+      [consumerRegistration([testDependency(0, serverConfigId, "eager")])],
+      { configs: [serverConfigRegistration()], configBinding: noopBinding() },
+    );
+
+    const snapshot = snapshotApplicationDefinition(definition);
+
+    expect(snapshot.schemaVersion).toBe(2);
+    expect(Object.isFrozen(snapshot.configs)).toBe(true);
+    expect(Object.isFrozen(snapshot.configs[0])).toBe(true);
+    expect(snapshot.configs[0]?.target).toBe(ServerConfig);
+  });
+
+  test("rejects the retired schema version 1", () => {
+    const { configs: _configs, ...rest } = testDefinition([consumerRegistration()]);
+
+    expectInvalid({ ...rest, schemaVersion: 1 }, "schemaVersion must be 2");
+  });
+
+  test("rejects a definition without the configs field", () => {
+    const { configs: _configs, ...withoutConfigs } = testDefinition([consumerRegistration()]);
+
+    expectInvalid(withoutConfigs, "configs");
+  });
+
+  test("rejects a non-empty configs list without a configBinding", () => {
+    const definition = testDefinition([], { configs: [serverConfigRegistration()] });
+
+    expectInvalid(definition, "configBinding");
+  });
+
+  test("rejects a configBinding alongside an empty configs list", () => {
+    const definition = testDefinition([consumerRegistration()], {
+      configBinding: noopBinding(),
+    });
+
+    expectInvalid(definition, "configBinding");
+  });
+
+  test("rejects a configBinding whose bind is not a function", () => {
+    const definition = testDefinition([], {
+      configs: [serverConfigRegistration()],
+      configBinding: { bind: "not-a-function" } as unknown as GeneratedConfigBinding,
+    });
+
+    expectInvalid(definition, "bind");
+  });
+
+  test("rejects a config registration carrying an unknown field", () => {
+    const tampered = { ...serverConfigRegistration(), prefix: "server" };
+    const definition = testDefinition([], {
+      configs: [tampered as unknown as ReturnType<typeof serverConfigRegistration>],
+      configBinding: noopBinding(),
+    });
+
+    expectInvalid(definition, 'unknown field "prefix"');
+  });
+
+  test("rejects a config id colliding with a registration id", () => {
+    const definition = testDefinition([consumerRegistration()], {
+      configs: [
+        configBean({
+          id: consumerId,
+          source: testSource("server-config"),
+          target: ServerConfig,
+        }),
+      ],
+      configBinding: noopBinding(),
+    });
+
+    expectInvalid(definition, "duplicated");
+  });
+
+  test("rejects a config target shared with a class registration", () => {
+    const definition = testDefinition(
+      [
+        classBean({
+          id: "src/other.ts#Other",
+          source: testSource("other"),
+          target: ServerConfig,
+          dependencies: [],
+          create: () => new ServerConfig({}),
+          hooks: {},
+        }),
+      ],
+      { configs: [serverConfigRegistration()], configBinding: noopBinding() },
+    );
+
+    expectInvalid(definition, "duplicated");
+  });
+
+  test("rejects a non-eager dependency onto a config", () => {
+    for (const mode of ["cycle-proxy", "explicit-lazy"] as const) {
+      const definition = testDefinition(
+        [consumerRegistration([testDependency(0, serverConfigId, mode)])],
+        { configs: [serverConfigRegistration()], configBinding: noopBinding() },
+      );
+
+      expectInvalid(definition, "eager");
+    }
+  });
+
+  test("rejects a construction plan that lists a config", () => {
+    const definition = testDefinition([consumerRegistration()], {
+      configs: [serverConfigRegistration()],
+      configBinding: noopBinding(),
+      constructionOrder: [serverConfigId, consumerId],
+    });
+
+    expectInvalid(definition, "unknown Bean ID");
   });
 });
 

@@ -16,6 +16,18 @@ import type {
 // 这里回调。
 
 export const contextModuleSpecifier = "@reforce/context";
+export const configModuleSpecifier = "@reforce/config";
+
+// 框架自有包的 import 一律短路合成符号、不读真实文件（与 contextSymbol 同一策略）；表驱动
+// 保持"specifier → 符号 kind/key 前缀"三处一致（Issue #114 的名单纪律）。
+const frameworkSpecifierKinds = {
+  [contextModuleSpecifier]: "context",
+  [configModuleSpecifier]: "config",
+} as const satisfies Record<string, "context" | "config">;
+
+export function isFrameworkSpecifier(specifier: string): boolean {
+  return Object.hasOwn(frameworkSpecifierKinds, specifier);
+}
 
 interface ExportBinderInputs {
   readonly diagnostics: CompilerDiagnostic[];
@@ -57,13 +69,17 @@ function directlyExportedLocal(
   return exported ? direct : undefined;
 }
 
-function contextSymbol(name: string): LinkedSymbol {
+function frameworkSymbol(
+  specifier: keyof typeof frameworkSpecifierKinds,
+  name: string,
+): LinkedSymbol {
+  const kind = frameworkSpecifierKinds[specifier];
   return Object.freeze({
-    key: `context:${name}`,
-    kind: "context",
+    key: `${kind}:${name}`,
+    kind,
     name,
-    moduleSpecifier: contextModuleSpecifier,
-    generic: name === "Lazy",
+    moduleSpecifier: specifier,
+    generic: kind === "context" && name === "Lazy",
   });
 }
 
@@ -249,8 +265,12 @@ export function createExportBinder({ diagnostics, resolveModule }: ExportBinderI
     importedName: string,
     visited = new Set<string>(),
   ): LinkedSymbol | undefined {
-    if (reference.moduleSpecifier === contextModuleSpecifier) {
-      return contextSymbol(importedName);
+    if (Object.hasOwn(frameworkSpecifierKinds, reference.moduleSpecifier)) {
+      // Object.hasOwn 已证明成员资格，索引签名推不回字面量联合 // justified: 见上一行
+      return frameworkSymbol(
+        reference.moduleSpecifier as keyof typeof frameworkSpecifierKinds,
+        importedName,
+      );
     }
     const target = resolveModule(record.source, reference.moduleSpecifier);
     if (target === undefined) {

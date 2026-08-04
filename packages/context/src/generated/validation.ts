@@ -4,6 +4,7 @@ import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
   GeneratedClassRegistration,
+  GeneratedConfigRegistration,
   GeneratedDependency,
   GeneratedFactoryRegistration,
   GeneratedSourcePosition,
@@ -211,6 +212,20 @@ function validateFactoryRegistrationLocal(
   }
 }
 
+function validateConfigRegistrationLocal(
+  value: unknown,
+  path = "config registration",
+): asserts value is GeneratedConfigRegistration {
+  const registration = requireObject(value, path);
+  requireExactKeys(registration, ["kind", "id", "source", "target"], path);
+  if (Reflect.get(registration, "kind") !== "config") {
+    return fail(`${path}.kind must be "config".`);
+  }
+  validateGeneratedBeanId(Reflect.get(registration, "id"), `${path}.id`);
+  validateSourceReference(Reflect.get(registration, "source"), `${path}.source`);
+  requireFunction(Reflect.get(registration, "target"), `${path}.target`);
+}
+
 function validateRegistration(
   value: unknown,
   index: number,
@@ -259,7 +274,11 @@ function requireSameSet(
   }
 }
 
-function validatePlans(value: unknown, registrations: readonly GeneratedBeanRegistration[]): void {
+function validatePlans(
+  value: unknown,
+  registrations: readonly GeneratedBeanRegistration[],
+  configIds: ReadonlySet<string>,
+): void {
   const plans = requireObject(value, "plans");
   requireExactKeys(plans, ["constructionOrder", "startActionOrder", "cleanupActionOrder"], "plans");
   const knownIds = new Set(registrations.map((registration) => registration.id));
@@ -281,6 +300,11 @@ function validatePlans(value: unknown, registrations: readonly GeneratedBeanRegi
     }
     for (const dependency of registration.dependencies) {
       if (dependency.mode !== "eager") {
+        continue;
+      }
+      // Config instances are bound before the construction loop starts, so an edge onto a
+      // config is satisfied regardless of the consumer's plan position.
+      if (configIds.has(dependency.targetId)) {
         continue;
       }
       const dependencyIndex = constructionIndex.get(dependency.targetId);
@@ -325,13 +349,13 @@ function validatePlans(value: unknown, registrations: readonly GeneratedBeanRegi
 
 function validateRegistrationIdentities(
   registrations: readonly GeneratedBeanRegistration[],
-): Set<string> {
+  configs: readonly GeneratedConfigRegistration[],
+): void {
   const ids = new Set<string>();
   const portableIds = new Set<string>();
   const classTargets = new Set<object>();
   const factoryDefinitions = new Set<object>();
-  for (const registration of registrations) {
-    const id = registration.id;
+  const claimIdentity = (id: string) => {
     if (ids.has(id)) {
       fail(`registration ID "${id}" is duplicated.`);
     }
@@ -341,28 +365,46 @@ function validateRegistrationIdentities(
       fail(`registration ID "${id}" has a portable case collision.`);
     }
     portableIds.add(portableId);
+  };
+  const claimClassTarget = (id: string, target: object) => {
+    if (classTargets.has(target)) {
+      fail(`class target for "${id}" is duplicated.`);
+    }
+    classTargets.add(target);
+  };
+  for (const registration of registrations) {
+    claimIdentity(registration.id);
     if (registration.kind === "class") {
-      if (classTargets.has(registration.target)) {
-        fail(`class target for "${id}" is duplicated.`);
-      }
-      classTargets.add(registration.target);
+      claimClassTarget(registration.id, registration.target);
       continue;
     }
     if (factoryDefinitions.has(registration.definition)) {
-      fail(`factory definition for "${id}" is duplicated.`);
+      fail(`factory definition for "${registration.id}" is duplicated.`);
     }
     factoryDefinitions.add(registration.definition);
   }
-  return ids;
+  for (const config of configs) {
+    claimIdentity(config.id);
+    claimClassTarget(config.id, config.target);
+  }
 }
 
 function validateDependencyTargets(
   registrations: readonly GeneratedBeanRegistration[],
-  ids: ReadonlySet<string>,
+  configIds: ReadonlySet<string>,
 ): void {
+  const beanIds = new Set(registrations.map((registration) => registration.id));
   for (const registration of registrations) {
     for (const dependency of registration.dependencies) {
-      if (!ids.has(dependency.targetId)) {
+      if (configIds.has(dependency.targetId)) {
+        if (dependency.mode !== "eager") {
+          fail(
+            `dependency of "${registration.id}" onto config "${dependency.targetId}" must be eager.`,
+          );
+        }
+        continue;
+      }
+      if (!beanIds.has(dependency.targetId)) {
         fail(
           `dependency of "${registration.id}" references unknown Bean "${dependency.targetId}".`,
         );
@@ -371,12 +413,38 @@ function validateDependencyTargets(
   }
 }
 
+function validateConfigBinding(
+  definition: object,
+  configs: readonly GeneratedConfigRegistration[],
+): void {
+  const binding = Reflect.get(definition, "configBinding");
+  if (configs.length === 0) {
+    if (binding !== undefined) {
+      fail("definition.configBinding requires a non-empty configs list.");
+    }
+    return;
+  }
+  const bindingObject = requireObject(binding, "definition.configBinding");
+  requireFunction(Reflect.get(bindingObject, "bind"), "definition.configBinding.bind");
+}
+
 function validateApplicationDefinition(value: unknown): void {
   const definition = requireObject(value, "definition");
-  requireExactKeys(definition, ["schemaVersion", "registrations", "plans"], "definition");
-  if (Reflect.get(definition, "schemaVersion") !== 1) {
-    fail("definition.schemaVersion must be 1.");
+  requireExactKeys(
+    definition,
+    ["schemaVersion", "configs", "configBinding", "registrations", "plans"],
+    "definition",
+  );
+  if (Reflect.get(definition, "schemaVersion") !== 2) {
+    fail("definition.schemaVersion must be 2.");
   }
+  const configCandidates = requireArray(Reflect.get(definition, "configs"), "definition.configs");
+  const configs: GeneratedConfigRegistration[] = [];
+  for (const [index, config] of configCandidates.entries()) {
+    validateConfigRegistrationLocal(config, `configs[${index}]`);
+    configs.push(config);
+  }
+  validateConfigBinding(definition, configs);
   const registrationCandidates = requireArray(
     Reflect.get(definition, "registrations"),
     "definition.registrations",
@@ -387,9 +455,10 @@ function validateApplicationDefinition(value: unknown): void {
     registrations.push(registration);
   }
 
-  const ids = validateRegistrationIdentities(registrations);
-  validateDependencyTargets(registrations, ids);
-  validatePlans(Reflect.get(definition, "plans"), registrations);
+  validateRegistrationIdentities(registrations, configs);
+  const configIds = new Set(configs.map((config) => config.id));
+  validateDependencyTargets(registrations, configIds);
+  validatePlans(Reflect.get(definition, "plans"), registrations, configIds);
 }
 
 function clonePosition(position: GeneratedSourcePosition): GeneratedSourcePosition {
@@ -458,6 +527,25 @@ function cloneRegistration(registration: GeneratedBeanRegistration): GeneratedBe
   return cloneFactoryRegistration(registration);
 }
 
+function cloneConfigRegistration<T extends object>(
+  registration: GeneratedConfigRegistration<T>,
+): GeneratedConfigRegistration<T> {
+  return Object.freeze({
+    kind: "config",
+    id: registration.id,
+    source: cloneSource(registration.source),
+    target: registration.target,
+  });
+}
+
+export function snapshotConfigRegistration<T extends object>(
+  registration: GeneratedConfigRegistration<T>,
+): GeneratedConfigRegistration<T> {
+  const candidate: unknown = registration;
+  validateConfigRegistrationLocal(candidate);
+  return cloneConfigRegistration(registration);
+}
+
 export function snapshotClassRegistration<T extends object>(
   registration: GeneratedClassRegistration<T>,
 ): GeneratedClassRegistration<T> {
@@ -479,7 +567,11 @@ export function snapshotApplicationDefinition(
 ): GeneratedApplicationDefinition {
   validateApplicationDefinition(definition);
   return Object.freeze({
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
+    configs: Object.freeze(definition.configs.map(cloneConfigRegistration)),
+    // The binding is carried by reference: it is behavior, not data, and the bind contract
+    // is per-call stateless, so a clone could only obscure its identity.
+    ...(definition.configBinding ? { configBinding: definition.configBinding } : {}),
     registrations: Object.freeze(definition.registrations.map(cloneRegistration)),
     plans: Object.freeze({
       constructionOrder: Object.freeze([...definition.plans.constructionOrder]),

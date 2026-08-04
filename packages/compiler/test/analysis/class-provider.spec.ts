@@ -281,6 +281,7 @@ function classDeclaration(options: ClassOptions = {}): ClassDeclaration {
     export: options.export ?? { kind: "named", exportedName: name, span: span() },
     generic: options.generic ?? false,
     decorators: options.decorators ?? [decorator("Injectable")],
+    fields: [],
     implements: options.implements ?? [],
     constructors: options.constructors ?? [],
     methods: options.methods ?? [],
