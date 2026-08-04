@@ -13,16 +13,15 @@ import {
   type TemporaryProject,
 } from "@reforce/tooling-testing";
 import { sleep } from "radashi";
+import { installApplicationPackages } from "../support/application-packages";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cliRoot = join(workspaceRoot, "packages", "cli");
 const cliEntry = join(cliRoot, "dist", "reforce.js");
+// starter lib 编译只需要 @reforce/context 的 dist 类型面（fixture 应用副本的装配在
+// support/application-packages.ts）。
 const contextRoot = join(workspaceRoot, "packages", "context");
-const configRoot = join(workspaceRoot, "packages", "config");
-const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
-const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
-const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const windowsSignalFixture = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
@@ -216,54 +215,6 @@ function isShutdownAcknowledgement(
     Reflect.get(value, "requestId") === requestId &&
     typeof Reflect.get(value, "ok") === "boolean"
   );
-}
-
-async function installApplicationPackages(
-  projectRoot: string,
-  contextDistribution: "dist-only" | "workspace" = "workspace",
-): Promise<void> {
-  const scopeRoot = join(projectRoot, "node_modules", "@reforce");
-  const typesScopeRoot = join(projectRoot, "node_modules", "@types");
-  const contextTarget = join(scopeRoot, "context");
-  await Promise.all([
-    mkdir(scopeRoot, { recursive: true }),
-    mkdir(typesScopeRoot, { recursive: true }),
-  ]);
-  await Promise.all([
-    symlink(
-      toolingTsconfigRoot,
-      join(scopeRoot, "tooling-tsconfig"),
-      process.platform === "win32" ? "junction" : "dir",
-    ),
-    symlink(
-      bunTypesRoot,
-      join(typesScopeRoot, "bun"),
-      process.platform === "win32" ? "junction" : "dir",
-    ),
-    cp(radashiRoot, join(projectRoot, "node_modules", "radashi"), { recursive: true }),
-  ]);
-  const configTarget = join(scopeRoot, "config");
-  if (contextDistribution === "workspace") {
-    await Promise.all([
-      symlink(contextRoot, contextTarget, process.platform === "win32" ? "junction" : "dir"),
-      symlink(configRoot, configTarget, process.platform === "win32" ? "junction" : "dir"),
-    ]);
-    return;
-  }
-  await Promise.all([mkdir(contextTarget), mkdir(configTarget)]);
-  await Promise.all([
-    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
-    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
-    cp(join(configRoot, "package.json"), join(configTarget, "package.json")),
-    cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
-    // dotenv 是 @reforce/config 唯一的运行时依赖；dist-only 拷贝没有包内 node_modules，
-    // 把真实包（穿透 bun 的符号链接）落到应用 node_modules。
-    cp(
-      realpathSync(join(configRoot, "node_modules", "dotenv")),
-      join(projectRoot, "node_modules", "dotenv"),
-      { recursive: true },
-    ),
-  ]);
 }
 
 const leafProbeSource = `import { Injectable } from "@reforce/context";
@@ -1546,7 +1497,9 @@ export class MetricsReader {
 `;
 
 async function writeStarterApplicationSources(appRoot: string): Promise<void> {
-  await writeFile(join(appRoot, "src", "starter-registration.ts"), starterRegistrationSource);
+  // defineApplication 每应用至多一次：fixture 模板自带 web-bun 注册（#153），starter 场景
+  // 用自己的注册整体替换 application.ts（本场景不消费 web 引擎与 worker barrel）。
+  await writeFile(join(appRoot, "src", "application.ts"), starterRegistrationSource);
   await writeFile(join(appRoot, "src", "cache-config.ts"), cacheConfigSource);
   await writeFile(join(appRoot, "src", "cache-reader.ts"), cacheReaderSource);
 }
