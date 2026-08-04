@@ -1,12 +1,12 @@
+import { DevHmrManager, type RspackHmrRuntime } from "@/hmr-manager";
 import type { Reporter } from "@/reporter";
-import { DevHmrManager, type RspackHmrRuntime } from "@/runtime/hmr-manager";
 import {
   installProcessShutdownHandlers,
   ShutdownController,
   type ShutdownFailure,
   type ShutdownResult,
   type ShutdownState,
-} from "@/runtime/shutdown-controller";
+} from "@/shutdown-controller";
 
 export interface DevEntryOptions {
   readonly hot: RspackHmrRuntime;

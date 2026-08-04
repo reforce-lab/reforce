@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import type { DevChildExit, ManagedDevChild } from "@/dev/child-supervisor";
 import {
   type DevBuildReadyMessage,
   type DevChildLeaseParticipantAcknowledgement,
@@ -11,9 +10,10 @@ import {
   isShutdownAcknowledgementMessage,
   type ShutdownAckMessage,
   type ShutdownRequestMessage,
-} from "@/dev-ipc";
-import type { LeaseParticipant } from "@/project/lease-endpoint";
-import { withTimeout } from "@/with-timeout";
+} from "@reforce/runtime/dev-ipc";
+import type { LeaseParticipant } from "@reforce/runtime/lease-endpoint";
+import { withTimeout } from "@reforce/runtime/with-timeout";
+import type { DevChildExit, ManagedDevChild } from "@/dev/child-supervisor";
 
 export interface SpawnDevChildOptions {
   readonly entryPath: string;

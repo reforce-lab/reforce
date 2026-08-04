@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { requireBunExecutable } from "@/bun-runtime";
+import { requireBunExecutable } from "@reforce/runtime/bun-runtime";
 import { runCli } from "@/commands/run-cli";
 
 requireBunExecutable();

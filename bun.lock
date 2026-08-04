@@ -62,8 +62,8 @@
       },
       "dependencies": {
         "@reforce/compiler": "workspace:*",
-        "@reforce/context": "workspace:*",
         "@reforce/primitives": "workspace:*",
+        "@reforce/runtime": "workspace:*",
         "@rsbuild/core": "^2.1.9",
         "@swc/helpers": "catalog:",
         "commander": "^15.0.0",

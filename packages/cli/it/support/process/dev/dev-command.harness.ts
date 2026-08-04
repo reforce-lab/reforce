@@ -1,5 +1,5 @@
+import { PlainTextReporter } from "@reforce/runtime/reporter";
 import { runDevCommand } from "@/commands/dev";
-import { PlainTextReporter } from "@/reporter";
 
 const cwd = process.argv[2];
 const projectDirectory = process.argv[3];

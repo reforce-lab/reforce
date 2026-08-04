@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type LeaseParticipant, probeLeaseEndpoint } from "@reforce/runtime/lease-endpoint";
 import {
   createTemporaryProject,
   resolveBunExecutable,
@@ -10,7 +11,6 @@ import {
   waitUntil,
 } from "@reforce/tooling-testing";
 import { spawnDevChild } from "@/dev/child-process";
-import { type LeaseParticipant, probeLeaseEndpoint } from "@/project/lease-endpoint";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-shutdown.harness.ts", import.meta.url),

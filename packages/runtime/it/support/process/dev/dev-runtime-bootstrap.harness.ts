@@ -1,5 +1,5 @@
 import { runDevelopmentApplication } from "@/dev-runtime";
-import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
+import type { RspackHmrRuntime } from "@/hmr-manager";
 
 const hot: RspackHmrRuntime = {
   async check() {

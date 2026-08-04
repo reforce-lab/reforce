@@ -1,5 +1,5 @@
 import { runDevelopmentApplication } from "@/dev-runtime";
-import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
+import type { RspackHmrRuntime } from "@/hmr-manager";
 import { observeShutdownSignals } from "../signal-observer";
 
 const onMessage = (message: unknown) => {

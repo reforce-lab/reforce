@@ -1,20 +1,20 @@
 import { lstat, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
+import {
+  hotUpdateChunkFilename,
+  hotUpdateDirectory,
+  hotUpdateManifestFilename,
+} from "@reforce/runtime/dev-hot-update";
 import { createRsbuild, type Rspack, rspack } from "@rsbuild/core";
 import { createDevBuildId, type DevBuildAsset } from "@/bundling/build-id";
 import { renderDevelopmentEntry } from "@/bundling/dev-entry";
 import { ReforceCompilerGatePlugin } from "@/bundling/dev-gate-plugin";
 import { unwatchedDirectoryNames, waitForRspackWatcher } from "@/bundling/dev-watcher-ready";
+import { resolveRuntimeEntryPath } from "@/bundling/runtime-locator";
 import type { ResolvedProject } from "@/compiler-types";
 import type { DevCompilerGate } from "@/dev/compiler-gate";
 import type { DevCompilation } from "@/dev/watch-coordinator";
-import {
-  hotUpdateChunkFilename,
-  hotUpdateDirectory,
-  hotUpdateManifestFilename,
-} from "@/dev-hot-update";
-import { resolveCliSupportModule } from "@/runtime-module-path";
 
 export interface DevWatchBuild {
   close(): Promise<void>;
@@ -109,10 +109,7 @@ export async function startDevWatchBuild(
   const devOutputRoot = join(projectRoot, ".reforce", "dev");
   const generatedBootstrapPath = join(projectRoot, ".reforce", "generated", "bootstrap.ts");
   const generatedBeansPath = join(projectRoot, ".reforce", "generated", "beans.ts");
-  const devRuntimePath = resolveCliSupportModule({
-    supportModuleName: "dev-runtime",
-    invokedEntryPath: process.argv[1],
-  });
+  const devRuntimePath = resolveRuntimeEntryPath("dev-runtime");
   const gatePlugin = new ReforceCompilerGatePlugin(options.gate, [
     generatedBootstrapPath,
     generatedBeansPath,

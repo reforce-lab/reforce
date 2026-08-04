@@ -4,9 +4,12 @@ import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promise
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createChildLeaseParticipant,
+  type LeaseParticipant,
+} from "@reforce/runtime/lease-endpoint";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
-import { createChildLeaseParticipant, type LeaseParticipant } from "@/project/lease-endpoint";
 import { spawnBunIpcHarness } from "../support/process/bun-ipc-harness";
 
 interface FakeGateEndpoint {

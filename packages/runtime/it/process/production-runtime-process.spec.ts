@@ -9,7 +9,7 @@ import {
   resolveBunExecutable,
   send,
 } from "@reforce/tooling-testing";
-import { type LeaseParticipant, probeLeaseEndpoint } from "@/project/lease-endpoint";
+import { type LeaseParticipant, probeLeaseEndpoint } from "@/lease-endpoint";
 import { parseLeaseParticipant } from "../support/process/lease-participant";
 
 const harnessPath = fileURLToPath(

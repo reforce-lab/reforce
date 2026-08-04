@@ -1,4 +1,4 @@
-import type { CloseableApplication } from "@/runtime/shutdown-controller";
+import type { CloseableApplication } from "@/shutdown-controller";
 
 // The accept boundary lives in the generated development entry, not here: rspack only rewrites an
 // accepted request into a module id when it sees the literal `import.meta.webpackHot.accept("...")`
