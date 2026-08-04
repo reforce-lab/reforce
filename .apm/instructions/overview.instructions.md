@@ -46,26 +46,20 @@ bun run build --filter=<pkg>
   - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在
     `~/.coding-worktrees/<仓库目录名>/<分支名>` 下新建 worktree（分支名保留斜杠，路径与分支一一对应，例如
     `fix/dev-watch-cross-drive` → `~/.coding-worktrees/reforce/fix/dev-watch-cross-drive`）。目录名不得以 `.git`
-    开头（曾用的 `~/.git-worktrees` 即因此弃用）：tsgo 判断模块能否用包名命名时要向上找 `node_modules`，它跳过
-    git 目录用的是前缀匹配，`.git*` 全被跳过，于是每个 `rslib.config.ts` 都报 `TS2883` 要求显式类型标注——主
-    工作区与 CI 都不复现，只有按本约定建 worktree 的人会撞上（Issue #99）。必须在仓库根**之外**：
+    开头（曾用的 `~/.git-worktrees` 即因此弃用）：tsgo 判断模块能否用包名命名时要向上找 `node_modules`，它跳过 git
+    目录用的是前缀匹配，`.git*` 全被跳过，于是每个 `rslib.config.ts` 都报 `TS2883` 要求显式类型标注——主 工作区与 CI
+    都不复现，只有按本约定建 worktree 的人会撞上（Issue #99）。必须在仓库根 **之外**：
     `apm compile --clean` 的孤儿扫描是 `<仓库根>.rglob("AGENTS.md")` 加一份硬编码 skip 列表，不读 `.gitignore`
-    也无配置项，worktree 只要在仓库根里面，就会被它把**被 git 跟踪**的 `AGENTS.md` 判成 orphan 删掉
-    （Issue #47、#52，上游 microsoft/apm#2436）。
+    也无配置项，worktree 只要在仓库根里面，就会被它把 **被 git 跟踪**的 `AGENTS.md` 判成 orphan 删掉 （Issue #47、#52，上游
+    microsoft/apm#2436）。
   - 从对话和相关 diff 可确认任务延续当前未提交工作时，直接在当前工作区继续，不另建 worktree；仅在关联不明或可能覆盖冲突改动时询问
     owner。
   - 指定 PR、分支或 commit 时以指定引用为基线；全新任务默认基于 `main`。
-  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `bun install`；根 `prepare` 会执行 `apm install && apm compile`，生成
+  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `bun install`；根 `prepare` 会执行
+    `apm install && apm compile`，生成
     `AGENTS.md` 及运行时配置。不要把未初始化 worktree 直接交给独立 agent。
-  - `--clean` 不进 `prepare`：它是维护操作，混进安装步骤意味着任何人任何时候 `bun install` 都可能误删（Issue #47）。删除
-    instruction 后如需清理残留的生成 `AGENTS.md`，手动跑 `apm compile --clean`；仓库根 `.worktrees/` 尚未清空前，先用
-    `--dry-run` 确认删除清单。
 - 全仓库使用 TS7 (tsgo)：
   - 类型安全第一
-  - 每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，根 `tsconfig.node.json` 管理源码与 Rslib/tooling 配置；测试目录各自维护 `tsconfig.json`。所有配置继承共享基线的 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`
-  - 有产物的 package 由 Rslib 自动读取源码 `tsconfig.json` 并负责 emit；JS 与 d.ts 一律 bundleless，`dist/` 与 `src/` 1:1 对应（Issue #34）。测试和配置文件不得进入声明产物
-  - package 内指向自身 `src` 的 import 统一使用该 package 的 `@/*` paths；跨 package 使用 `@reforce/*`，不要用 `#` import 或 `resolve.alias`
-  - package exports 不保留仓库专用源码 condition；仓库测试、CLI 和用户应用都消费 Reforce `dist`。Rsbuild 的 `development` / `production` 只表示用户应用模式
   - 能使用类型推导的，优先利用类型推导，而非到处声明类型
   - 禁止未经校验的 `as` 类型断言和 `@ts-ignore`；`as const` 不在此限。确需断言时，同行注释写明为什么类型系统推不出来。
   - 复杂类型优先复用 type-fest；不要仅为单处简单类型新增依赖或自行造轮子。
@@ -101,7 +95,8 @@ bun run build --filter=<pkg>
 本节约束的目标是一致性与可读性。以下仅列Linter管不到、但影响评审的规则：
 
 - 禁止嵌套三元。
-- 类私有成员统一使用 TypeScript `private` / `private readonly`，禁止 ES `#field` / `#method` 语法；只在初始化时赋值的字段优先 `private readonly`
+- 类私有成员统一使用 TypeScript `private` / `private readonly`，禁止 ES6私有成员语法；只在初始化时赋值的字段优先
+  `private readonly`
 - 控制流优先使用卫语句和早返回，用类型窄化代替层层 if 嵌套。
 - 注释解释"为什么"，不复述"是什么"；讲人话，不假设读者掌握全部上下文；
   - 已有 Issue/RFC 的设计约束，相关注释必须引用编号。没有对应记录时，注释直接说明当前代码必须维持的约束，并在交付说明中标记缺失；
@@ -125,7 +120,8 @@ bun run build --filter=<pkg>
 
 - **目录与层级**：
   - 单元测试放 `test/`，路径严格镜像源码：`src/a.ts` 对应 `test/a.spec.ts`；同一源码的 property-based 用例并入同一 spec。
-  - 跨模块、filesystem、子进程和 Worker 行为放 `it/`；support 只放该层测试直接使用的项目构造器或 harness，包内不保存 fixture。
+  - 跨模块、filesystem、子进程和 Worker 行为放 `it/`；support 只放该层测试直接使用的项目构造器或 harness，包内不保存
+    fixture。
   - 完整用户链路只放独立的 `@reforce/e2e` workspace，消费构建后的 dist；唯一完整应用模板是 `e2e/fixtures/application`。
   - `bun run test` 运行 unit 与 IT，`bun run test:e2e` 单独运行完整链路。
 - **不测**：纯类型推导（typecheck 已覆盖）、第三方库行为、getter/setter 级别的透传、私有实现细节。
