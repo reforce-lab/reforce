@@ -32,6 +32,27 @@
         "typescript": "catalog:",
       },
     },
+    "packages/bundler-plugin": {
+      "name": "@reforce/bundler-plugin",
+      "version": "0.0.0",
+      "dependencies": {
+        "@reforce/compiler": "workspace:*",
+        "@reforce/primitives": "workspace:*",
+        "@swc/helpers": "catalog:",
+        "publint": "^0.3.22",
+        "unplugin": "^3.3.0",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@reforce/context": "workspace:*",
+        "@reforce/tooling-rslib": "workspace:*",
+        "@reforce/tooling-testing": "workspace:*",
+        "@reforce/tooling-tsconfig": "workspace:*",
+        "@rslib/core": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/cli": {
       "name": "@reforce/cli",
       "version": "0.0.0",
@@ -157,27 +178,6 @@
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
         "type-fest": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "packages/unplugin": {
-      "name": "@reforce/unplugin",
-      "version": "0.0.0",
-      "dependencies": {
-        "@reforce/compiler": "workspace:*",
-        "@reforce/primitives": "workspace:*",
-        "@swc/helpers": "catalog:",
-        "publint": "^0.3.22",
-        "unplugin": "^3.3.0",
-      },
-      "devDependencies": {
-        "@biomejs/biome": "catalog:",
-        "@reforce/context": "workspace:*",
-        "@reforce/tooling-rslib": "workspace:*",
-        "@reforce/tooling-testing": "workspace:*",
-        "@reforce/tooling-tsconfig": "workspace:*",
-        "@rslib/core": "catalog:",
-        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -377,6 +377,8 @@
 
     "@publint/pack": ["@publint/pack@0.1.6", "", { "dependencies": { "tinyexec": "^1.2.4" } }, "sha512-3uVNyGcVplhPZSLVyeIpL7+cIRn1YCSNHLG/rUIlBQMVH8YuN9++YF+5+UDIIO9RW98dujiUoTltO7RDB5bFJA=="],
 
+    "@reforce/bundler-plugin": ["@reforce/bundler-plugin@workspace:packages/bundler-plugin"],
+
     "@reforce/cli": ["@reforce/cli@workspace:packages/cli"],
 
     "@reforce/compiler": ["@reforce/compiler@workspace:packages/compiler"],
@@ -396,8 +398,6 @@
     "@reforce/tooling-testing": ["@reforce/tooling-testing@workspace:tooling/testing"],
 
     "@reforce/tooling-tsconfig": ["@reforce/tooling-tsconfig@workspace:tooling/tsconfig"],
-
-    "@reforce/unplugin": ["@reforce/unplugin@workspace:packages/unplugin"],
 
     "@reforce/web": ["@reforce/web@workspace:packages/web"],
 
