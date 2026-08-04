@@ -22,6 +22,9 @@ export interface ModuleRecord {
   readonly source: ParsedSource;
   readonly localSymbols: ReadonlyMap<string, LinkedSymbol>;
   readonly imports: ReadonlyMap<string, ImportReference>;
+  // 仅外部记录使用：同名多次导出且指向不同声明的导出名。ESM 里这是非法输入，绑定层必须拒绝
+  // 解析而不是静默取第一个（IT 钉住 TYPE_LINK_FAILED）；应用源文件保持既有语义，不设此集合。
+  readonly ambiguousExports?: ReadonlySet<string>;
 }
 
 export interface ResolvedModule {
@@ -117,17 +120,14 @@ export function createModuleResolver(
     contextDependencies: resolverContextDependencies,
     missingDependencies,
   };
-  const resolvedModules = new Map<string, ResolvedModule | false>();
+  const resolvedModules = new Map<string, string | false>();
   const reportedFailures = new Set<string>();
 
   function resolutionKey(containing: ParsedSource, specifier: string): string {
     return `${containing.absolutePath}\0${specifier}`;
   }
 
-  function resolveUncachedModule(
-    containing: ParsedSource,
-    specifier: string,
-  ): ResolvedModule | false {
+  function resolveUncachedModule(containing: ParsedSource, specifier: string): string | false {
     let resolved: string | false;
     try {
       const resolveTypeModule = ["cts", "d.cts"].includes(containing.sourceKind)
@@ -145,9 +145,7 @@ export function createModuleResolver(
       return false;
     }
     resolverFileDependencies.add(resolved);
-    const physicalPath = moduleKey(resolved);
-    const record = records.get(physicalPath);
-    return record === undefined ? { physicalPath } : { physicalPath, record };
+    return moduleKey(resolved);
   }
 
   function resolveModule(
@@ -175,7 +173,36 @@ export function createModuleResolver(
       );
       return undefined;
     }
-    return result;
+    // record 每次都从 records 现查：外部模块记录在链接前的闭包加载阶段陆续补进同一张表，
+    // 缓存住早期查到的 undefined 会让 binder 把已建档的外部文件继续当成两比特外部符号处理。
+    const record = records.get(result);
+    return record === undefined ? { physicalPath: result } : { physicalPath: result, record };
+  }
+
+  // starter meta（`<pkg>/reforce-meta`，ADR 0004 决策 2）与包根探测共用的裸解析入口：不带
+  // tsconfig paths（包坐标必须按 node 语义落点），json 目标按 exports 字面 target 命中。
+  const resolveRawTarget = enhancedResolve.create.sync({
+    descriptionFiles: ["package.json"],
+    exportsFields: ["exports"],
+    extensions: [".json", ".ts", ".d.ts", ".js"],
+    conditionNames: ["types", ...customConditions, "import", "default"],
+    mainFields: ["types", "typings", "module", "main"],
+    fileSystem: nodeFileSystem,
+    symlinks: true,
+    useSyncFileSystemCalls: true,
+  });
+
+  function resolveFromDirectory(directory: string, specifier: string): string | undefined {
+    try {
+      const resolved = resolveRawTarget(directory, specifier, resolutionContext);
+      if (resolved === false) {
+        return undefined;
+      }
+      resolverFileDependencies.add(resolved);
+      return moduleKey(resolved);
+    } catch {
+      return undefined;
+    }
   }
 
   function collectWatchDependencies() {
@@ -198,5 +225,5 @@ export function createModuleResolver(
     return { fileDependencies, contextDependencies, missingDependencies };
   }
 
-  return { resolveModule, collectWatchDependencies };
+  return { resolveModule, resolveFromDirectory, collectWatchDependencies };
 }

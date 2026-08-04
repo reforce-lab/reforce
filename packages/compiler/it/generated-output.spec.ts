@@ -316,17 +316,19 @@ describe("generated output", () => {
         expect(registration).toContain(`definition: beanTarget${index},`);
         expect(registration).not.toContain("dependencies:");
       } else {
-        const argumentsList = bean.dependencies
+        // typed-edge（ADR 0004 决策 8）：每条边带 type-only 契约标注，别名由 emission 分配，
+        // 这里只钉住「每个参数位都有类型实参」的形状，不复算别名编号。
+        const argumentsPattern = bean.dependencies
           .map((dependency) =>
             dependency.mode === "explicit-lazy"
-              ? `resolver.lazy(${dependency.parameterIndex})`
-              : `resolver.resolve(${dependency.parameterIndex})`,
+              ? `resolver\\.lazy<beanContract\\d+>\\(${dependency.parameterIndex}\\)`
+              : `resolver\\.resolve<beanContract\\d+>\\(${dependency.parameterIndex}\\)`,
           )
           .join(", ");
         expect(registration).toContain(`const registration${index} = classBean({`);
         expect(registration).toContain(`dependencies: ${embeddedData(bean.dependencies)},`);
-        expect(registration).toContain(
-          `create: (resolver) => new beanTarget${index}(${argumentsList}),`,
+        expect(registration).toMatch(
+          new RegExp(`create: \\(resolver\\) => new beanTarget${index}\\(${argumentsPattern}\\),`),
         );
         expect(registration.includes("start: (bean) => bean.onContextStart(),")).toBe(
           bean.lifecycle.start,

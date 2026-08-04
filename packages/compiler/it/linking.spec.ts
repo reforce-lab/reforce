@@ -124,7 +124,9 @@ describe("external type linking", () => {
     }
   });
 
-  test("rejects a name available only through a declaration re-export", async () => {
+  // ADR 0004（#120）决策 7 解除了「外部声明只读直接导出」的限制：linker 沿 re-export 链追到
+  // 定义文件（#145）。此用例曾钉住旧限制（拒绝 re-export），现在钉住新语义。
+  test("links a name reachable only through a declaration re-export", async () => {
     const { result } = await compile(
       applicationTree(
         "external-contract",
@@ -135,10 +137,7 @@ describe("external type linking", () => {
       ),
     );
 
-    expect(result.status).toBe("failure");
-    if (result.status === "failure") {
-      expect(result.diagnostics.map((item) => item.code)).toContain("TYPE_LINK_FAILED");
-    }
+    expect(result.status).toBe("success");
   });
 
   test("rejects multiple local declarations exported under the same public name", async () => {
@@ -766,9 +765,12 @@ describe("project linking", () => {
       }
     }
 
+    // 外部符号的 manifest specifier 从「import 处原样写法」改为包视角归属（ADR 0004 决策 7）：
+    // paths 别名与 subpath 都归一到所属包名；三种 import 写法仍必须都链接成功（displayName 断言）。
     expect(manifest).toContain('"moduleSpecifier": "@fixture/shared"');
-    expect(manifest).toContain('"moduleSpecifier": "@shared/path"');
-    expect(manifest).toContain('"moduleSpecifier": "@fixture/shared/import-contract"');
+    expect(manifest).toContain('"displayName": "ExportPort"');
+    expect(manifest).toContain('"displayName": "PathPort"');
+    expect(manifest).toContain('"displayName": "ImportPort"');
     expect(manifest).not.toContain("HiddenSharedBean");
     expect(result.watchInputs.contextDependencies).toContain(logicalPackageDirectory);
     expect(result.watchInputs.contextDependencies).toContain(physicalPackageDirectory);

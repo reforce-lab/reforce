@@ -1,6 +1,9 @@
 import { type AliasMap, is, nameOf } from "yuku-ast";
 import type {
+  ArrayExpression,
+  ArrayExpressionElement,
   BaseNode,
+  CallExpression,
   Class,
   Declaration,
   ImportDeclarationSpecifier,
@@ -42,6 +45,9 @@ import type {
   ClassMethodName,
   ConstructorDeclaration,
   DeclarationExport,
+  DefineApplicationDeclaration,
+  DefineApplicationOptionProperty,
+  DefineApplicationOptions,
   DefineBeanDeclaration,
   DefineBeanOptionProperty,
   DefineBeanOptions,
@@ -55,6 +61,8 @@ import type {
   NamespaceExportedMember,
   NamespaceMemberKind,
   SourceFileIr,
+  StartersArrayElement,
+  StartersOptionValue,
   UnsupportedNamedDeclaration,
   UnsupportedNamedDeclarationKind,
 } from "@/parser/source-ir";
@@ -73,6 +81,7 @@ interface Collector {
   readonly namespaces: NamespaceDeclaration[];
   readonly classes: ClassDeclaration[];
   readonly beanFactories: DefineBeanDeclaration[];
+  readonly applicationDefinitions: DefineApplicationDeclaration[];
   readonly unsupportedDeclarations: UnsupportedNamedDeclaration[];
 }
 
@@ -544,6 +553,24 @@ function entityTail(entity: EntityName | undefined): string | undefined {
   return entity.kind === "identifier" ? entity.name : entity.right;
 }
 
+// defineBean / defineApplication 都按"callee 尾名"识别调用，命名空间前缀（`di.defineBean(...)`）
+// 留给链接层核实来源。
+function calledByTailName(
+  node: Node,
+  tail: string,
+  context: LoweringContext,
+): { readonly call: CallExpression; readonly callee: EntityName } | undefined {
+  const call = unparenthesized(node);
+  if (call.type !== "CallExpression") {
+    return undefined;
+  }
+  const callee = entityNameOf(call.callee, context);
+  if (callee === undefined || entityTail(callee) !== tail) {
+    return undefined;
+  }
+  return { call, callee };
+}
+
 function lowerBeanFactory(
   declaration: VariableDeclaration,
   declarator: VariableDeclarator,
@@ -556,14 +583,11 @@ function lowerBeanFactory(
   if (init === null || init === undefined) {
     return;
   }
-  const call = unparenthesized(init);
-  if (call.type !== "CallExpression") {
+  const matched = calledByTailName(init, "defineBean", context);
+  if (matched === undefined) {
     return;
   }
-  const callee = entityNameOf(call.callee, context);
-  if (callee === undefined || entityTail(callee) !== "defineBean") {
-    return;
-  }
+  const { call, callee } = matched;
   const options = call.arguments[0];
   const name = identifierTextOf(declarator.id);
   collector.beanFactories.push({
@@ -586,6 +610,141 @@ function lowerBeanFactory(
 
 function variableDeclarationKind(node: VariableDeclaration): "const" | "let" | "var" {
   return node.kind === "let" || node.kind === "var" ? node.kind : "const";
+}
+
+// ADR 0004 决策 5（Issue #120）：defineApplication 的 starters 只支持标识符数组字面量。其余形状照
+// defineBean 的惯例 lower 成 unsupported 而不是丢弃，让分析层在原位置给出可操作的诊断。
+function startersElementOf(
+  element: ArrayExpressionElement,
+  array: ArrayExpression,
+  context: LoweringContext,
+): StartersArrayElement {
+  // 数组空洞（`[a, , b]`）没有自己的节点，只能挂在数组的 span 上。
+  if (element === null) {
+    return { kind: "unsupported-element", expressionKind: "other", span: spanOf(array, context) };
+  }
+  if (element.type === "SpreadElement") {
+    return { kind: "unsupported-element", expressionKind: "other", span: spanOf(element, context) };
+  }
+  const target = unparenthesized(element);
+  if (target.type === "Identifier") {
+    return { kind: "identifier", name: target.name, span: spanOf(target, context) };
+  }
+  return {
+    kind: "unsupported-element",
+    expressionKind: expressionKindOf(target),
+    span: spanOf(target, context),
+  };
+}
+
+function startersValueOf(node: Node, context: LoweringContext): StartersOptionValue {
+  const target = unparenthesized(node);
+  if (target.type !== "ArrayExpression") {
+    return {
+      kind: "unsupported",
+      expressionKind: expressionKindOf(target),
+      span: spanOf(target, context),
+    };
+  }
+  return {
+    kind: "array",
+    elements: target.elements.map((element) => startersElementOf(element, target, context)),
+    span: spanOf(target, context),
+  };
+}
+
+function defineApplicationOptionOf(
+  property: ObjectPropertyKind,
+  context: LoweringContext,
+): DefineApplicationOptionProperty {
+  if (property.type === "SpreadElement") {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "spread",
+      span: spanOf(property, context),
+    };
+  }
+  if (property.computed) {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "computed",
+      span: spanOf(property, context),
+    };
+  }
+  if (property.method) {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "method",
+      span: spanOf(property, context),
+    };
+  }
+  const keyName =
+    identifierTextOf(property.key) ??
+    (property.key.type === "Literal" && typeof property.key.value === "string"
+      ? property.key.value
+      : undefined);
+  if (keyName !== "starters") {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "unknown-key",
+      span: spanOf(property, context),
+    };
+  }
+  return {
+    kind: "starters",
+    value: startersValueOf(property.value, context),
+    span: spanOf(property, context),
+  };
+}
+
+function defineApplicationOptionsOf(
+  call: CallExpression,
+  context: LoweringContext,
+): DefineApplicationOptions {
+  const argument = call.arguments[0];
+  if (argument === undefined) {
+    return { kind: "unsupported", expressionKind: "other", span: spanOf(call, context) };
+  }
+  const target = unparenthesized(argument);
+  if (target.type !== "ObjectExpression") {
+    return {
+      kind: "unsupported",
+      expressionKind: expressionKindOf(target),
+      span: spanOf(target, context),
+    };
+  }
+  return {
+    kind: "object",
+    properties: target.properties.map((property) => defineApplicationOptionOf(property, context)),
+    span: spanOf(target, context),
+  };
+}
+
+function lowerApplicationDefinition(
+  declarator: VariableDeclarator,
+  topLevel: boolean,
+  mode: ExportMode,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  const init = declarator.init;
+  if (init === null || init === undefined) {
+    return;
+  }
+  const matched = calledByTailName(init, "defineApplication", context);
+  if (matched === undefined) {
+    return;
+  }
+  const name = identifierTextOf(declarator.id);
+  collector.applicationDefinitions.push({
+    kind: "define-application",
+    topLevel,
+    name,
+    export: declarationExportOf(declarator.id, mode, context),
+    callee: matched.callee,
+    options: defineApplicationOptionsOf(matched.call, context),
+    span: spanOf(declarator, context),
+  });
 }
 
 function lowerUnsupported(
@@ -625,6 +784,20 @@ function visitDefaultDeclaration(
 ): void {
   const mode = { kind: "default-only", owner: node } as const;
   const declaration = node.declaration;
+  // `export default defineApplication({...})` 是 ADR 0004（Issue #120）的首选书写形式。默认导出的
+  // 调用同时照旧记一条 default-expression export，两份记录各服务一层消费者。
+  const matched = calledByTailName(declaration, "defineApplication", context);
+  if (matched !== undefined) {
+    collector.applicationDefinitions.push({
+      kind: "define-application",
+      topLevel,
+      export: declarationExportOf(undefined, mode, context),
+      callee: matched.callee,
+      options: defineApplicationOptionsOf(matched.call, context),
+      span: spanOf(node, context),
+    });
+    return;
+  }
   if (declaration.type === "ClassDeclaration" || declaration.type === "ClassExpression") {
     lowerClass(declaration, topLevel, mode, collector, context);
     return;
@@ -711,6 +884,7 @@ function visitStatement(
     case "VariableDeclaration":
       for (const declarator of node.declarations) {
         lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
+        lowerApplicationDefinition(declarator, topLevel, mode, collector, context);
         if (is.Function(declarator.init)) {
           visitFunctionBody(declarator.init, collector, context);
         }
@@ -817,6 +991,7 @@ export function lowerSource(
     namespaces: [],
     classes: [],
     beanFactories: [],
+    applicationDefinitions: [],
     unsupportedDeclarations: [],
   };
   const context = { mapper: createSourceMapper(file, sourceText), sourceText };
@@ -830,6 +1005,7 @@ export function lowerSource(
     namespaces: normalizeSpanned(collector.namespaces),
     classes: normalizeSpanned(collector.classes),
     beanFactories: normalizeSpanned(collector.beanFactories),
+    applicationDefinitions: normalizeSpanned(collector.applicationDefinitions),
     unsupportedDeclarations: normalizeSpanned(collector.unsupportedDeclarations),
   };
 }

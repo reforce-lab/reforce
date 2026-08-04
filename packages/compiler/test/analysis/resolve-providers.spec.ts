@@ -5,6 +5,7 @@ import {
   type PendingDependency,
   type ProviderDraft,
   type ProviderModel,
+  type ProviderOriginModel,
   providerId,
   type QualifierModel,
   sourceReference,
@@ -12,6 +13,7 @@ import {
 import { resolveProviders } from "@/analysis/resolve-providers";
 import type { CompilerDiagnostic } from "@/api";
 import type { LinkedSymbol } from "@/linking/model";
+import { emptyStarterLinkage } from "@/linking/starter-linking";
 import type {
   NamespaceDeclaration,
   NamespaceExportedMember,
@@ -31,6 +33,7 @@ function parsedSource(
     namespaces,
     classes: [],
     beanFactories: [],
+    applicationDefinitions: [],
     unsupportedDeclarations: [],
   };
   return {
@@ -110,9 +113,10 @@ interface ProviderInput {
 }
 
 function provider(input: ProviderInput): ProviderModel {
+  const origin: ProviderOriginModel = { kind: "application", source: parsedSource(input.file) };
   const base = {
     id: providerId(input.file, input.exportName),
-    source: parsedSource(input.file),
+    origin,
     exportName: input.exportName,
     declarationSource: sourceReference(span(input.file, input.offset ?? 0)),
     provides: input.provides ?? [],
@@ -156,7 +160,7 @@ function pending(symbol: LinkedSymbol, input: PendingInput = {}): PendingDepende
 
 function resolve(drafts: readonly ProviderDraft[]): readonly CompilerDiagnostic[] {
   const diagnostics: CompilerDiagnostic[] = [];
-  resolveProviders(drafts, diagnostics);
+  resolveProviders(drafts, emptyStarterLinkage, diagnostics);
   return diagnostics;
 }
 
@@ -375,7 +379,7 @@ describe("provider resolution", () => {
       draft(provider({ file: "src/c.ts", exportName: "Consumer", dependencies }), [pending(port)]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies).toEqual([]);
   });
@@ -492,7 +496,7 @@ describe("provider resolution", () => {
       ]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies).toEqual([]);
   });
@@ -505,7 +509,7 @@ describe("provider resolution", () => {
       draft(provider({ file: "src/c.ts", exportName: "Consumer", dependencies }), [pending(port)]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies.map((item) => item.targetId)).toEqual(["src/a.ts#Service"]);
   });
@@ -519,7 +523,7 @@ describe("provider resolution", () => {
       draft(provider({ file: "src/c.ts", exportName: "Consumer", dependencies }), [pending(port)]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies.map((item) => item.targetId)).toEqual(["src/b.ts#Second"]);
   });
@@ -542,7 +546,7 @@ describe("provider resolution", () => {
       ]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies.map((item) => item.targetId)).toEqual(["src/a.ts#First"]);
   });
@@ -566,7 +570,7 @@ describe("provider resolution", () => {
       ]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies.map((item) => item.targetId)).toEqual(["src/a.ts#Concrete"]);
   });
@@ -581,7 +585,7 @@ describe("provider resolution", () => {
       ]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies.map((item) => item.mode)).toEqual(["explicit-lazy"]);
   });
@@ -596,7 +600,7 @@ describe("provider resolution", () => {
       ]),
     ];
 
-    resolveProviders(drafts, []);
+    resolveProviders(drafts, emptyStarterLinkage, []);
 
     expect(dependencies).toEqual([
       {
@@ -604,6 +608,7 @@ describe("provider resolution", () => {
         targetId: "src/a.ts#Service",
         mode: "eager",
         source: sourceReference(span("src/consumer.ts", 2)),
+        contract: port,
       },
     ]);
   });

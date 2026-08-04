@@ -1,13 +1,24 @@
 import path from "node:path";
 import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import stableStringify from "json-stable-stringify";
-import { type ExecutionPlansModel, type ProviderModel, sourceReference } from "@/analysis/model";
+import {
+  type DependencyModel,
+  type ExecutionPlansModel,
+  type ProviderModel,
+  sourceReference,
+} from "@/analysis/model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
 
 const contextModuleSpecifier = "@reforce/context";
 const contextRuntimeModuleSpecifier = "@reforce/context/generated-runtime";
+
+// 外部契约符号（starter/契约包）的 type-only import specifier 由链接层决定：meta 户口表的
+// subpath 优先，无表退化为包根探测。应用源集内的符号 emission 自己算相对路径。
+export interface EmissionTypeResolver {
+  contractImportSpecifier(symbol: LinkedSymbol): string | undefined;
+}
 
 // Ordered most- to least-specific: "x.d.mts" also ends with ".mts", so the declaration suffixes
 // must be matched before their plain counterparts.
@@ -65,31 +76,107 @@ function symbolReference(
   symbol: LinkedSymbol,
   generatedDirectory: string,
 ): Record<string, unknown> {
-  const moduleSpecifier =
-    symbol.source === undefined
-      ? symbol.moduleSpecifier
-      : runtimeSpecifier(generatedDirectory, symbol.source.absolutePath);
-  const declaration = sourceReferenceForSymbol(symbol);
+  if (symbol.source === undefined) {
+    // 外部符号：moduleSpecifier 已是包视角 specifier；declaration span 属于包内文件，
+    // 不落进 manifest（manifest 的 span 一律指应用可寻址的相对路径）。
+    return {
+      displayName: symbol.name,
+      moduleSpecifier: symbol.moduleSpecifier,
+      exportName: symbol.name,
+      declaration: undefined,
+    };
+  }
   return {
     displayName: symbol.name,
-    moduleSpecifier,
+    moduleSpecifier: runtimeSpecifier(generatedDirectory, symbol.source.absolutePath),
     exportName: symbol.name,
-    declaration,
+    declaration: sourceReferenceForSymbol(symbol),
   };
 }
 
-function registrationExpression(provider: ProviderModel, index: number): string {
+// DependencyModel 的 contract 字段只服务 typed-edge 生成；manifest 与 beans.ts 内嵌 JSON 都必须
+// 保持运行时 GeneratedDependency 四字段形状（ADR 0004 决策 14：运行时 schema 一个字段不加）。
+function runtimeDependencies(provider: ProviderModel): readonly Record<string, unknown>[] {
+  return provider.dependencies.map((dependency) => ({
+    parameterIndex: dependency.parameterIndex,
+    targetId: dependency.targetId,
+    mode: dependency.mode,
+    source: dependency.source,
+  }));
+}
+
+function providerValueSpecifier(provider: ProviderModel, generatedDirectory: string): string {
+  return provider.origin.kind === "application"
+    ? runtimeSpecifier(generatedDirectory, provider.origin.source.absolutePath)
+    : provider.origin.runtimeExport.module;
+}
+
+interface ContractImport {
+  readonly symbol: LinkedSymbol;
+  readonly specifier: string;
+  readonly alias: string;
+}
+
+function contractImports(
+  providers: readonly ProviderModel[],
+  generatedDirectory: string,
+  typeResolver: EmissionTypeResolver,
+): ReadonlyMap<string, ContractImport> {
+  const bySymbolKey = new Map<string, { symbol: LinkedSymbol; specifier: string }>();
+  for (const provider of providers) {
+    for (const dependency of provider.dependencies) {
+      const symbol = dependency.contract;
+      if (bySymbolKey.has(symbol.key)) {
+        continue;
+      }
+      const specifier =
+        symbol.source === undefined
+          ? typeResolver.contractImportSpecifier(symbol)
+          : runtimeSpecifier(generatedDirectory, symbol.source.absolutePath);
+      if (specifier !== undefined) {
+        bySymbolKey.set(symbol.key, { symbol, specifier });
+      }
+    }
+  }
+  const ordered = [...bySymbolKey.values()].toSorted((left, right) => {
+    const specifier = compareUtf16CodeUnits(left.specifier, right.specifier);
+    if (specifier !== 0) {
+      return specifier;
+    }
+    const name = compareUtf16CodeUnits(left.symbol.name, right.symbol.name);
+    return name === 0 ? compareUtf16CodeUnits(left.symbol.key, right.symbol.key) : name;
+  });
+  return new Map(
+    ordered.map((entry, index) => [
+      entry.symbol.key,
+      { symbol: entry.symbol, specifier: entry.specifier, alias: `beanContract${index}` },
+    ]),
+  );
+}
+
+function dependencyExpression(
+  dependency: DependencyModel,
+  contracts: ReadonlyMap<string, ContractImport>,
+): string {
+  const alias = contracts.get(dependency.contract.key)?.alias;
+  const typeArgument = alias === undefined ? "" : `<${alias}>`;
+  return dependency.mode === "explicit-lazy"
+    ? `resolver.lazy${typeArgument}(${dependency.parameterIndex})`
+    : `resolver.resolve${typeArgument}(${dependency.parameterIndex})`;
+}
+
+function registrationExpression(
+  provider: ProviderModel,
+  index: number,
+  contracts: ReadonlyMap<string, ContractImport>,
+): string {
   const alias = `beanTarget${index}`;
   if (provider.kind === "factory") {
     return `const registration${index} = factoryBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  definition: ${alias},\n});`;
   }
   const argumentsList = provider.dependencies
     .toSorted((left, right) => left.parameterIndex - right.parameterIndex)
-    .map((dependency) =>
-      dependency.mode === "explicit-lazy"
-        ? `resolver.lazy(${dependency.parameterIndex})`
-        : `resolver.resolve(${dependency.parameterIndex})`,
-    )
+    .map((dependency) => dependencyExpression(dependency, contracts))
     .join(", ");
   const hooks = [
     ...(provider.startHook ? ["start: (bean) => bean.onContextStart(),"] : []),
@@ -97,24 +184,35 @@ function registrationExpression(provider: ProviderModel, index: number): string 
   ];
   const hooksBlock =
     hooks.length === 0 ? "{}" : `{\n${hooks.map((line) => `    ${line}`).join("\n")}\n  }`;
-  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  target: ${alias},\n  dependencies: ${inlineJson(provider.dependencies, 2)},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
+  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  target: ${alias},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
 }
 
 function renderBeans(
   providers: readonly ProviderModel[],
   plans: ExecutionPlansModel,
   generatedDirectory: string,
+  typeResolver: EmissionTypeResolver,
 ): string {
+  const contracts = contractImports(providers, generatedDirectory, typeResolver);
   const imports = providers.map((provider, index) => {
-    const specifier = runtimeSpecifier(generatedDirectory, provider.source.absolutePath);
+    const specifier = providerValueSpecifier(provider, generatedDirectory);
     return `import { ${provider.exportName} as beanTarget${index} } from ${JSON.stringify(specifier)};`;
   });
-  const registrations = providers.map(registrationExpression);
+  // typed-edge 的类型标注（ADR 0004 决策 8）：type-only import 编译后消失，运行时零痕迹；
+  // tsc 对每条 resolve<T>() 的实参赋值做结构校验，是链接错误的最后一道背书。
+  const typeImports = [...contracts.values()].map(
+    (contract) =>
+      `import type { ${contract.symbol.name} as ${contract.alias} } from ${JSON.stringify(contract.specifier)};`,
+  );
+  const registrations = providers.map((provider, index) =>
+    registrationExpression(provider, index, contracts),
+  );
   const names = providers.map((_, index) => `registration${index}`).join(", ");
   return `${[
     `import { classBean, factoryBean } from "${contextRuntimeModuleSpecifier}";`,
     `import type { GeneratedApplicationDefinition } from "${contextRuntimeModuleSpecifier}";`,
     ...imports,
+    ...typeImports,
     "",
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
@@ -233,13 +331,14 @@ function renderManifest(
   const beans = providers.map((provider) => ({
     id: provider.id,
     kind: provider.kind,
+    origin: provider.origin.kind === "application" ? "application" : provider.origin.origin,
     source: provider.declarationSource,
     runtimeExport: {
-      moduleSpecifier: runtimeSpecifier(generatedDirectory, provider.source.absolutePath),
+      moduleSpecifier: providerValueSpecifier(provider, generatedDirectory),
       exportName: provider.exportName,
     },
     provides: provider.provides.map((symbol) => symbolReference(symbol, generatedDirectory)),
-    dependencies: provider.dependencies,
+    dependencies: runtimeDependencies(provider),
     primary: provider.primary,
     qualifiers: provider.qualifiers.map((qualifier) => ({
       interface: symbolReference(qualifier.interfaceSymbol, generatedDirectory),
@@ -262,12 +361,13 @@ export function generateFiles(
   project: ResolvedApplicationProject,
   providers: readonly ProviderModel[],
   plans: ExecutionPlansModel,
+  typeResolver: EmissionTypeResolver,
 ): readonly GeneratedFile[] {
   const generatedDirectory = generatedDirectoryPath(project.projectRoot);
   return Object.freeze([
     {
       path: "beans.ts",
-      content: renderBeans(providers, plans, generatedDirectory),
+      content: renderBeans(providers, plans, generatedDirectory, typeResolver),
     },
     {
       path: "qualifiers.d.ts",

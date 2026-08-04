@@ -62,7 +62,12 @@ export async function compile(
   return {
     status: "success",
     diagnostics: [],
-    files: generateFiles(request.project, analysis.providers, analysis.plans),
+    files: generateFiles(
+      request.project,
+      analysis.providers,
+      analysis.plans,
+      linker.starterLinkage,
+    ),
     watchInputs,
   };
 }

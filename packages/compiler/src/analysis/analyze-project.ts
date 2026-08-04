@@ -87,13 +87,17 @@ export function analyzeProject(
   validateModuleSyntax(sources, diagnostics);
   const drafts = collectProviderDrafts(sources, linker, diagnostics);
 
+  // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
+  // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。
+  const starterDrafts = resolveProviders(drafts, linker.starterLinkage, diagnostics);
   diagnostics.push(...linker.diagnostics);
-  resolveProviders(drafts, diagnostics);
 
   if (diagnostics.length > 0) {
     return { status: "failure", diagnostics: nonEmptyDiagnostics(diagnostics) };
   }
-  const providers = drafts
+  // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
+  // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。
+  const providers = [...drafts, ...starterDrafts]
     .map((draft) => draft.provider)
     .toSorted((left, right) => compareUtf16CodeUnits(left.id, right.id));
   return {

@@ -92,6 +92,7 @@ function parsedSource(file: string, shape: ModuleShape): ParsedSource {
     namespaces: [],
     classes: shape.classes ?? [],
     beanFactories: [],
+    applicationDefinitions: [],
     unsupportedDeclarations: [],
   };
   return {
@@ -124,7 +125,7 @@ function harnessFor(modules: Readonly<Record<string, ModuleShape>>): Harness {
     throw new Error("The module graph under test must contain an entry module.");
   }
   return {
-    binder: createExportBinder({ externalDeclarations: new Map(), diagnostics, resolveModule }),
+    binder: createExportBinder({ diagnostics, resolveModule }),
     diagnostics,
     entry,
   };
@@ -252,6 +253,41 @@ describe("default export exclusion", () => {
     const symbol = binder.resolveLocal(entry, "Service");
 
     expect(symbol).toMatchObject({ key: "service.ts#class:Service" });
+  });
+});
+
+// 外部（npm 包）文件如今由 external-modules 建成同构 ModuleRecord 走同一算法（ADR 0004 决策 7，#120）；
+// 这里只钉住两条边界：没有记录的解析目标解析不出符号，标记为歧义的导出名拒绝解析。
+describe("external module records", () => {
+  test("resolves to nothing when the resolved module carries no record", () => {
+    const entry = createModuleRecord(
+      parsedSource("entry.ts", { imports: [namedImport("entry.ts", "vendor", "Client")] }),
+    );
+    const resolveModule: ModuleResolver = () => ({ physicalPath: "/project/vendor.js" });
+    const binder = createExportBinder({ diagnostics: [], resolveModule });
+
+    const symbol = binder.resolveLocal(entry, "Client");
+
+    expect(symbol).toBeUndefined();
+  });
+
+  test("refuses to resolve an exported name the record marks as ambiguous", () => {
+    const entry = createModuleRecord(
+      parsedSource("entry.ts", { imports: [namedImport("entry.ts", "vendor", "Port")] }),
+    );
+    const vendor: ModuleRecord = {
+      ...createModuleRecord(
+        parsedSource("vendor.ts", { classes: [classDeclaration("vendor.ts", "Port", true)] }),
+      ),
+      ambiguousExports: new Set(["Port"]),
+    };
+    const resolveModule: ModuleResolver = (_containing, specifier) =>
+      specifier === "vendor" ? { physicalPath: "/project/vendor.ts", record: vendor } : undefined;
+    const binder = createExportBinder({ diagnostics: [], resolveModule });
+
+    const symbol = binder.resolveLocal(entry, "Port");
+
+    expect(symbol).toBeUndefined();
   });
 });
 

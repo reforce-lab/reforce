@@ -17,6 +17,7 @@ test("the root entry exposes only the public programming model", () => {
     "Qualifier",
     "ReforceRuntimeError",
     "UnregisteredBeanTargetError",
+    "defineApplication",
     "defineBean",
   ]);
 });

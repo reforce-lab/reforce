@@ -49,6 +49,7 @@ interface ManifestLifecycle {
 
 interface ManifestBean {
   readonly id: string;
+  readonly origin: string;
   readonly kind: "class" | "factory";
   readonly source: ManifestSourceReference;
   readonly runtimeExport: ManifestExportReference;
@@ -167,11 +168,53 @@ function isExportReference(value: unknown): value is ManifestExportReference {
   if (!isObject(value) || !hasExactKeys(value, ["moduleSpecifier", "exportName"])) {
     return false;
   }
-  const moduleSpecifier = Reflect.get(value, "moduleSpecifier");
   return (
-    isRuntimeModuleSpecifier(moduleSpecifier) &&
-    isRelativeRuntimeModuleSpecifier(moduleSpecifier) &&
+    isRuntimeModuleSpecifier(Reflect.get(value, "moduleSpecifier")) &&
     isNonemptyString(Reflect.get(value, "exportName"))
+  );
+}
+
+// origin 线上格式（ADR 0004 决策 16，#120）：应用 bean 恒为 "application"，starter bean 为
+// `包名@版本`。scoped 包名自带前导 "@"，版本分隔取最后一个 "@" 且不得在首位或末位。
+function starterOriginPackageName(origin: string): string | undefined {
+  const separator = origin.lastIndexOf("@");
+  if (separator <= 0 || separator === origin.length - 1) {
+    return undefined;
+  }
+  const packageName = origin.slice(0, separator);
+  return isRelativePosixPath(packageName) ? packageName : undefined;
+}
+
+// starter bean 的专属不变量：id 是 `包名#导出名`，runtimeExport 是包内的裸 specifier（生成的
+// beans.ts 直接按包名 import），source 是发布包内的相对路径，因而不与 id 比对；M1 只有类构造
+// 语义的 starter bean（ADR 0004 M1 范围，#145）。
+function isStarterBean(
+  bean: {
+    readonly idParts: { readonly file: string; readonly exportName: string };
+    readonly kind: "class" | "factory";
+    readonly runtimeExport: ManifestExportReference;
+    readonly provides: readonly ManifestSymbolReference[];
+    readonly lifecycle: ManifestLifecycle;
+  },
+  origin: string,
+): boolean {
+  const packageName = starterOriginPackageName(origin);
+  if (packageName === undefined || bean.idParts.file !== packageName) {
+    return false;
+  }
+  const specifier = bean.runtimeExport.moduleSpecifier;
+  const insidePackage = specifier === packageName || specifier.startsWith(`${packageName}/`);
+  return (
+    bean.kind === "class" &&
+    !bean.lifecycle.dispose &&
+    insidePackage &&
+    bean.provides.some(
+      (provided) =>
+        provided.exportName === bean.runtimeExport.exportName &&
+        !provided.moduleSpecifier.startsWith(".") &&
+        (provided.moduleSpecifier === packageName ||
+          provided.moduleSpecifier.startsWith(`${packageName}/`)),
+    )
   );
 }
 
@@ -253,6 +296,7 @@ function isManifestBean(value: unknown): value is ManifestBean {
     !isObject(value) ||
     !hasExactKeys(value, [
       "id",
+      "origin",
       "kind",
       "source",
       "runtimeExport",
@@ -267,6 +311,7 @@ function isManifestBean(value: unknown): value is ManifestBean {
   }
   const id = Reflect.get(value, "id");
   const idParts = beanIdParts(id);
+  const origin = Reflect.get(value, "origin");
   const kind = Reflect.get(value, "kind");
   const source = Reflect.get(value, "source");
   const runtimeExport = Reflect.get(value, "runtimeExport");
@@ -276,9 +321,9 @@ function isManifestBean(value: unknown): value is ManifestBean {
   const lifecycle = Reflect.get(value, "lifecycle");
   if (
     idParts === undefined ||
+    !isNonemptyString(origin) ||
     (kind !== "class" && kind !== "factory") ||
     !isSourceReference(source) ||
-    source.file !== idParts.file ||
     !isExportReference(runtimeExport) ||
     runtimeExport.exportName !== idParts.exportName ||
     !isArrayOf(provides, isSymbolReference) ||
@@ -289,6 +334,16 @@ function isManifestBean(value: unknown): value is ManifestBean {
     !isArrayOf(qualifiers, isQualifier) ||
     !hasValidQualifiers(qualifiers, provides) ||
     !isLifecycle(lifecycle)
+  ) {
+    return false;
+  }
+  if (origin !== "application") {
+    return isStarterBean({ idParts, kind, runtimeExport, provides, lifecycle }, origin);
+  }
+  // 应用 bean：source.file 相对项目根且与 id 的 file 部分一致，runtimeExport 必须退回源码目录。
+  if (
+    source.file !== idParts.file ||
+    !isRelativeRuntimeModuleSpecifier(runtimeExport.moduleSpecifier)
   ) {
     return false;
   }
@@ -396,10 +451,11 @@ function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): bo
 // 源路径的大小写不敏感冲突检测：macOS/Windows 默认文件系统上，仅大小写不同的两个文件会
 // 互相覆盖，因此路径按 lowerCase 归一后必须唯一。compiler 编译期已拒绝此类冲突，此处对产物复检。
 function registerSourcePath(
+  namespace: string,
   source: ManifestSourceReference,
   portablePaths: Map<string, string>,
 ): boolean {
-  const portable = source.file.toLowerCase();
+  const portable = `${namespace}\0${source.file.toLowerCase()}`;
   const existing = portablePaths.get(portable);
   if (existing !== undefined && existing !== source.file) {
     return false;
@@ -408,6 +464,8 @@ function registerSourcePath(
   return true;
 }
 
+// 大小写冲突检查按 origin 分命名空间：应用 bean 的路径相对项目根，starter bean 的路径相对各自
+// 包根，跨命名空间的同名路径不是同一磁盘位置，不构成冲突。
 function hasPortableSourcePaths(beans: readonly ManifestBean[]): boolean {
   const portablePaths = new Map<string, string>();
   for (const bean of beans) {
@@ -421,7 +479,7 @@ function hasPortableSourcePaths(beans: readonly ManifestBean[]): boolean {
         qualifier.interface.declaration === undefined ? [] : [qualifier.interface.declaration],
       ),
     ];
-    if (sources.some((source) => !registerSourcePath(source, portablePaths))) {
+    if (sources.some((source) => !registerSourcePath(bean.origin, source, portablePaths))) {
       return false;
     }
   }

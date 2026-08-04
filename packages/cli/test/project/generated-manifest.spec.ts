@@ -27,6 +27,7 @@ function classBean(input: ClassBeanInput) {
   const specifier = input.specifier ?? `../../${input.file.replace(/\.ts$/u, ".js")}`;
   return {
     id: `${input.file}#${input.exportName}`,
+    origin: "application",
     kind: "class",
     source: sourceReference(input.file),
     runtimeExport: { moduleSpecifier: specifier, exportName: input.exportName },
@@ -154,5 +155,91 @@ describe("validateGeneratedManifestBytes runtime specifier", () => {
     const accepted = validateGeneratedManifestBytes(bytes);
 
     expect(accepted).toBe(true);
+  });
+});
+
+interface StarterBeanInput {
+  readonly origin?: string;
+  readonly moduleSpecifier?: string;
+  readonly sourceFile?: string;
+}
+
+function starterBean(input: StarterBeanInput = {}) {
+  return {
+    id: "@acme/starter-redis#RedisClient",
+    origin: input.origin ?? "@acme/starter-redis@1.2.0",
+    kind: "class",
+    source: sourceReference(input.sourceFile ?? "src/client.ts"),
+    runtimeExport: {
+      moduleSpecifier: input.moduleSpecifier ?? "@acme/starter-redis",
+      exportName: "RedisClient",
+    },
+    provides: [
+      {
+        displayName: "RedisClient",
+        moduleSpecifier: input.moduleSpecifier ?? "@acme/starter-redis",
+        exportName: "RedisClient",
+      },
+    ],
+    dependencies: [],
+    primary: false,
+    qualifiers: [],
+    lifecycle: { start: false, close: false, dispose: false },
+  };
+}
+
+function starterManifestBytes(bean: ReturnType<typeof starterBean>): Uint8Array {
+  return manifestBytes([bean], {
+    constructionOrder: [bean.id],
+    startActionOrder: [],
+    cleanupActionOrder: [],
+  });
+}
+
+// starter bean（ADR 0004 决策 16 的 origin 面）：id 为 `包名#导出名`，runtimeExport 是包内裸
+// specifier，source 相对包根——与应用 bean 的三条对应不变量分道校验。
+describe("validateGeneratedManifestBytes starter origin", () => {
+  test("accepts a starter bean with a package origin and bare runtime specifier", () => {
+    const accepted = validateGeneratedManifestBytes(starterManifestBytes(starterBean()));
+
+    expect(accepted).toBe(true);
+  });
+
+  test("rejects a bean without an origin field", () => {
+    const bean = classBean({ file: "src/resource.ts", exportName: "Resource" });
+    const { origin: _origin, ...withoutOrigin } = bean;
+    const bytes = manifestBytes([withoutOrigin], {
+      constructionOrder: [bean.id],
+      startActionOrder: [],
+      cleanupActionOrder: [],
+    });
+
+    const accepted = validateGeneratedManifestBytes(bytes);
+
+    expect(accepted).toBe(false);
+  });
+
+  test("rejects a starter origin whose package name disagrees with the bean id", () => {
+    const bytes = starterManifestBytes(starterBean({ origin: "@acme/other@1.0.0" }));
+
+    const accepted = validateGeneratedManifestBytes(bytes);
+
+    expect(accepted).toBe(false);
+  });
+
+  test("rejects a starter runtime specifier outside the starter package", () => {
+    const bytes = starterManifestBytes(starterBean({ moduleSpecifier: "@acme/other" }));
+
+    const accepted = validateGeneratedManifestBytes(bytes);
+
+    expect(accepted).toBe(false);
+  });
+
+  test("rejects an application bean whose runtime specifier is a bare package name", () => {
+    const bytes = singleBeanManifestBytes({ specifier: "@acme/starter-redis" });
+
+    const accepted = validateGeneratedManifestBytes(bytes);
+
+    expect(accepted).toBe(false);
   });
 });

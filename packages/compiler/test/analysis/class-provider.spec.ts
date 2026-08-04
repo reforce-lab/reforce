@@ -4,6 +4,7 @@ import type { ProviderDraft } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
+import { emptyStarterLinkage } from "@/linking/starter-linking";
 import type {
   ClassDeclaration,
   ClassMethodDeclaration,
@@ -138,6 +139,7 @@ function createLinker(input: LinkerInput = {}): ProjectLinker {
   const diagnostics: CompilerDiagnostic[] = [];
   return {
     diagnostics,
+    starterLinkage: emptyStarterLinkage,
     collectWatchInputs: () => ({
       fileDependencies: [],
       contextDependencies: [],
