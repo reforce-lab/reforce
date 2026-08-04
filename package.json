@@ -16,7 +16,6 @@
   "workspaces": [
     "e2e",
     "packages/*",
-    "platforms/*",
     "tooling/*"
   ],
   "catalog": {

@@ -125,22 +125,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/contracts": {
-      "name": "@reforce/contracts",
-      "version": "0.0.0",
-      "dependencies": {
-        "@swc/helpers": "catalog:",
-      },
-      "devDependencies": {
-        "@biomejs/biome": "catalog:",
-        "@reforce/tooling-rslib": "workspace:*",
-        "@reforce/tooling-tsconfig": "workspace:*",
-        "@rslib/core": "catalog:",
-        "@types/bun": "catalog:",
-        "type-fest": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/primitives": {
       "name": "@reforce/primitives",
       "version": "0.0.0",
@@ -210,38 +194,6 @@
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "platforms/fastify": {
-      "name": "@reforce/platform-fastify",
-      "version": "0.0.0",
-      "dependencies": {
-        "@swc/helpers": "catalog:",
-      },
-      "devDependencies": {
-        "@biomejs/biome": "catalog:",
-        "@reforce/tooling-rslib": "workspace:*",
-        "@reforce/tooling-tsconfig": "workspace:*",
-        "@rslib/core": "catalog:",
-        "@types/bun": "catalog:",
-        "type-fest": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
-    "platforms/hono": {
-      "name": "@reforce/platform-hono",
-      "version": "0.0.0",
-      "dependencies": {
-        "@swc/helpers": "catalog:",
-      },
-      "devDependencies": {
-        "@biomejs/biome": "catalog:",
-        "@reforce/tooling-rslib": "workspace:*",
-        "@reforce/tooling-tsconfig": "workspace:*",
-        "@rslib/core": "catalog:",
-        "@types/bun": "catalog:",
-        "type-fest": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -413,13 +365,7 @@
 
     "@reforce/context": ["@reforce/context@workspace:packages/context"],
 
-    "@reforce/contracts": ["@reforce/contracts@workspace:packages/contracts"],
-
     "@reforce/e2e": ["@reforce/e2e@workspace:e2e"],
-
-    "@reforce/platform-fastify": ["@reforce/platform-fastify@workspace:platforms/fastify"],
-
-    "@reforce/platform-hono": ["@reforce/platform-hono@workspace:platforms/hono"],
 
     "@reforce/primitives": ["@reforce/primitives@workspace:packages/primitives"],
 
