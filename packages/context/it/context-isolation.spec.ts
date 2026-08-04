@@ -130,7 +130,7 @@ describe("context isolation", () => {
     const constructionOrder = [registration.id];
     const configs: never[] = [];
     const definition = {
-      schemaVersion: 2 as const,
+      schemaVersion: 3 as const,
       configs,
       registrations,
       plans: {

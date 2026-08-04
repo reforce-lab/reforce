@@ -7,7 +7,12 @@ import type {
 import { snapshotApplicationDefinition } from "@/generated/validation";
 import { classBean, configBean, createApplicationContext } from "@/generated-runtime";
 import { defineBean, InvalidGeneratedDefinitionError } from "@/index";
-import { testDefinition, testDependency, testSource } from "../support/test-definition";
+import {
+  testCollectionDependency,
+  testDefinition,
+  testDependency,
+  testSource,
+} from "../support/test-definition";
 
 describe("generated definition validation", () => {
   test("a Bean ID must contain a relative path and direct export", () => {
@@ -180,7 +185,7 @@ describe("generated definition validation", () => {
   });
 });
 
-describe("generated definition config validation (schema v2)", () => {
+describe("generated definition config validation", () => {
   class ServerConfig {
     constructor(readonly values: object) {}
   }
@@ -227,16 +232,17 @@ describe("generated definition config validation (schema v2)", () => {
 
     const snapshot = snapshotApplicationDefinition(definition);
 
-    expect(snapshot.schemaVersion).toBe(2);
+    expect(snapshot.schemaVersion).toBe(3);
     expect(Object.isFrozen(snapshot.configs)).toBe(true);
     expect(Object.isFrozen(snapshot.configs[0])).toBe(true);
     expect(snapshot.configs[0]?.target).toBe(ServerConfig);
   });
 
-  test("rejects the retired schema version 1", () => {
+  test("rejects the retired schema versions 1 and 2", () => {
     const { configs: _configs, ...rest } = testDefinition([consumerRegistration()]);
 
-    expectInvalid({ ...rest, schemaVersion: 1 }, "schemaVersion must be 2");
+    expectInvalid({ ...rest, configs: [], schemaVersion: 1 }, "schemaVersion must be 3");
+    expectInvalid({ ...rest, configs: [], schemaVersion: 2 }, "schemaVersion must be 3");
   });
 
   test("rejects a definition without the configs field", () => {
@@ -330,6 +336,193 @@ describe("generated definition config validation (schema v2)", () => {
     });
 
     expectInvalid(definition, "unknown Bean ID");
+  });
+});
+
+describe("generated definition collection edges (schema v3)", () => {
+  class Handler {}
+  class OtherHandler {}
+  class Registry {}
+  const handlerId = "src/handler.ts#Handler";
+  const otherHandlerId = "src/other-handler.ts#OtherHandler";
+  const registryId = "src/registry.ts#Registry";
+
+  function handlerRegistration() {
+    return classBean({
+      id: handlerId,
+      source: testSource("handler"),
+      target: Handler,
+      dependencies: [],
+      create: () => new Handler(),
+      hooks: {},
+    });
+  }
+
+  function otherHandlerRegistration() {
+    return classBean({
+      id: otherHandlerId,
+      source: testSource("other-handler"),
+      target: OtherHandler,
+      dependencies: [],
+      create: () => new OtherHandler(),
+      hooks: {},
+    });
+  }
+
+  function registryRegistration(dependencies: readonly GeneratedDependency[]) {
+    return classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies,
+      create: () => new Registry(),
+      hooks: {},
+    });
+  }
+
+  // 负向用例的坏边不能经 classBean 构造——注册助手当场校验，异常会落在被断言的调用之外。
+  function rawRegistryRegistration(dependencies: readonly unknown[]): GeneratedBeanRegistration {
+    return {
+      kind: "class",
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: dependencies as readonly GeneratedDependency[], // 坏形状即测试输入，交给运行时校验裁决
+      create: () => new Registry(),
+      hooks: {},
+    };
+  }
+
+  function expectInvalid(definition: unknown, fragment: string): void {
+    const create = () => Reflect.apply(createApplicationContext, undefined, [definition]);
+    expect(create).toThrow(InvalidGeneratedDefinitionError);
+    expect(create).toThrow(fragment);
+  }
+
+  test("accepts a collection edge and freezes its member list in the snapshot", () => {
+    const definition = testDefinition(
+      [
+        handlerRegistration(),
+        otherHandlerRegistration(),
+        registryRegistration([
+          testCollectionDependency(0, [
+            { targetId: handlerId, mode: "eager" },
+            { targetId: otherHandlerId, mode: "eager" },
+          ]),
+        ]),
+      ],
+      { constructionOrder: [handlerId, otherHandlerId, registryId] },
+    );
+
+    const snapshot = snapshotApplicationDefinition(definition);
+
+    const dependency = snapshot.registrations[2]?.dependencies[0];
+    if (dependency?.mode !== "collection") {
+      throw new Error("Expected a collection dependency in the snapshot.");
+    }
+    expect(Object.isFrozen(dependency.members)).toBe(true);
+    expect(dependency.members).toEqual([
+      { targetId: handlerId, mode: "eager" },
+      { targetId: otherHandlerId, mode: "eager" },
+    ]);
+  });
+
+  test("accepts an empty member list", () => {
+    const definition = testDefinition([registryRegistration([testCollectionDependency(0, [])])]);
+
+    const snapshot = snapshotApplicationDefinition(definition);
+
+    const dependency = snapshot.registrations[0]?.dependencies[0];
+    if (dependency?.mode !== "collection") {
+      throw new Error("Expected a collection dependency in the snapshot.");
+    }
+    expect(dependency.members).toEqual([]);
+  });
+
+  test("a snapshot keeps its own copy of a collection member list", () => {
+    const members = [{ targetId: handlerId, mode: "eager" as const }];
+    const definition = testDefinition(
+      [handlerRegistration(), registryRegistration([testCollectionDependency(0, members)])],
+      { constructionOrder: [handlerId, registryId] },
+    );
+
+    const snapshot = snapshotApplicationDefinition(definition);
+    members.push({ targetId: handlerId, mode: "eager" });
+
+    const dependency = snapshot.registrations[1]?.dependencies[0];
+    if (dependency?.mode !== "collection") {
+      throw new Error("Expected a collection dependency in the snapshot.");
+    }
+    expect(dependency.members).toHaveLength(1);
+  });
+
+  test("rejects a collection edge that also carries a single-target field", () => {
+    const tampered = { ...testCollectionDependency(0, []), targetId: handlerId };
+    const definition = testDefinition([handlerRegistration(), rawRegistryRegistration([tampered])]);
+
+    expectInvalid(definition, 'unknown field "targetId"');
+  });
+
+  test("rejects a single edge that carries a member list", () => {
+    const tampered = { ...testDependency(0, handlerId, "eager"), members: [] };
+    const definition = testDefinition(
+      [handlerRegistration(), rawRegistryRegistration([tampered])],
+      { constructionOrder: [handlerId, registryId] },
+    );
+
+    expectInvalid(definition, 'unknown field "members"');
+  });
+
+  test("rejects an explicit-lazy member mode", () => {
+    const definition = testDefinition([
+      handlerRegistration(),
+      rawRegistryRegistration([
+        {
+          ...testCollectionDependency(0, []),
+          members: [{ targetId: handlerId, mode: "explicit-lazy" }],
+        },
+      ]),
+    ]);
+
+    expectInvalid(definition, "mode");
+  });
+
+  test("rejects duplicate member targets", () => {
+    const definition = testDefinition([
+      handlerRegistration(),
+      rawRegistryRegistration([
+        testCollectionDependency(0, [
+          { targetId: handlerId, mode: "eager" },
+          { targetId: handlerId, mode: "eager" },
+        ]),
+      ]),
+    ]);
+
+    expectInvalid(definition, "duplicate");
+  });
+
+  test("rejects a member referencing an unknown Bean", () => {
+    const definition = testDefinition([
+      rawRegistryRegistration([
+        testCollectionDependency(0, [{ targetId: "src/missing.ts#Missing", mode: "eager" }]),
+      ]),
+    ]);
+
+    expectInvalid(definition, "unknown Bean");
+  });
+
+  test("eager collection members must precede their consumer", () => {
+    const definition = testDefinition(
+      [
+        handlerRegistration(),
+        registryRegistration([
+          testCollectionDependency(0, [{ targetId: handlerId, mode: "eager" }]),
+        ]),
+      ],
+      { constructionOrder: [registryId, handlerId] },
+    );
+
+    expectInvalid(definition, "must place eager dependency");
   });
 });
 

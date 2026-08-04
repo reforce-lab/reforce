@@ -4,14 +4,18 @@ import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
   GeneratedClassRegistration,
+  GeneratedCollectionDependency,
+  GeneratedCollectionMember,
   GeneratedConfigRegistration,
   GeneratedDependency,
   GeneratedFactoryRegistration,
+  GeneratedSingleDependency,
   GeneratedSourcePosition,
   GeneratedSourceReference,
 } from "@/generated/contracts";
 
-const dependencyModes = new Set(["eager", "cycle-proxy", "explicit-lazy"]);
+const singleDependencyModes = new Set(["eager", "cycle-proxy", "explicit-lazy"]);
+const collectionMemberModes = new Set(["eager", "cycle-proxy"]);
 
 function fail(detail: string): never {
   throw new InvalidGeneratedDefinitionError(detail);
@@ -116,26 +120,75 @@ function validateSourceReference(
   }
 }
 
+function validateParameterIndex(dependency: object, index: number, path: string): void {
+  const parameterIndex = requireNonNegativeInteger(
+    Reflect.get(dependency, "parameterIndex"),
+    `${path}.parameterIndex`,
+  );
+  if (parameterIndex !== index) {
+    fail(`${path}.parameterIndex must equal its array index.`);
+  }
+}
+
+function validateCollectionMember(
+  value: unknown,
+  path: string,
+): asserts value is GeneratedCollectionMember {
+  const member = requireObject(value, path);
+  requireExactKeys(member, ["targetId", "mode"], path);
+  validateGeneratedBeanId(Reflect.get(member, "targetId"), `${path}.targetId`);
+  const mode = Reflect.get(member, "mode");
+  if (typeof mode !== "string" || !collectionMemberModes.has(mode)) {
+    return fail(`${path}.mode is unknown.`);
+  }
+}
+
+function validateCollectionDependency(
+  dependency: object,
+  index: number,
+  path: string,
+): asserts dependency is GeneratedCollectionDependency {
+  requireExactKeys(dependency, ["parameterIndex", "mode", "members", "source"], path);
+  validateParameterIndex(dependency, index, path);
+  const members = requireArray(Reflect.get(dependency, "members"), `${path}.members`);
+  const seen = new Set<string>();
+  for (const [memberIndex, member] of members.entries()) {
+    const memberPath = `${path}.members[${memberIndex}]`;
+    validateCollectionMember(member, memberPath);
+    if (seen.has(member.targetId)) {
+      fail(`${path}.members contains duplicate target "${member.targetId}".`);
+    }
+    seen.add(member.targetId);
+  }
+  validateSourceReference(Reflect.get(dependency, "source"), `${path}.source`);
+}
+
+function validateSingleDependency(
+  dependency: object,
+  index: number,
+  path: string,
+): asserts dependency is GeneratedSingleDependency {
+  requireExactKeys(dependency, ["parameterIndex", "targetId", "mode", "source"], path);
+  validateParameterIndex(dependency, index, path);
+  validateGeneratedBeanId(Reflect.get(dependency, "targetId"), `${path}.targetId`);
+  const mode = Reflect.get(dependency, "mode");
+  if (typeof mode !== "string" || !singleDependencyModes.has(mode)) {
+    return fail(`${path}.mode is unknown.`);
+  }
+  validateSourceReference(Reflect.get(dependency, "source"), `${path}.source`);
+}
+
 function validateDependency(
   value: unknown,
   index: number,
   path: string,
 ): asserts value is GeneratedDependency {
   const dependency = requireObject(value, path);
-  requireExactKeys(dependency, ["parameterIndex", "targetId", "mode", "source"], path);
-  const parameterIndex = requireNonNegativeInteger(
-    Reflect.get(dependency, "parameterIndex"),
-    `${path}.parameterIndex`,
-  );
-  if (parameterIndex !== index) {
-    return fail(`${path}.parameterIndex must equal its array index.`);
+  if (Reflect.get(dependency, "mode") === "collection") {
+    validateCollectionDependency(dependency, index, path);
+    return;
   }
-  validateGeneratedBeanId(Reflect.get(dependency, "targetId"), `${path}.targetId`);
-  const mode = Reflect.get(dependency, "mode");
-  if (typeof mode !== "string" || !dependencyModes.has(mode)) {
-    return fail(`${path}.mode is unknown.`);
-  }
-  validateSourceReference(Reflect.get(dependency, "source"), `${path}.source`);
+  validateSingleDependency(dependency, index, path);
 }
 
 function validateDependencies(value: unknown, path: string): readonly unknown[] {
@@ -274,6 +327,54 @@ function requireSameSet(
   }
 }
 
+function validateEagerEdgePosition(
+  edge: { readonly targetId: string; readonly mode: string },
+  consumerId: string,
+  consumerIndex: number,
+  constructionIndex: ReadonlyMap<string, number>,
+  configIds: ReadonlySet<string>,
+): void {
+  // Config instances are bound before the construction loop starts, so an edge onto a
+  // config is satisfied regardless of the consumer's plan position.
+  if (edge.mode !== "eager" || configIds.has(edge.targetId)) {
+    return;
+  }
+  const dependencyIndex = constructionIndex.get(edge.targetId);
+  if (dependencyIndex === undefined || dependencyIndex >= consumerIndex) {
+    fail(
+      `plans.constructionOrder must place eager dependency "${edge.targetId}" before "${consumerId}".`,
+    );
+  }
+}
+
+function validateEagerConstructionPositions(
+  constructionOrder: readonly string[],
+  registrations: readonly GeneratedBeanRegistration[],
+  configIds: ReadonlySet<string>,
+): void {
+  const constructionIndex = new Map(constructionOrder.map((id, index) => [id, index]));
+  for (const registration of registrations) {
+    const consumerIndex = constructionIndex.get(registration.id);
+    // Unreachable at runtime (requireSameSet already proved the plan covers every
+    // registration), but Map.get is typed `number | undefined` and the comparison below
+    // needs a number, so this guard exists to narrow it.
+    if (consumerIndex === undefined) {
+      fail(`plans.constructionOrder omits "${registration.id}".`);
+    }
+    for (const dependency of registration.dependencies) {
+      for (const edge of dependencyEdges(dependency)) {
+        validateEagerEdgePosition(
+          edge,
+          registration.id,
+          consumerIndex,
+          constructionIndex,
+          configIds,
+        );
+      }
+    }
+  }
+}
+
 function validatePlans(
   value: unknown,
   registrations: readonly GeneratedBeanRegistration[],
@@ -288,33 +389,7 @@ function validatePlans(
     knownIds,
   );
   requireSameSet(constructionOrder, knownIds, "plans.constructionOrder");
-
-  const constructionIndex = new Map(constructionOrder.map((id, index) => [id, index]));
-  for (const registration of registrations) {
-    const consumerIndex = constructionIndex.get(registration.id);
-    // Unreachable at runtime (requireSameSet above already proved the plan covers every
-    // registration), but Map.get is typed `number | undefined` and the comparison below
-    // needs a number, so this guard exists to narrow it.
-    if (consumerIndex === undefined) {
-      fail(`plans.constructionOrder omits "${registration.id}".`);
-    }
-    for (const dependency of registration.dependencies) {
-      if (dependency.mode !== "eager") {
-        continue;
-      }
-      // Config instances are bound before the construction loop starts, so an edge onto a
-      // config is satisfied regardless of the consumer's plan position.
-      if (configIds.has(dependency.targetId)) {
-        continue;
-      }
-      const dependencyIndex = constructionIndex.get(dependency.targetId);
-      if (dependencyIndex === undefined || dependencyIndex >= consumerIndex) {
-        fail(
-          `plans.constructionOrder must place eager dependency "${dependency.targetId}" before "${registration.id}".`,
-        );
-      }
-    }
-  }
+  validateEagerConstructionPositions(constructionOrder, registrations, configIds);
 
   const expectedStart = new Set(
     registrations.flatMap((registration) =>
@@ -389,6 +464,30 @@ function validateRegistrationIdentities(
   }
 }
 
+// 计划与目标校验只关心"这条边最终指向谁、以什么模式"；集合边按成员展开成同构的目标边。
+function dependencyEdges(
+  dependency: GeneratedDependency,
+): readonly { readonly targetId: string; readonly mode: string }[] {
+  return dependency.mode === "collection" ? dependency.members : [dependency];
+}
+
+function validateTargetEdge(
+  edge: { readonly targetId: string; readonly mode: string },
+  consumerId: string,
+  beanIds: ReadonlySet<string>,
+  configIds: ReadonlySet<string>,
+): void {
+  if (configIds.has(edge.targetId)) {
+    if (edge.mode !== "eager") {
+      fail(`dependency of "${consumerId}" onto config "${edge.targetId}" must be eager.`);
+    }
+    return;
+  }
+  if (!beanIds.has(edge.targetId)) {
+    fail(`dependency of "${consumerId}" references unknown Bean "${edge.targetId}".`);
+  }
+}
+
 function validateDependencyTargets(
   registrations: readonly GeneratedBeanRegistration[],
   configIds: ReadonlySet<string>,
@@ -396,18 +495,8 @@ function validateDependencyTargets(
   const beanIds = new Set(registrations.map((registration) => registration.id));
   for (const registration of registrations) {
     for (const dependency of registration.dependencies) {
-      if (configIds.has(dependency.targetId)) {
-        if (dependency.mode !== "eager") {
-          fail(
-            `dependency of "${registration.id}" onto config "${dependency.targetId}" must be eager.`,
-          );
-        }
-        continue;
-      }
-      if (!beanIds.has(dependency.targetId)) {
-        fail(
-          `dependency of "${registration.id}" references unknown Bean "${dependency.targetId}".`,
-        );
+      for (const edge of dependencyEdges(dependency)) {
+        validateTargetEdge(edge, registration.id, beanIds, configIds);
       }
     }
   }
@@ -435,8 +524,8 @@ function validateApplicationDefinition(value: unknown): void {
     ["schemaVersion", "configs", "configBinding", "registrations", "plans"],
     "definition",
   );
-  if (Reflect.get(definition, "schemaVersion") !== 2) {
-    fail("definition.schemaVersion must be 2.");
+  if (Reflect.get(definition, "schemaVersion") !== 3) {
+    fail("definition.schemaVersion must be 3.");
   }
   const configCandidates = requireArray(Reflect.get(definition, "configs"), "definition.configs");
   const configs: GeneratedConfigRegistration[] = [];
@@ -478,6 +567,18 @@ function cloneSource(source: GeneratedSourceReference): GeneratedSourceReference
 }
 
 function cloneDependency(dependency: GeneratedDependency): GeneratedDependency {
+  if (dependency.mode === "collection") {
+    return Object.freeze({
+      parameterIndex: dependency.parameterIndex,
+      mode: "collection",
+      members: Object.freeze(
+        dependency.members.map((member) =>
+          Object.freeze({ targetId: member.targetId, mode: member.mode }),
+        ),
+      ),
+      source: cloneSource(dependency.source),
+    });
+  }
   return Object.freeze({
     parameterIndex: dependency.parameterIndex,
     targetId: dependency.targetId,
@@ -567,7 +668,7 @@ export function snapshotApplicationDefinition(
 ): GeneratedApplicationDefinition {
   validateApplicationDefinition(definition);
   return Object.freeze({
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     configs: Object.freeze(definition.configs.map(cloneConfigRegistration)),
     // The binding is carried by reference: it is behavior, not data, and the bind contract
     // is per-call stateless, so a clone could only obscure its identity.

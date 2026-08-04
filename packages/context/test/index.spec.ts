@@ -14,6 +14,7 @@ test("the root entry exposes only the public programming model", () => {
     "EarlyBeanAccessError",
     "Injectable",
     "InvalidGeneratedDefinitionError",
+    "Order",
     "Primary",
     "Qualifier",
     "ReforceRuntimeError",

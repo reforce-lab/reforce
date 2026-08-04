@@ -87,3 +87,14 @@ export function Qualifier(
   }
   return () => undefined;
 }
+
+// Order 只服务集合注入的成员排序（ADR 0006 W6，#142 / #150）：数值升序，同序值与无 @Order 的
+// 成员按 beanId 决胜。与 Qualifier 同理保留运行时守卫，让未经编译的调用方立刻失败。
+export function Order(
+  order: number,
+): <T extends BeanClass>(value: T, context: ClassDecoratorContext<T>) => void {
+  if (typeof order !== "number" || !Number.isInteger(order)) {
+    throw new TypeError("Order value must be an integer.");
+  }
+  return () => undefined;
+}

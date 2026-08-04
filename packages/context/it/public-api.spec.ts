@@ -5,7 +5,7 @@ import type {
   GeneratedFactoryRegistration,
 } from "@/generated/contracts";
 import { factoryBean } from "@/generated-runtime";
-import { defineBean, Injectable, Primary, Qualifier, ReforceRuntimeError } from "@/index";
+import { defineBean, Injectable, Order, Primary, Qualifier, ReforceRuntimeError } from "@/index";
 
 interface BaseResource {
   readonly base: true;
@@ -61,11 +61,18 @@ describe("public bean declarations", () => {
     @Injectable()
     @Primary()
     @Qualifier("main")
+    @Order(1)
     class Resource {}
 
     const instance = new Resource();
 
     expect(instance).toBeInstanceOf(Resource);
+  });
+
+  test("Order rejects a non-integer argument at declaration time", () => {
+    expect(() => Reflect.apply(Order, undefined, ["first"])).toThrow(TypeError);
+    expect(() => Reflect.apply(Order, undefined, [1.5])).toThrow(TypeError);
+    expect(() => Order(-1)).not.toThrow();
   });
 
   test("a factory remains dormant until its registration is invoked", () => {

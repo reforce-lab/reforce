@@ -234,6 +234,56 @@ test("reads a parenthesized defineBean option value as its inner literal", () =>
   });
 });
 
+test("lowers array constructor parameters with their readonly modifier", () => {
+  const unit = parseFile(
+    [
+      "export class Registry {",
+      "  constructor(",
+      "    readonly ordered: readonly Handler[],",
+      "    readonly mutable: Handler[],",
+      "    readonly nested: readonly (readonly Handler[])[],",
+      "  ) {}",
+      "}",
+    ].join("\n"),
+  );
+
+  const parameters = unit.classes[0]?.constructors[0]?.parameters ?? [];
+  expect(
+    parameters.map((parameter) =>
+      parameter.type.kind === "array"
+        ? {
+            kind: parameter.type.kind,
+            readonlyModifier: parameter.type.readonlyModifier,
+            element: parameter.type.element.kind,
+          }
+        : { kind: parameter.type.kind },
+    ),
+  ).toEqual([
+    { kind: "array", readonlyModifier: true, element: "reference" },
+    { kind: "array", readonlyModifier: false, element: "reference" },
+    { kind: "array", readonlyModifier: true, element: "array" },
+  ]);
+});
+
+test("lowers integer decorator arguments including a unary minus literal", () => {
+  const unit = parseFile(
+    ["@Order(5) export class First {}", "@Order(-1) export class Second {}"].join("\n"),
+  );
+
+  expect(unit.classes.map((declaration) => declaration.decorators[0]?.arguments[0])).toMatchObject([
+    { kind: "number-literal", value: 5 },
+    { kind: "number-literal", value: -1 },
+  ]);
+});
+
+test("keeps a computed numeric decorator argument unsupported", () => {
+  const unit = parseFile("@Order(1 + 2) export class Service {}");
+
+  expect(unit.classes[0]?.decorators[0]?.arguments).toMatchObject([
+    { kind: "unsupported", expressionKind: "binary" },
+  ]);
+});
+
 test("reads a parenthesized decorator argument as its inner literal", () => {
   const unit = parseFile('@Qualifier(("primary")) export class Service {}');
 

@@ -31,7 +31,7 @@ export function testDefinition(
   registrations: readonly GeneratedBeanRegistration[],
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     configs: [],
     registrations,
     plans: {

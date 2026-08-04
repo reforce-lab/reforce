@@ -36,11 +36,34 @@ interface ManifestQualifier {
   readonly member: string;
 }
 
-export interface ManifestDependency {
+export interface ManifestSingleDependency {
   readonly parameterIndex: number;
   readonly targetId: string;
   readonly mode: "eager" | "cycle-proxy" | "explicit-lazy";
   readonly source: ManifestSourceReference;
+}
+
+export interface ManifestCollectionMember {
+  readonly targetId: string;
+  readonly mode: "eager" | "cycle-proxy";
+}
+
+// 集合边（ADR 0006 W6，#150 / schema v3）：members 顺序即注入顺序，编译期已按 @Order 与
+// beanId 决胜写死。
+export interface ManifestCollectionDependency {
+  readonly parameterIndex: number;
+  readonly mode: "collection";
+  readonly members: readonly ManifestCollectionMember[];
+  readonly source: ManifestSourceReference;
+}
+
+export type ManifestDependency = ManifestSingleDependency | ManifestCollectionDependency;
+
+// 计划位置与目标存在性检查只关心"边指向谁、什么模式"；集合边按成员展开成同构目标边。
+export function manifestDependencyEdges(
+  dependency: ManifestDependency,
+): readonly { readonly targetId: string; readonly mode: string }[] {
+  return dependency.mode === "collection" ? dependency.members : [dependency];
 }
 
 interface ManifestLifecycle {
@@ -58,6 +81,8 @@ export interface ManifestBean {
   readonly provides: readonly ManifestSymbolReference[];
   readonly dependencies: readonly ManifestDependency[];
   readonly primary: boolean;
+  // @Order(n) 的整数值（ADR 0006 W6）；仅带标记的 bean 写该键。
+  readonly order?: number;
   readonly qualifiers: readonly ManifestQualifier[];
   readonly lifecycle: ManifestLifecycle;
 }
@@ -78,7 +103,7 @@ interface ManifestPlans {
 }
 
 export interface GeneratedManifest {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly configs: readonly ManifestConfig[];
   readonly beans: readonly ManifestBean[];
   readonly plans: ManifestPlans;
@@ -282,8 +307,43 @@ function isLifecycle(value: unknown): value is ManifestLifecycle {
   );
 }
 
+function isCollectionMember(value: unknown): value is ManifestCollectionMember {
+  if (!isObject(value) || !hasExactKeys(value, ["targetId", "mode"])) {
+    return false;
+  }
+  const mode = Reflect.get(value, "mode");
+  return (
+    beanIdParts(Reflect.get(value, "targetId")) !== undefined &&
+    (mode === "eager" || mode === "cycle-proxy")
+  );
+}
+
+function isCollectionDependency(value: object, index: number): boolean {
+  if (!hasExactKeys(value, ["parameterIndex", "mode", "members", "source"])) {
+    return false;
+  }
+  const members = Reflect.get(value, "members");
+  if (
+    Reflect.get(value, "parameterIndex") !== index ||
+    !isArrayOf(members, (item, _memberIndex): item is ManifestCollectionMember =>
+      isCollectionMember(item),
+    ) ||
+    !isSourceReference(Reflect.get(value, "source"))
+  ) {
+    return false;
+  }
+  const targets = members.map((member) => member.targetId);
+  return new Set(targets).size === targets.length;
+}
+
 function isDependency(value: unknown, index: number): value is ManifestDependency {
-  if (!isObject(value) || !hasExactKeys(value, ["parameterIndex", "targetId", "mode", "source"])) {
+  if (!isObject(value)) {
+    return false;
+  }
+  if (Reflect.get(value, "mode") === "collection") {
+    return isCollectionDependency(value, index);
+  }
+  if (!hasExactKeys(value, ["parameterIndex", "targetId", "mode", "source"])) {
     return false;
   }
   const mode = Reflect.get(value, "mode");
@@ -317,19 +377,27 @@ function hasValidQualifiers(
 function isManifestBean(value: unknown): value is ManifestBean {
   if (
     !isObject(value) ||
-    !hasExactKeys(value, [
-      "id",
-      "origin",
-      "kind",
-      "source",
-      "runtimeExport",
-      "provides",
-      "dependencies",
-      "primary",
-      "qualifiers",
-      "lifecycle",
-    ])
+    !hasExactKeys(
+      value,
+      [
+        "id",
+        "origin",
+        "kind",
+        "source",
+        "runtimeExport",
+        "provides",
+        "dependencies",
+        "primary",
+        "qualifiers",
+        "lifecycle",
+      ],
+      ["order"],
+    )
   ) {
+    return false;
+  }
+  const order = Reflect.get(value, "order");
+  if (order !== undefined && !Number.isInteger(order)) {
     return false;
   }
   const id = Reflect.get(value, "id");
@@ -434,17 +502,19 @@ function hasEagerDependenciesConstructedFirst(
     if (consumerIndex === undefined) {
       return false;
     }
-    return bean.dependencies.every((dependency) => {
-      if (dependency.mode !== "eager") {
-        return true;
-      }
-      // config 实例在绑定 phase 先于构造循环产生，指向它的 eager 边不受计划位置约束。
-      if (configIds.has(dependency.targetId)) {
-        return true;
-      }
-      const dependencyIndex = constructionIndexes.get(dependency.targetId);
-      return dependencyIndex !== undefined && dependencyIndex < consumerIndex;
-    });
+    return bean.dependencies.every((dependency) =>
+      manifestDependencyEdges(dependency).every((edge) => {
+        if (edge.mode !== "eager") {
+          return true;
+        }
+        // config 实例在绑定 phase 先于构造循环产生，指向它的 eager 边不受计划位置约束。
+        if (configIds.has(edge.targetId)) {
+          return true;
+        }
+        const dependencyIndex = constructionIndexes.get(edge.targetId);
+        return dependencyIndex !== undefined && dependencyIndex < consumerIndex;
+      }),
+    );
   });
 }
 
@@ -556,11 +626,12 @@ function hasPortableSourcePaths(
 
 function isGeneratedManifest(value: unknown): value is GeneratedManifest {
   // schemaVersion 是硬版本门：无法识别的 schema 直接拒绝，不按错版契约解释产物字节。
-  // v2（ADR 0005，#130）新增顶层 configs；与 compiler 的 renderManifest 同步演进。
+  // v2（ADR 0005，#130）新增顶层 configs；v3（ADR 0006 W6，#150）新增集合依赖形态与 bean 的
+  // order 键；与 compiler 的 renderManifest 同步演进。
   if (
     !isObject(value) ||
     !hasExactKeys(value, ["schemaVersion", "configs", "beans", "plans"]) ||
-    Reflect.get(value, "schemaVersion") !== 2
+    Reflect.get(value, "schemaVersion") !== 3
   ) {
     return false;
   }
@@ -588,7 +659,11 @@ function isGeneratedManifest(value: unknown): value is GeneratedManifest {
     knownIds.size !== ids.length ||
     new Set(portableIds).size !== portableIds.length ||
     !hasPortableSourcePaths(beans, configs) ||
-    beans.some((bean) => bean.dependencies.some((dependency) => !knownIds.has(dependency.targetId)))
+    beans.some((bean) =>
+      bean.dependencies.some((dependency) =>
+        manifestDependencyEdges(dependency).some((edge) => !knownIds.has(edge.targetId)),
+      ),
+    )
   ) {
     return false;
   }

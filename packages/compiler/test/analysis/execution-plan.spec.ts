@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
 import { createExecutionPlans } from "@/analysis/execution-plan";
-import type { DependencyModel } from "@/analysis/model";
+import type { CollectionMemberModel, SingleDependencyModel } from "@/analysis/model";
 
-type TestDependency = Pick<DependencyModel, "mode" | "parameterIndex" | "targetId">;
+type TestDependency = Pick<SingleDependencyModel, "mode" | "parameterIndex" | "targetId">;
 
 interface TestProvider {
   readonly kind: "class";
@@ -202,6 +202,29 @@ describe("execution plans", () => {
       startActionOrder: ["b", "z", "a"],
       cleanupActionOrder: ["a", "z", "b"],
     });
+  });
+
+  test("marks a collection member inside an eager cycle as a cycle proxy", () => {
+    const member: CollectionMemberModel = { targetId: "r", mode: "eager" };
+    const outside: CollectionMemberModel = { targetId: "s", mode: "eager" };
+    const registry = {
+      kind: "class" as const,
+      id: "z",
+      dependencies: [{ parameterIndex: 0, members: [member, outside] }],
+      startHook: false,
+      closeHook: false,
+    };
+    const providers = [
+      registry,
+      lifecycleProvider("r", [dependency("z")]),
+      lifecycleProvider("s", []),
+    ];
+
+    const plans = createExecutionPlans(providers);
+
+    expect(member.mode).toBe("cycle-proxy");
+    expect(outside.mode).toBe("eager");
+    expect(plans.constructionOrder).toEqual(["s", "z", "r"]);
   });
 
   test("produces the same plans and proxy edges after shuffled inputs", () => {

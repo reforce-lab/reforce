@@ -7,6 +7,7 @@ export {
 export {
   defineBean,
   Injectable,
+  Order,
   Primary,
   Qualifier,
 } from "@/bean-declaration";

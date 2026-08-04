@@ -1185,6 +1185,28 @@ describe.serial("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // 集合注入主路径（ADR 0006 W6，#142 / #150）：readonly DefaultPort[] 收进全部实现，
+  // @Order(1) 的 preferred 排在无 @Order 的 fallback 之前，顺序由编译期写进生成物。
+  test(
+    "injects the ordered provider collection through the isolated artifact",
+    async () => {
+      const fixture = currentApplication();
+      const artifactRoot = fixture.isolatedArtifact.projectRoot;
+      const collectionOut = join(artifactRoot, "collection-artifact.out");
+
+      await executeArtifact({
+        executable: process.execPath,
+        projectRoot: artifactRoot,
+        readyPath: join(artifactRoot, "collection-artifact.ready"),
+        closedPath: join(artifactRoot, "collection-artifact.closed"),
+        extraEnv: { REFORCE_E2E_COLLECTION_OUT: collectionOut },
+      });
+
+      expect(await readFile(collectionOut, "utf8")).toBe("preferred,fallback\n");
+    },
+    commandTimeout,
+  );
+
   // 配置注入主路径（ADR 0005，#130 / #146）：五层合成经 REFORCE_PROFILE 选层、进程 env 压顶，
   // 绑定实例注入 bean 后经 start 与 production artifact 两条链路取值。
   test(
