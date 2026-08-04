@@ -840,13 +840,13 @@ describe("full chain over a fake adapter", () => {
     await writeFile(
       path.join(project.projectRoot, "integration.ts"),
       [
-        "import {",
-        "  createWebApplication,",
-        "  type PreparedRoute,",
-        "  type WebApplication,",
-        "  type WebApplicationHandle,",
-        "  type WebEngineAdapter,",
-        '} from "@reforce/web";',
+        'import { createWebApplication } from "@reforce/web";',
+        "import type {",
+        "  PreparedRoute,",
+        "  WebApplication,",
+        "  WebApplicationHandle,",
+        "  WebEngineAdapter,",
+        '} from "@reforce/web/adapter";',
         'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
         'import { routeTable } from "./.reforce/generated/routes.js";',
         'import { LogBook } from "./src/log-book.js";',
@@ -1003,7 +1003,7 @@ describe("web engine wiring", () => {
   }
 
   const engineDeclaration = [
-    'import type { WebApplication, WebApplicationHandle } from "@reforce/web";',
+    'import type { WebApplication, WebApplicationHandle } from "@reforce/web/adapter";',
     "export declare class WebEngine {",
     "  readonly name: string;",
     "  start(application: WebApplication): WebApplicationHandle;",
