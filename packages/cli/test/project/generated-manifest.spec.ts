@@ -54,7 +54,7 @@ interface Plans {
 }
 
 function manifestBytes(beans: readonly object[], plans: Plans): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify({ schemaVersion: 2, configs: [], beans, plans }));
+  return new TextEncoder().encode(JSON.stringify({ schemaVersion: 3, configs: [], beans, plans }));
 }
 
 function singleBeanManifestBytes(input: Omit<ClassBeanInput, "file" | "exportName">): Uint8Array {
@@ -241,5 +241,115 @@ describe("validateGeneratedManifestBytes starter origin", () => {
     const accepted = validateGeneratedManifestBytes(bytes);
 
     expect(accepted).toBe(false);
+  });
+});
+
+describe("validateGeneratedManifestBytes collection dependencies (schema v3)", () => {
+  function collectionDependency(
+    members: readonly { readonly targetId: string; readonly mode: string }[],
+    file: string,
+  ) {
+    return { parameterIndex: 0, mode: "collection", members, source: sourceReference(file) };
+  }
+
+  function collectionManifestBytes(
+    members: readonly { readonly targetId: string; readonly mode: string }[],
+    constructionOrder?: readonly string[],
+  ): Uint8Array {
+    const member = classBean({ file: "src/handler.ts", exportName: "Handler" });
+    const registry = classBean({
+      file: "src/registry.ts",
+      exportName: "Registry",
+      dependencies: [collectionDependency(members, "src/registry.ts")],
+    });
+    return manifestBytes([member, registry], {
+      constructionOrder: constructionOrder ?? [member.id, registry.id],
+      startActionOrder: [],
+      cleanupActionOrder: [],
+    });
+  }
+
+  test("accepts a collection edge whose eager members precede the consumer", () => {
+    const bytes = collectionManifestBytes([{ targetId: "src/handler.ts#Handler", mode: "eager" }]);
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(true);
+  });
+
+  test("accepts an empty member list", () => {
+    const bytes = collectionManifestBytes([]);
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(true);
+  });
+
+  test("rejects an eager member constructed after its consumer", () => {
+    const bytes = collectionManifestBytes(
+      [{ targetId: "src/handler.ts#Handler", mode: "eager" }],
+      ["src/registry.ts#Registry", "src/handler.ts#Handler"],
+    );
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(false);
+  });
+
+  test("rejects an explicit-lazy member mode", () => {
+    const bytes = collectionManifestBytes([
+      { targetId: "src/handler.ts#Handler", mode: "explicit-lazy" },
+    ]);
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(false);
+  });
+
+  test("rejects duplicate member targets", () => {
+    const bytes = collectionManifestBytes([
+      { targetId: "src/handler.ts#Handler", mode: "eager" },
+      { targetId: "src/handler.ts#Handler", mode: "eager" },
+    ]);
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(false);
+  });
+
+  test("rejects a member referencing an unknown Bean", () => {
+    const bytes = collectionManifestBytes([{ targetId: "src/missing.ts#Missing", mode: "eager" }]);
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(false);
+  });
+
+  test("rejects a collection edge that also carries a single-target field", () => {
+    const member = classBean({ file: "src/handler.ts", exportName: "Handler" });
+    const registry = classBean({
+      file: "src/registry.ts",
+      exportName: "Registry",
+      dependencies: [
+        {
+          parameterIndex: 0,
+          mode: "collection",
+          targetId: "src/handler.ts#Handler",
+          members: [],
+          source: sourceReference("src/registry.ts"),
+        },
+      ],
+    });
+    const bytes = manifestBytes([member, registry], {
+      constructionOrder: [member.id, registry.id],
+      startActionOrder: [],
+      cleanupActionOrder: [],
+    });
+
+    expect(validateGeneratedManifestBytes(bytes)).toBe(false);
+  });
+
+  test("accepts an integer order key and rejects a fractional one", () => {
+    const ordered = classBean({ file: "src/handler.ts", exportName: "Handler" });
+    const plans = {
+      constructionOrder: [ordered.id],
+      startActionOrder: [],
+      cleanupActionOrder: [],
+    };
+
+    expect(validateGeneratedManifestBytes(manifestBytes([{ ...ordered, order: -5 }], plans))).toBe(
+      true,
+    );
+    expect(validateGeneratedManifestBytes(manifestBytes([{ ...ordered, order: 1.5 }], plans))).toBe(
+      false,
+    );
   });
 });

@@ -17,6 +17,8 @@ import { createCycleProxy } from "@/runtime/cycle-proxy";
 import { createLazyHandle } from "@/runtime/lazy-handle";
 import type { ResolutionState } from "@/runtime/resolution-state";
 
+type ResolverMethod = "resolve" | "resolveAll" | "lazy";
+
 export class BeanResolver {
   private readonly state: ResolutionState;
 
@@ -100,13 +102,25 @@ export class BeanResolver {
     return Object.freeze({
       resolve: <T extends object>(dependencyIndex: number): T => {
         const dependency = this.readDependency(registration, dependencyIndex, "resolve");
-        if (dependency.mode === "explicit-lazy") {
+        if (dependency.mode === "explicit-lazy" || dependency.mode === "collection") {
           throw this.resolverModeError(registration.id, dependencyIndex, "resolve");
         }
         if (dependency.mode === "cycle-proxy") {
           return this.cycleProxy(dependency.targetId) as T; // Compiler-checked edge types are erased from generated data.
         }
         return this.construct(dependency.targetId) as T; // Compiler-checked edge types are erased from generated data.
+      },
+      resolveAll: <T extends object>(dependencyIndex: number): readonly T[] => {
+        const dependency = this.readDependency(registration, dependencyIndex, "resolveAll");
+        if (dependency.mode !== "collection") {
+          throw this.resolverModeError(registration.id, dependencyIndex, "resolveAll");
+        }
+        const members = dependency.members.map((member) =>
+          member.mode === "cycle-proxy"
+            ? this.cycleProxy(member.targetId)
+            : this.construct(member.targetId),
+        );
+        return Object.freeze(members) as readonly T[]; // Compiler-checked edge types are erased from generated data.
       },
       lazy: <T extends object>(dependencyIndex: number): Lazy<T> => {
         const dependency = this.readDependency(registration, dependencyIndex, "lazy");
@@ -121,7 +135,7 @@ export class BeanResolver {
   private readDependency(
     registration: Pick<GeneratedClassRegistration, "id" | "dependencies">,
     dependencyIndex: number,
-    method: "resolve" | "lazy",
+    method: ResolverMethod,
   ): GeneratedDependency {
     if (!Number.isInteger(dependencyIndex) || dependencyIndex < 0) {
       throw new InvalidGeneratedDefinitionError(
@@ -140,7 +154,7 @@ export class BeanResolver {
   private resolverModeError(
     beanId: string,
     dependencyIndex: number,
-    method: "resolve" | "lazy",
+    method: ResolverMethod,
   ): InvalidGeneratedDefinitionError {
     return new InvalidGeneratedDefinitionError(
       `Resolver ${method} cannot consume dependency ${dependencyIndex} of "${beanId}".`,

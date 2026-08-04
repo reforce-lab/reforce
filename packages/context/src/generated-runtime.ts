@@ -22,6 +22,9 @@ export type {
   GeneratedBeanRegistration,
   GeneratedClassHooks,
   GeneratedClassRegistration,
+  GeneratedCollectionDependency,
+  GeneratedCollectionMember,
+  GeneratedCollectionMemberMode,
   GeneratedConfigBinding,
   GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
@@ -31,6 +34,7 @@ export type {
   GeneratedFactoryBeanInput,
   GeneratedFactoryRegistration,
   GeneratedResolver,
+  GeneratedSingleDependency,
   GeneratedSourcePosition,
   GeneratedSourceReference,
 } from "@/generated/contracts";

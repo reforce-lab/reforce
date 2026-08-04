@@ -6,7 +6,7 @@ import type {
   ManifestBean,
   ManifestSourceReference,
 } from "@/project/generated-manifest";
-import { starterOriginPackageName } from "@/project/generated-manifest";
+import { manifestDependencyEdges, starterOriginPackageName } from "@/project/generated-manifest";
 
 // explain 的输出契约：一行一个事实、无对齐留白、字段用 " · " 分隔——供人读也供脚本 grep。
 // origin 的用户可读呈现（M1 遗留账，PR #154）：`application` 展示为 "this application"，
@@ -96,9 +96,11 @@ function relevantPackageNames(
     }
   }
   for (const dependency of bean.dependencies) {
-    const target = manifest.beans.find((candidate) => candidate.id === dependency.targetId);
-    if (target !== undefined) {
-      registerOrigin(target.origin);
+    for (const edge of manifestDependencyEdges(dependency)) {
+      const target = manifest.beans.find((candidate) => candidate.id === edge.targetId);
+      if (target !== undefined) {
+        registerOrigin(target.origin);
+      }
     }
   }
   return names;
@@ -133,10 +135,21 @@ function dependencyTargetDescription(manifest: GeneratedManifest, targetId: stri
 }
 
 function dependencyLines(manifest: GeneratedManifest, bean: ManifestBean): readonly string[] {
-  return bean.dependencies.map(
-    (dependency) =>
-      `dependency [${dependency.parameterIndex}] -> ${dependency.targetId} · ${dependencyTargetDescription(manifest, dependency.targetId)} · ${dependency.mode}`,
-  );
+  return bean.dependencies.flatMap((dependency) => {
+    if (dependency.mode !== "collection") {
+      return [
+        `dependency [${dependency.parameterIndex}] -> ${dependency.targetId} · ${dependencyTargetDescription(manifest, dependency.targetId)} · ${dependency.mode}`,
+      ];
+    }
+    // 集合边：成员行的排列即注入顺序（编译期 @Order + beanId 决胜后写死）。
+    return [
+      `dependency [${dependency.parameterIndex}] -> collection · ${dependency.members.length} member(s)`,
+      ...dependency.members.map(
+        (member) =>
+          `  member ${member.targetId} · ${dependencyTargetDescription(manifest, member.targetId)} · ${member.mode}`,
+      ),
+    ];
+  });
 }
 
 function constructionLines(manifest: GeneratedManifest, bean: ManifestBean): readonly string[] {

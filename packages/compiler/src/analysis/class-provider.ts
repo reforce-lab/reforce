@@ -9,7 +9,7 @@ import {
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import type { LinkedSymbol } from "@/linking/model";
+import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type {
   ClassDeclaration,
@@ -212,6 +212,7 @@ interface ClassDecoratorSelection {
   readonly primary: boolean;
   readonly qualifierDecorators: readonly DecoratorUse[];
   readonly explicitQualifier?: string;
+  readonly order?: number;
 }
 
 function validatePrimaryDecorators(
@@ -251,6 +252,30 @@ function explicitQualifierFrom(
   return value;
 }
 
+function orderFrom(
+  decorators: readonly DecoratorUse[],
+  diagnostics: CompilerDiagnostic[],
+): number | undefined {
+  const first = decorators.at(0);
+  if (first === undefined) {
+    return undefined;
+  }
+  const argument = first.arguments.at(0);
+  const value =
+    argument?.kind === "number-literal" && first.arguments.length === 1
+      ? argument.value
+      : undefined;
+  if (decorators.length !== 1 || !first.called || value === undefined || !Number.isInteger(value)) {
+    addInvalidDecoratorDiagnostic(
+      diagnostics,
+      "Order must appear at most once as @Order(n) with one integer literal.",
+      first.span,
+    );
+    return undefined;
+  }
+  return value;
+}
+
 function classDecoratorSelection(
   source: ParsedSource,
   declaration: ClassDeclaration,
@@ -261,11 +286,12 @@ function classDecoratorSelection(
   const injectable = decorators.get("Injectable") ?? [];
   const primaryDecorators = decorators.get("Primary") ?? [];
   const qualifierDecorators = decorators.get("Qualifier") ?? [];
+  const orderDecorators = decorators.get("Order") ?? [];
   if (injectable.length === 0) {
-    for (const decorator of [...primaryDecorators, ...qualifierDecorators]) {
+    for (const decorator of [...primaryDecorators, ...qualifierDecorators, ...orderDecorators]) {
       addInvalidDecoratorDiagnostic(
         diagnostics,
-        "Primary and Qualifier can only mark an Injectable class.",
+        "Primary, Qualifier, and Order can only mark an Injectable class.",
         decorator.span,
       );
     }
@@ -285,10 +311,12 @@ function classDecoratorSelection(
   }
   validatePrimaryDecorators(primaryDecorators, declaration, diagnostics);
   const explicitQualifier = explicitQualifierFrom(qualifierDecorators, diagnostics);
+  const order = orderFrom(orderDecorators, diagnostics);
   return {
     primary: primaryDecorators.length === 1,
     qualifierDecorators,
     explicitQualifier,
+    ...(order === undefined ? {} : { order }),
   };
 }
 
@@ -439,6 +467,201 @@ function validateLifecycleMethods(
   );
 }
 
+interface CollectionSyntax {
+  readonly element: TypeNode;
+  readonly readonlyModifier: boolean;
+}
+
+// 集合边的两种书写（ADR 0006 W6，#142）：readonly T[] 与全局 ReadonlyArray<T>。可变形态（T[]、
+// Array<T>）也要在这里识别，才能给出"改成 readonly"的指引而不是泛化的注入类型错误。全局名
+// 仅在未被应用符号遮蔽时按集合语法解释。
+function collectionSyntaxOf(
+  source: ParsedSource,
+  type: TypeNode,
+  linker: ProjectLinker,
+): CollectionSyntax | undefined {
+  if (type.kind === "array") {
+    return { element: type.element, readonlyModifier: type.readonlyModifier };
+  }
+  if (
+    type.kind !== "reference" ||
+    type.name.kind !== "identifier" ||
+    (type.name.name !== "Array" && type.name.name !== "ReadonlyArray") ||
+    type.typeArguments.length !== 1 ||
+    linker.resolveEntity(source, type.name) !== undefined
+  ) {
+    return undefined;
+  }
+  const element = type.typeArguments[0];
+  if (element === undefined) {
+    return undefined;
+  }
+  return { element, readonlyModifier: type.name.name === "ReadonlyArray" };
+}
+
+function collectionDiagnostic(
+  diagnostics: CompilerDiagnostic[],
+  message: string,
+  span: SourceSpan,
+  help: string,
+): void {
+  diagnostics.push(
+    diagnostic({ code: "INVALID_COLLECTION_INJECTION", message, sourceSpan: span, help }),
+  );
+}
+
+const collectionElementHelp =
+  "Use readonly T[] where T is one linked non-generic class or interface contract.";
+
+function collectionElementShapeError(
+  source: ParsedSource,
+  syntax: CollectionSyntax,
+  linker: ProjectLinker,
+): string | undefined {
+  if (collectionSyntaxOf(source, syntax.element, linker) !== undefined) {
+    return "nests a collection inside a collection, which is not supported yet";
+  }
+  if (syntax.element.kind !== "reference") {
+    return "has a collection element that is not a supported contract";
+  }
+  return undefined;
+}
+
+function linkedCollectionElementError(linked: LinkedType): string | undefined {
+  if (linked.lazy) {
+    return "combines a collection with a Lazy element, which is not supported yet";
+  }
+  if (linked.qualifierMember !== undefined) {
+    return "combines a collection with a qualified member element, which is not supported yet";
+  }
+  const linkableContract = linked.symbol.kind === "class" || linked.symbol.kind === "interface";
+  if (!linkableContract || linked.symbol.generic || linked.typeArguments.length > 0) {
+    return "has a collection element that is not a non-generic class or interface contract";
+  }
+  return undefined;
+}
+
+function collectionElementType(
+  source: ParsedSource,
+  parameter: ClassDeclaration["constructors"][number]["parameters"][number],
+  syntax: CollectionSyntax,
+  exportName: string,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): LinkedType | undefined {
+  const location = `Constructor parameter ${parameter.index} on ${exportName}`;
+  const shapeError = collectionElementShapeError(source, syntax, linker);
+  if (shapeError !== undefined) {
+    collectionDiagnostic(
+      diagnostics,
+      `${location} ${shapeError}.`,
+      parameter.span,
+      collectionElementHelp,
+    );
+    return undefined;
+  }
+  // linker.resolveType already records its own diagnostic when it fails; only add
+  // INVALID_COLLECTION_INJECTION when it didn't, or one bad element type is reported twice (#108).
+  const diagnosticCount = linker.diagnostics.length;
+  const linked = linker.resolveType(source, syntax.element);
+  if (linked === undefined) {
+    if (linker.diagnostics.length === diagnosticCount) {
+      collectionDiagnostic(
+        diagnostics,
+        `${location} has a collection element that is not a supported contract.`,
+        parameter.span,
+        collectionElementHelp,
+      );
+    }
+    return undefined;
+  }
+  if (linked.symbol.kind === "unsupported") {
+    reportUnsupportedType(diagnostics, linked.symbol, syntax.element.span);
+    return undefined;
+  }
+  const linkError = linkedCollectionElementError(linked);
+  if (linkError !== undefined) {
+    collectionDiagnostic(
+      diagnostics,
+      `${location} ${linkError}.`,
+      parameter.span,
+      collectionElementHelp,
+    );
+    return undefined;
+  }
+  return linked;
+}
+
+function collectionParameterDependency(
+  source: ParsedSource,
+  parameter: ClassDeclaration["constructors"][number]["parameters"][number],
+  syntax: CollectionSyntax,
+  exportName: string,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): PendingDependency | undefined {
+  if (!syntax.readonlyModifier) {
+    collectionDiagnostic(
+      diagnostics,
+      `Constructor parameter ${parameter.index} on ${exportName} injects a mutable array.`,
+      parameter.span,
+      "Declare the collection as readonly T[]: injected collections are read-only.",
+    );
+    return undefined;
+  }
+  const linked = collectionElementType(source, parameter, syntax, exportName, linker, diagnostics);
+  if (linked === undefined) {
+    return undefined;
+  }
+  return {
+    index: parameter.index,
+    linkedType: linked,
+    collection: true,
+    sourceSpan: parameter.span,
+  };
+}
+
+// Lazy<readonly T[]> 一类"泛型包集合"的形态：链接层解不出类型也不报错（Lazy 匹配但内层不是
+// 引用），这里点名集合组合形态，不让它退化成泛化的注入类型错误。
+function referencesCollectionArgument(
+  source: ParsedSource,
+  type: TypeNode,
+  linker: ProjectLinker,
+): boolean {
+  return (
+    type.kind === "reference" &&
+    type.typeArguments.some(
+      (argument) => collectionSyntaxOf(source, argument, linker) !== undefined,
+    )
+  );
+}
+
+function reportUnresolvedParameterType(
+  source: ParsedSource,
+  parameter: ClassDeclaration["constructors"][number]["parameters"][number],
+  exportName: string,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): void {
+  if (referencesCollectionArgument(source, parameter.type, linker)) {
+    collectionDiagnostic(
+      diagnostics,
+      `Constructor parameter ${parameter.index} on ${exportName} wraps a collection in a generic, which is not supported yet.`,
+      parameter.span,
+      "Inject the collection directly as readonly T[].",
+    );
+    return;
+  }
+  diagnostics.push(
+    diagnostic({
+      code: "UNSUPPORTED_INJECTION_TYPE",
+      message: `Constructor parameter ${parameter.index} on ${exportName} is not a supported injection type.`,
+      sourceSpan: parameter.span,
+      help: "Use a named concrete class, interface, generated qualifier, or Lazy wrapper.",
+    }),
+  );
+}
+
 function constructorParameterDependency(
   source: ParsedSource,
   parameter: ClassDeclaration["constructors"][number]["parameters"][number],
@@ -465,20 +688,24 @@ function constructorParameterDependency(
     );
     return undefined;
   }
+  const collectionSyntax = collectionSyntaxOf(source, parameter.type, linker);
+  if (collectionSyntax !== undefined) {
+    return collectionParameterDependency(
+      source,
+      parameter,
+      collectionSyntax,
+      exportName,
+      linker,
+      diagnostics,
+    );
+  }
   // linker.resolveType already records its own diagnostic when it fails; only add
   // UNSUPPORTED_INJECTION_TYPE when it didn't, or one bad parameter type is reported twice (#108).
   const diagnosticCount = linker.diagnostics.length;
   const linked = linker.resolveType(source, parameter.type);
   if (linked === undefined) {
     if (linker.diagnostics.length === diagnosticCount) {
-      diagnostics.push(
-        diagnostic({
-          code: "UNSUPPORTED_INJECTION_TYPE",
-          message: `Constructor parameter ${parameter.index} on ${exportName} is not a supported injection type.`,
-          sourceSpan: parameter.span,
-          help: "Use a named concrete class, interface, generated qualifier, or Lazy wrapper.",
-        }),
-      );
+      reportUnresolvedParameterType(source, parameter, exportName, linker, diagnostics);
     }
     return undefined;
   }
@@ -633,6 +860,7 @@ export function analyzeClassProvider(
       declarationSource: sourceReference(declaration.span),
       provides,
       primary: selection.primary,
+      ...(selection.order === undefined ? {} : { order: selection.order }),
       qualifiers,
       dependencies: [],
       startHook: contracts.startHook,

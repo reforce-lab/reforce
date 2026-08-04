@@ -1,8 +1,32 @@
 import { alg, Graph } from "@dagrejs/graphlib";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
-import type { DependencyModel, ExecutionPlansModel } from "@/analysis/model";
+import type { ExecutionPlansModel } from "@/analysis/model";
 
-type PlanDependency = Pick<DependencyModel, "mode" | "parameterIndex" | "targetId">;
+// 计划层的结构化输入（与 analysis/model 的 DependencyModel 结构兼容）：环标记要就地改写
+// mode，边必须是模型对象本身——单边即依赖对象，集合边展开为各成员对象（#150）。
+interface PlanSingleDependency {
+  readonly parameterIndex: number;
+  readonly targetId: string;
+  mode: "eager" | "cycle-proxy" | "explicit-lazy";
+}
+
+interface PlanCollectionMember {
+  readonly targetId: string;
+  mode: "eager" | "cycle-proxy";
+}
+
+interface PlanCollectionDependency {
+  readonly parameterIndex: number;
+  readonly members: readonly PlanCollectionMember[];
+}
+
+type PlanDependency = PlanSingleDependency | PlanCollectionDependency;
+type PlanEdge = PlanSingleDependency | PlanCollectionMember;
+
+interface PlanEdgeRef {
+  readonly parameterIndex: number;
+  readonly edge: PlanEdge;
+}
 
 interface PlanProviderBase {
   readonly id: string;
@@ -19,14 +43,22 @@ type PlanProvider =
       readonly dispose: boolean;
     });
 
-function orderedDependencies(
-  provider: PlanProvider,
-  includeDelayed: boolean,
-): readonly PlanDependency[] {
-  return provider.dependencies
-    .filter((edge) => includeDelayed || edge.mode === "eager")
+function planEdges(provider: PlanProvider): readonly PlanEdgeRef[] {
+  return provider.dependencies.flatMap((dependency): readonly PlanEdgeRef[] =>
+    "members" in dependency
+      ? dependency.members.map((member) => ({
+          parameterIndex: dependency.parameterIndex,
+          edge: member,
+        }))
+      : [{ parameterIndex: dependency.parameterIndex, edge: dependency }],
+  );
+}
+
+function orderedEdges(provider: PlanProvider, includeDelayed: boolean): readonly PlanEdgeRef[] {
+  return planEdges(provider)
+    .filter((reference) => includeDelayed || reference.edge.mode === "eager")
     .toSorted((left, right) => {
-      const target = compareUtf16CodeUnits(left.targetId, right.targetId);
+      const target = compareUtf16CodeUnits(left.edge.targetId, right.edge.targetId);
       return target === 0 ? left.parameterIndex - right.parameterIndex : target;
     });
 }
@@ -37,7 +69,7 @@ function markCycleProxyEdges(providers: readonly PlanProvider[]): void {
     const members = new Set(component.members);
     const state = new Map<string, "active" | "complete">();
 
-    function visitEdge(edge: PlanDependency): void {
+    function visitEdge(edge: PlanEdge): void {
       if (!members.has(edge.targetId)) {
         return;
       }
@@ -58,8 +90,8 @@ function markCycleProxyEdges(providers: readonly PlanProvider[]): void {
         state.set(id, "complete");
         return;
       }
-      for (const edge of orderedDependencies(provider, false)) {
-        visitEdge(edge);
+      for (const reference of orderedEdges(provider, false)) {
+        visitEdge(reference.edge);
       }
       state.set(id, "complete");
     }
@@ -80,7 +112,7 @@ function dependencyFirstOrder(
   const dependencies = new Map(
     providers.map((provider) => [
       provider.id,
-      new Set(orderedDependencies(provider, includeDelayed).map((edge) => edge.targetId)),
+      new Set(orderedEdges(provider, includeDelayed).map((reference) => reference.edge.targetId)),
     ]),
   );
   return globallyReadyOrder(
@@ -128,8 +160,8 @@ function dependencyGraph(providers: readonly PlanProvider[], includeDelayed: boo
     compareUtf16CodeUnits(left.id, right.id),
   )) {
     graph.setNode(provider.id);
-    for (const edge of orderedDependencies(provider, includeDelayed)) {
-      graph.setEdge(provider.id, edge.targetId);
+    for (const reference of orderedEdges(provider, includeDelayed)) {
+      graph.setEdge(provider.id, reference.edge.targetId);
     }
   }
   return graph;
@@ -165,8 +197,8 @@ function lifecycleOrder(providers: readonly PlanProvider[]): readonly string[] {
     }
     const targets = dependencies.get(consumerComponent.key) ?? new Set<string>();
     dependencies.set(consumerComponent.key, targets);
-    for (const edge of provider.dependencies) {
-      const targetComponent = componentByMember.get(edge.targetId);
+    for (const reference of planEdges(provider)) {
+      const targetComponent = componentByMember.get(reference.edge.targetId);
       if (targetComponent !== undefined && targetComponent.key !== consumerComponent.key) {
         targets.add(targetComponent.key);
       }

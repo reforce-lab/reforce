@@ -168,11 +168,39 @@ export function typeNodeOf(
   if (node.type === "TSVoidKeyword") {
     return { kind: "primitive", name: "void", span: spanOf(node, context) };
   }
+  if (node.type === "TSArrayType") {
+    return {
+      kind: "array",
+      element: typeNodeOf(node.elementType, context, typeParameters),
+      readonlyModifier: false,
+      span: spanOf(node, context),
+    };
+  }
+  // readonly 只对数组形态有意义；keyof/unique 以及作用在非数组上的 readonly 照旧 unsupported。
+  if (node.type === "TSTypeOperator" && node.operator === "readonly") {
+    const inner = unparenthesizedType(node.typeAnnotation);
+    if (inner.type === "TSArrayType") {
+      return {
+        kind: "array",
+        element: typeNodeOf(inner.elementType, context, typeParameters),
+        readonlyModifier: true,
+        span: spanOf(node, context),
+      };
+    }
+  }
   const reference = referenceTypeOf(node, context, typeParameters);
   if (reference !== undefined) {
     return reference;
   }
   return { kind: "unsupported", span: spanOf(node, context) };
+}
+
+function unparenthesizedType(node: TSType): TSType {
+  let current = node;
+  while (current.type === "TSParenthesizedType") {
+    current = current.typeAnnotation;
+  }
+  return current;
 }
 
 function referenceTypeOf(
@@ -238,11 +266,29 @@ export function expressionValueOf(node: Node, context: LoweringContext): Express
   if (target.type === "Literal" && typeof target.value === "boolean") {
     return { kind: "boolean-literal", value: target.value, span: spanOf(target, context) };
   }
+  const numeric = numberLiteralOf(target, context);
+  if (numeric !== undefined) {
+    return numeric;
+  }
   return {
     kind: "unsupported",
     expressionKind: expressionKindOf(target),
     span: spanOf(target, context),
   };
+}
+
+// 数字字面量允许一元负号（@Order(-1) 在 AST 里是 UnaryExpression 包字面量）；其余一元运算不认。
+function numberLiteralOf(target: Node, context: LoweringContext): ExpressionValue | undefined {
+  if (target.type === "Literal" && typeof target.value === "number") {
+    return { kind: "number-literal", value: target.value, span: spanOf(target, context) };
+  }
+  if (target.type === "UnaryExpression" && target.operator === "-") {
+    const operand = unparenthesized(target.argument);
+    if (operand.type === "Literal" && typeof operand.value === "number") {
+      return { kind: "number-literal", value: -operand.value, span: spanOf(target, context) };
+    }
+  }
+  return undefined;
 }
 
 function decoratorCalleeOf(

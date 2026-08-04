@@ -37,7 +37,7 @@ const cacheSymbol = {
 
 function manifestOf(beans: readonly ManifestBean[]): GeneratedManifest {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     configs: [],
     beans,
     plans: {
@@ -138,6 +138,35 @@ describe("renderExplanation", () => {
 
     expect(lines).toContain(
       "dependency [0] -> @acme/starter-redis#RedisClient · @acme/starter-redis@1.2.0 · registered starter · eager",
+    );
+  });
+
+  test("renders a collection edge with one member line per injection position", () => {
+    const alpha = bean({ id: "src/alpha.ts#Alpha", origin: "application" });
+    const beta = bean({ id: "src/beta.ts#Beta", origin: "application" });
+    const registry = bean({
+      id: "src/registry.ts#Registry",
+      origin: "application",
+      dependencies: [
+        {
+          parameterIndex: 0,
+          mode: "collection",
+          members: [
+            { targetId: "src/beta.ts#Beta", mode: "eager" },
+            { targetId: "src/alpha.ts#Alpha", mode: "cycle-proxy" },
+          ],
+          source: span,
+        },
+      ],
+    });
+
+    const lines = render(manifestOf([alpha, beta, registry]), registry);
+
+    const collectionIndex = lines.indexOf("dependency [0] -> collection · 2 member(s)");
+    expect(collectionIndex).toBeGreaterThan(-1);
+    expect(lines[collectionIndex + 1]).toBe("  member src/beta.ts#Beta · this application · eager");
+    expect(lines[collectionIndex + 2]).toBe(
+      "  member src/alpha.ts#Alpha · this application · cycle-proxy",
     );
   });
 

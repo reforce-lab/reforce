@@ -8,6 +8,7 @@ import {
   type ProviderOriginModel,
   providerId,
   type QualifierModel,
+  type SingleDependencyModel,
   sourceReference,
 } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
@@ -110,6 +111,7 @@ interface ProviderInput {
   readonly provides?: readonly LinkedSymbol[];
   readonly primary?: boolean;
   readonly qualifiers?: readonly QualifierModel[];
+  readonly order?: number;
   readonly dependencies?: DependencyModel[];
 }
 
@@ -122,6 +124,7 @@ function provider(input: ProviderInput): ProviderModel {
     declarationSource: sourceReference(span(input.file, input.offset ?? 0)),
     provides: input.provides ?? [],
     primary: input.primary ?? false,
+    ...(input.order === undefined ? {} : { order: input.order }),
     qualifiers: input.qualifiers ?? [],
     dependencies: input.dependencies ?? [],
   };
@@ -157,6 +160,10 @@ function pending(symbol: LinkedSymbol, input: PendingInput = {}): PendingDepende
     },
     sourceSpan: site,
   };
+}
+
+function collectionPending(symbol: LinkedSymbol, input: PendingInput = {}): PendingDependency {
+  return { ...pending(symbol, input), collection: true };
 }
 
 function resolve(drafts: readonly ProviderDraft[]): readonly CompilerDiagnostic[] {
@@ -373,7 +380,7 @@ describe("provider resolution", () => {
 
   test("leaves a dependency unresolved when several Primary Beans provide the interface", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(provider({ file: "src/a.ts", exportName: "First", provides: [port], primary: true })),
       draft(provider({ file: "src/b.ts", exportName: "Second", provides: [port], primary: true })),
@@ -481,7 +488,7 @@ describe("provider resolution", () => {
 
   test("leaves a qualified dependency unresolved instead of falling back to the Primary Bean", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(
         provider({
@@ -504,7 +511,7 @@ describe("provider resolution", () => {
 
   test("selects the only Bean that provides an interface", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(provider({ file: "src/a.ts", exportName: "Service", provides: [port] })),
       draft(provider({ file: "src/c.ts", exportName: "Consumer", dependencies }), [pending(port)]),
@@ -517,7 +524,7 @@ describe("provider resolution", () => {
 
   test("selects the Primary Bean among several interface candidates", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(provider({ file: "src/a.ts", exportName: "First", provides: [port] })),
       draft(provider({ file: "src/b.ts", exportName: "Second", provides: [port], primary: true })),
@@ -531,7 +538,7 @@ describe("provider resolution", () => {
 
   test("selects the qualified Bean instead of the Primary Bean", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(
         provider({
@@ -554,7 +561,7 @@ describe("provider resolution", () => {
 
   test("selects a class's own Injectable provider over a Primary factory for that class", () => {
     const concrete = classSymbol("src/a.ts", "Concrete");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(provider({ file: "src/a.ts", exportName: "Concrete", provides: [concrete] })),
       draft(
@@ -578,7 +585,7 @@ describe("provider resolution", () => {
 
   test("records an explicitly lazy dependency as explicit-lazy", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(provider({ file: "src/a.ts", exportName: "Service", provides: [port] })),
       draft(provider({ file: "src/c.ts", exportName: "Consumer", dependencies }), [
@@ -593,7 +600,7 @@ describe("provider resolution", () => {
 
   test("records the resolved dependency with its parameter index and injection site", () => {
     const port = interfaceSymbol("src/port.ts", "Port");
-    const dependencies: DependencyModel[] = [];
+    const dependencies: SingleDependencyModel[] = [];
     const drafts = [
       draft(provider({ file: "src/a.ts", exportName: "Service", provides: [port] })),
       draft(provider({ file: "src/c.ts", exportName: "Consumer", dependencies }), [
@@ -611,6 +618,80 @@ describe("provider resolution", () => {
         source: sourceReference(span("src/consumer.ts", 2)),
         contract: port,
       },
+    ]);
+  });
+});
+
+describe("collection membership", () => {
+  test("every provider of the contract joins ordered by @Order then beanId", () => {
+    const port = interfaceSymbol("src/port.ts", "Port");
+    const dependencies: DependencyModel[] = [];
+    const drafts = [
+      draft(provider({ file: "src/a.ts", exportName: "Unordered", provides: [port] })),
+      draft(provider({ file: "src/b.ts", exportName: "Late", provides: [port], order: 10 })),
+      draft(provider({ file: "src/c.ts", exportName: "Tied", provides: [port], order: 1 })),
+      draft(provider({ file: "src/b.ts", exportName: "AlsoTied", provides: [port], order: 1 })),
+      draft(provider({ file: "src/d.ts", exportName: "Consumer", dependencies }), [
+        collectionPending(port),
+      ]),
+    ];
+
+    const diagnostics = resolve(drafts);
+
+    expect(diagnostics).toEqual([]);
+    const dependency = dependencies[0];
+    if (dependency === undefined || !("members" in dependency)) {
+      throw new Error("Expected one collection dependency.");
+    }
+    expect(dependency.members).toEqual([
+      { targetId: "src/b.ts#AlsoTied", mode: "eager" },
+      { targetId: "src/c.ts#Tied", mode: "eager" },
+      { targetId: "src/b.ts#Late", mode: "eager" },
+      { targetId: "src/a.ts#Unordered", mode: "eager" },
+    ]);
+    expect(dependency.contract).toBe(port);
+  });
+
+  test("an empty membership resolves to an empty collection without diagnostics", () => {
+    const port = interfaceSymbol("src/port.ts", "Port");
+    const dependencies: DependencyModel[] = [];
+    const drafts = [
+      draft(provider({ file: "src/d.ts", exportName: "Consumer", dependencies }), [
+        collectionPending(port),
+      ]),
+    ];
+
+    const diagnostics = resolve(drafts);
+
+    expect(diagnostics).toEqual([]);
+    const dependency = dependencies[0];
+    if (dependency === undefined || !("members" in dependency)) {
+      throw new Error("Expected one collection dependency.");
+    }
+    expect(dependency.members).toEqual([]);
+  });
+
+  test("a collection does not consult Primary and reports no ambiguity", () => {
+    const port = interfaceSymbol("src/port.ts", "Port");
+    const dependencies: DependencyModel[] = [];
+    const drafts = [
+      draft(provider({ file: "src/a.ts", exportName: "First", provides: [port] })),
+      draft(provider({ file: "src/b.ts", exportName: "Second", provides: [port], primary: true })),
+      draft(provider({ file: "src/d.ts", exportName: "Consumer", dependencies }), [
+        collectionPending(port),
+      ]),
+    ];
+
+    const diagnostics = resolve(drafts);
+
+    expect(diagnostics).toEqual([]);
+    const dependency = dependencies[0];
+    if (dependency === undefined || !("members" in dependency)) {
+      throw new Error("Expected one collection dependency.");
+    }
+    expect(dependency.members.map((member) => member.targetId)).toEqual([
+      "src/a.ts#First",
+      "src/b.ts#Second",
     ]);
   });
 });

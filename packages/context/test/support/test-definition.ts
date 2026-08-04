@@ -1,6 +1,8 @@
 import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
+  GeneratedCollectionDependency,
+  GeneratedCollectionMember,
   GeneratedConfigBinding,
   GeneratedConfigRegistration,
   GeneratedDependency,
@@ -29,6 +31,18 @@ export function testDependency(
   };
 }
 
+export function testCollectionDependency(
+  parameterIndex: number,
+  members: readonly GeneratedCollectionMember[],
+): GeneratedCollectionDependency {
+  return {
+    parameterIndex,
+    mode: "collection",
+    members,
+    source: testSource(`parameter-${parameterIndex}`),
+  };
+}
+
 export function testDefinition(
   registrations: readonly GeneratedBeanRegistration[],
   input: {
@@ -40,7 +54,7 @@ export function testDefinition(
   } = {},
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     configs: input.configs ?? [],
     ...(input.configBinding ? { configBinding: input.configBinding } : {}),
     registrations,

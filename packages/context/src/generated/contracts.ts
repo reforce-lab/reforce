@@ -17,15 +17,35 @@ export interface GeneratedSourceReference {
 
 export type GeneratedDependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
 
-export interface GeneratedDependency {
+export interface GeneratedSingleDependency {
   readonly parameterIndex: number;
   readonly targetId: GeneratedBeanId;
   readonly mode: GeneratedDependencyMode;
   readonly source: GeneratedSourceReference;
 }
 
+// 集合成员没有 explicit-lazy：Lazy<T[]> 组合形态在编译期即被拒绝（ADR 0006 W6，#142）。
+export type GeneratedCollectionMemberMode = "eager" | "cycle-proxy";
+
+export interface GeneratedCollectionMember {
+  readonly targetId: GeneratedBeanId;
+  readonly mode: GeneratedCollectionMemberMode;
+}
+
+// 集合边（ADR 0006 W6，#142 / #150）：一个构造参数注入"图里所有提供该契约的 bean"。
+// members 的数组顺序就是注入顺序——编译期按 @Order 与 beanId 决胜后写死，运行时不再排序。
+export interface GeneratedCollectionDependency {
+  readonly parameterIndex: number;
+  readonly mode: "collection";
+  readonly members: readonly GeneratedCollectionMember[];
+  readonly source: GeneratedSourceReference;
+}
+
+export type GeneratedDependency = GeneratedSingleDependency | GeneratedCollectionDependency;
+
 export interface GeneratedResolver {
   resolve<T extends object>(dependencyIndex: number): T;
+  resolveAll<T extends object>(dependencyIndex: number): readonly T[];
   lazy<T extends object>(dependencyIndex: number): Lazy<T>;
 }
 
@@ -105,7 +125,7 @@ export interface GeneratedConfigBinding {
 }
 
 export interface GeneratedApplicationDefinition {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly configs: readonly GeneratedConfigRegistration[];
   readonly configBinding?: GeneratedConfigBinding;
   readonly registrations: readonly GeneratedBeanRegistration[];

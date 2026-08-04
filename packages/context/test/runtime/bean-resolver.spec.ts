@@ -8,7 +8,12 @@ import {
   UnregisteredBeanTargetError,
 } from "@/index";
 import { applicationStartError, rejection } from "../support/rejection";
-import { testDefinition, testDependency, testSource } from "../support/test-definition";
+import {
+  testCollectionDependency,
+  testDefinition,
+  testDependency,
+  testSource,
+} from "../support/test-definition";
 
 describe("application context identity", () => {
   test("constructor injection and public lookup return one singleton", async () => {
@@ -381,6 +386,216 @@ describe("dependency resolution", () => {
           hooks: {},
         }),
       ]),
+    );
+
+    const error = applicationStartError(await rejection(context.start()));
+
+    expect(error.cause).toBeInstanceOf(InvalidGeneratedDefinitionError);
+  });
+});
+
+describe("collection resolution", () => {
+  interface Named {
+    name(): string;
+  }
+
+  class AlphaHandler implements Named {
+    name(): string {
+      return "alpha";
+    }
+  }
+  class BetaHandler implements Named {
+    name(): string {
+      return "beta";
+    }
+  }
+  class Registry {
+    constructor(readonly handlers: readonly Named[]) {}
+  }
+  const alphaId = "src/alpha.ts#AlphaHandler";
+  const betaId = "src/beta.ts#BetaHandler";
+  const registryId = "src/registry.ts#Registry";
+
+  function alphaRegistration() {
+    return classBean({
+      id: alphaId,
+      source: testSource("alpha"),
+      target: AlphaHandler,
+      dependencies: [],
+      create: () => new AlphaHandler(),
+      hooks: {},
+    });
+  }
+
+  function betaRegistration() {
+    return classBean({
+      id: betaId,
+      source: testSource("beta"),
+      target: BetaHandler,
+      dependencies: [],
+      create: () => new BetaHandler(),
+      hooks: {},
+    });
+  }
+
+  test("resolveAll injects members in the declared order as a frozen array", async () => {
+    const registry = classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: [
+        testCollectionDependency(0, [
+          { targetId: betaId, mode: "eager" },
+          { targetId: alphaId, mode: "eager" },
+        ]),
+      ],
+      create: (resolver) => new Registry(resolver.resolveAll(0)),
+      hooks: {},
+    });
+    const context = createApplicationContext(
+      testDefinition([alphaRegistration(), betaRegistration(), registry], {
+        constructionOrder: [alphaId, betaId, registryId],
+      }),
+    );
+    await context.start();
+
+    const handlers = context.get(Registry).handlers;
+
+    expect(handlers.map((handler) => handler.name())).toEqual(["beta", "alpha"]);
+    expect(Object.isFrozen(handlers)).toBe(true);
+    expect(handlers[1]).toBe(context.get(AlphaHandler));
+    await context.close();
+  });
+
+  test("resolveAll injects an empty frozen array when the collection has no members", async () => {
+    const registry = classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: [testCollectionDependency(0, [])],
+      create: (resolver) => new Registry(resolver.resolveAll(0)),
+      hooks: {},
+    });
+    const context = createApplicationContext(testDefinition([registry]));
+    await context.start();
+
+    const handlers = context.get(Registry).handlers;
+
+    expect(handlers).toEqual([]);
+    expect(Object.isFrozen(handlers)).toBe(true);
+    await context.close();
+  });
+
+  test("a cycle-proxy member forwards after its target is constructed", async () => {
+    class Reentrant implements Named {
+      constructor(readonly registry: Registry) {}
+      name(): string {
+        return "reentrant";
+      }
+    }
+    const reentrantId = "src/reentrant.ts#Reentrant";
+    const registry = classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: [testCollectionDependency(0, [{ targetId: reentrantId, mode: "cycle-proxy" }])],
+      create: (resolver) => new Registry(resolver.resolveAll(0)),
+      hooks: {},
+    });
+    const reentrant = classBean({
+      id: reentrantId,
+      source: testSource("reentrant"),
+      target: Reentrant,
+      dependencies: [testDependency(0, registryId, "eager")],
+      create: (resolver) => new Reentrant(resolver.resolve(0)),
+      hooks: {},
+    });
+    const context = createApplicationContext(
+      testDefinition([registry, reentrant], {
+        constructionOrder: [registryId, reentrantId],
+      }),
+    );
+    await context.start();
+
+    const handlers = context.get(Registry).handlers;
+
+    expect(handlers[0]?.name()).toBe("reentrant");
+    await context.close();
+  });
+
+  test("a cycle-proxy member rejects access before its target is constructed", async () => {
+    class Eager {
+      constructor(readonly names: readonly string[]) {}
+    }
+    const eagerId = "src/eager.ts#Eager";
+    const registration = classBean({
+      id: eagerId,
+      source: testSource("eager"),
+      target: Eager,
+      dependencies: [testCollectionDependency(0, [{ targetId: alphaId, mode: "cycle-proxy" }])],
+      create: (resolver) =>
+        new Eager(resolver.resolveAll<Named>(0).map((handler) => handler.name())),
+      hooks: {},
+    });
+    const context = createApplicationContext(
+      testDefinition([registration, alphaRegistration()], {
+        constructionOrder: [eagerId, alphaId],
+      }),
+    );
+
+    const error = applicationStartError(await rejection(context.start()));
+
+    expect(error.cause).toBeInstanceOf(BeanCreationError);
+  });
+
+  test("resolve rejects a collection edge", async () => {
+    const registration = classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: [testCollectionDependency(0, [])],
+      create: (resolver) => new Registry([resolver.resolve(0)]),
+      hooks: {},
+    });
+    const context = createApplicationContext(testDefinition([registration]));
+
+    const error = applicationStartError(await rejection(context.start()));
+
+    expect(error.cause).toBeInstanceOf(InvalidGeneratedDefinitionError);
+  });
+
+  test("lazy rejects a collection edge", async () => {
+    const registration = classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: [testCollectionDependency(0, [])],
+      create: (resolver) => {
+        resolver.lazy(0);
+        return new Registry([]);
+      },
+      hooks: {},
+    });
+    const context = createApplicationContext(testDefinition([registration]));
+
+    const error = applicationStartError(await rejection(context.start()));
+
+    expect(error.cause).toBeInstanceOf(InvalidGeneratedDefinitionError);
+  });
+
+  test("resolveAll rejects a single-target edge", async () => {
+    const registration = classBean({
+      id: registryId,
+      source: testSource("registry"),
+      target: Registry,
+      dependencies: [testDependency(0, alphaId, "eager")],
+      create: (resolver) => new Registry(resolver.resolveAll(0)),
+      hooks: {},
+    });
+    const context = createApplicationContext(
+      testDefinition([alphaRegistration(), registration], {
+        constructionOrder: [alphaId, registryId],
+      }),
     );
 
     const error = applicationStartError(await rejection(context.start()));

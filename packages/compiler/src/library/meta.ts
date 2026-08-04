@@ -53,6 +53,13 @@ const handleDtsContent = [
   "",
 ].join("\n");
 
+function unsupportedEdgeKind(pending: ProviderDraft["pendingDependencies"][number]): string {
+  if (pending.collection === true) {
+    return "a collection dependency";
+  }
+  return pending.linkedType.lazy ? "a Lazy dependency" : "a qualified dependency";
+}
+
 function providerSpan(draft: ProviderDraft): SourceSpan | undefined {
   const origin = draft.provider.origin;
   if (origin.kind !== "application") {
@@ -234,13 +241,18 @@ export async function buildLibraryMeta(
     const dependencies: MetaDependencyDraft[] = [];
     const pendings = [...draft.pendingDependencies].sort((left, right) => left.index - right.index);
     for (const pending of pendings) {
-      if (pending.linkedType.lazy || pending.linkedType.qualifierMember !== undefined) {
+      if (
+        pending.collection === true ||
+        pending.linkedType.lazy ||
+        pending.linkedType.qualifierMember !== undefined
+      ) {
+        const edgeKind = unsupportedEdgeKind(pending);
         diagnostics.push(
           diagnostic({
             code: "UNSUPPORTED_LIBRARY_DECLARATION",
-            message: `Constructor parameter ${pending.index} on ${draft.provider.exportName} uses ${pending.linkedType.lazy ? "a Lazy dependency" : "a qualified dependency"}; starter meta v1 only records plain contract edges.`,
+            message: `Constructor parameter ${pending.index} on ${draft.provider.exportName} uses ${edgeKind}; starter meta v1 only records plain contract edges.`,
             sourceSpan: pending.sourceSpan,
-            help: "Inject the contract directly; qualifiers and Lazy stay application-side features for now.",
+            help: "Inject the contract directly; qualifiers, Lazy, and collections stay application-side features for now.",
           }),
         );
         return undefined;

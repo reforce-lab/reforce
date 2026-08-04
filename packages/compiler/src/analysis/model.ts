@@ -18,7 +18,7 @@ export interface GeneratedSourceReferenceModel {
 
 type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
 
-export interface DependencyModel {
+export interface SingleDependencyModel {
   readonly parameterIndex: number;
   readonly targetId: string;
   // execution-plan's cycle marking rewrites "eager" to "cycle-proxy" in place after analysis,
@@ -28,6 +28,30 @@ export interface DependencyModel {
   // 该边的契约符号：emission 用它写 type-only 类型标注（ADR 0004 决策 8，#120）。只进生成的
   // import type 与 resolve<T>() 标注，不进 manifest / 运行时 JSON——序列化前必须剥掉。
   readonly contract: LinkedSymbol;
+}
+
+// 集合成员没有 explicit-lazy（Lazy<T[]> 组合形态编译期即拒，ADR 0006 W6）；mode 与单边同理
+// 保持可变，execution-plan 的环标记会把成员边就地改写为 cycle-proxy。
+export interface CollectionMemberModel {
+  readonly targetId: string;
+  mode: "eager" | "cycle-proxy";
+}
+
+// 集合边（ADR 0006 W6，#142 / #150）：members 的数组顺序即注入顺序，resolve-providers 按
+// @Order 与 beanId 决胜后写死；contract 是元素契约符号，服务 resolveAll<T>() 的 typed-edge。
+export interface CollectionDependencyModel {
+  readonly parameterIndex: number;
+  readonly members: readonly CollectionMemberModel[];
+  readonly source: GeneratedSourceReferenceModel;
+  readonly contract: LinkedSymbol;
+}
+
+export type DependencyModel = SingleDependencyModel | CollectionDependencyModel;
+
+export function isCollectionDependency(
+  dependency: DependencyModel,
+): dependency is CollectionDependencyModel {
+  return "members" in dependency;
 }
 
 // bean 的来源（ADR 0004，#120）：应用源集里的声明，或注册 starter 的 meta bean。starter bean 没有
@@ -53,6 +77,8 @@ interface ProviderBase {
   readonly declarationSource: GeneratedSourceReferenceModel;
   readonly provides: readonly LinkedSymbol[];
   readonly primary: boolean;
+  // @Order(n) 只服务集合成员排序（ADR 0006 W6）；无标记即 undefined，排在全部有序成员之后。
+  readonly order?: number;
   readonly qualifiers: readonly QualifierModel[];
   readonly dependencies: DependencyModel[];
 }
@@ -80,7 +106,9 @@ export type BeanProviderModel = ClassProviderModel | FactoryProviderModel;
 
 export interface PendingDependency {
   readonly index: number;
+  // 集合边的 linkedType 是元素契约；collection 标记决定 resolve-providers 走成员资格路径。
   readonly linkedType: LinkedType;
+  readonly collection?: true;
   readonly sourceSpan: SourceSpan;
 }
 

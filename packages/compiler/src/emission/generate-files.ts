@@ -6,6 +6,7 @@ import {
   type ConfigProviderModel,
   type DependencyModel,
   type ExecutionPlansModel,
+  isCollectionDependency,
   type ProviderModel,
   sourceReference,
 } from "@/analysis/model";
@@ -98,14 +99,27 @@ function symbolReference(
 }
 
 // DependencyModel 的 contract 字段只服务 typed-edge 生成；manifest 与 beans.ts 内嵌 JSON 都必须
-// 保持运行时 GeneratedDependency 四字段形状（ADR 0004 决策 14：运行时 schema 一个字段不加）。
+// 保持运行时 GeneratedDependency 的封闭形状（ADR 0004 决策 14：运行时 schema 一个字段不加）。
+// 集合边是 schema v3 的第二形态（ADR 0006 W6，#150）：members 顺序即注入顺序。
 function runtimeDependencies(provider: ProviderModel): readonly Record<string, unknown>[] {
-  return provider.dependencies.map((dependency) => ({
-    parameterIndex: dependency.parameterIndex,
-    targetId: dependency.targetId,
-    mode: dependency.mode,
-    source: dependency.source,
-  }));
+  return provider.dependencies.map((dependency) =>
+    isCollectionDependency(dependency)
+      ? {
+          parameterIndex: dependency.parameterIndex,
+          mode: "collection",
+          members: dependency.members.map((member) => ({
+            targetId: member.targetId,
+            mode: member.mode,
+          })),
+          source: dependency.source,
+        }
+      : {
+          parameterIndex: dependency.parameterIndex,
+          targetId: dependency.targetId,
+          mode: dependency.mode,
+          source: dependency.source,
+        },
+  );
 }
 
 function providerValueSpecifier(provider: ProviderModel, generatedDirectory: string): string {
@@ -163,6 +177,10 @@ function dependencyExpression(
 ): string {
   const alias = contracts.get(dependency.contract.key)?.alias;
   const typeArgument = alias === undefined ? "" : `<${alias}>`;
+  // typed-edge 纪律不因集合降级（#150）：resolveAll<T>() 的 T 是元素契约，tsc 背书数组元素类型。
+  if (isCollectionDependency(dependency)) {
+    return `resolver.resolveAll${typeArgument}(${dependency.parameterIndex})`;
+  }
   return dependency.mode === "explicit-lazy"
     ? `resolver.lazy${typeArgument}(${dependency.parameterIndex})`
     : `resolver.resolve${typeArgument}(${dependency.parameterIndex})`;
@@ -238,7 +256,7 @@ function renderBeans(
     ...configRegistrations.flatMap((registration) => [registration, ""]),
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
-    "  schemaVersion: 2,",
+    "  schemaVersion: 3,",
     `  configs: [${configNames}],`,
     ...(configs.length > 0 ? ["  configBinding: createConfigBinding(),"] : []),
     `  registrations: [${names}],`,
@@ -371,6 +389,8 @@ function renderManifest(
     provides: provider.provides.map((symbol) => symbolReference(symbol, generatedDirectory)),
     dependencies: runtimeDependencies(provider),
     primary: provider.primary,
+    // @Order 值进 manifest（ADR 0006 W6：成员顺序静态可查可 diff）；未标记的 bean 不写该键。
+    ...(provider.order === undefined ? {} : { order: provider.order }),
     qualifiers: provider.qualifiers.map((qualifier) => ({
       interface: symbolReference(qualifier.interfaceSymbol, generatedDirectory),
       member: qualifier.member,
@@ -381,7 +401,7 @@ function renderManifest(
       dispose: provider.kind === "factory" && provider.dispose,
     },
   }));
-  return `${json({ schemaVersion: 2, configs: manifestConfigs, beans, plans })}\n`;
+  return `${json({ schemaVersion: 3, configs: manifestConfigs, beans, plans })}\n`;
 }
 
 function renderBootstrap(): string {

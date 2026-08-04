@@ -23,6 +23,14 @@ export type TypeNode =
       readonly span: SourceSpan;
     }
   | {
+      // T[] 与 readonly T[]（ADR 0006 W6，#142）：readonly 与否必须保真下传——分析层要用它区分
+      // 合法集合边（readonly）与需要指引改写的可变数组。
+      readonly kind: "array";
+      readonly element: TypeNode;
+      readonly readonlyModifier: boolean;
+      readonly span: SourceSpan;
+    }
+  | {
       readonly kind: "primitive";
       readonly name: "void";
       readonly span: SourceSpan;
@@ -68,6 +76,12 @@ export type ExpressionValue =
   | {
       readonly kind: "boolean-literal";
       readonly value: boolean;
+      readonly span: SourceSpan;
+    }
+  | {
+      // 数字字面量含一元负号形态（@Order(-1)）；只认字面量，其余数值表达式照旧 unsupported。
+      readonly kind: "number-literal";
+      readonly value: number;
       readonly span: SourceSpan;
     }
   | {

@@ -1,11 +1,13 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
 import {
+  type CollectionDependencyModel,
   type PendingDependency,
   type ProviderDraft,
   type ProviderModel,
   providerId,
   type QualifierModel,
+  type SingleDependencyModel,
   sourceReference,
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
@@ -523,6 +525,86 @@ function rejectLazyConfigInjection(
   return true;
 }
 
+interface CollectionMemberCandidate {
+  readonly id: string;
+  readonly order?: number;
+}
+
+// 集合排序（ADR 0006 W6）：@Order 数值升序在前，无 @Order 的成员排在全部有序成员之后，
+// 同序值与无序成员一律按 beanId 决定性决胜。
+function compareCollectionMembers(
+  left: CollectionMemberCandidate,
+  right: CollectionMemberCandidate,
+): number {
+  if (left.order !== right.order) {
+    if (left.order === undefined) {
+      return 1;
+    }
+    if (right.order === undefined) {
+      return -1;
+    }
+    return left.order - right.order;
+  }
+  return compareUtf16CodeUnits(left.id, right.id);
+}
+
+// 集合成员资格 = 图里所有提供该契约的候选（决策 11 的可达性语义照旧：被集合选中的 starter bean
+// 由此物化入图）。defaultBean 沿用单边的让位规则（决策 12）：存在任何其他候选即退出，全员
+// default 时全部入集合。空集合合法——零成员注入空数组，不是 MISSING_BEAN。
+function collectionMemberIds(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+  demand: DemandContext,
+): readonly string[] {
+  const available = state.candidates.byKey.get(symbol.key) ?? [];
+  const locals = available.flatMap((entry) => (entry.kind === "local" ? [entry.provider] : []));
+  const starters = available.flatMap((entry) => (entry.kind === "starter" ? [entry.bean] : []));
+  const preferred = starters.filter((bean) => !bean.defaultBean);
+  const pool = locals.length > 0 || preferred.length > 0 ? preferred : starters;
+  const members: CollectionMemberCandidate[] = [
+    ...locals.map((provider) => ({ id: provider.id, order: provider.order })),
+    ...pool.map((bean) => ({ id: materializeStarter(state, bean, demand).id })),
+  ];
+  return members.toSorted(compareCollectionMembers).map((member) => member.id);
+}
+
+function collectionDependencyFor(
+  state: ResolutionState,
+  pending: PendingDependency,
+  demand: DemandContext,
+): CollectionDependencyModel {
+  return {
+    parameterIndex: pending.index,
+    members: collectionMemberIds(state, pending.linkedType.symbol, demand).map((targetId) => ({
+      targetId,
+      mode: "eager",
+    })),
+    source: sourceReference(pending.sourceSpan),
+    contract: pending.linkedType.symbol,
+  };
+}
+
+function singleDependencyFor(
+  state: ResolutionState,
+  pending: PendingDependency,
+  demand: DemandContext,
+): SingleDependencyModel | undefined {
+  const selected =
+    pending.linkedType.qualifierMember === undefined
+      ? selectProvider(state, pending.linkedType.symbol, demand)
+      : qualifiedDependencyProvider(state, pending);
+  if (selected === undefined || rejectLazyConfigInjection(state, pending, selected)) {
+    return undefined;
+  }
+  return {
+    parameterIndex: pending.index,
+    targetId: selected.id,
+    mode: pending.linkedType.lazy ? "explicit-lazy" : "eager",
+    source: sourceReference(pending.sourceSpan),
+    contract: pending.linkedType.symbol,
+  };
+}
+
 function resolveLocalDraftDependencies(state: ResolutionState): void {
   for (const draft of state.drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -530,20 +612,14 @@ function resolveLocalDraftDependencies(state: ResolutionState): void {
         span: pending.linkedType.span,
         chain: [draft.provider.id],
       };
-      const selected =
-        pending.linkedType.qualifierMember === undefined
-          ? selectProvider(state, pending.linkedType.symbol, demand)
-          : qualifiedDependencyProvider(state, pending);
-      if (selected === undefined || rejectLazyConfigInjection(state, pending, selected)) {
+      if (pending.collection === true) {
+        draft.provider.dependencies.push(collectionDependencyFor(state, pending, demand));
         continue;
       }
-      draft.provider.dependencies.push({
-        parameterIndex: pending.index,
-        targetId: selected.id,
-        mode: pending.linkedType.lazy ? "explicit-lazy" : "eager",
-        source: sourceReference(pending.sourceSpan),
-        contract: pending.linkedType.symbol,
-      });
+      const dependency = singleDependencyFor(state, pending, demand);
+      if (dependency !== undefined) {
+        draft.provider.dependencies.push(dependency);
+      }
     }
   }
 }
