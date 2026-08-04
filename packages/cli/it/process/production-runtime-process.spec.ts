@@ -2,15 +2,15 @@ import { afterEach, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { resolveBunExecutable } from "@reforce/tooling-testing";
-import { type LeaseParticipant, probeLeaseEndpoint } from "@/project/lease-endpoint";
-import { parseLeaseParticipant } from "../support/process/lease-participant";
 import {
   createSubprocessRegistry,
   createTimeoutGuard,
   observeTypedMessages,
+  resolveBunExecutable,
   send,
-} from "../support/process/observed-subprocess";
+} from "@reforce/tooling-testing";
+import { type LeaseParticipant, probeLeaseEndpoint } from "@/project/lease-endpoint";
+import { parseLeaseParticipant } from "../support/process/lease-participant";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/production/production-runtime-order.harness.ts", import.meta.url),
