@@ -1,7 +1,11 @@
-import { cp, mkdir, readdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DevCompilation } from "@/dev/watch-coordinator";
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 const workspaceRoot = resolve("../..");
 const contextRoot = join(workspaceRoot, "packages", "context");
@@ -65,24 +69,14 @@ export async function untilObserved(
   compilations: CompilationRecorder,
   observed: () => Promise<boolean>,
 ): Promise<void> {
-  // 临时诊断：macOS CI 上「编辑源文件」那条用例等满了整个预算，本地至今复现不出来。挂住时至少要能
-  // 分清是「一次重建都没发生」还是「重建了但产物没反映改动」，否则失败信息只有一句 timed out
-  // （Issue #86）。拿到一轮 CI 数据后删掉。
-  const diagnostic = setInterval(() => {
-    console.error(`[watch-diagnostic] compilations=${compilations.all.length}`);
-  }, 15_000);
-  try {
-    while (true) {
-      // 先记住已收到的次数再检查：检查期间到达的编译不能被当成「还没来」，否则会多等一次永远不会
-      // 发生的重建。
-      const received = compilations.all.length;
-      if (await observed()) {
-        return;
-      }
-      await compilations.untilCount(received + 1);
+  while (true) {
+    // 先记住已收到的次数再检查：检查期间到达的编译不能被当成「还没来」，否则会多等一次永远不会
+    // 发生的重建。
+    const received = compilations.all.length;
+    if (await observed()) {
+      return;
     }
-  } finally {
-    clearInterval(diagnostic);
+    await compilations.untilCount(received + 1);
   }
 }
 
@@ -103,6 +97,77 @@ export async function developmentOutputContains(
     }
   }
   return false;
+}
+
+export interface InvalidationRecorder {
+  readonly all: readonly (string | null)[];
+  accept(path: string | null): void;
+  untilPath(path: string): Promise<void>;
+}
+
+// 与 recordCompilations 同构：rspack 的 invalid 钩子本身就是事件，等它而不是轮询数组
+// （轮询只留给没有事件可等的外部可观察物，见 tooling-testing 的 stall.ts）。
+export function recordInvalidations(): InvalidationRecorder {
+  const received: Array<string | null> = [];
+  const waiters = new Map<string, ReturnType<typeof Promise.withResolvers<void>>>();
+  return {
+    get all() {
+      return received;
+    },
+    accept(path) {
+      received.push(path);
+      if (path !== null) {
+        waiters.get(path)?.resolve();
+        waiters.delete(path);
+      }
+    },
+    async untilPath(path) {
+      if (received.includes(path)) {
+        return;
+      }
+      const waiter = waiters.get(path) ?? Promise.withResolvers<void>();
+      waiters.set(path, waiter);
+      await waiter.promise;
+    },
+  };
+}
+
+// 哨兵重写的节奏钟：只控制「多久没等到就换 marker 重写」，不判失败——判死仍归包级
+// `bun test --timeout` 击杀钟（Issue #92）。取值只需盖过 aggregateTimeout(200ms) + 一段余量。
+const sentinelRetouchIntervalMilliseconds = 1_000;
+
+// 事件流就绪屏障（Issue #177）：macOS 上 fs.watch 创建后 ≤10ms 窗口内的写入事件可能永久丢失
+// （nodejs/node#52601，#86 探针实证），waitForRspackWatcher 的登记完成只证明初始扫描结束、
+// 不证明事件流已就绪。真实用户从 dev 启动到首次保存隔着秒级，永远在窗口外；测试却是建完项目
+// 毫秒级内首次编辑。这里在 Arrange 阶段对已在 watch 输入内的源文件追加 marker 注释（不改语义，
+// 失败态项目同样适用），等 invalid 钩子报出该路径（「事件被投递」的直接证据，不依赖构建成败），
+// 再等随后的编译回调把屏障自己的重建排干。哨兵写入自己可能正落在丢失窗口内——丢失是永久的，
+// 重写是唯一自愈手段，停滞一个节奏钟就换新 marker 重写。
+export async function establishWatchDelivery(input: {
+  readonly compilations: CompilationRecorder;
+  readonly invalidations: InvalidationRecorder;
+  readonly sentinelPath: string;
+  readonly sentinelBaseContent: string;
+}): Promise<void> {
+  // 先排干初始构建：它不是事件投递的证据（由 rsbuild.build 直接驱动），也不能让下面的
+  // untilCount 把它误算成哨兵自己的重建。
+  await input.compilations.untilCount(1);
+  const delivered = input.invalidations.untilPath(input.sentinelPath);
+  for (let attempt = 0; ; attempt += 1) {
+    const received = input.compilations.all.length;
+    await writeFile(
+      input.sentinelPath,
+      `${input.sentinelBaseContent}// watch-delivery-${attempt}\n`,
+    );
+    const arrived = await Promise.race([
+      delivered.then(() => true),
+      sleep(sentinelRetouchIntervalMilliseconds).then(() => false),
+    ]);
+    if (arrived) {
+      await input.compilations.untilCount(received + 1);
+      return;
+    }
+  }
 }
 
 export function watchesGeneratedOutput(
