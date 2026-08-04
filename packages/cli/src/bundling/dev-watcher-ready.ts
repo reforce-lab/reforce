@@ -45,9 +45,11 @@ const watcherPollIntervalMilliseconds = 10;
 // 下面这个窗口才说明真的卡住了。等待上限因此自动随项目规模伸缩，与平台速度无关。
 const watcherProgressStallBudgetMilliseconds = 10_000;
 
-// startDevWatchBuild must not resolve until the rspack watcher has registered every gate watch
-// input in fileTimeInfoEntries; that invariant guarantees a file modification made immediately
-// after startup triggers a rebuild instead of being silently missed.
+// startDevWatchBuild 在所有 gate watch 输入登记进 fileTimeInfoEntries 之前不得 resolve。
+// 但登记完成只证明初始扫描结束，**不**证明事件流已就绪：macOS 上 fs.watch 创建后 ≤10ms
+// 窗口内的写入事件可能永久丢失（nodejs/node#52601，Issue #86 探针实证）。真实 dev 会话
+// 从启动到首次保存隔着秒级、天然在窗口外，产品侧因此不加常驻补偿（#86 决议：用户再保存
+// 一次即自愈）；紧贴启动就编辑的集成测试须先用哨兵屏障确立投递（Issue #177）。
 export async function waitForRspackWatcher(
   plugin: ReforceCompilerGatePlugin,
   projectRoot: string,
