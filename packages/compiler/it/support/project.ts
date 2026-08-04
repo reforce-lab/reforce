@@ -53,6 +53,10 @@ export async function linkConfigPackage(projectRoot: string): Promise<void> {
   );
 }
 
+export async function linkWebPackage(projectRoot: string): Promise<void> {
+  await linkPackage(projectRoot, "@reforce/web", path.join(repositoryRoot, "packages", "web"));
+}
+
 export async function writePositiveApplication(projectRoot: string): Promise<void> {
   await writeProjectTree(projectRoot, positiveApplicationTree);
   await linkApplicationPackages(projectRoot);

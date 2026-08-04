@@ -98,11 +98,50 @@ export type DecoratorCallee =
       readonly span: SourceSpan;
     };
 
+// 装饰器参数比其余表达式位多认三类形态（ADR 0006 W3/W5，#142 / #152）：路由 marker 的
+// JSON 字面量树（数组/对象/null）与 schema/中间件引用（标识符）。其余表达式位（defineBean
+// 选项、heritage 实参）保持窄的 ExpressionValue——放宽哪个位是各自分析层的决定，不在
+// parser 一刀切。
+export type DecoratorArgumentValue =
+  | ExpressionValue
+  | {
+      readonly kind: "null-literal";
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "array-literal";
+      readonly elements: readonly DecoratorArgumentValue[];
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "object-literal";
+      readonly properties: readonly ObjectLiteralProperty[];
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "identifier-reference";
+      readonly entity: EntityName;
+      readonly span: SourceSpan;
+    };
+
+export type ObjectLiteralProperty =
+  | {
+      readonly kind: "property";
+      readonly key: string;
+      readonly value: DecoratorArgumentValue;
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "unsupported-property";
+      readonly propertyKind: "computed" | "method" | "spread";
+      readonly span: SourceSpan;
+    };
+
 export interface DecoratorUse {
   readonly kind: "decorator";
   readonly callee: DecoratorCallee;
   readonly called: boolean;
-  readonly arguments: readonly ExpressionValue[];
+  readonly arguments: readonly DecoratorArgumentValue[];
   readonly span: SourceSpan;
 }
 
@@ -257,6 +296,9 @@ export interface ClassMethodDeclaration {
   readonly implementation: boolean;
   readonly parameterCount: number;
   readonly returnType?: TypeNode;
+  // 方法级装饰器服务路由提取（ADR 0006 W3，#152）：@Get/@Post、@Use 与路由 marker 都落在
+  // handler 方法上，分析层经链接核实来源后消费。
+  readonly decorators: readonly DecoratorUse[];
   readonly span: SourceSpan;
 }
 
@@ -441,6 +483,25 @@ export interface DefineApplicationDeclaration {
   readonly span: SourceSpan;
 }
 
+// 顶层值声明的名录（ADR 0006 W3/W5，#152）：路由 marker 声明（const X = defineRouteMarker(...)）
+// 与 schema 引用目标（export const UserSchema = ...）都要按名字回查"这个模块导出的这个值
+// 是什么"。只登记形状，来源核实照旧留给链接/分析层。init 只在直接调用形态下保真——marker
+// 识别只需要 callee 尾名与字面量实参。
+export interface ValueDeclaration {
+  readonly kind: "value-declaration";
+  readonly topLevel: boolean;
+  readonly declarationKind: "const" | "let" | "var";
+  readonly name?: string;
+  readonly export: DeclarationExport;
+  readonly initializer?: {
+    readonly kind: "call";
+    readonly callee: EntityName;
+    readonly arguments: readonly DecoratorArgumentValue[];
+    readonly span: SourceSpan;
+  };
+  readonly span: SourceSpan;
+}
+
 // 与 beanFactories 同一策略：parser 按尾名收集 ConfigProperties(...) 的变量初始化候选，
 // 来源核实留给链接层——命中 @reforce/config 的候选即"中间变量"硬错（ADR 0005 决策 5.1）。
 export interface ConfigFactoryCallDeclaration {
@@ -477,5 +538,6 @@ export interface SourceFileIr {
   readonly beanFactories: readonly DefineBeanDeclaration[];
   readonly applicationDefinitions: readonly DefineApplicationDeclaration[];
   readonly configFactoryCalls: readonly ConfigFactoryCallDeclaration[];
+  readonly valueDeclarations: readonly ValueDeclaration[];
   readonly unsupportedDeclarations: readonly UnsupportedNamedDeclaration[];
 }

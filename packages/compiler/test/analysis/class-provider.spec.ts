@@ -145,6 +145,7 @@ function createLinker(input: LinkerInput = {}): ProjectLinker {
       contextDependencies: [],
       missingDependencies: [],
     }),
+    resolveValueDeclaration: () => undefined,
     resolveEntity(_source, entity) {
       return entity.kind === "identifier" ? byName.get(entity.name) : undefined;
     },
@@ -251,6 +252,7 @@ function methodBody(
     implementation: options.implementation ?? true,
     parameterCount: options.parameterCount ?? 0,
     returnType: options.returnType ?? voidType,
+    decorators: [],
     span: span(),
   };
 }

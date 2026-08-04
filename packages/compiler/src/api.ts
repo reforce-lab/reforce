@@ -35,6 +35,12 @@ export type CompilerDiagnosticCode =
   | "INVALID_CONFIG_PROPERTIES"
   | "DUPLICATE_CONFIG_PREFIX"
   | "INVALID_CONFIG_INJECTION"
+  | "INVALID_ROUTE_DECLARATION"
+  | "DUPLICATE_ROUTE"
+  | "INVALID_ROUTE_MARKER"
+  | "INVALID_ROUTE_MARKER_VALUE"
+  | "INVALID_ROUTE_SCHEMA"
+  | "INVALID_MIDDLEWARE_DECLARATION"
   | "DUPLICATE_STARTER_REGISTRATION"
   | "STARTER_META_NOT_FOUND"
   | "INVALID_STARTER_META"
@@ -130,7 +136,15 @@ export type CompileLibraryResult =
     };
 
 export interface GeneratedFile {
-  readonly path: "beans.ts" | "qualifiers.d.ts" | "manifest.json" | "bootstrap.ts";
+  // routes.* 是第二种生成物（ADR 0006 W1，#152）：与 DI 四件套一起无条件产出精确全集——
+  // CLI 的 generated 事务按全集校验落盘，无 web 内容时是零 import 的空表。
+  readonly path:
+    | "beans.ts"
+    | "bootstrap.ts"
+    | "manifest.json"
+    | "qualifiers.d.ts"
+    | "routes.json"
+    | "routes.ts";
   readonly content: string;
 }
 

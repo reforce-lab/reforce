@@ -17,13 +17,15 @@ import type {
 
 export const contextModuleSpecifier = "@reforce/context";
 export const configModuleSpecifier = "@reforce/config";
+export const webModuleSpecifier = "@reforce/web";
 
 // 框架自有包的 import 一律短路合成符号、不读真实文件（与 contextSymbol 同一策略）；表驱动
 // 保持"specifier → 符号 kind/key 前缀"三处一致（Issue #114 的名单纪律）。
 const frameworkSpecifierKinds = {
   [contextModuleSpecifier]: "context",
   [configModuleSpecifier]: "config",
-} as const satisfies Record<string, "context" | "config">;
+  [webModuleSpecifier]: "web",
+} as const satisfies Record<string, "config" | "context" | "web">;
 
 export function isFrameworkSpecifier(specifier: string): boolean {
   return Object.hasOwn(frameworkSpecifierKinds, specifier);

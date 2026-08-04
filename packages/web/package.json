@@ -7,16 +7,24 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./generated-runtime": {
+      "types": "./dist/generated-runtime.d.ts",
+      "default": "./dist/generated-runtime.js"
     }
   },
   "scripts": {
     "build": "rslib build",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "bun test test it",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@swc/helpers": "catalog:"
+    "@reforce/context": "workspace:*",
+    "@standard-schema/spec": "^1.1.0",
+    "@swc/helpers": "catalog:",
+    "radashi": "^12.9.1"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
@@ -24,7 +32,6 @@
     "@reforce/tooling-tsconfig": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/bun": "catalog:",
-    "type-fest": "catalog:",
     "typescript": "catalog:"
   }
 }

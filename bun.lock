@@ -198,7 +198,10 @@
       "name": "@reforce/web",
       "version": "0.0.0",
       "dependencies": {
+        "@reforce/context": "workspace:*",
+        "@standard-schema/spec": "^1.1.0",
         "@swc/helpers": "catalog:",
+        "radashi": "^12.9.1",
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
@@ -206,7 +209,6 @@
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
-        "type-fest": "catalog:",
         "typescript": "catalog:",
       },
     },

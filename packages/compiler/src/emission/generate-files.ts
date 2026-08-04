@@ -1,6 +1,4 @@
-import path from "node:path";
-import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
-import stableStringify from "json-stable-stringify";
+import { compareUtf16CodeUnits } from "@reforce/primitives";
 import {
   type BeanProviderModel,
   type ConfigProviderModel,
@@ -10,7 +8,10 @@ import {
   type ProviderModel,
   sourceReference,
 } from "@/analysis/model";
+import type { WebModel } from "@/analysis/web-model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
+import { generateWebFiles } from "@/emission/generate-web-files";
+import { inlineJson, json, runtimeSpecifier } from "@/emission/render";
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
 
@@ -22,53 +23,6 @@ const configRuntimeModuleSpecifier = "@reforce/config/generated-runtime";
 // subpath 优先，无表退化为包根探测。应用源集内的符号 emission 自己算相对路径。
 export interface EmissionTypeResolver {
   contractImportSpecifier(symbol: LinkedSymbol): string | undefined;
-}
-
-// Ordered most- to least-specific: "x.d.mts" also ends with ".mts", so the declaration suffixes
-// must be matched before their plain counterparts.
-const runtimeExtensionMap = [
-  [".d.mts", ".mjs"],
-  [".d.cts", ".cjs"],
-  [".d.ts", ".js"],
-  [".mts", ".mjs"],
-  [".cts", ".cjs"],
-  [".tsx", ".js"],
-  [".ts", ".js"],
-] as const;
-
-function runtimeSuffix(file: string): string {
-  for (const [sourceExtension, runtimeExtension] of runtimeExtensionMap) {
-    if (file.endsWith(sourceExtension)) {
-      return `${file.slice(0, -sourceExtension.length)}${runtimeExtension}`;
-    }
-  }
-  return file;
-}
-
-function runtimeSpecifier(generatedDirectory: string, sourceFile: string): string {
-  const relative = toPortablePath(path.relative(generatedDirectory, sourceFile));
-  const withPrefix = relative.startsWith(".") ? relative : `./${relative}`;
-  return runtimeSuffix(withPrefix);
-}
-
-function json(value: unknown): string {
-  const rendered = stableStringify(value, { space: 2 });
-  if (rendered === undefined) {
-    throw new Error("Generated data is not serializable");
-  }
-  return rendered;
-}
-
-function indent(value: string, spaces: number): string {
-  const prefix = " ".repeat(spaces);
-  return value
-    .split("\n")
-    .map((line) => `${prefix}${line}`)
-    .join("\n");
-}
-
-function inlineJson(value: unknown, spaces: number): string {
-  return indent(json(value), spaces).trimStart();
 }
 
 function sourceReferenceForSymbol(symbol: LinkedSymbol) {
@@ -421,6 +375,7 @@ export function generateFiles(
   providers: readonly BeanProviderModel[],
   configs: readonly ConfigProviderModel[],
   plans: ExecutionPlansModel,
+  web: WebModel,
   typeResolver: EmissionTypeResolver,
 ): readonly GeneratedFile[] {
   const generatedDirectory = generatedDirectoryPath(project.projectRoot);
@@ -438,5 +393,6 @@ export function generateFiles(
       content: renderManifest(providers, configs, plans, generatedDirectory),
     },
     { path: "bootstrap.ts", content: renderBootstrap() },
+    ...generateWebFiles(project, web),
   ]);
 }

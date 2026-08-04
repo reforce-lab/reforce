@@ -36,6 +36,15 @@ function generatedFiles(generation: string): readonly GeneratedFile[] {
       })}\n`,
     },
     { path: "qualifiers.d.ts", content: "export {};\n" },
+    {
+      path: "routes.json",
+      content: `${JSON.stringify({ schemaVersion: 1, routes: [], errorHandlers: [] })}\n`,
+    },
+    {
+      path: "routes.ts",
+      content:
+        "export const routeTable = {\n  schemaVersion: 1,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
+    },
   ];
 }
 

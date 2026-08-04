@@ -23,9 +23,21 @@ import type {
   InterfaceDeclaration,
   SourceFileIr,
   TypeNode,
+  ValueDeclaration,
 } from "@/parser/source-ir";
 import type { ParsedSource } from "@/project/source-files";
 import { createWatchInputs } from "@/project/watch-inputs";
+
+// 值声明的解析结果（ADR 0006 W3/W5，#152）：exportName 是"从声明模块 import 该值"要用的
+// 名字——emission 据此在 routes.ts 里重建 import；declaration 供分析层核实形状（marker 的
+// defineRouteMarker 调用、schema 的导出 const）。
+export interface ResolvedValueDeclaration {
+  readonly source: ParsedSource;
+  // 从声明模块 import 该值要用的名字；本文件声明且未导出时缺省——marker 的同文件使用不需要
+  // 导出，schema 引用则必须可 import，由调用方按各自约束诊断。
+  readonly exportName?: string;
+  readonly declaration: ValueDeclaration;
+}
 
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
@@ -33,6 +45,9 @@ export interface ProjectLinker {
   collectWatchInputs(): CompilerWatchInputs;
   resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined;
   resolveType(source: ParsedSource, type: TypeNode): LinkedType | undefined;
+  // 名字在 source 语境下指向的顶层值声明：本文件声明，或一跳具名 import 的目标模块直接
+  // 导出。不追 re-export 链（路由 schema / marker 的 v1 边界，越界由调用方给出诊断）。
+  resolveValueDeclaration(source: ParsedSource, name: string): ResolvedValueDeclaration | undefined;
   symbolForDeclaration(
     source: ParsedSource,
     declaration: ClassDeclaration | InterfaceDeclaration,
@@ -245,6 +260,85 @@ export async function createProjectLinker(
     return name === undefined ? undefined : recordFor(source).localSymbols.get(name);
   }
 
+  function localExportNameOf(record: ModuleRecord, localName: string): string | undefined {
+    const declaration = record.source.unit.valueDeclarations.find(
+      (candidate) => candidate.topLevel && candidate.name === localName,
+    );
+    if (declaration?.export.kind === "named") {
+      return declaration.export.exportedName;
+    }
+    for (const exported of record.source.unit.exports) {
+      if (exported.kind !== "local-named") {
+        continue;
+      }
+      const specifier = exported.specifiers.find((candidate) => candidate.local === localName);
+      if (specifier !== undefined) {
+        return specifier.exported;
+      }
+    }
+    return undefined;
+  }
+
+  function exportedValueOf(
+    record: ModuleRecord,
+    exportedName: string,
+  ): ResolvedValueDeclaration | undefined {
+    const direct = record.source.unit.valueDeclarations.find(
+      (candidate) =>
+        candidate.topLevel &&
+        candidate.export.kind === "named" &&
+        candidate.export.exportedName === exportedName,
+    );
+    if (direct !== undefined) {
+      return { source: record.source, exportName: exportedName, declaration: direct };
+    }
+    for (const exported of record.source.unit.exports) {
+      if (exported.kind !== "local-named") {
+        continue;
+      }
+      const specifier = exported.specifiers.find(
+        (candidate) => candidate.exported === exportedName,
+      );
+      if (specifier === undefined) {
+        continue;
+      }
+      const local = record.source.unit.valueDeclarations.find(
+        (candidate) => candidate.topLevel && candidate.name === specifier.local,
+      );
+      if (local !== undefined) {
+        return { source: record.source, exportName: exportedName, declaration: local };
+      }
+    }
+    return undefined;
+  }
+
+  function resolveValueDeclaration(
+    source: ParsedSource,
+    name: string,
+  ): ResolvedValueDeclaration | undefined {
+    const record = recordFor(source);
+    const local = record.source.unit.valueDeclarations.find(
+      (candidate) => candidate.topLevel && candidate.name === name,
+    );
+    if (local !== undefined) {
+      const exportName = localExportNameOf(record, name);
+      return {
+        source: record.source,
+        ...(exportName === undefined ? {} : { exportName }),
+        declaration: local,
+      };
+    }
+    const imported = record.imports.get(name);
+    if (imported === undefined || imported.namespace) {
+      return undefined;
+    }
+    const target = resolveModule(source, imported.moduleSpecifier);
+    if (target?.record === undefined) {
+      return undefined;
+    }
+    return exportedValueOf(target.record, imported.imported);
+  }
+
   return {
     // diagnostics must stay the live array: resolveType and the export binder keep pushing
     // diagnostics while analysis runs, and analysis reads linker.diagnostics only after it
@@ -263,6 +357,7 @@ export async function createProjectLinker(
     },
     resolveEntity,
     resolveType,
+    resolveValueDeclaration,
     symbolForDeclaration,
   };
 }

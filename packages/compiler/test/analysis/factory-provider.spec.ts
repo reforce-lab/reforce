@@ -112,6 +112,7 @@ function createLinker(
       contextDependencies: [],
       missingDependencies: [],
     }),
+    resolveValueDeclaration: () => undefined,
     resolveEntity(_source, entity) {
       return entity.kind === "identifier" ? byName.get(entity.name) : undefined;
     },
