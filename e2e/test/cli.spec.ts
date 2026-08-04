@@ -1391,3 +1391,352 @@ describe.serial("built Reforce CLI", () => {
     );
   }
 });
+
+// —— ADR 0004 M3（#148）：fixture starter 的完整消费链路与 dev watch 两条 install 路径 ——
+//
+// meta 由真实 `reforce lib`（构建后的 CLI）编出，不手写（M2 狗粮验收）；唯一的例外是
+// defaultBean 位：M2 尚无作者侧授权面（消费侧 schema 自 M1 起支持），由本 harness 在编译产物上
+// 注入并在 PR 交付说明中记账。fixture starter 复制到临时目录后再编译/安装，模板目录零污染。
+
+const starterBaseFixture = join(e2eRoot, "fixtures", "starter-base");
+const starterCacheFixture = join(e2eRoot, "fixtures", "starter-cache");
+
+// lib 编译解析 starter src 的 `@reforce/context` import，只需要 dist 类型面。
+async function installStarterCompilePackages(packageRoot: string): Promise<void> {
+  const contextTarget = join(packageRoot, "node_modules", "@reforce", "context");
+  await mkdir(contextTarget, { recursive: true });
+  await Promise.all([
+    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
+    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
+  ]);
+}
+
+interface CompiledStarters {
+  readonly baseRoot: string;
+  readonly cacheRoot: string;
+}
+
+async function compileStarterFixtures(workspaceRootPath: string): Promise<CompiledStarters> {
+  const baseRoot = join(workspaceRootPath, "starter-base");
+  const cacheRoot = join(workspaceRootPath, "starter-cache");
+  await cp(starterBaseFixture, baseRoot, { recursive: true });
+  await cp(starterCacheFixture, cacheRoot, { recursive: true });
+  await installStarterCompilePackages(baseRoot);
+  await installStarterCompilePackages(cacheRoot);
+  const baseResult = await runCommand(bunExecutable, [cliEntry, "lib", "--project", baseRoot], {
+    cwd: baseRoot,
+    timeout: commandTimeout,
+  });
+  expect(baseResult.exitCode, commandFailure(baseResult)).toBe(0);
+  // base（含刚编出的 meta）装进 cache 的 node_modules：cache 编译时 Clock 才能归一为 meta 坐标
+  // 并进 starterDeps。
+  await cp(baseRoot, join(cacheRoot, "node_modules", "@acme", "starter-base"), {
+    recursive: true,
+  });
+  const cacheResult = await runCommand(bunExecutable, [cliEntry, "lib", "--project", cacheRoot], {
+    cwd: cacheRoot,
+    timeout: commandTimeout,
+  });
+  expect(cacheResult.exitCode, commandFailure(cacheResult)).toBe(0);
+  // defaultBean 注入：M2 的 reforce lib 没有作者侧授权面（本 PR 交付说明记账），消费侧语义
+  // （存在其他候选即让位）自 M1 起已实装，这里补上这一位以覆盖该场景。
+  const metaPath = join(cacheRoot, "reforce-meta.json");
+  // 断言依据：这份字节刚由上面的 reforce lib 写出并经其出口自检，形状由 lib 保证；JSON.parse
+  // 的返回类型系统推不出来。
+  const meta = JSON.parse(await readFile(metaPath, "utf8")) as {
+    beans: { id: string; defaultBean?: boolean }[];
+  };
+  for (const bean of meta.beans) {
+    if (bean.id === "@acme/starter-cache#MemoryCache") {
+      bean.defaultBean = true;
+    }
+  }
+  await writeFile(metaPath, `${JSON.stringify(meta, undefined, 2)}\n`);
+  return { baseRoot, cacheRoot };
+}
+
+async function installStarters(appRoot: string, starters: CompiledStarters): Promise<void> {
+  const scopeRoot = join(appRoot, "node_modules", "@acme");
+  await mkdir(scopeRoot, { recursive: true });
+  await cp(starters.cacheRoot, join(scopeRoot, "starter-cache"), { recursive: true });
+  await cp(starters.baseRoot, join(scopeRoot, "starter-base"), { recursive: true });
+  // 剥掉编译期用的嵌套 node_modules：应用里只保留一份物理拷贝，starterDeps 解析提升到应用根。
+  await rm(join(scopeRoot, "starter-cache", "node_modules"), { recursive: true, force: true });
+  await rm(join(scopeRoot, "starter-base", "node_modules"), { recursive: true, force: true });
+}
+
+const starterRegistrationSource = `import { defineApplication } from "@reforce/context";
+import cacheStarter from "@acme/starter-cache/reforce";
+
+export default defineApplication({ starters: [cacheStarter] });
+`;
+
+const cacheConfigSource = `import { Injectable } from "@reforce/context";
+import type { CacheConfig } from "@acme/starter-cache";
+
+@Injectable()
+export class LocalCacheConfig implements CacheConfig {
+  prefix(): string {
+    return "e2e";
+  }
+}
+`;
+
+const cacheReaderSource = `import { Injectable } from "@reforce/context";
+import type { Cache } from "@acme/starter-cache";
+
+@Injectable()
+export class CacheReader {
+  constructor(readonly cache: Cache) {}
+
+  read(): string {
+    return this.cache.get("greeting");
+  }
+}
+`;
+
+const localCacheSource = `import { Injectable } from "@reforce/context";
+import type { Cache } from "@acme/starter-cache";
+
+@Injectable()
+export class LocalCache implements Cache {
+  get(key: string): string {
+    return \`local:\${key}\`;
+  }
+}
+`;
+
+// 覆盖场景仍要消费 starter 的另一个 bean：一个在 manifest 里没有任何 bean 的 starter 对 explain
+// 不可见（最小版声明过的盲点），让位关系要能展示，starter 必须至少留有一席之地。
+const metricsReaderSource = `import { Injectable } from "@reforce/context";
+import { CacheMetrics } from "@acme/starter-cache";
+
+@Injectable()
+export class MetricsReader {
+  constructor(readonly metrics: CacheMetrics) {}
+
+  hits(): number {
+    return this.metrics.hits();
+  }
+}
+`;
+
+async function writeStarterApplicationSources(appRoot: string): Promise<void> {
+  await writeFile(join(appRoot, "src", "starter-registration.ts"), starterRegistrationSource);
+  await writeFile(join(appRoot, "src", "cache-config.ts"), cacheConfigSource);
+  await writeFile(join(appRoot, "src", "cache-reader.ts"), cacheReaderSource);
+}
+
+async function createStarterApplication(
+  workspaceRootPath: string,
+  name: string,
+  starters?: CompiledStarters,
+): Promise<string> {
+  const appRoot = join(workspaceRootPath, name);
+  await mkdir(appRoot, { recursive: true });
+  await copyApplicationProject(applicationFixture, appRoot);
+  await installApplicationPackages(appRoot);
+  await writeStarterApplicationSources(appRoot);
+  if (starters !== undefined) {
+    await installStarters(appRoot, starters);
+  }
+  return appRoot;
+}
+
+async function waitForStderr(subprocess: SpawnedIpcProcess, expected: string): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    if (subprocess.output().stderr.includes(expected)) {
+      return;
+    }
+    if (subprocess.child.exitCode !== null || subprocess.child.signalCode !== null) {
+      throw new Error(
+        `Subprocess exited before printing ${expected}.\n${subprocess.output().stderr}`,
+      );
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`Timed out waiting for output ${expected}.\n${subprocess.output().stderr}`);
+    }
+    await sleep(20);
+  }
+}
+
+const devTerminationSignal: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGTERM";
+
+describe.serial("starter consumption", () => {
+  let workspace: TemporaryProject;
+  let starters: CompiledStarters;
+  let appRoot: string;
+
+  beforeAll(async () => {
+    workspace = await createTemporaryProject();
+    starters = await compileStarterFixtures(workspace.projectRoot);
+    appRoot = await createStarterApplication(workspace.projectRoot, "app", starters);
+    const result = await buildProject(appRoot);
+    expect(result.exitCode, commandFailure(result)).toBe(0);
+  });
+
+  afterAll(async () => {
+    await workspace.cleanup();
+  });
+
+  test(
+    "links a reforce lib compiled starter with starterDeps and an app-supplied open edge",
+    async () => {
+      const manifest = await readFile(
+        join(appRoot, ".reforce", "generated", "manifest.json"),
+        "utf8",
+      );
+      expect(manifest).toContain('"origin": "@acme/starter-cache@1.0.0"');
+      // starterDeps 自动拉入：应用只注册了 starter-cache，SystemClock 来自 base。
+      expect(manifest).toContain('"origin": "@acme/starter-base@1.0.0"');
+      const beans = await readFile(join(appRoot, ".reforce", "generated", "beans.ts"), "utf8");
+      expect(beans).toContain('from "@acme/starter-cache"');
+      expect(beans).toContain('from "@acme/starter-base"');
+    },
+    commandTimeout,
+  );
+
+  test(
+    "starts the built application constructing starter beans",
+    async () => {
+      const started = await startApplication(appRoot, "starter-app");
+      let stopped = false;
+      try {
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.acknowledgementOk).toBe(true);
+        await expectGracefulClose(started, shutdown.result);
+      } finally {
+        if (!stopped) {
+          await forceCleanup(started);
+        }
+      }
+    },
+    commandTimeout,
+  );
+
+  test(
+    "explains an accepted default starter bean from the generated manifest",
+    async () => {
+      const result = await runCommand(
+        bunExecutable,
+        [cliEntry, "explain", "MemoryCache", "--project", appRoot],
+        { cwd: appRoot, timeout: commandTimeout },
+      );
+      expect(result.exitCode, commandFailure(result)).toBe(0);
+      const stdout = String(result.stdout);
+      expect(stdout).toContain("bean @acme/starter-cache#MemoryCache");
+      expect(stdout).toContain("origin @acme/starter-cache@1.0.0 · registered starter");
+      expect(stdout).toContain("accepted default provider");
+    },
+    commandTimeout,
+  );
+
+  test(
+    "a local provider overrides the starter default and explain reports the stand-aside",
+    async () => {
+      const overrideRoot = await createStarterApplication(
+        workspace.projectRoot,
+        "app-override",
+        starters,
+      );
+      await writeFile(join(overrideRoot, "src", "local-cache.ts"), localCacheSource);
+      await writeFile(join(overrideRoot, "src", "metrics-reader.ts"), metricsReaderSource);
+      const result = await buildProject(overrideRoot);
+      expect(result.exitCode, commandFailure(result)).toBe(0);
+
+      const manifest = await readFile(
+        join(overrideRoot, ".reforce", "generated", "manifest.json"),
+        "utf8",
+      );
+      expect(manifest).not.toContain("MemoryCache");
+      expect(manifest).toContain("CacheMetrics");
+
+      const explain = await runCommand(
+        bunExecutable,
+        [cliEntry, "explain", "LocalCache", "--project", overrideRoot],
+        { cwd: overrideRoot, timeout: commandTimeout },
+      );
+      expect(explain.exitCode, commandFailure(explain)).toBe(0);
+      const stdout = String(explain.stdout);
+      expect(stdout).toContain("stood aside @acme/starter-cache#MemoryCache");
+      expect(stdout).toContain("a local provider always wins");
+    },
+    commandTimeout,
+  );
+
+  test(
+    "development recovers when a missing starter is installed and bun.lock lands",
+    async () => {
+      const devRoot = await createStarterApplication(workspace.projectRoot, "app-sudden-install");
+      const suffix = randomUUID();
+      const readyPath = join(devRoot, `dev-${suffix}.ready`);
+      const closedPath = join(devRoot, `dev-${suffix}.closed`);
+      const subprocess = spawnDevCommand({
+        cwd: devRoot,
+        projectDirectory: devRoot,
+        readyPath,
+        closedPath,
+        marker: "sudden-install",
+      });
+      try {
+        // 注册的 starter 未安装：编译失败、保持 watch，不退出。
+        await waitForStderr(subprocess, "STARTER_META_NOT_FOUND");
+        // 模拟 bun install：先落包内容（node_modules 不被 watch），bun.lock 收尾触发重发现。
+        await installStarters(devRoot, starters);
+        await writeFile(join(devRoot, "bun.lock"), '{"lockfileVersion": 1}\n');
+        await waitForFile(readyPath, subprocess.child);
+        const result = await shutdownWithSignal(subprocess, devTerminationSignal);
+        expect(result.exitCode, processFailure(subprocess, result)).toBe(0);
+      } finally {
+        await forceCleanupProcess(subprocess);
+      }
+    },
+    commandTimeout,
+  );
+
+  test(
+    "development relinks after a starter upgrade lands through bun.lock",
+    async () => {
+      const devRoot = await createStarterApplication(
+        workspace.projectRoot,
+        "app-starter-upgrade",
+        starters,
+      );
+      const development = await startDevelopment({
+        cwd: devRoot,
+        projectDirectory: devRoot,
+        projectRoot: devRoot,
+        marker: "starter-upgrade",
+      });
+      try {
+        const installedCachePackage = join(
+          devRoot,
+          "node_modules",
+          "@acme",
+          "starter-cache",
+          "package.json",
+        );
+        // 断言依据：fixture 的 package.json 由本仓库提交、上面刚复制而来；JSON.parse 推不出形状。
+        const packageJson = JSON.parse(await readFile(installedCachePackage, "utf8")) as {
+          version: string;
+        };
+        packageJson.version = "2.0.0";
+        await writeFile(installedCachePackage, `${JSON.stringify(packageJson, undefined, 2)}\n`);
+        await writeFile(join(devRoot, "bun.lock"), '{"lockfileVersion": 1}\n');
+        // 升级经 bun.lock 信号进入重发现→重链接→重生成：manifest 的 origin 换代即证据。
+        await waitForFileContent(
+          join(devRoot, ".reforce", "generated", "manifest.json"),
+          "@acme/starter-cache@2.0.0",
+          development.child,
+        );
+        const result = await shutdownWithSignal(development, devTerminationSignal);
+        expect(result.exitCode, processFailure(development, result)).toBe(0);
+      } finally {
+        await forceCleanupProcess(development);
+      }
+    },
+    commandTimeout,
+  );
+});

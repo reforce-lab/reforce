@@ -13,18 +13,20 @@ interface ManifestSourcePosition {
   readonly character: number;
 }
 
-interface ManifestSourceReference {
+// 类型面（Manifest*、GeneratedManifest）随 parseGeneratedManifestBytes 导出：explain 命令
+// （Issue #148）以同一信任边界消费 manifest，字段形状只在此处声明一次。
+export interface ManifestSourceReference {
   readonly file: string;
   readonly start: ManifestSourcePosition;
   readonly end: ManifestSourcePosition;
 }
 
-interface ManifestExportReference {
+export interface ManifestExportReference {
   readonly moduleSpecifier: string;
   readonly exportName: string;
 }
 
-interface ManifestSymbolReference extends ManifestExportReference {
+export interface ManifestSymbolReference extends ManifestExportReference {
   readonly displayName: string;
   readonly declaration?: ManifestSourceReference;
 }
@@ -34,7 +36,7 @@ interface ManifestQualifier {
   readonly member: string;
 }
 
-interface ManifestDependency {
+export interface ManifestDependency {
   readonly parameterIndex: number;
   readonly targetId: string;
   readonly mode: "eager" | "cycle-proxy" | "explicit-lazy";
@@ -47,7 +49,7 @@ interface ManifestLifecycle {
   readonly dispose: boolean;
 }
 
-interface ManifestBean {
+export interface ManifestBean {
   readonly id: string;
   readonly origin: string;
   readonly kind: "class" | "factory";
@@ -62,7 +64,7 @@ interface ManifestBean {
 
 // config 条目（ADR 0005，#130）：恒为应用侧声明，不进 plans——实例由运行时绑定 phase 先于
 // 一切 bean 构造，bean 依赖可以指向 config id。
-interface ManifestConfig {
+export interface ManifestConfig {
   readonly id: string;
   readonly prefix: string;
   readonly source: ManifestSourceReference;
@@ -73,6 +75,13 @@ interface ManifestPlans {
   readonly constructionOrder: readonly string[];
   readonly startActionOrder: readonly string[];
   readonly cleanupActionOrder: readonly string[];
+}
+
+export interface GeneratedManifest {
+  readonly schemaVersion: 2;
+  readonly configs: readonly ManifestConfig[];
+  readonly beans: readonly ManifestBean[];
+  readonly plans: ManifestPlans;
 }
 
 // 与 compiler（analysis/config-provider.ts）及 @reforce/config 运行时同一条 prefix 规则；
@@ -189,7 +198,8 @@ function isExportReference(value: unknown): value is ManifestExportReference {
 
 // origin 线上格式（ADR 0004 决策 16，#120）：应用 bean 恒为 "application"，starter bean 为
 // `包名@版本`。scoped 包名自带前导 "@"，版本分隔取最后一个 "@" 且不得在首位或末位。
-function starterOriginPackageName(origin: string): string | undefined {
+// export 给 explain 命令拆 origin：包名/版本的切分规则必须与这里的校验同源。
+export function starterOriginPackageName(origin: string): string | undefined {
   const separator = origin.lastIndexOf("@");
   if (separator <= 0 || separator === origin.length - 1) {
     return undefined;
@@ -544,7 +554,7 @@ function hasPortableSourcePaths(
   return true;
 }
 
-function isGeneratedManifest(value: unknown): boolean {
+function isGeneratedManifest(value: unknown): value is GeneratedManifest {
   // schemaVersion 是硬版本门：无法识别的 schema 直接拒绝，不按错版契约解释产物字节。
   // v2（ADR 0005，#130）新增顶层 configs；与 compiler 的 renderManifest 同步演进。
   if (
@@ -585,10 +595,15 @@ function isGeneratedManifest(value: unknown): boolean {
   return hasValidPlans(plans, beans, configIds);
 }
 
-export function validateGeneratedManifestBytes(bytes: Uint8Array): boolean {
+export function parseGeneratedManifestBytes(bytes: Uint8Array): GeneratedManifest | undefined {
   try {
-    return isGeneratedManifest(JSON.parse(new TextDecoder().decode(bytes)));
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return isGeneratedManifest(value) ? value : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+export function validateGeneratedManifestBytes(bytes: Uint8Array): boolean {
+  return parseGeneratedManifestBytes(bytes) !== undefined;
 }

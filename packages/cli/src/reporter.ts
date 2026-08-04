@@ -3,7 +3,7 @@ import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@reforce/compil
 import { ReforceRuntimeError, type RuntimeErrorCode } from "@reforce/context";
 import { isObject } from "radashi";
 
-export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib";
+export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain";
 
 export type CliCommandPhase =
   | "argv"
