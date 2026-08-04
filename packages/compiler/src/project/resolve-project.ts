@@ -216,6 +216,7 @@ function explicitSelectionFailure(
 export async function resolveProject(
   request: ResolveProjectRequest,
   remember: RememberProject,
+  requireGeneratedDeclarations = true,
 ): Promise<ProjectResolutionResult> {
   const resolvedBoundary = await resolveSelectionBoundary(request.projectDirectory);
   if (resolvedBoundary === undefined) {
@@ -250,10 +251,14 @@ export async function resolveProject(
 
   const inspected = await Promise.all(
     selection.candidates.map((candidate) =>
-      inspectProjectConfigCandidate(candidate.canonicalPath, {
-        selectionBoundary: resolvedBoundary.identityPath,
-        config: candidate.identityPath,
-      }),
+      inspectProjectConfigCandidate(
+        candidate.canonicalPath,
+        {
+          selectionBoundary: resolvedBoundary.identityPath,
+          config: candidate.identityPath,
+        },
+        requireGeneratedDeclarations,
+      ),
     ),
   );
   const valid = inspected.filter((item) => item.status === "success");

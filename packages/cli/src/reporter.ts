@@ -3,7 +3,7 @@ import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@reforce/compil
 import { ReforceRuntimeError, type RuntimeErrorCode } from "@reforce/context";
 import { isObject } from "radashi";
 
-export type CliCommandName = "cli" | "dev" | "build" | "start";
+export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib";
 
 export type CliCommandPhase =
   | "argv"
@@ -19,6 +19,7 @@ export type CliCommandPhase =
 
 export type CliFailureCode =
   | "CLI_USAGE_ERROR"
+  | "PACKAGE_EXPORTS_INVALID"
   | "PROJECT_BUSY"
   | "GENERATED_TRANSACTION_FAILED"
   | "DIST_TRANSACTION_FAILED"
@@ -38,7 +39,7 @@ interface CliStatusEvent {
 
 interface CliDiagnosticEvent {
   readonly kind: "diagnostic";
-  readonly command: "dev" | "build";
+  readonly command: "dev" | "build" | "lib";
   readonly phase: "project" | "compiler";
   readonly diagnostic: CompilerDiagnostic;
 }

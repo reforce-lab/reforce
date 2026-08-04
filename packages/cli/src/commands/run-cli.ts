@@ -110,6 +110,19 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     });
   });
 
+  configureCompileOptions(
+    program.command("lib").description("compile a starter library's reforce meta"),
+  ).action(async (commandOptions: CompileProjectOptions) => {
+    selectedCommand = "lib";
+    const { runLibCommand } = await import("@/commands/lib");
+    result = await runLibCommand({
+      cwd,
+      projectDirectory: commandOptions.project,
+      ...(commandOptions.tsconfig === undefined ? {} : { tsconfigPath: commandOptions.tsconfig }),
+      reporter,
+    });
+  });
+
   configureProjectOption(
     program.command("start").description("start a production application"),
   ).action(async (commandOptions: ProjectOptions) => {

@@ -176,9 +176,12 @@ async function validateApplicationSources(
   return undefined;
 }
 
+// requireGeneratedDeclarations：应用项目必须把 .reforce/generated 声明纳入 tsconfig；库模式
+// （ADR 0004 决策 1，#147）不产生成目录，跳过该闸门，其余项目校验两种模式共用。
 export async function inspectProjectConfigCandidate(
   candidate: string,
   identityPaths: ConfigCandidateIdentityPaths,
+  requireGeneratedDeclarations = true,
 ): Promise<ConfigCandidateResult> {
   const loadedCandidate = await loadConfigCandidate(candidate);
   if (loadedCandidate.status === "failure") {
@@ -228,7 +231,10 @@ export async function inspectProjectConfigCandidate(
     };
   }
 
-  if (!generatedDeclarationsAreIncluded(loaded.parsed.config, canonicalConfig)) {
+  if (
+    requireGeneratedDeclarations &&
+    !generatedDeclarationsAreIncluded(loaded.parsed.config, canonicalConfig)
+  ) {
     return {
       status: "failure",
       diagnostics: [

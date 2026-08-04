@@ -1,0 +1,722 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import {
+  createTemporaryProject,
+  type ProjectTree,
+  type TemporaryProject,
+} from "@reforce/tooling-testing";
+import {
+  type CompileLibraryResult,
+  type CompileResult,
+  createCompiler,
+  type LibraryGeneratedFile,
+} from "@/index";
+import { applicationTsconfig, type CompileSuccess } from "./support/project";
+import { nodeModulesTree, starterPackage } from "./support/starters";
+
+// ADR 0004（#120）M2 生产侧 IT（#147）：reforce lib 复用流水线中段编出 meta，schema 由
+// linking/starter-meta.ts（M1，#145）钉死。闭环用例把编出的 meta 原样装进应用 node_modules 走
+// M1 链接路径，并与同语义的手写 meta 逐字节比对生成产物；负向用例钉死生产侧提前拦截
+// （runtimeExport 可达、形状相符、meta v1 表达不了的授权面）。
+
+type LibraryFailure = Extract<CompileLibraryResult, { readonly status: "failure" }>;
+type LibrarySuccess = Extract<CompileLibraryResult, { readonly status: "success" }>;
+
+const temporaryProjects: TemporaryProject[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
+});
+
+const libraryPackageName = "@acme/starter-redis";
+
+const defaultExports = {
+  ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+  "./client": { types: "./dist/client.d.ts", default: "./dist/client.js" },
+  "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
+  "./reforce-meta": "./reforce-meta.json",
+};
+
+const contractsSource = [
+  "export interface Cache {",
+  "  get(key: string): string;",
+  "}",
+  "export interface RedisConfig {",
+  "  url(): string;",
+  "}",
+  "",
+].join("\n");
+
+const clientSource = [
+  'import { Injectable, type OnContextClose } from "@reforce/context";',
+  'import type { Cache, RedisConfig } from "./contracts";',
+  "",
+  "@Injectable()",
+  "export class RedisClient implements Cache, OnContextClose {",
+  "  private readonly prefix: string;",
+  "",
+  "  constructor(config: RedisConfig) {",
+  "    this.prefix = config.url();",
+  "  }",
+  "",
+  "  onContextClose(): void {}",
+  "",
+  "  get(key: string): string {",
+  '    return this.prefix + ":" + key;',
+  "  }",
+  "}",
+  "",
+].join("\n");
+
+const metricsSource = [
+  'import { Injectable } from "@reforce/context";',
+  'import { RedisClient } from "./client";',
+  "",
+  "@Injectable()",
+  "export class MetricsPusher {",
+  "  constructor(readonly client: RedisClient) {}",
+  "}",
+  "",
+].join("\n");
+
+const indexSource = [
+  'export { RedisClient } from "./client";',
+  'export { MetricsPusher } from "./metrics";',
+  'export type { Cache, RedisConfig } from "./contracts";',
+  "",
+].join("\n");
+
+const defaultSources: Record<string, string> = {
+  "contracts.ts": contractsSource,
+  "client.ts": clientSource,
+  "metrics.ts": metricsSource,
+  "index.ts": indexSource,
+};
+
+const defaultDist: ProjectTree = {
+  "contracts.d.ts": contractsSource,
+  "contracts.js": "export {};\n",
+  "client.d.ts": [
+    'import type { Cache, RedisConfig } from "./contracts.js";',
+    "export declare class RedisClient implements Cache {",
+    "  constructor(config: RedisConfig);",
+    "  onContextClose(): void;",
+    "  get(key: string): string;",
+    "}",
+    "",
+  ].join("\n"),
+  "client.js": [
+    "export class RedisClient {",
+    "  constructor(config) {",
+    "    this.prefix = config.url();",
+    "  }",
+    "  onContextClose() {}",
+    "  get(key) {",
+    '    return this.prefix + ":" + key;',
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
+  "metrics.d.ts": [
+    'import { RedisClient } from "./client.js";',
+    "export declare class MetricsPusher {",
+    "  constructor(client: RedisClient);",
+    "}",
+    "",
+  ].join("\n"),
+  "metrics.js": [
+    "export class MetricsPusher {",
+    "  constructor(client) {",
+    "    this.client = client;",
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
+  "index.d.ts": [
+    'export { RedisClient } from "./client.js";',
+    'export { MetricsPusher } from "./metrics.js";',
+    'export type { Cache, RedisConfig } from "./contracts.js";',
+    "",
+  ].join("\n"),
+  "index.js": [
+    'export { RedisClient } from "./client.js";',
+    'export { MetricsPusher } from "./metrics.js";',
+    "",
+  ].join("\n"),
+};
+
+interface AuthorTreeOptions {
+  readonly sources?: Record<string, string>;
+  readonly dist?: ProjectTree;
+  readonly exports?: Record<string, unknown> | "omitted";
+  readonly packages?: Record<string, ProjectTree>;
+}
+
+function authorTree(options: AuthorTreeOptions = {}): ProjectTree {
+  const packageJson: Record<string, unknown> = {
+    name: libraryPackageName,
+    version: "1.2.0",
+    type: "module",
+  };
+  if (options.exports !== "omitted") {
+    packageJson.exports = options.exports ?? defaultExports;
+  }
+  return {
+    "package.json": `${JSON.stringify(packageJson)}\n`,
+    "tsconfig.json": applicationTsconfig(["src"]),
+    src: options.sources ?? defaultSources,
+    ...(options.packages === undefined ? {} : { node_modules: nodeModulesTree(options.packages) }),
+    dist: options.dist ?? defaultDist,
+  };
+}
+
+async function compileLibrary(tree: ProjectTree): Promise<CompileLibraryResult> {
+  const project = await createTemporaryProject(tree);
+  temporaryProjects.push(project);
+  const compiler = createCompiler();
+  const resolution = await compiler.resolveLibraryProject({
+    projectDirectory: project.projectRoot,
+  });
+  if (resolution.status === "failure") {
+    throw new Error(JSON.stringify(resolution.diagnostics));
+  }
+  return compiler.compileLibrary({ project: resolution.project });
+}
+
+function expectLibrarySuccess(result: CompileLibraryResult): LibrarySuccess {
+  if (result.status !== "success") {
+    throw new Error(JSON.stringify(result.diagnostics));
+  }
+  return result;
+}
+
+function expectLibraryFailure(result: CompileLibraryResult): LibraryFailure {
+  expect(result.status).toBe("failure");
+  if (result.status !== "failure") {
+    throw new Error("Expected a failed library compilation");
+  }
+  return result;
+}
+
+function generatedLibraryFile(
+  result: LibrarySuccess,
+  filePath: LibraryGeneratedFile["path"],
+): string {
+  const content = result.files.find((file) => file.path === filePath)?.content;
+  if (content === undefined) {
+    throw new Error(`Missing generated library file ${filePath}`);
+  }
+  return content;
+}
+
+interface ParsedMetaBean {
+  readonly id: string;
+  readonly source: {
+    readonly file: string;
+    readonly start: { readonly offset: number };
+    readonly end: { readonly offset: number };
+  };
+  readonly [key: string]: unknown;
+}
+
+interface ParsedMeta {
+  readonly schemaVersion: number;
+  readonly starterDeps: readonly string[];
+  readonly symbols: readonly Record<string, unknown>[];
+  readonly beans: readonly ParsedMetaBean[];
+}
+
+function parseMeta(result: LibrarySuccess): ParsedMeta {
+  return JSON.parse(generatedLibraryFile(result, "reforce-meta.json"));
+}
+
+function beanOf(meta: ParsedMeta, id: string): ParsedMetaBean {
+  const bean = meta.beans.find((candidate) => candidate.id === id);
+  if (bean === undefined) {
+    throw new Error(`Missing meta bean ${id}`);
+  }
+  return bean;
+}
+
+describe("library compile", () => {
+  test("emits meta symbols, beans, and registration handle for a starter library", async () => {
+    const result = expectLibrarySuccess(await compileLibrary(authorTree()));
+
+    expect(result.packageName).toBe(libraryPackageName);
+    const meta = parseMeta(result);
+    expect(meta.schemaVersion).toBe(1);
+    expect(meta.starterDeps).toEqual([]);
+    expect(meta.symbols).toEqual([
+      { id: "@acme/starter-redis#Cache", file: "dist/contracts.d.ts", subpaths: ["."] },
+      { id: "@acme/starter-redis#MetricsPusher", file: "dist/metrics.d.ts", subpaths: ["."] },
+      {
+        id: "@acme/starter-redis#RedisClient",
+        file: "dist/client.d.ts",
+        subpaths: [".", "./client"],
+      },
+      { id: "@acme/starter-redis#RedisConfig", file: "dist/contracts.d.ts", subpaths: ["."] },
+    ]);
+
+    const metrics = beanOf(meta, "@acme/starter-redis#MetricsPusher");
+    expect(metrics.runtimeExport).toEqual({
+      module: "@acme/starter-redis",
+      export: "MetricsPusher",
+    });
+    expect(metrics.provides).toEqual(["@acme/starter-redis#MetricsPusher"]);
+    expect(metrics.dependencies).toEqual([
+      { contract: "@acme/starter-redis#RedisClient", open: false },
+    ]);
+    expect(metrics.lifecycle).toBeUndefined();
+    expect(metrics.source.file).toBe("src/metrics.ts");
+
+    const client = beanOf(meta, "@acme/starter-redis#RedisClient");
+    expect(client.runtimeExport).toEqual({ module: "@acme/starter-redis", export: "RedisClient" });
+    expect(client.provides).toEqual([
+      "@acme/starter-redis#Cache",
+      "@acme/starter-redis#RedisClient",
+    ]);
+    expect(client.dependencies).toEqual([
+      { contract: "@acme/starter-redis#RedisConfig", open: true },
+    ]);
+    expect(client.lifecycle).toEqual({ close: "onContextClose" });
+    expect(client.source.file).toBe("src/client.ts");
+    const clientSpan = clientSource.slice(client.source.start.offset, client.source.end.offset);
+    expect(clientSpan).toContain("class RedisClient");
+
+    expect(generatedLibraryFile(result, "reforce.js")).toBe("export default Object.freeze({});\n");
+    expect(generatedLibraryFile(result, "reforce.d.ts")).toContain("StarterDefinition");
+  });
+
+  test("normalizes dependency-starter contracts to meta coordinates and records starterDeps", async () => {
+    const starterBase = starterPackage({
+      name: "@acme/starter-base",
+      meta: {
+        schemaVersion: 1,
+        starterDeps: [],
+        symbols: [
+          { id: "@acme/starter-base#BaseRemote", file: "dist/index.d.ts", subpaths: ["."] },
+          { id: "@acme/starter-base#BaseTelemetry", file: "dist/index.d.ts", subpaths: ["."] },
+        ],
+        beans: [],
+      },
+      dist: {
+        "index.d.ts": [
+          "export interface BaseTelemetry {",
+          "  push(metric: string): void;",
+          "}",
+          "export interface BaseRemote {",
+          "  send(payload: string): void;",
+          "}",
+          "",
+        ].join("\n"),
+        "index.js": "export {};\n",
+      },
+    });
+    const result = expectLibrarySuccess(
+      await compileLibrary(
+        authorTree({
+          packages: { "@acme/starter-base": starterBase },
+          sources: {
+            "telemetry.ts": [
+              'import { Injectable } from "@reforce/context";',
+              'import type { BaseRemote, BaseTelemetry } from "@acme/starter-base";',
+              "",
+              "@Injectable()",
+              "export class WiredTelemetry implements BaseTelemetry {",
+              "  constructor(private readonly remote: BaseRemote) {}",
+              "",
+              "  push(metric: string): void {",
+              "    this.remote.send(metric);",
+              "  }",
+              "}",
+              "",
+            ].join("\n"),
+            "index.ts": 'export { WiredTelemetry } from "./telemetry";\n',
+          },
+          dist: {
+            "telemetry.d.ts": [
+              'import type { BaseTelemetry } from "@acme/starter-base";',
+              "export declare class WiredTelemetry implements BaseTelemetry {",
+              "  push(metric: string): void;",
+              "}",
+              "",
+            ].join("\n"),
+            "telemetry.js": "export class WiredTelemetry {}\n",
+            "index.d.ts": 'export { WiredTelemetry } from "./telemetry.js";\n',
+            "index.js": 'export { WiredTelemetry } from "./telemetry.js";\n',
+          },
+          exports: {
+            ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+            "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
+            "./reforce-meta": "./reforce-meta.json",
+          },
+        }),
+      ),
+    );
+
+    const meta = parseMeta(result);
+    expect(meta.starterDeps).toEqual(["@acme/starter-base"]);
+    const bean = beanOf(meta, "@acme/starter-redis#WiredTelemetry");
+    expect(bean.provides).toEqual([
+      "@acme/starter-base#BaseTelemetry",
+      "@acme/starter-redis#WiredTelemetry",
+    ]);
+    expect(bean.dependencies).toEqual([{ contract: "@acme/starter-base#BaseRemote", open: true }]);
+  });
+
+  test("keeps file coordinates for contract packages without meta", async () => {
+    const result = expectLibrarySuccess(
+      await compileLibrary(
+        authorTree({
+          packages: {
+            "@acme/cache-api": {
+              "package.json": `${JSON.stringify({
+                name: "@acme/cache-api",
+                version: "1.0.0",
+                type: "module",
+                exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
+              })}\n`,
+              dist: {
+                "index.d.ts": [
+                  "export interface SharedCache {",
+                  "  get(key: string): string;",
+                  "}",
+                  "",
+                ].join("\n"),
+                "index.js": "export {};\n",
+              },
+            },
+          },
+          sources: {
+            "cache.ts": [
+              'import { Injectable } from "@reforce/context";',
+              'import type { SharedCache } from "@acme/cache-api";',
+              "",
+              "@Injectable()",
+              "export class MemoryCache implements SharedCache {",
+              "  get(key: string): string {",
+              "    return key;",
+              "  }",
+              "}",
+              "",
+            ].join("\n"),
+            "index.ts": 'export { MemoryCache } from "./cache";\n',
+          },
+          dist: {
+            "cache.d.ts": [
+              'import type { SharedCache } from "@acme/cache-api";',
+              "export declare class MemoryCache implements SharedCache {",
+              "  get(key: string): string;",
+              "}",
+              "",
+            ].join("\n"),
+            "cache.js": "export class MemoryCache {}\n",
+            "index.d.ts": 'export { MemoryCache } from "./cache.js";\n',
+            "index.js": 'export { MemoryCache } from "./cache.js";\n',
+          },
+          exports: {
+            ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+            "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
+            "./reforce-meta": "./reforce-meta.json",
+          },
+        }),
+      ),
+    );
+
+    const meta = parseMeta(result);
+    expect(meta.starterDeps).toEqual([]);
+    const bean = beanOf(meta, "@acme/starter-redis#MemoryCache");
+    expect(bean.provides).toEqual([
+      "@acme/cache-api:dist/index.d.ts#SharedCache",
+      "@acme/starter-redis#MemoryCache",
+    ]);
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for defineBean factories", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "factory.ts": [
+              'import { defineBean } from "@reforce/context";',
+              "",
+              "export const clock = defineBean({",
+              "  create: () => ({ now: () => 0 }),",
+              "});",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("defineBean");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for defineApplication in library sources", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "app.ts": [
+              'import { defineApplication } from "@reforce/context";',
+              "",
+              "export default defineApplication({ starters: [] });",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("defineApplication");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for Primary and Qualifier decorators", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "client.ts": clientSource.replace(
+              "@Injectable()",
+              'import { Primary } from "@reforce/context";\n@Injectable()\n@Primary()',
+            ),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("@Primary");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for Lazy dependencies", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "metrics.ts": [
+              'import { Injectable, type Lazy } from "@reforce/context";',
+              'import { RedisClient } from "./client";',
+              "",
+              "@Injectable()",
+              "export class MetricsPusher {",
+              "  constructor(readonly client: Lazy<RedisClient>) {}",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("Lazy");
+  });
+
+  test("reports LIBRARY_EXPORT_MISMATCH when a bean class is not publicly exported", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "index.ts": [
+              'export { RedisClient } from "./client";',
+              'export type { Cache, RedisConfig } from "./contracts";',
+              "",
+            ].join("\n"),
+          },
+          dist: {
+            ...defaultDist,
+            "index.d.ts": [
+              'export { RedisClient } from "./client.js";',
+              'export type { Cache, RedisConfig } from "./contracts.js";',
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("LIBRARY_EXPORT_MISMATCH");
+    expect(failure.diagnostics[0].message).toContain("MetricsPusher");
+  });
+
+  test("reports LIBRARY_EXPORT_MISMATCH when the built dist declares a different shape", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          dist: {
+            ...defaultDist,
+            "client.d.ts": [
+              "export interface RedisClient {",
+              "  get(key: string): string;",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("LIBRARY_EXPORT_MISMATCH");
+    expect(failure.diagnostics[0].message).toContain("RedisClient");
+  });
+
+  test("reports LIBRARY_EXPORT_MISMATCH when one export name anchors two declarations", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          dist: {
+            ...defaultDist,
+            "other.d.ts": ["export declare class RedisClient {}", ""].join("\n"),
+            "other.js": "export class RedisClient {}\n",
+          },
+          exports: {
+            ...defaultExports,
+            "./other": { types: "./dist/other.d.ts", default: "./dist/other.js" },
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("LIBRARY_EXPORT_MISMATCH");
+    expect(failure.diagnostics[0].message).toContain("two different declaration files");
+  });
+
+  test("reports INVALID_LIBRARY_PACKAGE when package.json declares no exports map", async () => {
+    const failure = expectLibraryFailure(await compileLibrary(authorTree({ exports: "omitted" })));
+    expect(failure.diagnostics[0].code).toBe("INVALID_LIBRARY_PACKAGE");
+    expect(failure.diagnostics[0].message).toContain("exports");
+  });
+});
+
+// —— 闭环：编出的 meta 原样喂给 M1 链接路径，行为与手写 meta 一致 ——
+
+const registrationSource = [
+  'import { defineApplication, Injectable } from "@reforce/context";',
+  'import type { Cache, RedisConfig } from "@acme/starter-redis";',
+  'import redisStarter from "@acme/starter-redis/reforce";',
+  "",
+  "@Injectable()",
+  "export class LocalConfig implements RedisConfig {",
+  "  url(): string {",
+  '    return "redis://local";',
+  "  }",
+  "}",
+  "",
+  "@Injectable()",
+  "export class CacheConsumer {",
+  "  constructor(readonly cache: Cache) {}",
+  "",
+  "  read(key: string): string {",
+  "    return this.cache.get(key);",
+  "  }",
+  "}",
+  "",
+  "export default defineApplication({ starters: [redisStarter] });",
+  "",
+].join("\n");
+
+async function compileApplication(
+  metaBytes: string,
+  handles: {
+    readonly js: string;
+    readonly dts: string;
+  },
+): Promise<CompileSuccess> {
+  const installed: ProjectTree = {
+    ...starterPackage({
+      name: libraryPackageName,
+      version: "1.2.0",
+      meta: {},
+      dist: defaultDist,
+      exports: defaultExports,
+    }),
+    "reforce-meta.json": metaBytes,
+    "reforce.d.ts": handles.dts,
+    "reforce.js": handles.js,
+  };
+  const project = await createTemporaryProject({
+    "tsconfig.json": applicationTsconfig(),
+    node_modules: nodeModulesTree({ [libraryPackageName]: installed }),
+    src: { "main.ts": registrationSource },
+  });
+  temporaryProjects.push(project);
+  const compiler = createCompiler();
+  const resolution = await compiler.resolveProject({ projectDirectory: project.projectRoot });
+  if (resolution.status === "failure") {
+    throw new Error(JSON.stringify(resolution.diagnostics));
+  }
+  const result: CompileResult = await compiler.compile({ project: resolution.project });
+  if (result.status === "failure") {
+    throw new Error(JSON.stringify(result.diagnostics));
+  }
+  return result;
+}
+
+describe("library compile closed loop", () => {
+  test("meta compiled by reforce lib links exactly like the handwritten equivalent", async () => {
+    const library = expectLibrarySuccess(await compileLibrary(authorTree()));
+    const metaBytes = generatedLibraryFile(library, "reforce-meta.json");
+    const handles = {
+      js: generatedLibraryFile(library, "reforce.js"),
+      dts: generatedLibraryFile(library, "reforce.d.ts"),
+    };
+    const produced = parseMeta(library);
+
+    // 手写孪生：结构逐字段手写，仅 bean source span 取自产出（span 会进生成物，孪生必须同点位）。
+    const handwritten = {
+      schemaVersion: 1,
+      starterDeps: [],
+      symbols: [
+        { id: "@acme/starter-redis#Cache", file: "dist/contracts.d.ts", subpaths: ["."] },
+        { id: "@acme/starter-redis#MetricsPusher", file: "dist/metrics.d.ts", subpaths: ["."] },
+        {
+          id: "@acme/starter-redis#RedisClient",
+          file: "dist/client.d.ts",
+          subpaths: [".", "./client"],
+        },
+        { id: "@acme/starter-redis#RedisConfig", file: "dist/contracts.d.ts", subpaths: ["."] },
+      ],
+      beans: [
+        {
+          id: "@acme/starter-redis#MetricsPusher",
+          runtimeExport: { module: "@acme/starter-redis", export: "MetricsPusher" },
+          provides: ["@acme/starter-redis#MetricsPusher"],
+          dependencies: [{ contract: "@acme/starter-redis#RedisClient", open: false }],
+          source: beanOf(produced, "@acme/starter-redis#MetricsPusher").source,
+        },
+        {
+          id: "@acme/starter-redis#RedisClient",
+          runtimeExport: { module: "@acme/starter-redis", export: "RedisClient" },
+          provides: ["@acme/starter-redis#Cache", "@acme/starter-redis#RedisClient"],
+          dependencies: [{ contract: "@acme/starter-redis#RedisConfig", open: true }],
+          lifecycle: { close: "onContextClose" },
+          source: beanOf(produced, "@acme/starter-redis#RedisClient").source,
+        },
+      ],
+    };
+    expect(produced).toEqual(handwritten);
+
+    const fromProduced = await compileApplication(metaBytes, handles);
+    const fromHandwritten = await compileApplication(
+      `${JSON.stringify(handwritten, undefined, 2)}\n`,
+      handles,
+    );
+    expect(fromProduced.files).toEqual(fromHandwritten.files);
+
+    const manifest = JSON.parse(
+      fromProduced.files.find((file) => file.path === "manifest.json")?.content ?? "{}",
+    );
+    const beanIds = manifest.beans.map((bean: { id: string }) => bean.id);
+    expect(beanIds).toContain("@acme/starter-redis#RedisClient");
+    // MetricsPusher 无人需求：按需拉取语义必须原样穿过编出的 meta。
+    expect(beanIds).not.toContain("@acme/starter-redis#MetricsPusher");
+    const clientBean = manifest.beans.find(
+      (bean: { id: string }) => bean.id === "@acme/starter-redis#RedisClient",
+    );
+    expect(clientBean.origin).toBe("@acme/starter-redis@1.2.0");
+    const beansTs = fromProduced.files.find((file) => file.path === "beans.ts")?.content ?? "";
+    expect(beansTs).toContain("import type { Cache as");
+    expect(beansTs).toContain('from "@acme/starter-redis"');
+  });
+});
