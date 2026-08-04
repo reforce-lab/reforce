@@ -216,3 +216,80 @@ test("runCli dispatches the explain command", async () => {
   expect(exitCode).toBe(0);
   expect(output.events.filter((event) => event.kind === "failure")).toEqual([]);
 });
+
+// —— web 面（ADR 0006 W1，#153）：路由查询只读 routes.json，静态回答 路径 → 处理链 ——
+
+const webApplicationSources = {
+  "web.ts": [
+    'import { Injectable } from "@reforce/context";',
+    'import { Controller, Get, Middleware, type RequestContext } from "@reforce/web";',
+    "",
+    "@Injectable()",
+    '@Middleware({ phase: "admission", global: true })',
+    "export class Gate {",
+    "  handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {",
+    "    return next();",
+    "  }",
+    "}",
+    "",
+    "@Injectable()",
+    '@Controller("/ping")',
+    "export class PingController {",
+    "  @Get()",
+    "  ping(): Response {",
+    '    return new Response("pong");',
+    "  }",
+    "}",
+    "",
+  ].join("\n"),
+};
+
+test("explains a route's handling chain from the generated route table", async () => {
+  const project = await createExplainProject({ sources: webApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "GET /ping");
+
+  expect(exitCode).toBe(0);
+  expect(lines).toEqual([
+    "GET /ping",
+    "  handler src/web.ts#PingController · ping()",
+    "  middleware chain (outer → inner) · flattened at compile time by (phase, order, beanId)",
+    "  1. admission · order 0 · global · src/web.ts#Gate",
+  ]);
+});
+
+test("a concrete path resolves the parameterless route pattern for every method", async () => {
+  const project = await createExplainProject({ sources: webApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "/ping");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toBe("GET /ping");
+});
+
+test("an unmatched route query lists the known routes", async () => {
+  const project = await createExplainProject({ sources: webApplicationSources });
+
+  const { exitCode, events } = await explain(project, "/nowhere");
+
+  expect(exitCode).toBe(1);
+  expect(events[0]).toHaveProperty(
+    "message",
+    expect.stringContaining('No route matches "/nowhere". Known routes: GET /ping'),
+  );
+});
+
+test("a route query without a generated route table reports recovery guidance", async () => {
+  const project = await createExplainProject({
+    sources: webApplicationSources,
+    compile: false,
+  });
+
+  const { exitCode, events } = await explain(project, "/ping");
+
+  expect(exitCode).toBe(1);
+  expect(events[0]).toHaveProperty(
+    "message",
+    expect.stringContaining("Run reforce build or reforce dev first."),
+  );
+});
