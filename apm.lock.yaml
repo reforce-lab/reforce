@@ -28,7 +28,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:bf2de18c19785a22f9650e35a8fb104508a172b9d4aff1df55be46a6fe42fbff
+  content_hash: sha256:a5a86aee65542888f625e018db3c852211d00a0f82f738583c209a21085e70f8
 - kind: project-relative
   target: claude
   value: .claude/rules/e2e-fixture.md
@@ -56,6 +56,15 @@ deployments:
   - .
   active_owner: .
   content_hash: sha256:b18c4a4bdabf88aeec1fbbd3bdb57a2958cd9d4bab277a0c6e74a056b8f3933a
+- kind: project-relative
+  target: claude
+  value: .claude/rules/runtime.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:1dfcc4fa9fdbdb70fac57005047d62de519a1216ae3ffd8a058e30cb72886a8b
 - kind: project-relative
   target: claude
   value: .claude/rules/workspace.md
@@ -106,14 +115,16 @@ local_deployed_files:
 - .claude/rules/e2e-fixture.md
 - .claude/rules/e2e.md
 - .claude/rules/overview.md
+- .claude/rules/runtime.md
 - .claude/rules/workspace.md
 - .claude/skills/apm
 - .claude/skills/apm/SKILL.md
 local_deployed_file_hashes:
   .agents/skills/apm/SKILL.md: sha256:e3dbe06a8c0e3f7943503288f1cfe829cf31099e8dabde3322683cfb5eab8c86
-  .claude/rules/cli-runtime.md: sha256:bf2de18c19785a22f9650e35a8fb104508a172b9d4aff1df55be46a6fe42fbff
+  .claude/rules/cli-runtime.md: sha256:a5a86aee65542888f625e018db3c852211d00a0f82f738583c209a21085e70f8
   .claude/rules/e2e-fixture.md: sha256:d202e9400e85760f5c9c7ffdd149b2dcb7d60291ab2a049c9e7000067c284761
   .claude/rules/e2e.md: sha256:c7aef95edf2b13c65792118e8a8f3ee684421966d9afc40efbf749b654b9f4b4
   .claude/rules/overview.md: sha256:b18c4a4bdabf88aeec1fbbd3bdb57a2958cd9d4bab277a0c6e74a056b8f3933a
+  .claude/rules/runtime.md: sha256:1dfcc4fa9fdbdb70fac57005047d62de519a1216ae3ffd8a058e30cb72886a8b
   .claude/rules/workspace.md: sha256:c5a4ab26d55929b4fd4f0388b6ff6f68dcaae8506e98cc992657a6de94eba487
   .claude/skills/apm/SKILL.md: sha256:e3dbe06a8c0e3f7943503288f1cfe829cf31099e8dabde3322683cfb5eab8c86
