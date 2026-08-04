@@ -113,6 +113,8 @@ test.skipIf(process.platform !== "win32")(
         "qualifiers.d.ts",
         "manifest.json",
         "bootstrap.ts",
+        "routes.json",
+        "routes.ts",
       ]);
     }
   },
