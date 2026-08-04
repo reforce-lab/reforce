@@ -143,6 +143,7 @@ describe("development compiler gate", () => {
     }
     const resolutionError = new Error("resolution failed unexpectedly");
     const throwingCompiler: Compiler = {
+      ...compiler,
       compile: (request) => compiler.compile(request),
       async resolveProject() {
         throw resolutionError;
@@ -180,6 +181,7 @@ describe("development compiler gate", () => {
     const compilationError = new Error("compilation failed unexpectedly");
     let compileCount = 0;
     const throwingCompiler: Compiler = {
+      ...compiler,
       resolveProject: (request) => compiler.resolveProject(request),
       async compile(request) {
         compileCount += 1;

@@ -33,6 +33,9 @@ export type CompilerDiagnosticCode =
   | "INVALID_STARTER_META"
   | "UNSUPPORTED_STARTER_META_VERSION"
   | "STARTER_META_RUNTIME_MISMATCH"
+  | "INVALID_LIBRARY_PACKAGE"
+  | "UNSUPPORTED_LIBRARY_DECLARATION"
+  | "LIBRARY_EXPORT_MISMATCH"
   | "MISSING_BEAN"
   | "AMBIGUOUS_BEAN"
   | "MULTIPLE_PRIMARY_BEANS"
@@ -92,6 +95,32 @@ export type ProjectResolutionResult =
 export interface CompileRequest {
   readonly project: ResolvedApplicationProject;
 }
+
+// 库模式（ADR 0004 决策 1/4，#120/#147）：reforce lib 复用流水线中段，不产执行计划与
+// beans.ts/bootstrap.ts；产物是 meta JSON 与 ./reforce 注册 handle 两个文件面。写盘位置由
+// 调用方（CLI/unplugin 插件）决定，exports subpath 是唯一契约。
+export interface CompileLibraryRequest {
+  readonly project: ResolvedApplicationProject;
+}
+
+export interface LibraryGeneratedFile {
+  readonly path: "reforce-meta.json" | "reforce.d.ts" | "reforce.js";
+  readonly content: string;
+}
+
+export type CompileLibraryResult =
+  | {
+      readonly status: "success";
+      readonly diagnostics: readonly [];
+      readonly packageName: string;
+      readonly files: readonly LibraryGeneratedFile[];
+      readonly watchInputs: CompilerWatchInputs;
+    }
+  | {
+      readonly status: "failure";
+      readonly diagnostics: readonly [CompilerDiagnostic, ...CompilerDiagnostic[]];
+      readonly watchInputs: CompilerWatchInputs;
+    };
 
 export interface GeneratedFile {
   readonly path: "beans.ts" | "qualifiers.d.ts" | "manifest.json" | "bootstrap.ts";
