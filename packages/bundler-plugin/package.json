@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./rsbuild": {
+      "types": "./dist/rsbuild.d.ts",
+      "default": "./dist/rsbuild.js"
     }
   },
   "files": [
