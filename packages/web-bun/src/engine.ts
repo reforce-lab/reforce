@@ -1,5 +1,5 @@
 import { Injectable, type OnContextClose } from "@reforce/context";
-import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web";
+import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
 import type { BunRequest, Server } from "bun";
 import { createFallbackResponder } from "@/routing-fallback";
 import type { WebBunServeSettings } from "@/settings";

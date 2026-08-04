@@ -1,4 +1,4 @@
-import type { PreparedRoute } from "@reforce/web";
+import type { PreparedRoute } from "@reforce/web/adapter";
 
 // 未命中 Bun 原生 routes 的请求（冷路径）：路径形状能匹配某条路由但方法不符 → 405 + Allow；
 // 否则 404。Bun 对方法不匹配与未注册 HEAD 都直接落 fetch fallback（spike 实测），404/405
