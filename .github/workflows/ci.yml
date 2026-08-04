@@ -46,8 +46,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    # 正常一轮 3 分钟（ubuntu ~55s / macos ~60s / windows 2m38s–3m23s）；冷缓存留足余量后仍远
-    # 小于 GitHub 默认的 6 小时。挂死的测试必须快速失败，而不是把 runner 占一上午（Issue #75）。
+    # 正常一轮 3 分钟（ubuntu ~55s / macos ~55s / windows 2m30s–3m10s，check/typecheck 仅 ubuntu
+    # 执行后 macos/windows 各省 3–15s，Issue #172）；冷缓存留足余量后仍远小于 GitHub 默认的
+    # 6 小时。挂死的测试必须快速失败，而不是把 runner 占一上午（Issue #75）。
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -105,10 +106,15 @@ jobs:
           key: ${{ runner.os }}-turbo-${{ github.sha }}
           restore-keys: ${{ runner.os }}-turbo-
 
+      # Biome 与 tsgo 的结果与平台无关，三平台重复执行无信息量；只在 ubuntu 跑，
+      # macos/windows 显示 skipped（Issue #172）。不拆独立 job：那要动分支保护的
+      # required checks，且新增 job 的 checkout/install 开销把几秒收益吃回去。
       - name: Check source contracts and formatting
+        if: runner.os == 'Linux'
         run: bun run check
 
       - name: Typecheck (TS7)
+        if: runner.os == 'Linux'
         run: bun run typecheck
 
       - name: Test unit, integration, process, lease, and recovery behavior (Bun)
