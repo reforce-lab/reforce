@@ -1,8 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, readFile, symlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  createTemporaryProject,
+  resolveBunExecutable,
+  type TemporaryProject,
+} from "@reforce/tooling-testing";
 import { createRslib, type RslibConfig } from "@rslib/core";
 import { reforceStarter } from "@/index";
 import { reforceStarterRsbuild } from "@/rsbuild";
@@ -191,8 +196,8 @@ test("verify mode reports missing starter subpaths without rewriting package.jso
 });
 
 // 真实 rslib 构建（dts 走 tsgo）的两个用例：rsbuild-plugin-dts 从项目根 resolve typescript
-// 可执行文件，tsgo 又要解析 @reforce/context 的类型，所以把两个包按安装形态以 junction
-// 链接进临时项目——junction 在 Windows 无需符号链接权限。
+// 可执行文件，tsgo 又要解析 @reforce/context 的类型，所以两个包都要在临时项目内可解析。
+// @reforce/context 按安装形态以 junction 链接（Windows 无需符号链接权限）。
 function installedPackageRoot(specifier: string): string {
   return dirname(dirname(fileURLToPath(import.meta.resolve(specifier))));
 }
@@ -201,6 +206,102 @@ async function linkIntoProject(projectRoot: string, packageName: string): Promis
   const destination = join(projectRoot, "node_modules", ...packageName.split("/"));
   await mkdir(dirname(destination), { recursive: true });
   await symlink(installedPackageRoot(packageName), destination, "junction");
+}
+
+// typescript 不能直接链接真包：两侧插件面的断言都关于"d.ts 落盘相对 rspack afterEmit 的先后"，
+// 真 tsgo 的落盘时点随机器快慢漂移——macOS CI 上曾赶在 afterEmit 之前完成，令"unplugin 面
+// 必败"的断言假绿（#185）。这里装的 typescript 包版本同真，可执行文件先睡固定时长再转发真
+// tsgo，把 d.ts 确定性推迟到 afterEmit 之后；退出时落 marker，供用例在临时树清理前等后台
+// 包装进程退净（Windows 上活进程的 cwd 会挡住递归删除）。
+const dtsDelayMilliseconds = 3000;
+const delayedTsgoMarker = "delayed-tsgo-exited";
+
+async function readRealTypescriptVersion(realRoot: string): Promise<string> {
+  const parsed: unknown = JSON.parse(await readFile(join(realRoot, "package.json"), "utf8"));
+  const version =
+    typeof parsed === "object" && parsed !== null && "version" in parsed
+      ? parsed.version
+      : undefined;
+  if (typeof version !== "string") {
+    throw new Error("The real typescript package must declare a version.");
+  }
+  return version;
+}
+
+async function resolveRealTsgoExecutable(realRoot: string): Promise<string> {
+  const module: unknown = await import(pathToFileURL(join(realRoot, "lib", "getExePath.js")).href);
+  const getExePath =
+    typeof module === "object" && module !== null && "default" in module
+      ? module.default
+      : undefined;
+  if (typeof getExePath !== "function") {
+    throw new Error("typescript/lib/getExePath.js must default-export a function.");
+  }
+  const executable: unknown = getExePath();
+  if (typeof executable !== "string") {
+    throw new Error("getExePath must return the tsgo executable path.");
+  }
+  return executable;
+}
+
+async function installDelayedTypescript(projectRoot: string): Promise<void> {
+  const realRoot = installedPackageRoot("typescript");
+  const version = await readRealTypescriptVersion(realRoot);
+  const realExecutable = await resolveRealTsgoExecutable(realRoot);
+  const bunExecutable = await resolveBunExecutable();
+  const packageRoot = join(projectRoot, "node_modules", "typescript");
+  await mkdir(join(packageRoot, "lib"), { recursive: true });
+  await mkdir(join(packageRoot, "bin"), { recursive: true });
+  const delayScript = join(packageRoot, "delay-exec.js");
+  const marker = join(packageRoot, delayedTsgoMarker);
+  const wrapper = join(
+    packageRoot,
+    "bin",
+    process.platform === "win32" ? "tsgo-wrapper.cmd" : "tsgo-wrapper",
+  );
+  const wrapperContent =
+    process.platform === "win32"
+      ? `@echo off\r\n"${bunExecutable}" "${delayScript}" %*\r\nexit /b %errorlevel%\r\n`
+      : `#!/bin/sh\nexec "${bunExecutable}" "${delayScript}" "$@"\n`;
+  await Promise.all([
+    writeFile(
+      join(packageRoot, "package.json"),
+      `${JSON.stringify({ name: "typescript", version })}\n`,
+    ),
+    writeFile(
+      join(packageRoot, "lib", "getExePath.js"),
+      `export default function getExePath() {\n  return ${JSON.stringify(wrapper)};\n}\n`,
+    ),
+    writeFile(
+      delayScript,
+      [
+        'import { spawnSync } from "node:child_process";',
+        'import { writeFileSync } from "node:fs";',
+        `await new Promise((resolve) => setTimeout(resolve, ${dtsDelayMilliseconds}));`,
+        "let status = 1;",
+        "try {",
+        `  const result = spawnSync(${JSON.stringify(realExecutable)}, process.argv.slice(2), { stdio: "inherit" });`,
+        "  status = result.status ?? 1;",
+        "} finally {",
+        `  writeFileSync(${JSON.stringify(marker)}, "done", "utf8");`,
+        "}",
+        "process.exit(status);",
+        "",
+      ].join("\n"),
+    ),
+    writeFile(wrapper, wrapperContent, { mode: 0o755 }),
+  ]);
+}
+
+async function waitForDelayedTsgoExit(projectRoot: string): Promise<void> {
+  const marker = join(projectRoot, "node_modules", "typescript", delayedTsgoMarker);
+  const deadline = Date.now() + 30_000;
+  while (!existsSync(marker)) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for the delayed tsgo wrapper to exit.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 async function createRslibLibrary(): Promise<TemporaryProject> {
@@ -243,7 +344,7 @@ async function createRslibLibrary(): Promise<TemporaryProject> {
     },
   });
   projects.push(project);
-  await linkIntoProject(project.projectRoot, "typescript");
+  await installDelayedTypescript(project.projectRoot);
   await linkIntoProject(project.projectRoot, "@reforce/context");
   return project;
 }
@@ -281,6 +382,8 @@ test("the unplugin rspack surface fails a real rslib build before tsgo declarati
       },
     }),
   ).rejects.toThrow("INVALID_LIBRARY_PACKAGE");
+  // 构建在 dts 落盘前就已失败返回，后台的延迟 tsgo 还活着——等它退净再进 afterEach 清理。
+  await waitForDelayedTsgoExit(project.projectRoot);
 }, 120_000);
 
 test("the rsbuild surface finishes a real rslib build after tsgo declarations land", async () => {
