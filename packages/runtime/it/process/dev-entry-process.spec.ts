@@ -2,18 +2,19 @@ import { afterEach, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { resolveBunExecutable, runCommand } from "@reforce/tooling-testing";
+import {
+  createSubprocessRegistry,
+  createTimeoutGuard,
+  observeTypedMessages,
+  resolveBunExecutable,
+  runCommand,
+  send,
+} from "@reforce/tooling-testing";
 import {
   isDevChildLeaseParticipantMessage,
   isDevChildReadyMessage,
   writerLeaseTokenEnvironmentVariable,
 } from "@/dev-ipc";
-import {
-  createSubprocessRegistry,
-  createTimeoutGuard,
-  observeTypedMessages,
-  send,
-} from "../support/process/observed-subprocess";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-entry.harness.ts", import.meta.url),

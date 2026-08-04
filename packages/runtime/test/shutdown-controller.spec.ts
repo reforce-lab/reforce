@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ApplicationStartError, InvalidGeneratedDefinitionError } from "@reforce/context";
 import type { ShutdownAckMessage } from "@/dev-ipc";
 import type { CliReporterEvent, Reporter } from "@/reporter";
-import { ShutdownController } from "@/runtime/shutdown-controller";
+import { ShutdownController } from "@/shutdown-controller";
 
 class RecordingReporter implements Reporter {
   readonly events: CliReporterEvent[] = [];

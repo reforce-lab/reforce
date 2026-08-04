@@ -1,9 +1,9 @@
 import type { ApplicationContext } from "@reforce/context";
 import { isObject } from "radashi";
 import { requireBunExecutable } from "@/bun-runtime";
-import { createChildLeaseParticipant } from "@/project/lease-endpoint";
+import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { PlainTextReporter, type Reporter, reportShutdownFailure } from "@/reporter";
-import { installProcessShutdownHandlers, ShutdownController } from "@/runtime/shutdown-controller";
+import { installProcessShutdownHandlers, ShutdownController } from "@/shutdown-controller";
 
 // Receiver half of the production-wire acknowledgement sent by start-command.ts. The dev wire's
 // `DevChildLeaseParticipantAcknowledgement` (dev-ipc.ts) looks similar but carries an `ok` field;

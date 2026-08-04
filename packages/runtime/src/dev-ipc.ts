@@ -1,5 +1,5 @@
 import { isObject } from "radashi";
-import type { LeaseParticipant } from "@/project/lease-endpoint";
+import type { LeaseParticipant } from "@/lease-endpoint";
 
 export const writerLeaseTokenEnvironmentVariable = "REFORCE_WRITER_LEASE_TOKEN";
 

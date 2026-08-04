@@ -5,6 +5,15 @@ export {
   spawnCommand,
 } from "@/command";
 export {
+  createSubprocessRegistry,
+  createTimeoutGuard,
+  observeTypedMessages,
+  type SubprocessRegistry,
+  send,
+  type TimeoutGuard,
+  type TypedMessageObserver,
+} from "@/observed-subprocess";
+export {
   copyApplicationProject,
   copyProjectTree,
   createTemporaryProject,

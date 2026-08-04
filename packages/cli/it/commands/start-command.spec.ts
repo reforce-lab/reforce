@@ -1,10 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import { symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { createChildLeaseParticipant } from "@reforce/runtime/lease-endpoint";
+import {
+  createTemporaryProject,
+  createTimeoutGuard,
+  type TemporaryProject,
+} from "@reforce/tooling-testing";
 import { runStartCommand } from "@/commands/start";
-import { createChildLeaseParticipant } from "@/project/lease-endpoint";
-import { createTimeoutGuard } from "../support/process/observed-subprocess";
 import { recordingReporter } from "../support/recording-reporter";
 
 // 内层判死时钟（Issue #94）：失聪窗口的回归以「哨兵先到」的形式失败，而不是把整个套件挂死在

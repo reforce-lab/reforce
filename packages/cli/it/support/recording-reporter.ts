@@ -1,4 +1,4 @@
-import type { CliReporterEvent, Reporter } from "@/reporter";
+import type { CliReporterEvent, Reporter } from "@reforce/runtime/reporter";
 
 export interface RecordingReporter {
   readonly events: CliReporterEvent[];

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { DevEntryController } from "@/dev-entry";
+import { DevHmrManager, type RspackHmrRuntime } from "@/hmr-manager";
 import type { CliReporterEvent, Reporter } from "@/reporter";
-import { DevEntryController } from "@/runtime/dev-entry";
-import { DevHmrManager, type RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 // Stands in for whatever module id rspack reports as outdated; the manager only checks emptiness.
 const outdatedModuleId = "./.reforce/generated/bootstrap.ts";

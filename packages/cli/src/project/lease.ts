@@ -2,14 +2,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { compareUtf16CodeUnits, isPathStrictlyContained } from "@reforce/primitives";
-import { isObject, sleep } from "radashi";
-import { hasExactKeys } from "@/project/exact-keys";
 import {
   type LeaseParticipant,
   type LeaseProbeResult,
   LivenessEndpoint,
   probeLeaseEndpoint,
-} from "@/project/lease-endpoint";
+} from "@reforce/runtime/lease-endpoint";
+import { isObject, sleep } from "radashi";
+import { hasExactKeys } from "@/project/exact-keys";
 import {
   publishMissingDestinationWithWindowsRetry,
   renameWithWindowsRetry,

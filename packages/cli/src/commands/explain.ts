@@ -1,5 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import {
+  captureFailure,
+  createFailureEvent,
+  type Reporter,
+  reportShutdownFailure,
+} from "@reforce/runtime/reporter";
 import { renderExplanation } from "@/explain/render";
 import {
   isRouteQuery,
@@ -18,12 +24,6 @@ import {
   parseGeneratedManifestBytes,
   starterOriginPackageName,
 } from "@/project/generated-manifest";
-import {
-  captureFailure,
-  createFailureEvent,
-  type Reporter,
-  reportShutdownFailure,
-} from "@/reporter";
 
 // reforce explain <bean> 最小版（ADR 0004 决策 16，#120/#148）：只读生成物（manifest）与磁盘上
 // 已安装 starter 的 meta，静态输出选择链——谁提供、为何胜出、谁让位、origin，以及决策 10 多版本

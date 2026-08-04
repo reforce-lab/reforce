@@ -1,22 +1,22 @@
 import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
-import { requireBunExecutable } from "@/bun-runtime";
+import { requireBunExecutable } from "@reforce/runtime/bun-runtime";
+import { writerLeaseTokenEnvironmentVariable } from "@reforce/runtime/dev-ipc";
+import { installTerminationSignalHandlers } from "@reforce/runtime/process-signals";
+import {
+  captureFailure,
+  createFailureEvent,
+  type Reporter,
+  reportShutdownFailure,
+} from "@reforce/runtime/reporter";
 import { type DevWatchBuild, startDevWatchBuild } from "@/bundling/dev-watch";
 import { spawnDevChild } from "@/dev/child-process";
 import { DevChildSupervisor } from "@/dev/child-supervisor";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 import { collectInstallSignalInputs } from "@/dev/install-signals";
 import { type DevCompilation, DevWatchCoordinator } from "@/dev/watch-coordinator";
-import { writerLeaseTokenEnvironmentVariable } from "@/dev-ipc";
-import { installTerminationSignalHandlers } from "@/process-signals";
 import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
-import {
-  captureFailure,
-  createFailureEvent,
-  type Reporter,
-  reportShutdownFailure,
-} from "@/reporter";
 
 export interface DevCommandOptions {
   readonly cwd: string;
