@@ -1,0 +1,38 @@
+{
+  "name": "@reforce/web-bun",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./reforce": {
+      "types": "./reforce.d.ts",
+      "default": "./reforce.js"
+    },
+    "./reforce-meta": "./reforce-meta.json"
+  },
+  "scripts": {
+    "build": "rslib build && bun ../cli/dist/reforce.js lib --project . --tsconfig tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "bun test test it",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@reforce/context": "workspace:*",
+    "@reforce/web": "workspace:*",
+    "@swc/helpers": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/cli": "workspace:*",
+    "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@rslib/core": "catalog:",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

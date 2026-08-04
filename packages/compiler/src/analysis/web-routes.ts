@@ -8,6 +8,7 @@ import {
   type RouteMiddlewareModel,
   type RouteModel,
   type RouteSchemasModel,
+  type WebEngineModel,
   type WebErrorHandlerModel,
   type WebExportRefModel,
   type WebModel,
@@ -18,6 +19,7 @@ import {
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
+import type { StarterBeanModel } from "@/linking/starter-linking";
 import type {
   ClassDeclaration,
   ClassMethodDeclaration,
@@ -973,15 +975,55 @@ function registerWebBeans(
   return { middlewareById, errorHandlers };
 }
 
+// 引擎与播种接线（ADR 0006 W2 的 #153 修订，约定见 web-model.ts）：引擎排序按 beanId 决定
+// 性决胜；webRequestSeeder 在 defineApplication 模块作用域内解析，未导出是硬错——生成的
+// bootstrap 必须能 import 它，类型契约（RequestSeeder）由生成代码上的 tsc 背书（typed-edge）。
+function webWiring(
+  linker: ProjectLinker,
+  engineBeans: readonly StarterBeanModel[],
+  diagnostics: CompilerDiagnostic[],
+): { engines: readonly WebEngineModel[]; requestSeeder?: WebExportRefModel } {
+  const engines = engineBeans
+    .map((bean) => ({
+      beanId: bean.id,
+      moduleSpecifier: bean.runtimeExport.module,
+      exportName: bean.runtimeExport.export,
+    }))
+    .toSorted((left, right) => compareUtf16CodeUnits(left.beanId, right.beanId));
+  const applicationModule = linker.applicationModule;
+  if (engines.length === 0 || applicationModule === undefined) {
+    return { engines };
+  }
+  const seeder = linker.resolveValueDeclaration(applicationModule, "webRequestSeeder");
+  if (seeder === undefined) {
+    return { engines };
+  }
+  if (seeder.exportName === undefined) {
+    report(
+      diagnostics,
+      "INVALID_WEB_REQUEST_SEEDER",
+      "webRequestSeeder must be an exported declaration so the generated bootstrap can import it.",
+      seeder.declaration.span,
+    );
+    return { engines };
+  }
+  return {
+    engines,
+    requestSeeder: { source: seeder.source, exportName: seeder.exportName },
+  };
+}
+
 export function analyzeWebRoutes(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
   providers: readonly ProviderModel[],
   diagnostics: CompilerDiagnostic[],
+  engineBeans: readonly StarterBeanModel[],
 ): WebModel {
   const scans = scanWebClasses(sources, linker);
   const markers = collectRouteMarkers(sources, linker, diagnostics);
-  if (scans.length === 0 && markers.size === 0) {
+  const wiring = webWiring(linker, engineBeans, diagnostics);
+  if (scans.length === 0 && markers.size === 0 && wiring.engines.length === 0) {
     return emptyWebModel;
   }
 
@@ -1028,6 +1070,8 @@ export function analyzeWebRoutes(
   return {
     routes: Object.freeze(routes),
     errorHandlers: Object.freeze(orderedErrorHandlers),
+    engines: Object.freeze(wiring.engines),
+    ...(wiring.requestSeeder === undefined ? {} : { requestSeeder: wiring.requestSeeder }),
   };
 }
 

@@ -17,6 +17,8 @@ const applicationFixture = join(e2eRoot, "fixtures", "application");
 const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
 const contextRoot = join(workspaceRoot, "packages", "context");
 const configRoot = join(workspaceRoot, "packages", "config");
+const webRoot = join(workspaceRoot, "packages", "web");
+const webBunRoot = join(workspaceRoot, "packages", "web-bun");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -86,6 +88,14 @@ beforeAll(async () => {
     symlink(
       configRoot,
       join(scopeRoot, "config"),
+      process.platform === "win32" ? "junction" : "dir",
+    ),
+    // fixture 应用现在是 web 应用（#153）：web 核心与 Bun 引擎 starter 同样以符号链接落地，
+    // 每个 Worker 里 bootstrap 会真的起 Bun.serve（端口 0），close 时排空停机。
+    symlink(webRoot, join(scopeRoot, "web"), process.platform === "win32" ? "junction" : "dir"),
+    symlink(
+      webBunRoot,
+      join(scopeRoot, "web-bun"),
       process.platform === "win32" ? "junction" : "dir",
     ),
     symlink(

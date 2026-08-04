@@ -127,9 +127,12 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     program
       .command("explain")
       .description(
-        "explain a bean's selection chain from the generated manifest; starters with no bean in the manifest are not visible",
+        "explain a bean's selection chain from the generated manifest, or a route's handling chain from the generated route table; starters with no bean in the manifest are not visible",
       )
-      .argument("<bean>", "bean id, export name, or contract display name"),
+      .argument(
+        "<query>",
+        'bean id, export name, contract display name, or a route query ("/path" or "GET /path")',
+      ),
   ).action(async (beanName: string, commandOptions: ProjectOptions) => {
     selectedCommand = "explain";
     const { runExplainCommand } = await import("@/commands/explain");

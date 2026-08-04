@@ -1,6 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { renderExplanation } from "@/explain/render";
+import {
+  isRouteQuery,
+  knownRouteList,
+  matchRoutes,
+  parseRouteManifestBytes,
+  parseRouteQuery,
+  renderRouteExplanation,
+} from "@/explain/routes";
 import { explainContracts } from "@/explain/selection";
 import { discoverInstalledStarters } from "@/explain/starter-metas";
 import { isMissingPathError } from "@/project/fs-error";
@@ -112,8 +120,57 @@ function beanLookupProblem(
   };
 }
 
+// web 面（ADR 0006 W1，#153）：查询以 "/" 开头（可带方法前缀）即路由查询，只读 routes.json
+// 静态回答 路径 → 处理链；与 bean 面互不混淆（bean id/导出名/契约名都不会以 "/" 开头）。
+async function resolveRouteExplanation(
+  projectRoot: string,
+  query: string,
+): Promise<ExplainOutcome> {
+  const routesPath = join(projectRoot, ".reforce", "generated", "routes.json");
+  let bytes: Uint8Array;
+  try {
+    bytes = await readFile(routesPath);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return {
+        kind: "problem",
+        phase: "project",
+        code: "ARTIFACT_INVALID",
+        message: `No generated route table at ${routesPath}. Run reforce build or reforce dev first.`,
+      };
+    }
+    throw error;
+  }
+  const manifest = parseRouteManifestBytes(bytes);
+  if (manifest === undefined) {
+    return {
+      kind: "problem",
+      phase: "project",
+      code: "ARTIFACT_INVALID",
+      message: `The generated route table at ${routesPath} is not valid. Rebuild the application.`,
+    };
+  }
+  const routeQuery = parseRouteQuery(query);
+  if (routeQuery === undefined) {
+    throw new Error(`Query "${query}" is not a route query.`);
+  }
+  const matches = matchRoutes(manifest, routeQuery);
+  if (matches.length === 0) {
+    return {
+      kind: "problem",
+      phase: "argv",
+      code: "CLI_USAGE_ERROR",
+      message: `No route matches "${query}". Known routes: ${knownRouteList(manifest)}`,
+    };
+  }
+  return { kind: "lines", lines: renderRouteExplanation(manifest, matches) };
+}
+
 async function resolveExplanation(options: ExplainCommandOptions): Promise<ExplainOutcome> {
   const projectRoot = resolve(options.cwd, options.projectDirectory);
+  if (isRouteQuery(options.beanName)) {
+    return await resolveRouteExplanation(projectRoot, options.beanName);
+  }
   const manifestPath = join(projectRoot, ".reforce", "generated", "manifest.json");
   const { manifest, problem } = await readManifest(manifestPath);
   if (manifest === undefined) {
