@@ -10,6 +10,11 @@ dist/
 !/e2e/fixtures/*/dist/
 !/e2e/fixtures/*/dist/**
 
+# 真 starter 包的 meta 三件套由 `reforce lib` 随 build 产出（#153），与 dist 同为构建产物
+/packages/web-bun/reforce-meta.json
+/packages/web-bun/reforce.js
+/packages/web-bun/reforce.d.ts
+
 # turbo
 .turbo/
 

@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { access, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -13,16 +12,15 @@ import {
   type TemporaryProject,
 } from "@reforce/tooling-testing";
 import { sleep } from "radashi";
+import { installApplicationPackages } from "../support/application-packages";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cliRoot = join(workspaceRoot, "packages", "cli");
 const cliEntry = join(cliRoot, "dist", "reforce.js");
+// starter lib 编译只需要 @reforce/context 的 dist 类型面（fixture 应用副本的装配在
+// support/application-packages.ts）。
 const contextRoot = join(workspaceRoot, "packages", "context");
-const configRoot = join(workspaceRoot, "packages", "config");
-const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
-const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
-const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const windowsSignalFixture = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
@@ -216,54 +214,6 @@ function isShutdownAcknowledgement(
     Reflect.get(value, "requestId") === requestId &&
     typeof Reflect.get(value, "ok") === "boolean"
   );
-}
-
-async function installApplicationPackages(
-  projectRoot: string,
-  contextDistribution: "dist-only" | "workspace" = "workspace",
-): Promise<void> {
-  const scopeRoot = join(projectRoot, "node_modules", "@reforce");
-  const typesScopeRoot = join(projectRoot, "node_modules", "@types");
-  const contextTarget = join(scopeRoot, "context");
-  await Promise.all([
-    mkdir(scopeRoot, { recursive: true }),
-    mkdir(typesScopeRoot, { recursive: true }),
-  ]);
-  await Promise.all([
-    symlink(
-      toolingTsconfigRoot,
-      join(scopeRoot, "tooling-tsconfig"),
-      process.platform === "win32" ? "junction" : "dir",
-    ),
-    symlink(
-      bunTypesRoot,
-      join(typesScopeRoot, "bun"),
-      process.platform === "win32" ? "junction" : "dir",
-    ),
-    cp(radashiRoot, join(projectRoot, "node_modules", "radashi"), { recursive: true }),
-  ]);
-  const configTarget = join(scopeRoot, "config");
-  if (contextDistribution === "workspace") {
-    await Promise.all([
-      symlink(contextRoot, contextTarget, process.platform === "win32" ? "junction" : "dir"),
-      symlink(configRoot, configTarget, process.platform === "win32" ? "junction" : "dir"),
-    ]);
-    return;
-  }
-  await Promise.all([mkdir(contextTarget), mkdir(configTarget)]);
-  await Promise.all([
-    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
-    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
-    cp(join(configRoot, "package.json"), join(configTarget, "package.json")),
-    cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
-    // dotenv 是 @reforce/config 唯一的运行时依赖；dist-only 拷贝没有包内 node_modules，
-    // 把真实包（穿透 bun 的符号链接）落到应用 node_modules。
-    cp(
-      realpathSync(join(configRoot, "node_modules", "dotenv")),
-      join(projectRoot, "node_modules", "dotenv"),
-      { recursive: true },
-    ),
-  ]);
 }
 
 const leafProbeSource = `import { Injectable } from "@reforce/context";
@@ -597,7 +547,13 @@ async function startDevelopment(input: {
     return { ...subprocess, ...input, readyPath, closedPath };
   } catch (error) {
     await forceCleanupProcess(subprocess);
-    throw error;
+    // 就绪超时最常见的原因是 dev 会话内的编译失败或子进程反复崩溃，
+    // 不带会话输出的超时错误在 CI 上无法定位（#153 Windows 排障实录）。
+    const output = subprocess.output();
+    throw new Error(
+      `Development session did not become ready: ${String(error)}\nstdout:\n${output.stdout}\nstderr:\n${output.stderr}`,
+      { cause: error },
+    );
   }
 }
 
@@ -1549,7 +1505,9 @@ export class MetricsReader {
 `;
 
 async function writeStarterApplicationSources(appRoot: string): Promise<void> {
-  await writeFile(join(appRoot, "src", "starter-registration.ts"), starterRegistrationSource);
+  // defineApplication 每应用至多一次：fixture 模板自带 web-bun 注册（#153），starter 场景
+  // 用自己的注册整体替换 application.ts（本场景不消费 web 引擎与 worker barrel）。
+  await writeFile(join(appRoot, "src", "application.ts"), starterRegistrationSource);
   await writeFile(join(appRoot, "src", "cache-config.ts"), cacheConfigSource);
   await writeFile(join(appRoot, "src", "cache-reader.ts"), cacheReaderSource);
 }
@@ -1693,6 +1651,34 @@ describe.serial("starter consumption", () => {
     commandTimeout,
   );
 
+  // lockfile 不能只写一次：失败态的 watcher 刚建立，macOS 上 fs.watch 初期写入事件可能
+  // 永久丢失（Issue #86 探针实证；产品侧决议是"再保存一次即自愈"，不加常驻补偿）。e2e 按
+  // 同一语义周期性重写 lockfile 直到重发现完成，不赌单次事件必达（Issue #177 同理）。
+  async function recoverThroughLockfileWrites(
+    subprocess: SpawnedIpcProcess,
+    readyPath: string,
+    lockPath: string,
+  ): Promise<void> {
+    const deadline = Date.now() + 30_000;
+    let lockWrittenAt = 0;
+    for (;;) {
+      if (Date.now() - lockWrittenAt >= 2_000) {
+        lockWrittenAt = Date.now();
+        await writeFile(lockPath, '{"lockfileVersion": 1}\n');
+      }
+      if (await pathExists(readyPath)) {
+        return;
+      }
+      if (subprocess.child.exitCode !== null || subprocess.child.signalCode !== null) {
+        throw new Error(`Subprocess exited before creating ${readyPath}.`);
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for ${readyPath}`);
+      }
+      await sleep(20);
+    }
+  }
+
   test(
     "development recovers when a missing starter is installed and bun.lock lands",
     async () => {
@@ -1712,8 +1698,7 @@ describe.serial("starter consumption", () => {
         await waitForStderr(subprocess, "STARTER_META_NOT_FOUND");
         // 模拟 bun install：先落包内容（node_modules 不被 watch），bun.lock 收尾触发重发现。
         await installStarters(devRoot, starters);
-        await writeFile(join(devRoot, "bun.lock"), '{"lockfileVersion": 1}\n');
-        await waitForFile(readyPath, subprocess.child);
+        await recoverThroughLockfileWrites(subprocess, readyPath, join(devRoot, "bun.lock"));
         const result = await shutdownWithSignal(subprocess, devTerminationSignal);
         expect(result.exitCode, processFailure(subprocess, result)).toBe(0);
       } finally {

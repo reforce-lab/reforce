@@ -1,4 +1,5 @@
 import { isBuiltin } from "node:module";
+import path from "node:path";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "@/api";
@@ -42,6 +43,9 @@ export interface ResolvedValueDeclaration {
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
   readonly starterLinkage: StarterLinkage;
+  // defineApplication 所在的应用模块（顶层至多一次由注册读取保证）；未注册任何 starter 时
+  // 缺省。web 接线的 webRequestSeeder 约定以它为查找作用域（ADR 0006 W2 的 #153 修订）。
+  readonly applicationModule?: ParsedSource;
   collectWatchInputs(): CompilerWatchInputs;
   resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined;
   resolveType(source: ParsedSource, type: TypeNode): LinkedType | undefined;
@@ -78,7 +82,17 @@ export async function createProjectLinker(
     project,
     customConditions,
   );
-  const locatePackage = createPackageLocator();
+  // 定位过的外部包根都记账：watch 面收敛（见 collectWatchInputs）要按"已知包根的严格祖先"
+  // 识别解析走链带出的项目外高层目录。
+  const locatedPackageRoots = new Set<string>();
+  const packageLocator = createPackageLocator();
+  const locatePackage: typeof packageLocator = (physicalPath) => {
+    const location = packageLocator(physicalPath);
+    if (location !== undefined) {
+      locatedPackageRoots.add(location.rootPath);
+    }
+    return location;
+  };
   // binder 的每次查询都现读 records，因此可以在外部闭包装载前创建：注册读取只会命中应用记录
   // 与 @reforce/context 特例，装载后同一实例自动看见外部记录。
   const binder = createExportBinder({ diagnostics, resolveModule });
@@ -347,13 +361,45 @@ export async function createProjectLinker(
       return diagnostics;
     },
     starterLinkage,
+    ...(registrations.length === 0 ? {} : { applicationModule: registrations[0]?.source }),
     // Same timing constraint: the closures above keep resolving modules while analysis runs — a
     // re-export of the context specifier is resolved there for the first time, because
     // the external closure loader skips it — so this must be called after analysis finishes, never
     // snapshotted before it (Issue #26). Each call re-classifies every resolver dependency, which
     // is why compile() calls it exactly once.
     collectWatchInputs() {
-      return createWatchInputs(collectWatchDependencies());
+      const dependencies = collectWatchDependencies();
+      // watch 面收敛（#153 发现的失控场景）：workspace symlink 的外部包（starter 或类型依赖）
+      // 以 realpath 形态参与解析，解析器从真实包目录向上的 node_modules 走链会把 /Users 一类
+      // 项目外高层祖先写进 context 依赖——它们不含 node_modules / dist 段，watcher 的具名
+      // 目录忽略拦不住，rspack 原生 watcher 对这类目录的递归扫描无界（实测整个 home 目录被
+      // 爬取、CPU 持续打满且项目内变更事件全部丢失）。外部包根本身保留（既有契约：symlink
+      // workspace 包的物理目录参与失效；对它的爬取有界——node_modules 子树被具名段忽略），
+      // 丢弃的只有"已知包根的严格祖先且在项目外"的目录。
+      // 单文件依赖不受限（跨目录 tsconfig extends 失效是 dev-watch-build 钉住的契约，文件监视
+      // 不引发目录递归扫描），但已注册 starter 包内的文件除外——安装内容视为不可变，其变更的
+      // 重建信号是项目内 package.json / bun.lock（dev-watch-signals 钉住的通道）。
+      const starterRoots = registry.starters.map((starter) => starter.rootPath);
+      const projectPrefix = `${project.projectRoot}${path.sep}`;
+      const insideProject = (dependency: string) =>
+        dependency === project.projectRoot || dependency.startsWith(projectPrefix);
+      const holdsLocatedPackageRoot = (dependency: string) => {
+        const prefix = `${dependency}${path.sep}`;
+        return [...locatedPackageRoots].some((root) => root.startsWith(prefix));
+      };
+      const watchableDirectory = (dependency: string) =>
+        insideProject(dependency) || !holdsLocatedPackageRoot(dependency);
+      const withinStarterPackage = (dependency: string) =>
+        starterRoots.some(
+          (root) => dependency === root || dependency.startsWith(`${root}${path.sep}`),
+        );
+      return createWatchInputs({
+        fileDependencies: [...dependencies.fileDependencies].filter(
+          (dependency) => !withinStarterPackage(dependency),
+        ),
+        contextDependencies: [...dependencies.contextDependencies].filter(watchableDirectory),
+        missingDependencies: [...dependencies.missingDependencies].filter(watchableDirectory),
+      });
     },
     resolveEntity,
     resolveType,

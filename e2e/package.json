@@ -8,11 +8,15 @@
     "test:e2e:evidence": "bun test --timeout 120000 test --reporter=junit --reporter-outfile=e2e-junit.xml",
     "typecheck": "tsc && tsc -p fixtures/application/tsconfig.json",
     "check": "biome check .",
-    "check:write": "biome check --write ."
+    "check:write": "biome check --write .",
+    "bench:http": "bun bench/http.bench.ts",
+    "bench:serializer": "bun bench/serializer.bench.ts"
   },
   "dependencies": {
     "@reforce/config": "workspace:*",
-    "@reforce/context": "workspace:*"
+    "@reforce/context": "workspace:*",
+    "@reforce/web": "workspace:*",
+    "@reforce/web-bun": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

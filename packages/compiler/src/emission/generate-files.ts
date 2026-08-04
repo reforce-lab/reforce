@@ -10,7 +10,7 @@ import {
 } from "@/analysis/model";
 import type { WebModel } from "@/analysis/web-model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
-import { generateWebFiles } from "@/emission/generate-web-files";
+import { generateWebFiles, webRuntimeModuleSpecifier } from "@/emission/generate-web-files";
 import { inlineJson, json, runtimeSpecifier } from "@/emission/render";
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
@@ -366,8 +366,44 @@ function renderManifest(
   return `${json({ schemaVersion: 4, configs: manifestConfigs, beans, plans })}\n`;
 }
 
-function renderBootstrap(): string {
-  return `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";\nimport { applicationDefinition } from "./beans.js";\n\nexport async function bootstrap() {\n  const application = createApplicationContext(applicationDefinition);\n  await application.start();\n  return application;\n}\n`;
+// web 接线（ADR 0006 W2 的 #153 修订）：路由表与容器只有生成代码同时拿得到，注册了 web 引擎
+// starter 时 bootstrap 负责把两者交给 connectWebApplication（组装 + 启动引擎 + 关闭编排）。
+// 无引擎的应用保持零 import 的哑 bootstrap，逐字节不变。
+function renderBootstrap(web: WebModel, generatedDirectory: string): string {
+  if (web.engines.length === 0) {
+    return `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";\nimport { applicationDefinition } from "./beans.js";\n\nexport async function bootstrap() {\n  const application = createApplicationContext(applicationDefinition);\n  await application.start();\n  return application;\n}\n`;
+  }
+  const seeder = web.requestSeeder;
+  const imports = [
+    `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
+    `import { connectWebApplication } from "${webRuntimeModuleSpecifier}";`,
+    ...web.engines.map(
+      (engine, index) =>
+        `import { ${engine.exportName} as webEngine${index} } from ${JSON.stringify(engine.moduleSpecifier)};`,
+    ),
+    ...(seeder === undefined
+      ? []
+      : [
+          `import { ${seeder.exportName} as webSeeder0 } from ${JSON.stringify(runtimeSpecifier(generatedDirectory, seeder.source.absolutePath))};`,
+        ]),
+    `import { applicationDefinition } from "./beans.js";`,
+    `import { routeTable } from "./routes.js";`,
+  ];
+  const engineList = web.engines.map((_, index) => `webEngine${index}`).join(", ");
+  return `${[
+    ...imports,
+    "",
+    "export async function bootstrap() {",
+    "  const application = createApplicationContext(applicationDefinition);",
+    "  await application.start();",
+    "  return await connectWebApplication({",
+    "    context: application,",
+    "    table: routeTable,",
+    `    engines: [${engineList}],`,
+    ...(seeder === undefined ? [] : ["    requestSeeds: webSeeder0,"]),
+    "  });",
+    "}",
+  ].join("\n")}\n`;
 }
 
 export function generateFiles(
@@ -392,7 +428,7 @@ export function generateFiles(
       path: "manifest.json",
       content: renderManifest(providers, configs, plans, generatedDirectory),
     },
-    { path: "bootstrap.ts", content: renderBootstrap() },
+    { path: "bootstrap.ts", content: renderBootstrap(web, generatedDirectory) },
     ...generateWebFiles(project, web),
   ]);
 }

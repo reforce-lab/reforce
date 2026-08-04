@@ -107,12 +107,19 @@ export function analyzeProject(
   const configAnalysis = analyzeConfigProviders(sources, linker, diagnostics);
   const drafts = collectProviderDrafts(sources, linker, diagnostics, configAnalysis.claimed);
 
+  // web 引擎约定（ADR 0006 W2 的 #153 接线，见 web-model.ts）：runtimeExport 导出名为
+  // "WebEngine" 的 starter bean 由生成的 bootstrap 消费，先于 resolveProviders 识别出来，
+  // 作为显式需求物化——它的需求方是生成代码，不在任何依赖边上。
+  const engineBeans = linker.starterLinkage.beans.filter(
+    (bean) => bean.runtimeExport.export === "WebEngine",
+  );
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
   // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。
   const starterDrafts = resolveProviders(
     [...configAnalysis.drafts, ...drafts],
     linker.starterLinkage,
     diagnostics,
+    new Set(engineBeans.map((bean) => bean.id)),
   );
   // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
   // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。config 不进执行计划——它由
@@ -124,7 +131,7 @@ export function analyzeProject(
   validateScopeRules(allProviders, diagnostics);
   // 路由提取要在 provider 全集就位后进行：controller/中间件/错误处理器的 bean 身份与
   // scope 校验都以最终 provider 表为准（ADR 0006 W3/W4，#152）。
-  const web = analyzeWebRoutes(sources, linker, allProviders, diagnostics);
+  const web = analyzeWebRoutes(sources, linker, allProviders, diagnostics, engineBeans);
   diagnostics.push(...linker.diagnostics);
 
   if (diagnostics.length > 0) {
