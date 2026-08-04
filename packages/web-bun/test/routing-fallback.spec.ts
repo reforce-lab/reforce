@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PreparedRoute } from "@reforce/web";
+import type { PreparedRoute } from "@reforce/web/adapter";
 import { createFallbackResponder } from "@/routing-fallback";
 
 function route(method: PreparedRoute["method"], path: string): PreparedRoute {

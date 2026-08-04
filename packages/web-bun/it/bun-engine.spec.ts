@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PreparedRoute, WebApplication } from "@reforce/web";
+import type { PreparedRoute, WebApplication } from "@reforce/web/adapter";
 import { WebEngine } from "@/index";
 
 // 真实 Bun.serve 上的引擎契约（#153）：原生 routes 分发、参数路由、404/405 冷路径、
