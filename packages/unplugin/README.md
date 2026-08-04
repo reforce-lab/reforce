@@ -8,8 +8,9 @@ Starter 库作者的构建收尾插件（ADR 0004，[#120](https://github.com/re
 - `reforce.js` / `reforce.d.ts` —— `defineApplication({ starters: [...] })` 用的注册 handle
   （subpath `./reforce`）。
 
-收尾最后用 [publint](https://publint.dev) 校验发布产物，error 级问题直接判失败，兜住
-「meta 写了但没随包发布」这类事故。
+收尾最后用 [publint](https://publint.dev) 校验发布产物（`pack: false`，纯文件系统校验，
+不拉起包管理器），error 级问题直接判失败，兜住 exports/main 指向缺失文件这类事故；
+`files` 字段是否漏发 dist 属发布前检查，请在发布流水线另跑 `publint` CLI。
 
 ## 用法
 

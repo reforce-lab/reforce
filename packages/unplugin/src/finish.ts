@@ -97,7 +97,10 @@ function patchExportsContent(
 }
 
 async function runPublint(projectRoot: string): Promise<void> {
-  const { messages, pkg } = await publint({ pkgDir: projectRoot, level: "error" });
+  // pack: false——publint 默认会拉起包管理器 pack 来模拟发布文件集，构建收尾钩子里反复
+  // spawn 又慢又不稳（Windows CI 实测 EBUSY，PR #156）。纯 fs 校验已覆盖 exports/main 目标
+  // 缺失这类 meta subpath 配置事故；files 字段漏发 dist 属发布前检查，交给作者跑 publint CLI。
+  const { messages, pkg } = await publint({ pkgDir: projectRoot, level: "error", pack: false });
   const errors = messages.filter((message) => message.type === "error");
   if (errors.length === 0) {
     return;
