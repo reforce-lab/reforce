@@ -97,14 +97,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Turbo 默认写 <repo-root>/.turbo/cache。key 取 SHA 使每次提交独立成条，
-      # restore-keys 让未改动 package 的 build/typecheck/test 命中上一条（Issue #40）。
-      - name: Cache Turbo task cache
-        uses: actions/cache@v6
-        with:
-          path: .turbo/cache
-          key: ${{ runner.os }}-turbo-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-turbo-
+      # CI 不做 turbo 任务缓存（曾按 Issue #40 以 SHA 分条 + restore-keys 复用）：跨 run 恢复
+      # 的缓存态让同一失败在不同 run 里表象漂移（#153 排障实录：同一 rspack 竞态在不同缓存
+      # 命中组合下呈现 137/134 两种信号），验证一致性优先于增量的分钟级节省；run 内的任务
+      # 去重仍由 turbo 进程内完成，不受影响。
 
       # Biome 与 tsgo 的结果与平台无关，三平台重复执行无信息量；只在 ubuntu 跑，
       # macos/windows 显示 skipped（Issue #172）。不拆独立 job：那要动分支保护的
