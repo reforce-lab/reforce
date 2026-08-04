@@ -1,32 +1,40 @@
 {
-  "name": "@reforce/testing",
+  "name": "@reforce/unplugin",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "Bundler plugin that compiles and publishes Reforce starter meta from library builds.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "rslib build",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
-    "test": "bun test test it",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p it/tsconfig.json",
+    "test": "bun test it",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
-    "@swc/helpers": "catalog:"
+    "@reforce/compiler": "workspace:*",
+    "@reforce/primitives": "workspace:*",
+    "@swc/helpers": "catalog:",
+    "publint": "^0.3.22",
+    "unplugin": "^3.3.0"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@reforce/context": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/bun": "catalog:",
-    "type-fest": "catalog:",
     "typescript": "catalog:"
   }
 }
