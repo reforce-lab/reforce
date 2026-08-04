@@ -9,15 +9,28 @@ export interface DefineBeanOptions<T extends object> {
   readonly qualifier?: string;
 }
 
+// 请求作用域工厂（ADR 0006 W7，#151）：create 允许 async（请求计划本就在异步链里按序 await）；
+// 请求实例随请求结束，没有 context 级 cleanup 相位可挂，因此没有 dispose。
+export interface DefineRequestBeanOptions<T extends object> {
+  readonly scope: "request";
+  readonly create: () => T | Promise<T>;
+  readonly primary?: boolean;
+  readonly qualifier?: string;
+}
+
+export type BeanDefinitionOptions<T extends object> =
+  | DefineBeanOptions<T>
+  | DefineRequestBeanOptions<T>;
+
 class OwnedBeanDefinition<T extends object> implements BeanDefinition<T> {
   declare readonly [beanDefinitionBrand]: T;
-  private readonly options: DefineBeanOptions<T>;
+  private readonly options: BeanDefinitionOptions<T>;
 
-  constructor(options: DefineBeanOptions<T>) {
+  constructor(options: BeanDefinitionOptions<T>) {
     this.options = Object.freeze({ ...options });
   }
 
-  static read<T extends object>(definition: OwnedBeanDefinition<T>): DefineBeanOptions<T> {
+  static read<T extends object>(definition: OwnedBeanDefinition<T>): BeanDefinitionOptions<T> {
     return definition.options;
   }
 }
@@ -28,14 +41,23 @@ function isOwnedBeanDefinition<T extends object>(
   return definition instanceof OwnedBeanDefinition;
 }
 
-export function defineBean<T extends object>(options: DefineBeanOptions<T>): BeanDefinition<T> {
+export function defineBean<T extends object>(options: BeanDefinitionOptions<T>): BeanDefinition<T> {
   if (!isObject(options)) {
     throw new TypeError("defineBean options must be an object.");
   }
   if (typeof options.create !== "function") {
     throw new TypeError("defineBean requires a create function.");
   }
-  if (options.dispose !== undefined && typeof options.dispose !== "function") {
+  // 与其余守卫同理服务未经编译的调用方：scope 词汇表封闭为 "request"，dispose 只属于 singleton。
+  const scope = Reflect.get(options, "scope");
+  if (scope !== undefined && scope !== "request") {
+    throw new TypeError('defineBean scope must be the string "request" when provided.');
+  }
+  const dispose = Reflect.get(options, "dispose");
+  if (scope === "request" && dispose !== undefined) {
+    throw new TypeError("defineBean dispose is not available on a request-scoped Bean.");
+  }
+  if (dispose !== undefined && typeof dispose !== "function") {
     throw new TypeError("defineBean dispose must be a function when provided.");
   }
   if (options.primary !== undefined && typeof options.primary !== "boolean") {
@@ -50,13 +72,19 @@ export function defineBean<T extends object>(options: DefineBeanOptions<T>): Bea
 
 export function readBeanDefinitionOptions<T extends object>(
   definition: BeanDefinition<T>,
-): DefineBeanOptions<T> {
+): BeanDefinitionOptions<T> {
   if (!isOwnedBeanDefinition(definition)) {
     throw new InvalidGeneratedDefinitionError(
       "Factory registration must reference a definition created by defineBean().",
     );
   }
   return OwnedBeanDefinition.read(definition);
+}
+
+export function beanDefinitionScope<T extends object>(
+  options: BeanDefinitionOptions<T>,
+): "singleton" | "request" {
+  return "scope" in options && options.scope === "request" ? "request" : "singleton";
 }
 
 // Injectable/Primary/Qualifier are compile-time markers: the compiler reads them
@@ -73,6 +101,15 @@ export function Injectable(): <T extends BeanClass>(
 }
 
 export function Primary(): <T extends BeanClass>(
+  value: T,
+  context: ClassDecoratorContext<T>,
+) => void {
+  return () => undefined;
+}
+
+// scope 是编译期属性（ADR 0006 W7，#151）：编译器读取标记并把 scope 写进生成物，运行时按
+// 生成物执行，装饰器本身照惯例保持 no-op。
+export function RequestScoped(): <T extends BeanClass>(
   value: T,
   context: ClassDecoratorContext<T>,
 ) => void {

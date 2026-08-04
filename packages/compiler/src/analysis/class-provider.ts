@@ -210,12 +210,14 @@ function addInvalidDecoratorDiagnostic(
 
 interface ClassDecoratorSelection {
   readonly primary: boolean;
+  readonly requestScoped: boolean;
   readonly qualifierDecorators: readonly DecoratorUse[];
   readonly explicitQualifier?: string;
   readonly order?: number;
 }
 
-function validatePrimaryDecorators(
+function validateMarkerDecorators(
+  name: string,
   decorators: readonly DecoratorUse[],
   declaration: ClassDeclaration,
   diagnostics: CompilerDiagnostic[],
@@ -228,7 +230,7 @@ function validatePrimaryDecorators(
   }
   addInvalidDecoratorDiagnostic(
     diagnostics,
-    "Primary must appear at most once as @Primary().",
+    `${name} must appear at most once as @${name}().`,
     decorators[0]?.span ?? declaration.span,
   );
 }
@@ -285,13 +287,19 @@ function classDecoratorSelection(
   const decorators = contextDecorators(source, declaration.decorators, linker);
   const injectable = decorators.get("Injectable") ?? [];
   const primaryDecorators = decorators.get("Primary") ?? [];
+  const requestScopedDecorators = decorators.get("RequestScoped") ?? [];
   const qualifierDecorators = decorators.get("Qualifier") ?? [];
   const orderDecorators = decorators.get("Order") ?? [];
   if (injectable.length === 0) {
-    for (const decorator of [...primaryDecorators, ...qualifierDecorators, ...orderDecorators]) {
+    for (const decorator of [
+      ...primaryDecorators,
+      ...requestScopedDecorators,
+      ...qualifierDecorators,
+      ...orderDecorators,
+    ]) {
       addInvalidDecoratorDiagnostic(
         diagnostics,
-        "Primary, Qualifier, and Order can only mark an Injectable class.",
+        "Primary, RequestScoped, Qualifier, and Order can only mark an Injectable class.",
         decorator.span,
       );
     }
@@ -309,11 +317,25 @@ function classDecoratorSelection(
     );
     return undefined;
   }
-  validatePrimaryDecorators(primaryDecorators, declaration, diagnostics);
+  validateMarkerDecorators("Primary", primaryDecorators, declaration, diagnostics);
+  validateMarkerDecorators("RequestScoped", requestScopedDecorators, declaration, diagnostics);
+  const requestScoped = requestScopedDecorators.length >= 1;
+  // @Order 只服务集合成员排序，而请求作用域 bean 不能入集合（ADR 0006 W7 交叉形态从紧），
+  // 两个标记同时出现只能是误解，原位拒绝。
+  const orderOnRequestScoped = requestScoped ? orderDecorators.at(0) : undefined;
+  if (orderOnRequestScoped !== undefined) {
+    addInvalidDecoratorDiagnostic(
+      diagnostics,
+      "Order cannot mark a request-scoped class: request Beans never join collections.",
+      orderOnRequestScoped.span,
+    );
+    return undefined;
+  }
   const explicitQualifier = explicitQualifierFrom(qualifierDecorators, diagnostics);
   const order = orderFrom(orderDecorators, diagnostics);
   return {
     primary: primaryDecorators.length === 1,
+    requestScoped,
     qualifierDecorators,
     explicitQualifier,
     ...(order === undefined ? {} : { order }),
@@ -531,6 +553,9 @@ function linkedCollectionElementError(linked: LinkedType): string | undefined {
   if (linked.lazy) {
     return "combines a collection with a Lazy element, which is not supported yet";
   }
+  if (linked.current) {
+    return "combines a collection with a Current element, which is not supported yet";
+  }
   if (linked.qualifierMember !== undefined) {
     return "combines a collection with a qualified member element, which is not supported yet";
   }
@@ -662,6 +687,45 @@ function reportUnresolvedParameterType(
   );
 }
 
+// context 符号不是契约：ApplicationContext 禁注入；Lazy<Current<T>> / Current<Lazy<T>> /
+// Current<Current<T>> 句柄套句柄（ADR 0006 W7 交叉形态从紧）点名拒绝，不落进泛化注入类型错误。
+function reportContextSymbolMisuse(
+  linked: LinkedType,
+  parameter: ClassDeclaration["constructors"][number]["parameters"][number],
+  exportName: string,
+  diagnostics: CompilerDiagnostic[],
+): boolean {
+  if (linked.symbol.kind !== "context") {
+    return false;
+  }
+  if (linked.symbol.name === "ApplicationContext") {
+    diagnostics.push(
+      diagnostic({
+        code: "UNSUPPORTED_APPLICATION_CONTEXT_INJECTION",
+        message: "ApplicationContext cannot be injected into a constructor.",
+        sourceSpan: parameter.span,
+        help: "Move coordination outside the Bean constructor.",
+      }),
+    );
+    return true;
+  }
+  const handleSymbol = linked.symbol.name === "Lazy" || linked.symbol.name === "Current";
+  const nestedHandle =
+    handleSymbol && (linked.current || (linked.lazy && linked.symbol.name === "Current"));
+  if (nestedHandle) {
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_CURRENT_INJECTION",
+        message: `Constructor parameter ${parameter.index} on ${exportName} nests dependency handles, which is not supported.`,
+        sourceSpan: parameter.span,
+        help: "Use a single Current<T> or Lazy<T> wrapper around the contract.",
+      }),
+    );
+    return true;
+  }
+  return false;
+}
+
 function constructorParameterDependency(
   source: ParsedSource,
   parameter: ClassDeclaration["constructors"][number]["parameters"][number],
@@ -709,15 +773,7 @@ function constructorParameterDependency(
     }
     return undefined;
   }
-  if (linked.symbol.kind === "context" && linked.symbol.name === "ApplicationContext") {
-    diagnostics.push(
-      diagnostic({
-        code: "UNSUPPORTED_APPLICATION_CONTEXT_INJECTION",
-        message: "ApplicationContext cannot be injected into a constructor.",
-        sourceSpan: parameter.span,
-        help: "Move coordination outside the Bean constructor.",
-      }),
-    );
+  if (reportContextSymbolMisuse(linked, parameter, exportName, diagnostics)) {
     return undefined;
   }
   if (linked.symbol.kind === "unsupported") {
@@ -841,6 +897,18 @@ export function analyzeClassProvider(
     diagnostics,
   );
   validateLifecycleMethods(declaration, exportName, contracts, diagnostics);
+  // 请求 bean 没有 context 级生命周期（ADR 0006 W7）：start action 在任何请求存在之前运行，
+  // cleanup 账本按 bean 记一次——两者都以"每 bean 恰好一个实例"为前提。
+  if (selection.requestScoped && (contracts.startHook || contracts.closeHook)) {
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_LIFECYCLE_DECLARATION",
+        message: `Request-scoped ${exportName} cannot implement context lifecycle interfaces.`,
+        sourceSpan: declaration.span,
+        help: "Remove OnContextStart/OnContextClose from the request-scoped class.",
+      }),
+    );
+  }
   const pendingDependencies = constructorDependencies(
     source,
     implementation.declaration,
@@ -859,6 +927,7 @@ export function analyzeClassProvider(
       exportName,
       declarationSource: sourceReference(declaration.span),
       provides,
+      scope: selection.requestScoped ? "request" : "singleton",
       primary: selection.primary,
       ...(selection.order === undefined ? {} : { order: selection.order }),
       qualifiers,

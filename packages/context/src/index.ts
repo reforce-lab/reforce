@@ -10,6 +10,7 @@ export {
   Order,
   Primary,
   Qualifier,
+  RequestScoped,
 } from "@/bean-declaration";
 export {
   ApplicationCleanupError,
@@ -23,6 +24,7 @@ export {
   EarlyBeanAccessError,
   InvalidGeneratedDefinitionError,
   ReforceRuntimeError,
+  RequestContextMissingError,
   type RuntimeErrorCode,
   UnregisteredBeanTargetError,
 } from "@/errors";
@@ -30,8 +32,10 @@ export type {
   ApplicationContext,
   BeanClass,
   BeanDefinition,
+  Current,
   Lazy,
   OnContextClose,
   OnContextStart,
   QualifiedBean,
+  RequestScopeSeed,
 } from "@/public-types";

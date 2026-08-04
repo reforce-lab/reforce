@@ -7,6 +7,7 @@ import type {
   GeneratedSourceReference,
 } from "@reforce/context/generated-runtime";
 import type { TemporaryProject } from "@reforce/tooling-testing";
+import stableStringify from "json-stable-stringify";
 import { createCompiler, type GeneratedFile } from "@/index";
 import {
   type CompilerProjectName,
@@ -123,8 +124,14 @@ function registrationBlock(beans: string, index: number): string {
   return beans.slice(start, end);
 }
 
+// beans.ts 内嵌 JSON 与 manifest 同源同渲染（json-stable-stringify 的空数组呈现与
+// JSON.stringify 不同），比对必须用同一序列化器。
 function embeddedData(value: unknown): string {
-  return JSON.stringify(value, undefined, 2)
+  const rendered = stableStringify(value, { space: 2 });
+  if (rendered === undefined) {
+    throw new Error("Expected serializable embedded data");
+  }
+  return rendered
     .split("\n")
     .map((line) => `  ${line}`)
     .join("\n")

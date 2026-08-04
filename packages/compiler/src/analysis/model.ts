@@ -16,7 +16,10 @@ export interface GeneratedSourceReferenceModel {
   readonly end: GeneratedSourcePositionModel;
 }
 
-type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
+type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy" | "current";
+
+// scope 是编译期属性（ADR 0006 W7，#142 / #151）：进模型、进生成物，运行时不做任何推断。
+export type BeanScopeModel = "singleton" | "request";
 
 export interface SingleDependencyModel {
   readonly parameterIndex: number;
@@ -76,6 +79,7 @@ interface ProviderBase {
   readonly exportName: string;
   readonly declarationSource: GeneratedSourceReferenceModel;
   readonly provides: readonly LinkedSymbol[];
+  readonly scope: BeanScopeModel;
   readonly primary: boolean;
   // @Order(n) 只服务集合成员排序（ADR 0006 W6）；无标记即 undefined，排在全部有序成员之后。
   readonly order?: number;
@@ -119,6 +123,9 @@ export interface ProviderDraft {
 
 export interface ExecutionPlansModel {
   readonly constructionOrder: readonly string[];
+  // 第二组计划（ADR 0006 W7）：请求作用域 bean 的构造顺序，运行时每请求照单执行——请求构造
+  // 时机全确定，不存在按需构造。singleton 与 config 对它恒就绪。
+  readonly requestConstructionOrder: readonly string[];
   readonly startActionOrder: readonly string[];
   readonly cleanupActionOrder: readonly string[];
 }

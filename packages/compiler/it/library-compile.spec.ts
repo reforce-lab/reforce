@@ -515,6 +515,48 @@ describe("library compile", () => {
     expect(failure.diagnostics[0].message).toContain("Lazy");
   });
 
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for the RequestScoped decorator", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "client.ts": clientSource.replace(
+              "@Injectable()",
+              'import { RequestScoped } from "@reforce/context";\n@Injectable()\n@RequestScoped()',
+            ),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("@RequestScoped");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for Current dependencies", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "metrics.ts": [
+              'import { type Current, Injectable } from "@reforce/context";',
+              'import { RedisClient } from "./client";',
+              "",
+              "@Injectable()",
+              "export class MetricsPusher {",
+              "  constructor(readonly client: Current<RedisClient>) {}",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("Current");
+  });
+
   test("reports LIBRARY_EXPORT_MISMATCH when a bean class is not publicly exported", async () => {
     const failure = expectLibraryFailure(
       await compileLibrary(

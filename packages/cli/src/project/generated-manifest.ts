@@ -39,7 +39,8 @@ interface ManifestQualifier {
 export interface ManifestSingleDependency {
   readonly parameterIndex: number;
   readonly targetId: string;
-  readonly mode: "eager" | "cycle-proxy" | "explicit-lazy";
+  // "current"（ADR 0006 W7，#151 / schema v4）：singleton 持有请求态句柄的唯一通道。
+  readonly mode: "eager" | "cycle-proxy" | "explicit-lazy" | "current";
   readonly source: ManifestSourceReference;
 }
 
@@ -76,6 +77,8 @@ export interface ManifestBean {
   readonly id: string;
   readonly origin: string;
   readonly kind: "class" | "factory";
+  // scope 是编译期属性（ADR 0006 W7，#151 / schema v4）：请求 bean 走第二组构造计划。
+  readonly scope: "singleton" | "request";
   readonly source: ManifestSourceReference;
   readonly runtimeExport: ManifestExportReference;
   readonly provides: readonly ManifestSymbolReference[];
@@ -98,12 +101,13 @@ export interface ManifestConfig {
 
 interface ManifestPlans {
   readonly constructionOrder: readonly string[];
+  readonly requestConstructionOrder: readonly string[];
   readonly startActionOrder: readonly string[];
   readonly cleanupActionOrder: readonly string[];
 }
 
 export interface GeneratedManifest {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly configs: readonly ManifestConfig[];
   readonly beans: readonly ManifestBean[];
   readonly plans: ManifestPlans;
@@ -288,6 +292,23 @@ function symbolIdentity(value: ManifestSymbolReference): string {
   return `${value.moduleSpecifier}\0${value.exportName}`;
 }
 
+function isBeanScope(value: unknown): value is "singleton" | "request" {
+  return value === "singleton" || value === "request";
+}
+
+// 请求 bean 没有 context 级生命周期，@Order 也不服务它（不能入集合），编译期都已拒绝；
+// 产物字节可能被手改，此处按线上协议复检。
+function requestScopeInvariantsHold(
+  scope: unknown,
+  lifecycle: ManifestLifecycle,
+  order: unknown,
+): boolean {
+  if (scope !== "request") {
+    return true;
+  }
+  return !lifecycle.start && !lifecycle.close && !lifecycle.dispose && order === undefined;
+}
+
 function isQualifier(value: unknown): value is ManifestQualifier {
   return (
     isObject(value) &&
@@ -350,7 +371,10 @@ function isDependency(value: unknown, index: number): value is ManifestDependenc
   return (
     Reflect.get(value, "parameterIndex") === index &&
     beanIdParts(Reflect.get(value, "targetId")) !== undefined &&
-    (mode === "eager" || mode === "cycle-proxy" || mode === "explicit-lazy") &&
+    (mode === "eager" ||
+      mode === "cycle-proxy" ||
+      mode === "explicit-lazy" ||
+      mode === "current") &&
     isSourceReference(Reflect.get(value, "source"))
   );
 }
@@ -383,6 +407,7 @@ function isManifestBean(value: unknown): value is ManifestBean {
         "id",
         "origin",
         "kind",
+        "scope",
         "source",
         "runtimeExport",
         "provides",
@@ -400,6 +425,7 @@ function isManifestBean(value: unknown): value is ManifestBean {
   if (order !== undefined && !Number.isInteger(order)) {
     return false;
   }
+  const scope = Reflect.get(value, "scope");
   const id = Reflect.get(value, "id");
   const idParts = beanIdParts(id);
   const origin = Reflect.get(value, "origin");
@@ -424,12 +450,18 @@ function isManifestBean(value: unknown): value is ManifestBean {
     typeof Reflect.get(value, "primary") !== "boolean" ||
     !isArrayOf(qualifiers, isQualifier) ||
     !hasValidQualifiers(qualifiers, provides) ||
-    !isLifecycle(lifecycle)
+    !isLifecycle(lifecycle) ||
+    !isBeanScope(scope) ||
+    !requestScopeInvariantsHold(scope, lifecycle, order)
   ) {
     return false;
   }
   if (origin !== "application") {
-    return isStarterBean({ idParts, kind, runtimeExport, provides, lifecycle }, origin);
+    // starter meta v1 没有 scope 面：starter bean 恒为 singleton。
+    return (
+      scope === "singleton" &&
+      isStarterBean({ idParts, kind, runtimeExport, provides, lifecycle }, origin)
+    );
   }
   // 应用 bean：source.file 相对项目根且与 id 的 file 部分一致，runtimeExport 必须退回源码目录。
   if (
@@ -476,7 +508,12 @@ function isManifestConfig(value: unknown): value is ManifestConfig {
 }
 
 function isPlans(value: unknown): value is ManifestPlans {
-  const keys = ["constructionOrder", "startActionOrder", "cleanupActionOrder"] as const;
+  const keys = [
+    "constructionOrder",
+    "requestConstructionOrder",
+    "startActionOrder",
+    "cleanupActionOrder",
+  ] as const;
   if (!isObject(value) || !hasExactKeys(value, keys)) {
     return false;
   }
@@ -492,11 +529,11 @@ function exactlyCovers(values: readonly string[], expected: ReadonlySet<string>)
 }
 
 function hasEagerDependenciesConstructedFirst(
-  constructionOrder: readonly string[],
+  order: readonly string[],
   beans: readonly ManifestBean[],
-  configIds: ReadonlySet<string>,
+  alwaysReadyIds: ReadonlySet<string>,
 ): boolean {
-  const constructionIndexes = new Map(constructionOrder.map((id, index) => [id, index]));
+  const constructionIndexes = new Map(order.map((id, index) => [id, index]));
   return beans.every((bean) => {
     const consumerIndex = constructionIndexes.get(bean.id);
     if (consumerIndex === undefined) {
@@ -507,8 +544,9 @@ function hasEagerDependenciesConstructedFirst(
         if (edge.mode !== "eager") {
           return true;
         }
-        // config 实例在绑定 phase 先于构造循环产生，指向它的 eager 边不受计划位置约束。
-        if (configIds.has(edge.targetId)) {
+        // config 实例在绑定 phase 先于构造循环产生；请求计划里的 singleton 目标在请求开启前
+        // 必然已构造——指向恒就绪目标的 eager 边不受计划位置约束。
+        if (alwaysReadyIds.has(edge.targetId)) {
           return true;
         }
         const dependencyIndex = constructionIndexes.get(edge.targetId);
@@ -531,6 +569,28 @@ function hasMirroredLifecycleOrder(plans: ManifestPlans): boolean {
   return startShared.every((id, index) => id === cleanupShared[cleanupShared.length - 1 - index]);
 }
 
+// 跨作用域边规则（ADR 0006 W7，#151 / schema v4）镜像 compiler 的 scope-rules：current 只连
+// singleton→request；到 request 目标的其余合法形态只有"request 消费者的 eager 单边"，集合
+// 成员一律 singleton。
+function hasValidScopeEdges(beans: readonly ManifestBean[]): boolean {
+  const scopeById = new Map(beans.map((bean) => [bean.id, bean.scope]));
+  return beans.every((bean) =>
+    bean.dependencies.every((dependency) => {
+      const collection = dependency.mode === "collection";
+      return manifestDependencyEdges(dependency).every((edge) => {
+        const targetScope = scopeById.get(edge.targetId);
+        if (edge.mode === "current") {
+          return bean.scope === "singleton" && targetScope === "request";
+        }
+        if (targetScope !== "request") {
+          return true;
+        }
+        return !collection && bean.scope === "request" && edge.mode === "eager";
+      });
+    }),
+  );
+}
+
 function hasValidPlans(
   plans: ManifestPlans,
   beans: readonly ManifestBean[],
@@ -538,15 +598,32 @@ function hasValidPlans(
 ): boolean {
   // plans 的已知 id 只含 bean：config 不进任何计划数组（绑定 phase 不是计划驱动的）。
   const knownIds = new Set(beans.map((bean) => bean.id));
+  const singletonIds = new Set(
+    beans.flatMap((bean) => (bean.scope === "singleton" ? [bean.id] : [])),
+  );
+  const requestIds = new Set(beans.flatMap((bean) => (bean.scope === "request" ? [bean.id] : [])));
   if (
     !hasUniqueKnownIds(plans.constructionOrder, knownIds) ||
+    !hasUniqueKnownIds(plans.requestConstructionOrder, knownIds) ||
     !hasUniqueKnownIds(plans.startActionOrder, knownIds) ||
     !hasUniqueKnownIds(plans.cleanupActionOrder, knownIds) ||
-    !exactlyCovers(plans.constructionOrder, knownIds)
+    !exactlyCovers(plans.constructionOrder, singletonIds) ||
+    !exactlyCovers(plans.requestConstructionOrder, requestIds)
   ) {
     return false;
   }
-  if (!hasEagerDependenciesConstructedFirst(plans.constructionOrder, beans, configIds)) {
+  const singletonBeans = beans.filter((bean) => bean.scope === "singleton");
+  const requestBeans = beans.filter((bean) => bean.scope === "request");
+  if (!hasEagerDependenciesConstructedFirst(plans.constructionOrder, singletonBeans, configIds)) {
+    return false;
+  }
+  if (
+    !hasEagerDependenciesConstructedFirst(
+      plans.requestConstructionOrder,
+      requestBeans,
+      new Set([...configIds, ...singletonIds]),
+    )
+  ) {
     return false;
   }
   const expectedStart = new Set(
@@ -627,11 +704,12 @@ function hasPortableSourcePaths(
 function isGeneratedManifest(value: unknown): value is GeneratedManifest {
   // schemaVersion 是硬版本门：无法识别的 schema 直接拒绝，不按错版契约解释产物字节。
   // v2（ADR 0005，#130）新增顶层 configs；v3（ADR 0006 W6，#150）新增集合依赖形态与 bean 的
-  // order 键；与 compiler 的 renderManifest 同步演进。
+  // order 键；v4（ADR 0006 W7，#151）新增 bean 的 scope、current 依赖模式与
+  // plans.requestConstructionOrder；与 compiler 的 renderManifest 同步演进。
   if (
     !isObject(value) ||
     !hasExactKeys(value, ["schemaVersion", "configs", "beans", "plans"]) ||
-    Reflect.get(value, "schemaVersion") !== 3
+    Reflect.get(value, "schemaVersion") !== 4
   ) {
     return false;
   }
@@ -665,6 +743,9 @@ function isGeneratedManifest(value: unknown): value is GeneratedManifest {
       ),
     )
   ) {
+    return false;
+  }
+  if (!hasValidScopeEdges(beans)) {
     return false;
   }
   return hasValidPlans(plans, beans, configIds);

@@ -8,6 +8,7 @@ type TestDependency = Pick<SingleDependencyModel, "mode" | "parameterIndex" | "t
 interface TestProvider {
   readonly kind: "class";
   readonly id: string;
+  readonly scope: "singleton" | "request";
   readonly dependencies: readonly TestDependency[];
   readonly startHook: boolean;
   readonly closeHook: boolean;
@@ -79,6 +80,7 @@ function lifecycleProvider(id: string, dependencies: readonly TestDependency[]):
   return {
     kind: "class",
     id,
+    scope: "singleton",
     dependencies,
     startHook: true,
     closeHook: true,
@@ -179,6 +181,7 @@ describe("execution plans", () => {
 
     expect(plans).toEqual({
       constructionOrder: ["b", "z", "a"],
+      requestConstructionOrder: [],
       startActionOrder: ["b", "z", "a"],
       cleanupActionOrder: ["a", "z", "b"],
     });
@@ -199,6 +202,7 @@ describe("execution plans", () => {
     expect(dependencyFromZ.mode).toBe("cycle-proxy");
     expect(plans).toEqual({
       constructionOrder: ["z", "a", "b"],
+      requestConstructionOrder: [],
       startActionOrder: ["b", "z", "a"],
       cleanupActionOrder: ["a", "z", "b"],
     });
@@ -210,6 +214,7 @@ describe("execution plans", () => {
     const registry = {
       kind: "class" as const,
       id: "z",
+      scope: "singleton" as const,
       dependencies: [{ parameterIndex: 0, members: [member, outside] }],
       startHook: false,
       closeHook: false,

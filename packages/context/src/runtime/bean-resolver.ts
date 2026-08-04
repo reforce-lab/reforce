@@ -5,19 +5,22 @@ import {
   EarlyBeanAccessError,
   InvalidGeneratedDefinitionError,
   ReforceRuntimeError,
+  RequestContextMissingError,
   UnregisteredBeanTargetError,
 } from "@/errors";
 import type {
+  GeneratedBeanRegistration,
   GeneratedClassRegistration,
   GeneratedDependency,
   GeneratedResolver,
 } from "@/generated/contracts";
-import type { BeanClass, BeanDefinition, Lazy } from "@/public-types";
+import type { BeanClass, BeanDefinition, Current, Lazy } from "@/public-types";
 import { createCycleProxy } from "@/runtime/cycle-proxy";
 import { createLazyHandle } from "@/runtime/lazy-handle";
+import type { RequestStore } from "@/runtime/request-scope";
 import type { ResolutionState } from "@/runtime/resolution-state";
 
-type ResolverMethod = "resolve" | "resolveAll" | "lazy";
+type ResolverMethod = "resolve" | "resolveAll" | "lazy" | "current";
 
 export class BeanResolver {
   private readonly state: ResolutionState;
@@ -30,6 +33,9 @@ export class BeanResolver {
     const id = this.state.beanId(target);
     if (!id) {
       throw new UnregisteredBeanTargetError(target);
+    }
+    if (this.state.registration(id)?.scope === "request") {
+      return this.requestInstance(id) as T; // The identity map ties the registered target's generic type to this instance.
     }
     const record = this.state.record(id);
     if (record?.state !== "constructed") {
@@ -102,11 +108,19 @@ export class BeanResolver {
     return Object.freeze({
       resolve: <T extends object>(dependencyIndex: number): T => {
         const dependency = this.readDependency(registration, dependencyIndex, "resolve");
-        if (dependency.mode === "explicit-lazy" || dependency.mode === "collection") {
+        if (
+          dependency.mode === "explicit-lazy" ||
+          dependency.mode === "collection" ||
+          dependency.mode === "current"
+        ) {
           throw this.resolverModeError(registration.id, dependencyIndex, "resolve");
         }
         if (dependency.mode === "cycle-proxy") {
           return this.cycleProxy(dependency.targetId) as T; // Compiler-checked edge types are erased from generated data.
+        }
+        // request→request 的 eager 边在请求仓解析：目标由请求计划先行构造，缺席即计划被破坏。
+        if (this.state.registration(dependency.targetId)?.scope === "request") {
+          return this.requestInstance(dependency.targetId) as T; // Compiler-checked edge types are erased from generated data.
         }
         return this.construct(dependency.targetId) as T; // Compiler-checked edge types are erased from generated data.
       },
@@ -129,6 +143,91 @@ export class BeanResolver {
         }
         return this.lazy(dependency.targetId) as Lazy<T>; // Compiler-checked edge types are erased from generated data.
       },
+      current: <T extends object>(dependencyIndex: number): Current<T> => {
+        const dependency = this.readDependency(registration, dependencyIndex, "current");
+        if (dependency.mode !== "current") {
+          throw this.resolverModeError(registration.id, dependencyIndex, "current");
+        }
+        return this.currentHandle(registration.id, dependency.targetId) as Current<T>; // Compiler-checked edge types are erased from generated data.
+      },
+    });
+  }
+
+  // 请求计划执行（ADR 0006 W7）：runInRequestScope 按 requestConstructionOrder 逐个 await，
+  // 构造时机全确定；create 允许 async（await 顺序被计划钉死）。请求仓内按 beanId 记忆化，
+  // 播种者已有记录、直接跳过。
+  async constructRequest(id: string, store: RequestStore): Promise<void> {
+    if (store.record(id) !== undefined) {
+      return;
+    }
+    const registration = this.state.registration(id);
+    if (!registration) {
+      throw new InvalidGeneratedDefinitionError(`No registration exists for Bean ID "${id}".`);
+    }
+    store.beginConstruction(id);
+    try {
+      const instance = await this.createRegistrationInstance(registration);
+      if (isPrimitive(instance)) {
+        throw new TypeError("Bean creation must return an object.");
+      }
+      store.finishConstruction(id, instance);
+    } catch (error) {
+      store.abandonConstruction(id);
+      if (error instanceof BeanCreationError || error instanceof InvalidGeneratedDefinitionError) {
+        throw error;
+      }
+      throw new BeanCreationError({
+        beanId: id,
+        dependencyPath: store.constructionPath(),
+        cause: error,
+      });
+    } finally {
+      store.finishConstructionAttempt();
+    }
+  }
+
+  private createRegistrationInstance(
+    registration: GeneratedBeanRegistration,
+  ): object | Promise<object> {
+    return registration.kind === "class"
+      ? registration.create(this.createGeneratedResolver(registration))
+      : registration.create();
+  }
+
+  // Current 句柄：singleton 构造一次、终身持有；查找发生在 .get() 调用时刻，从当前请求仓取值。
+  private currentHandle(consumerId: string, targetId: string): Current<object> {
+    return Object.freeze({
+      get: (): object => {
+        const store = this.state.requestScope.active();
+        if (store === undefined) {
+          throw new RequestContextMissingError({
+            targetBeanId: targetId,
+            consumerBeanId: consumerId,
+          });
+        }
+        return this.storedRequestInstance(store, targetId);
+      },
+    });
+  }
+
+  private requestInstance(targetId: string): object {
+    const store = this.state.requestScope.active();
+    if (store === undefined) {
+      throw new RequestContextMissingError({ targetBeanId: targetId });
+    }
+    return this.storedRequestInstance(store, targetId);
+  }
+
+  private storedRequestInstance(store: RequestStore, targetId: string): object {
+    const record = store.record(targetId);
+    if (record?.state === "constructed") {
+      return record.instance;
+    }
+    // 计划全量先行构造，这里只剩一种可达情形：请求计划执行途中，靠前的 bean 经 singleton
+    // 方法链回读了计划里靠后的 bean。
+    throw new EarlyBeanAccessError({
+      beanId: targetId,
+      constructionPath: store.constructionPath(targetId),
     });
   }
 

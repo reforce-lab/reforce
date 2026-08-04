@@ -255,6 +255,8 @@ function analyzeConfigClass(
         exportName,
         declarationSource: sourceReference(declaration.span),
         provides: dedupeSymbols(contracts.provided),
+        // config 实例由启动期绑定 phase 产生、先于一切 bean 构造（ADR 0005），天然 singleton。
+        scope: "singleton",
         primary: false,
         qualifiers: [],
         dependencies: [],

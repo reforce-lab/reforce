@@ -62,11 +62,12 @@ function generatedFiles(generation: string): readonly GeneratedFile[] {
     {
       path: "manifest.json",
       content: `${JSON.stringify({
-        schemaVersion: 3,
+        schemaVersion: 4,
         configs: [],
         beans: [],
         plans: {
           constructionOrder: [],
+          requestConstructionOrder: [],
           startActionOrder: [],
           cleanupActionOrder: [],
         },
@@ -157,7 +158,7 @@ function generatedManifest(
   input: { readonly beans?: readonly object[]; readonly plans?: ManifestPlans } = {},
 ) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     configs: [],
     beans: input.beans ?? [resourceManifestBean(), consumerManifestBean()],
     plans: input.plans ?? manifestPlans(),
@@ -553,11 +554,12 @@ describe("directory transactions", () => {
         ? {
             ...file,
             content: `${JSON.stringify({
-              schemaVersion: 3,
+              schemaVersion: 4,
               configs: [],
               beans: [],
               plans: {
                 constructionOrder: [],
+                requestConstructionOrder: [],
                 startActionOrder: [],
                 cleanupActionOrder: [],
               },

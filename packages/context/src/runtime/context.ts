@@ -1,3 +1,4 @@
+import { isObject } from "radashi";
 import {
   ApplicationCleanupError,
   ApplicationContextStateError,
@@ -5,6 +6,7 @@ import {
   type CleanupActionError,
   ConfigBindingError,
   InvalidGeneratedDefinitionError,
+  UnregisteredBeanTargetError,
 } from "@/errors";
 import type {
   GeneratedApplicationDefinition,
@@ -15,9 +17,11 @@ import type {
   BeanClass,
   BeanDefinition,
   ContextOperation,
+  RequestScopeSeed,
 } from "@/public-types";
 import { BeanResolver } from "@/runtime/bean-resolver";
 import { LifecycleRunner } from "@/runtime/lifecycle-runner";
+import { RequestStore } from "@/runtime/request-scope";
 import { ResolutionState } from "@/runtime/resolution-state";
 
 export class RuntimeApplicationContext implements ApplicationContext {
@@ -45,6 +49,61 @@ export class RuntimeApplicationContext implements ApplicationContext {
       throw this.stateError("get");
     }
     return this.resolver.get(target);
+  }
+
+  // 开启请求作用域并播种根请求值（ADR 0006 W7，#151）：请求仓挂上 ALS 后按
+  // requestConstructionOrder 全量构造（播种者跳过），callback 与其 await 链内的任何
+  // Current.get 都取到这一仓。嵌套调用即独立请求，内层结束后外层自动恢复。
+  async runInRequestScope<R>(
+    seeds: readonly RequestScopeSeed[],
+    callback: () => R,
+  ): Promise<Awaited<R>> {
+    if (this.state.contextState !== "running") {
+      throw this.stateError("runInRequestScope");
+    }
+    const store = new RequestStore();
+    for (const [id, instance] of this.collectSeeds(seeds)) {
+      store.seed(id, instance);
+    }
+    return await this.state.requestScope.run(store, async () => {
+      for (const id of this.state.definition.plans.requestConstructionOrder) {
+        await this.resolver.constructRequest(id, store);
+      }
+      return await callback();
+    });
+  }
+
+  // 播种是调用方输入而非生成物，坏输入按 defineBean 先例抛 TypeError（未注册目标沿用
+  // UnregisteredBeanTargetError）。
+  private collectSeeds(seeds: readonly RequestScopeSeed[]): ReadonlyMap<string, object> {
+    if (!Array.isArray(seeds)) {
+      throw new TypeError("runInRequestScope seeds must be an array.");
+    }
+    const byId = new Map<string, object>();
+    for (const seed of seeds) {
+      // 公开签名类型化，运行时仍按不可信输入逐字段复检（与 generated/validation 同一惯例）。
+      const instance = isObject(seed) ? Reflect.get(seed, "instance") : undefined;
+      if (!isObject(instance)) {
+        throw new TypeError("Each request seed needs a target and an object instance.");
+      }
+      const target = Reflect.get(seed, "target");
+      const id = this.state.beanId(target);
+      if (!id) {
+        throw new UnregisteredBeanTargetError(target);
+      }
+      const registration = this.state.registration(id);
+      if (registration?.scope !== "request") {
+        throw new TypeError(`Seed target "${id}" is not a request-scoped Bean.`);
+      }
+      if (registration.kind === "class" && !(instance instanceof registration.target)) {
+        throw new TypeError(`Seed instance for "${id}" must be an instance of its class target.`);
+      }
+      if (byId.has(id)) {
+        throw new TypeError(`Seed target "${id}" appears more than once.`);
+      }
+      byId.set(id, instance);
+    }
+    return byId;
   }
 
   close(): Promise<void> {

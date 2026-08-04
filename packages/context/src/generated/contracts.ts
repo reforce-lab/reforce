@@ -1,5 +1,5 @@
 import type { ConfigBindingIssue } from "@/errors";
-import type { BeanClass, BeanDefinition, Lazy } from "@/public-types";
+import type { BeanClass, BeanDefinition, Current, Lazy } from "@/public-types";
 
 export type GeneratedBeanId = string;
 
@@ -15,7 +15,12 @@ export interface GeneratedSourceReference {
   readonly end: GeneratedSourcePosition;
 }
 
-export type GeneratedDependencyMode = "eager" | "cycle-proxy" | "explicit-lazy";
+// scope 是编译期属性（ADR 0006 W7，#142 / #151）：进生成物、进校验，运行时不做任何推断。
+export type GeneratedBeanScope = "singleton" | "request";
+
+// "current" 是 singleton→request 的唯一合法通道：注入的是稳定句柄，查找发生在 .get() 调用
+// 时刻（ADR 0006 W7）。其余三种模式的组合合法性由 scope 两侧决定，见 validation。
+export type GeneratedDependencyMode = "eager" | "cycle-proxy" | "explicit-lazy" | "current";
 
 export interface GeneratedSingleDependency {
   readonly parameterIndex: number;
@@ -47,6 +52,7 @@ export interface GeneratedResolver {
   resolve<T extends object>(dependencyIndex: number): T;
   resolveAll<T extends object>(dependencyIndex: number): readonly T[];
   lazy<T extends object>(dependencyIndex: number): Lazy<T>;
+  current<T extends object>(dependencyIndex: number): Current<T>;
 }
 
 export interface GeneratedClassHooks<T extends object> {
@@ -62,6 +68,7 @@ export interface GeneratedClassRegistration<T extends object = object, THook ext
   readonly kind: "class";
   readonly id: GeneratedBeanId;
   readonly source: GeneratedSourceReference;
+  readonly scope: GeneratedBeanScope;
   readonly target: BeanClass<T>;
   readonly dependencies: readonly GeneratedDependency[];
   readonly create: (resolver: GeneratedResolver) => T;
@@ -75,9 +82,11 @@ export interface GeneratedFactoryRegistration<
   readonly kind: "factory";
   readonly id: GeneratedBeanId;
   readonly source: GeneratedSourceReference;
+  readonly scope: GeneratedBeanScope;
   readonly definition: BeanDefinition<T>;
   readonly dependencies: readonly [];
-  readonly create: () => T;
+  // 请求作用域工厂允许 async create（ADR 0006 W7）；singleton 工厂必须同步返回，由构造路径守卫。
+  readonly create: () => T | Promise<T>;
   readonly dispose?: (instance: TDispose) => void | Promise<void>;
 }
 
@@ -96,6 +105,8 @@ export type GeneratedBeanRegistration =
 
 export interface GeneratedExecutionPlans {
   readonly constructionOrder: readonly GeneratedBeanId[];
+  // 第二组计划（ADR 0006 W7）：请求 bean 的构造顺序，每请求照单执行，无按需构造。
+  readonly requestConstructionOrder: readonly GeneratedBeanId[];
   readonly startActionOrder: readonly GeneratedBeanId[];
   readonly cleanupActionOrder: readonly GeneratedBeanId[];
 }
@@ -125,7 +136,7 @@ export interface GeneratedConfigBinding {
 }
 
 export interface GeneratedApplicationDefinition {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly configs: readonly GeneratedConfigRegistration[];
   readonly configBinding?: GeneratedConfigBinding;
   readonly registrations: readonly GeneratedBeanRegistration[];

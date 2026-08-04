@@ -19,7 +19,7 @@ import { nodeModulesTree, starterMetaSpan, starterPackage } from "./support/star
 
 // 集合注入 IT（ADR 0006 W6，#142 / #150）：readonly T[] 是集合边的唯一合法书写（ReadonlyArray<T>
 // 等价），成员资格与最终顺序在编译期封闭——@Order(n) 升序优先，同序值与无序成员按 beanId 决胜。
-// 空集合合法（≠ MISSING_BEAN），starter bean 与本地 bean 同待遇入集合。生成物 schemaVersion 升 3。
+// 空集合合法（≠ MISSING_BEAN），starter bean 与本地 bean 同待遇入集合。
 
 type FailureResult = Extract<CompileResult, { readonly status: "failure" }>;
 
@@ -397,7 +397,7 @@ describe("@Order usage diagnostics", () => {
 });
 
 describe("generated output schema", () => {
-  test("collection edges emit resolveAll typed edges under schemaVersion 3", async () => {
+  test("collection edges emit resolveAll typed edges under schemaVersion 4", async () => {
     const result = await compileSourceOrThrow(
       [
         'import { Injectable } from "@reforce/context";',
@@ -410,9 +410,9 @@ describe("generated output schema", () => {
     );
 
     const beans = generatedContent(result, "beans.ts");
-    expect(beans).toContain("schemaVersion: 3,");
+    expect(beans).toContain("schemaVersion: 4,");
     expect(beans).toMatch(/resolver\.resolveAll<beanContract\d+>\(0\)/);
-    expect(manifestOf(result).schemaVersion).toBe(3);
+    expect(manifestOf(result).schemaVersion).toBe(4);
   });
 });
 

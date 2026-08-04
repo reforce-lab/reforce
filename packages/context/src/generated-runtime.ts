@@ -1,4 +1,4 @@
-import { readBeanDefinitionOptions } from "@/bean-declaration";
+import { beanDefinitionScope, readBeanDefinitionOptions } from "@/bean-declaration";
 import type { ConfigBindingIssue } from "@/errors";
 import type {
   GeneratedApplicationDefinition,
@@ -20,6 +20,7 @@ export type {
   GeneratedApplicationDefinition,
   GeneratedBeanId,
   GeneratedBeanRegistration,
+  GeneratedBeanScope,
   GeneratedClassHooks,
   GeneratedClassRegistration,
   GeneratedCollectionDependency,
@@ -40,24 +41,29 @@ export type {
 } from "@/generated/contracts";
 export type { ConfigBindingIssue };
 
+// scope 缺省即 singleton：既有手写注册面不被 v4 强制打扰，生成物则总是显式写 scope。
 export function classBean<T extends object>(
-  input: Omit<GeneratedClassRegistration<T>, "kind">,
+  input: Omit<GeneratedClassRegistration<T>, "kind" | "scope"> & {
+    readonly scope?: GeneratedClassRegistration<T>["scope"];
+  },
 ): GeneratedClassRegistration<T> {
-  return snapshotClassRegistration({ kind: "class", ...input });
+  return snapshotClassRegistration({ kind: "class", ...input, scope: input.scope ?? "singleton" });
 }
 
 export function factoryBean<T extends object>(
   input: GeneratedFactoryBeanInput<T>,
 ): GeneratedFactoryRegistration<T> {
+  // 工厂的 scope 由 defineBean 选项自证：声明字面量既是编译输入也是运行时输入，无从错位。
   const options = readBeanDefinitionOptions(input.definition);
   return snapshotFactoryRegistration({
     kind: "factory",
     id: input.id,
     source: input.source,
+    scope: beanDefinitionScope(options),
     definition: input.definition,
     dependencies: [],
     create: options.create,
-    dispose: options.dispose,
+    dispose: "dispose" in options ? options.dispose : undefined,
   });
 }
 

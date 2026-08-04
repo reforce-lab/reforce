@@ -49,18 +49,27 @@ export function testDefinition(
     readonly configs?: readonly GeneratedConfigRegistration[];
     readonly configBinding?: GeneratedConfigBinding;
     readonly constructionOrder?: readonly string[];
+    readonly requestConstructionOrder?: readonly string[];
     readonly startActionOrder?: readonly string[];
     readonly cleanupActionOrder?: readonly string[];
   } = {},
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     configs: input.configs ?? [],
     ...(input.configBinding ? { configBinding: input.configBinding } : {}),
     registrations,
     plans: {
       constructionOrder:
-        input.constructionOrder ?? registrations.map((registration) => registration.id),
+        input.constructionOrder ??
+        registrations.flatMap((registration) =>
+          registration.scope === "singleton" ? [registration.id] : [],
+        ),
+      requestConstructionOrder:
+        input.requestConstructionOrder ??
+        registrations.flatMap((registration) =>
+          registration.scope === "request" ? [registration.id] : [],
+        ),
       startActionOrder:
         input.startActionOrder ??
         registrations.flatMap((registration) =>

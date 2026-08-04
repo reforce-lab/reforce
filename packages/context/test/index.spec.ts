@@ -18,6 +18,8 @@ test("the root entry exposes only the public programming model", () => {
     "Primary",
     "Qualifier",
     "ReforceRuntimeError",
+    "RequestContextMissingError",
+    "RequestScoped",
     "UnregisteredBeanTargetError",
     "defineApplication",
     "defineBean",

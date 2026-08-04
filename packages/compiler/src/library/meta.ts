@@ -57,7 +57,10 @@ function unsupportedEdgeKind(pending: ProviderDraft["pendingDependencies"][numbe
   if (pending.collection === true) {
     return "a collection dependency";
   }
-  return pending.linkedType.lazy ? "a Lazy dependency" : "a qualified dependency";
+  if (pending.linkedType.lazy) {
+    return "a Lazy dependency";
+  }
+  return pending.linkedType.current ? "a Current dependency" : "a qualified dependency";
 }
 
 function providerSpan(draft: ProviderDraft): SourceSpan | undefined {
@@ -244,6 +247,7 @@ export async function buildLibraryMeta(
       if (
         pending.collection === true ||
         pending.linkedType.lazy ||
+        pending.linkedType.current ||
         pending.linkedType.qualifierMember !== undefined
       ) {
         const edgeKind = unsupportedEdgeKind(pending);
@@ -252,7 +256,7 @@ export async function buildLibraryMeta(
             code: "UNSUPPORTED_LIBRARY_DECLARATION",
             message: `Constructor parameter ${pending.index} on ${draft.provider.exportName} uses ${edgeKind}; starter meta v1 only records plain contract edges.`,
             sourceSpan: pending.sourceSpan,
-            help: "Inject the contract directly; qualifiers, Lazy, and collections stay application-side features for now.",
+            help: "Inject the contract directly; qualifiers, Lazy, Current, and collections stay application-side features for now.",
           }),
         );
         return undefined;

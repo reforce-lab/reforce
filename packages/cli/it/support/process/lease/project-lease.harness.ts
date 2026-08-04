@@ -24,11 +24,12 @@ function generatedFiles(generation: string): readonly GeneratedFile[] {
     {
       path: "manifest.json",
       content: `${JSON.stringify({
-        schemaVersion: 3,
+        schemaVersion: 4,
         configs: [],
         beans: [],
         plans: {
           constructionOrder: [],
+          requestConstructionOrder: [],
           startActionOrder: [],
           cleanupActionOrder: [],
         },
