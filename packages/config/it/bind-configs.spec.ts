@@ -269,13 +269,11 @@ describe("createConfigBinding", () => {
     );
   }, 120000);
 
+  // dist 的新鲜度由 turbo 保证（本包 turbo.json 让 test 依赖自身 build），不在测试内重建：
+  // rslib 构建会先清空 dist 再产出，清空窗口内并发的 compiler IT 经 junction 消费同一份
+  // dist，会撞出 TS2307 假失败（Issue #169）。代价是在包目录裸跑 `bun test it` 需先有 dist。
   test("produces the same bound values under Node.js consuming the built dist", async () => {
     const packageRoot = resolve(import.meta.dir, "..");
-    const bunExecutable = await resolveBunExecutable();
-    const build = await runCommand(bunExecutable, ["run", "build"], { cwd: packageRoot });
-    if (build.exitCode !== 0) {
-      throw new Error(`packages/config build failed:\n${String(build.stderr)}`);
-    }
     const nodeExecutable = Bun.which("node");
     if (nodeExecutable === null) {
       throw new Error("Node.js executable not found on PATH; the runtime-neutrality IT needs it");
