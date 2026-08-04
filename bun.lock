@@ -19,6 +19,8 @@
       "dependencies": {
         "@reforce/config": "workspace:*",
         "@reforce/context": "workspace:*",
+        "@reforce/web": "workspace:*",
+        "@reforce/web-bun": "workspace:*",
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
@@ -190,6 +192,24 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/tooling-rslib": "workspace:*",
+        "@reforce/tooling-tsconfig": "workspace:*",
+        "@rslib/core": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/web-bun": {
+      "name": "@reforce/web-bun",
+      "version": "0.0.0",
+      "dependencies": {
+        "@reforce/context": "workspace:*",
+        "@reforce/web": "workspace:*",
+        "@swc/helpers": "catalog:",
+      },
+      "devDependencies": {
+        "@biomejs/biome": "catalog:",
+        "@reforce/cli": "workspace:*",
         "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
         "@rslib/core": "catalog:",
@@ -380,6 +400,8 @@
     "@reforce/unplugin": ["@reforce/unplugin@workspace:packages/unplugin"],
 
     "@reforce/web": ["@reforce/web@workspace:packages/web"],
+
+    "@reforce/web-bun": ["@reforce/web-bun@workspace:packages/web-bun"],
 
     "@rsbuild/core": ["@rsbuild/core@2.1.9", "", { "dependencies": { "@rspack/core": "~2.1.7", "@swc/helpers": "^0.5.23" }, "peerDependencies": { "core-js": ">= 3.0.0" }, "optionalPeers": ["core-js"], "bin": { "rsbuild": "./bin/rsbuild.js" } }, "sha512-yqf1hFZ3wbMYI431LqsxLH3r0VZkfyarVKTf7kMeIiGe0YLwsrgsfp+sKpIyVkQkq60J0qyp6l/CoqqsQZqEwQ=="],
 
