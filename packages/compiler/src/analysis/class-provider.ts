@@ -111,7 +111,8 @@ function validLifecycleMethod(methods: readonly ClassMethodDeclaration[], name: 
   );
 }
 
-function dedupeSymbols(symbols: readonly LinkedSymbol[]): readonly LinkedSymbol[] {
+// config-provider 复用：config class 的 provides 同样由自身符号 + implements 契约构成。
+export function dedupeSymbols(symbols: readonly LinkedSymbol[]): readonly LinkedSymbol[] {
   const byKey = new Map<string, LinkedSymbol>();
   for (const symbol of symbols) {
     byKey.set(symbol.key, symbol);
@@ -357,7 +358,8 @@ interface LinkedClassContracts {
   readonly closeHook: boolean;
 }
 
-function linkedClassContracts(
+// config-provider 复用：同一套 implements 契约链接与 lifecycle 接口探测。
+export function linkedClassContracts(
   source: ParsedSource,
   declaration: ClassDeclaration,
   exportName: string,

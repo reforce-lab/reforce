@@ -16,6 +16,7 @@ const workerSupportRoot = join(e2eRoot, "support", "worker");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
 const contextRoot = join(workspaceRoot, "packages", "context");
+const configRoot = join(workspaceRoot, "packages", "config");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -79,6 +80,12 @@ beforeAll(async () => {
     symlink(
       toolingTsconfigRoot,
       join(scopeRoot, "tooling-tsconfig"),
+      process.platform === "win32" ? "junction" : "dir",
+    ),
+    // fixture 应用带 config class：workspace 符号链接保留包内 node_modules，dotenv 可解析。
+    symlink(
+      configRoot,
+      join(scopeRoot, "config"),
       process.platform === "win32" ? "junction" : "dir",
     ),
     symlink(

@@ -34,6 +34,7 @@ function parsedSource(
     classes: [],
     beanFactories: [],
     applicationDefinitions: [],
+    configFactoryCalls: [],
     unsupportedDeclarations: [],
   };
   return {

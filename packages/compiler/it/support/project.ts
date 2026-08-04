@@ -45,6 +45,14 @@ export async function linkApplicationPackages(projectRoot: string): Promise<void
   ]);
 }
 
+export async function linkConfigPackage(projectRoot: string): Promise<void> {
+  await linkPackage(
+    projectRoot,
+    "@reforce/config",
+    path.join(repositoryRoot, "packages", "config"),
+  );
+}
+
 export async function writePositiveApplication(projectRoot: string): Promise<void> {
   await writeProjectTree(projectRoot, positiveApplicationTree);
   await linkApplicationPackages(projectRoot);

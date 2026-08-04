@@ -65,6 +65,7 @@ export async function compile(
     files: generateFiles(
       request.project,
       analysis.providers,
+      analysis.configs,
       analysis.plans,
       linker.starterLinkage,
     ),

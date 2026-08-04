@@ -7,6 +7,7 @@ export type RuntimeErrorCode =
   | "BEAN_DISPOSAL_FAILED"
   | "APPLICATION_START_FAILED"
   | "APPLICATION_CLEANUP_FAILED"
+  | "CONFIG_BINDING_FAILED"
   | "UNREGISTERED_BEAN_TARGET"
   | "APPLICATION_CONTEXT_STATE"
   | "INVALID_GENERATED_DEFINITION";
@@ -121,6 +122,36 @@ export class ApplicationCleanupError extends ReforceRuntimeError<"APPLICATION_CL
   constructor(errors: readonly CleanupActionError[]) {
     const snapshot = Object.freeze([...errors]);
     super("Application Context cleanup failed.", { errors: snapshot });
+  }
+}
+
+// 诊断数据永不携带配置值（ADR 0005 决策 6.2 的脱敏约定以"不打印"实现）：
+// reason 只转述 schema 库的 issue 文案，layer/environmentVariable 定位来源。
+export interface ConfigBindingIssue {
+  readonly configId: string;
+  readonly keyPath: readonly (string | number)[];
+  readonly environmentVariable: string;
+  readonly layer: string;
+  readonly reason: string;
+}
+
+function renderConfigBindingIssue(issue: ConfigBindingIssue): string {
+  return `- ${issue.configId}: ${issue.environmentVariable} (${issue.layer}): ${issue.reason}`;
+}
+
+export class ConfigBindingError extends ReforceRuntimeError<"CONFIG_BINDING_FAILED"> {
+  readonly code = "CONFIG_BINDING_FAILED" as const;
+  readonly issues: readonly ConfigBindingIssue[];
+
+  constructor(input: { readonly issues: readonly ConfigBindingIssue[] }) {
+    const issues = Object.freeze([...input.issues]);
+    super(
+      [
+        `Configuration binding failed with ${issues.length} issue(s):`,
+        ...issues.map(renderConfigBindingIssue),
+      ].join("\n"),
+    );
+    this.issues = issues;
   }
 }
 

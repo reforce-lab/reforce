@@ -68,7 +68,15 @@ interface FactoryProviderModel extends ProviderBase {
   readonly dispose: boolean;
 }
 
-export type ProviderModel = ClassProviderModel | FactoryProviderModel;
+// 配置类 provider（ADR 0005，#130）：class 身份即注入 token，与普通候选同表参选（本地恒胜、
+// 可闭合 starter 开放边），但不进 constructionOrder——实例由启动期绑定 phase 先于一切 bean 构造。
+export interface ConfigProviderModel extends ProviderBase {
+  readonly kind: "config";
+  readonly prefix: string;
+}
+
+export type ProviderModel = ClassProviderModel | FactoryProviderModel | ConfigProviderModel;
+export type BeanProviderModel = ClassProviderModel | FactoryProviderModel;
 
 export interface PendingDependency {
   readonly index: number;

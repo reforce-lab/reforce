@@ -1,3 +1,4 @@
+import type { ConfigBindingIssue } from "@/errors";
 import type { BeanClass, BeanDefinition, Lazy } from "@/public-types";
 
 export type GeneratedBeanId = string;
@@ -79,8 +80,34 @@ export interface GeneratedExecutionPlans {
   readonly cleanupActionOrder: readonly GeneratedBeanId[];
 }
 
+export interface GeneratedConfigRegistration<T extends object = object> {
+  readonly kind: "config";
+  readonly id: GeneratedBeanId;
+  readonly source: GeneratedSourceReference;
+  readonly target: BeanClass<T>;
+}
+
+export type GeneratedConfigBindingOutcome =
+  | {
+      readonly status: "bound";
+      readonly instances: ReadonlyMap<GeneratedBeanId, object>;
+    }
+  | {
+      readonly status: "failed";
+      readonly issues: readonly ConfigBindingIssue[];
+    };
+
+// The binding implementation lives outside this package (ADR 0005 keeps @reforce/context
+// free of any schema vocabulary): the runtime only sees an opaque phase that either yields
+// one instance per declared config or reports value-free issues.
+export interface GeneratedConfigBinding {
+  bind(configs: readonly GeneratedConfigRegistration[]): Promise<GeneratedConfigBindingOutcome>;
+}
+
 export interface GeneratedApplicationDefinition {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
+  readonly configs: readonly GeneratedConfigRegistration[];
+  readonly configBinding?: GeneratedConfigBinding;
   readonly registrations: readonly GeneratedBeanRegistration[];
   readonly plans: GeneratedExecutionPlans;
 }

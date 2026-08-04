@@ -3,9 +3,13 @@ import {
   ApplicationContextStateError,
   ApplicationStartError,
   type CleanupActionError,
+  ConfigBindingError,
   InvalidGeneratedDefinitionError,
 } from "@/errors";
-import type { GeneratedApplicationDefinition } from "@/generated/contracts";
+import type {
+  GeneratedApplicationDefinition,
+  GeneratedConfigBindingOutcome,
+} from "@/generated/contracts";
 import type {
   ApplicationContext,
   BeanClass,
@@ -62,6 +66,7 @@ export class RuntimeApplicationContext implements ApplicationContext {
 
   private async runStart(): Promise<void> {
     try {
+      await this.bindConfigs();
       for (const id of this.state.definition.plans.constructionOrder) {
         this.resolver.construct(id);
       }
@@ -89,6 +94,48 @@ export class RuntimeApplicationContext implements ApplicationContext {
       }
       throw new ApplicationStartError({ cause: startupError, errors: cleanupErrors });
     }
+  }
+
+  // 独立于 bean 构造的绑定 phase（ADR 0005 决策 6.1）：全部 config 一次 bind，失败即聚合
+  // 退出，不逐个 fail-fast；成功实例按 exactly-once 纪律预 seed 为已构造记录。
+  private async bindConfigs(): Promise<void> {
+    const { configs, configBinding } = this.state.definition;
+    if (configs.length === 0 || configBinding === undefined) {
+      return;
+    }
+    const outcome = await configBinding.bind(configs);
+    this.requireOutcomeShape(outcome);
+    if (outcome.status === "failed") {
+      throw new ConfigBindingError({ issues: outcome.issues });
+    }
+    for (const config of configs) {
+      const instance = outcome.instances.get(config.id);
+      if (!(instance instanceof config.target)) {
+        throw new InvalidGeneratedDefinitionError(
+          `config binding did not produce an instance of "${config.id}".`,
+        );
+      }
+      this.state.seedConstructed(config.id, instance);
+    }
+  }
+
+  private requireOutcomeShape(
+    outcome: GeneratedConfigBindingOutcome,
+  ): asserts outcome is GeneratedConfigBindingOutcome {
+    if (outcome === null || typeof outcome !== "object") {
+      throw new InvalidGeneratedDefinitionError(
+        "configBinding.bind must resolve to an outcome object.",
+      );
+    }
+    if (outcome.status === "failed" && Array.isArray(outcome.issues)) {
+      return;
+    }
+    if (outcome.status === "bound" && typeof outcome.instances?.get === "function") {
+      return;
+    }
+    throw new InvalidGeneratedDefinitionError(
+      "configBinding.bind resolved to an unrecognized outcome shape.",
+    );
   }
 
   private async waitForStartBoundaryAndCleanup(): Promise<void> {

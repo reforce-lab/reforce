@@ -502,6 +502,27 @@ function qualifiedDependencyProvider(
   return undefined;
 }
 
+// ADR 0005 决策 5.4：config 先于一切 bean 构造，Lazy 包装没有可延迟的东西。
+function rejectLazyConfigInjection(
+  state: ResolutionState,
+  pending: PendingDependency,
+  selected: ProviderModel,
+): boolean {
+  if (selected.kind !== "config" || !pending.linkedType.lazy) {
+    return false;
+  }
+  state.diagnostics.push(
+    diagnostic({
+      code: "INVALID_CONFIG_INJECTION",
+      message: `${pending.linkedType.symbol.name} is a config class and is bound before any Bean constructs, so Lazy injection defers nothing.`,
+      sourceSpan: pending.linkedType.span,
+      related: [providerIdentityRelated(selected)],
+      help: "Inject the config class directly without the Lazy wrapper.",
+    }),
+  );
+  return true;
+}
+
 function resolveLocalDraftDependencies(state: ResolutionState): void {
   for (const draft of state.drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -513,7 +534,7 @@ function resolveLocalDraftDependencies(state: ResolutionState): void {
         pending.linkedType.qualifierMember === undefined
           ? selectProvider(state, pending.linkedType.symbol, demand)
           : qualifiedDependencyProvider(state, pending);
-      if (selected === undefined) {
+      if (selected === undefined || rejectLazyConfigInjection(state, pending, selected)) {
         continue;
       }
       draft.provider.dependencies.push({

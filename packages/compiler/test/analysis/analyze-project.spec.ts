@@ -39,6 +39,7 @@ function injectableClass(file: string, name: string): ClassDeclaration {
     export: { kind: "named", exportedName: name, span: span(file) },
     generic: false,
     decorators: [injectableDecorator(file)],
+    fields: [],
     implements: [],
     constructors: [],
     methods: [],
@@ -62,6 +63,7 @@ function parsedSource(file: string, options: SourceOptions = {}): ParsedSource {
     classes: options.classes ?? [],
     beanFactories: [],
     applicationDefinitions: [],
+    configFactoryCalls: [],
     unsupportedDeclarations: [],
   };
   return {

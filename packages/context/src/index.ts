@@ -17,6 +17,8 @@ export {
   BeanCreationError,
   BeanDisposalError,
   BeanLifecycleError,
+  ConfigBindingError,
+  type ConfigBindingIssue,
   EarlyBeanAccessError,
   InvalidGeneratedDefinitionError,
   ReforceRuntimeError,

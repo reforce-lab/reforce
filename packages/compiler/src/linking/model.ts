@@ -6,7 +6,7 @@ import type { ParsedSource } from "@/project/source-files";
 // 它必须与 project-linker 分开：module-resolver 要描述自己缓存的符号，若从 project-linker
 // 取类型就会反向依赖自己的调用方。不要把这些类型搬回 project-linker (#23)。
 
-type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
+type LinkedSymbolKind = "class" | "interface" | "context" | "config" | "namespace" | "unsupported";
 
 // 外部符号的包视角坐标（ADR 0004 决策 7，#120）：key 以包根为锚，两份物理拷贝天然两个身份
 // （决策 10 不合并）；coordinate 是诊断与 manifest 用的展示形；metaSubpath 来自 meta 户口表，

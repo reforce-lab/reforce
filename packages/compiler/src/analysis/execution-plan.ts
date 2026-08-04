@@ -75,6 +75,7 @@ function markCycleProxyEdges(providers: readonly PlanProvider[]): void {
 function dependencyFirstOrder(
   providers: readonly PlanProvider[],
   includeDelayed: boolean,
+  alwaysReady: ReadonlySet<string>,
 ): readonly string[] {
   const dependencies = new Map(
     providers.map((provider) => [
@@ -85,15 +86,19 @@ function dependencyFirstOrder(
   return globallyReadyOrder(
     providers.map((provider) => provider.id),
     dependencies,
+    alwaysReady,
   );
 }
 
 function globallyReadyOrder(
   keys: readonly string[],
   dependencies: ReadonlyMap<string, ReadonlySet<string>>,
+  alwaysReady: ReadonlySet<string> = new Set(),
 ): readonly string[] {
   const pending = keys.toSorted(compareUtf16CodeUnits);
-  const emitted = new Set<string>();
+  // config 实例由启动期绑定 phase 先于构造循环产生（ADR 0005 决策 6.1），指向它们的边
+  // 在任何计划位置都已满足。
+  const emitted = new Set<string>(alwaysReady);
   const output: string[] = [];
   while (pending.length > 0) {
     const readyIndex = pending.findIndex((key) =>
@@ -175,9 +180,12 @@ function lifecycleOrder(providers: readonly PlanProvider[]): readonly string[] {
   ).flatMap((key) => componentByKey.get(key)?.members ?? []);
 }
 
-export function createExecutionPlans(providers: readonly PlanProvider[]): ExecutionPlansModel {
+export function createExecutionPlans(
+  providers: readonly PlanProvider[],
+  alwaysReady: ReadonlySet<string> = new Set(),
+): ExecutionPlansModel {
   markCycleProxyEdges(providers);
-  const constructionOrder = dependencyFirstOrder(providers, false);
+  const constructionOrder = dependencyFirstOrder(providers, false, alwaysReady);
   const fullLifecycleOrder = lifecycleOrder(providers);
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
   const startActionOrder = fullLifecycleOrder.filter((id) => {
