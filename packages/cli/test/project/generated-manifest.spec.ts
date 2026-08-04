@@ -54,7 +54,7 @@ interface Plans {
 }
 
 function manifestBytes(beans: readonly object[], plans: Plans): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, beans, plans }));
+  return new TextEncoder().encode(JSON.stringify({ schemaVersion: 2, configs: [], beans, plans }));
 }
 
 function singleBeanManifestBytes(input: Omit<ClassBeanInput, "file" | "exportName">): Uint8Array {

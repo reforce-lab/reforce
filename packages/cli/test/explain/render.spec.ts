@@ -37,7 +37,8 @@ const cacheSymbol = {
 
 function manifestOf(beans: readonly ManifestBean[]): GeneratedManifest {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    configs: [],
     beans,
     plans: {
       constructionOrder: beans.map((entry) => entry.id),

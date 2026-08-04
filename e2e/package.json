@@ -11,6 +11,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
+    "@reforce/config": "workspace:*",
     "@reforce/context": "workspace:*"
   },
   "devDependencies": {

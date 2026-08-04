@@ -10,6 +10,7 @@ test("the root entry exposes only the public programming model", () => {
     "BeanCreationError",
     "BeanDisposalError",
     "BeanLifecycleError",
+    "ConfigBindingError",
     "EarlyBeanAccessError",
     "Injectable",
     "InvalidGeneratedDefinitionError",
@@ -25,6 +26,7 @@ test("the root entry exposes only the public programming model", () => {
 test("the generated entry exposes only registration and Context helpers", () => {
   expect(Object.keys(generatedRuntime).sort()).toEqual([
     "classBean",
+    "configBean",
     "createApplicationContext",
     "factoryBean",
   ]);

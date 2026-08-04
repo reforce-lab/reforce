@@ -120,12 +120,23 @@ function contractLines(
   ];
 }
 
+function dependencyTargetDescription(manifest: GeneratedManifest, targetId: string): string {
+  const target = manifest.beans.find((candidate) => candidate.id === targetId);
+  if (target !== undefined) {
+    return originDescription(target.origin);
+  }
+  // bean 依赖可以指向 config 条目（ADR 0005，#130）；config 恒为应用侧声明。
+  if (manifest.configs.some((config) => config.id === targetId)) {
+    return "this application · configuration";
+  }
+  return "unknown";
+}
+
 function dependencyLines(manifest: GeneratedManifest, bean: ManifestBean): readonly string[] {
-  return bean.dependencies.map((dependency) => {
-    const target = manifest.beans.find((candidate) => candidate.id === dependency.targetId);
-    const origin = target === undefined ? "unknown" : originDescription(target.origin);
-    return `dependency [${dependency.parameterIndex}] -> ${dependency.targetId} · ${origin} · ${dependency.mode}`;
-  });
+  return bean.dependencies.map(
+    (dependency) =>
+      `dependency [${dependency.parameterIndex}] -> ${dependency.targetId} · ${dependencyTargetDescription(manifest, dependency.targetId)} · ${dependency.mode}`,
+  );
 }
 
 function constructionLines(manifest: GeneratedManifest, bean: ManifestBean): readonly string[] {

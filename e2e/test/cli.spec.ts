@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { access, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -18,6 +19,7 @@ const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cliRoot = join(workspaceRoot, "packages", "cli");
 const cliEntry = join(cliRoot, "dist", "reforce.js");
 const contextRoot = join(workspaceRoot, "packages", "context");
+const configRoot = join(workspaceRoot, "packages", "config");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -240,14 +242,27 @@ async function installApplicationPackages(
     ),
     cp(radashiRoot, join(projectRoot, "node_modules", "radashi"), { recursive: true }),
   ]);
+  const configTarget = join(scopeRoot, "config");
   if (contextDistribution === "workspace") {
-    await symlink(contextRoot, contextTarget, process.platform === "win32" ? "junction" : "dir");
+    await Promise.all([
+      symlink(contextRoot, contextTarget, process.platform === "win32" ? "junction" : "dir"),
+      symlink(configRoot, configTarget, process.platform === "win32" ? "junction" : "dir"),
+    ]);
     return;
   }
-  await mkdir(contextTarget);
+  await Promise.all([mkdir(contextTarget), mkdir(configTarget)]);
   await Promise.all([
     cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
     cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
+    cp(join(configRoot, "package.json"), join(configTarget, "package.json")),
+    cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
+    // dotenv 是 @reforce/config 唯一的运行时依赖；dist-only 拷贝没有包内 node_modules，
+    // 把真实包（穿透 bun 的符号链接）落到应用 node_modules。
+    cp(
+      realpathSync(join(configRoot, "node_modules", "dotenv")),
+      join(projectRoot, "node_modules", "dotenv"),
+      { recursive: true },
+    ),
   ]);
 }
 
@@ -412,6 +427,7 @@ async function executeArtifact(input: {
   readonly projectRoot: string;
   readonly readyPath: string;
   readonly closedPath: string;
+  readonly extraEnv?: Readonly<Record<string, string>>;
 }): Promise<void> {
   await rm(input.readyPath, { force: true });
   await rm(input.closedPath, { force: true });
@@ -420,6 +436,7 @@ async function executeArtifact(input: {
     arguments: [join(input.projectRoot, "dist", "main.mjs")],
     cwd: input.projectRoot,
     env: {
+      ...input.extraEnv,
       REFORCE_E2E_READY: input.readyPath,
       REFORCE_E2E_CLOSED: input.closedPath,
     },
@@ -464,6 +481,7 @@ function spawnStartCommand(input: {
   readonly closedPath: string;
   readonly marker: string;
   readonly useWindowsSignalHarness?: boolean;
+  readonly extraEnv?: Readonly<Record<string, string>>;
 }): SpawnedIpcProcess {
   return spawnIpcProcess({
     executable: bunExecutable,
@@ -472,6 +490,7 @@ function spawnStartCommand(input: {
       : [cliEntry, "start", "--project", input.projectRoot],
     cwd: input.projectRoot,
     env: {
+      ...input.extraEnv,
       REFORCE_E2E_READY: input.readyPath,
       REFORCE_E2E_CLOSED: input.closedPath,
       REFORCE_E2E_MARKER: input.marker,
@@ -509,6 +528,7 @@ async function startApplication(
   projectRoot: string,
   marker = projectRoot,
   useWindowsSignalHarness = false,
+  extraEnv: Readonly<Record<string, string>> = {},
 ): Promise<StartedApplication> {
   const suffix = randomUUID();
   const readyPath = join(projectRoot, `start-${suffix}.ready`);
@@ -519,6 +539,7 @@ async function startApplication(
     closedPath,
     marker,
     useWindowsSignalHarness,
+    extraEnv,
   });
   try {
     await waitForFile(readyPath, subprocess.child);
@@ -1160,6 +1181,62 @@ describe.serial("built Reforce CLI", () => {
       expect(await pathExists(join(artifactRoot, "node_modules"))).toBe(false);
       expect(await pathExists(readyPath)).toBe(true);
       expect(await pathExists(closedPath)).toBe(true);
+    },
+    commandTimeout,
+  );
+
+  // 配置注入主路径（ADR 0005，#130 / #146）：五层合成经 REFORCE_PROFILE 选层、进程 env 压顶，
+  // 绑定实例注入 bean 后经 start 与 production artifact 两条链路取值。
+  test(
+    "binds layered .env configuration through start and the isolated artifact",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        await writeFile(
+          join(project.projectRoot, ".env"),
+          "FIXTURE_SERVER_HOST=env-host\nFIXTURE_SERVER_PORT=3000\n",
+        );
+        await writeFile(join(project.projectRoot, ".env.prod"), "FIXTURE_SERVER_PORT=9000\n");
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        const configOut = join(project.projectRoot, "config-probe.out");
+        started = await startApplication(project.projectRoot, "config-start", false, {
+          REFORCE_PROFILE: "prod",
+          FIXTURE_SERVER_HOST: "process-host",
+          REFORCE_E2E_CONFIG_OUT: configOut,
+        });
+        // 进程 env 压过 profile 文件的 host；port 来自 .env.prod 覆盖 .env。
+        expect(await readFile(configOut, "utf8")).toBe("process-host:9000\n");
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.acknowledgementOk).toBe(true);
+        expect(shutdown.result.exitCode).toBe(0);
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+
+      // artifact 链路：.env 族落在制品根（cwd），直跑 dist/main.mjs。
+      const fixture = currentApplication();
+      const artifactRoot = fixture.isolatedArtifact.projectRoot;
+      await writeFile(
+        join(artifactRoot, ".env"),
+        "FIXTURE_SERVER_HOST=artifact-host\nFIXTURE_SERVER_PORT=7000\n",
+      );
+      const artifactConfigOut = join(artifactRoot, "config-artifact.out");
+      await executeArtifact({
+        executable: process.execPath,
+        projectRoot: artifactRoot,
+        readyPath: join(artifactRoot, "config-artifact.ready"),
+        closedPath: join(artifactRoot, "config-artifact.closed"),
+        extraEnv: { REFORCE_E2E_CONFIG_OUT: artifactConfigOut },
+      });
+      expect(await readFile(artifactConfigOut, "utf8")).toBe("artifact-host:7000\n");
     },
     commandTimeout,
   );

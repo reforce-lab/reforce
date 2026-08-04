@@ -1,6 +1,8 @@
 import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
+  GeneratedConfigBinding,
+  GeneratedConfigRegistration,
   GeneratedDependency,
   GeneratedDependencyMode,
   GeneratedSourceReference,
@@ -30,13 +32,17 @@ export function testDependency(
 export function testDefinition(
   registrations: readonly GeneratedBeanRegistration[],
   input: {
+    readonly configs?: readonly GeneratedConfigRegistration[];
+    readonly configBinding?: GeneratedConfigBinding;
     readonly constructionOrder?: readonly string[];
     readonly startActionOrder?: readonly string[];
     readonly cleanupActionOrder?: readonly string[];
   } = {},
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    configs: input.configs ?? [],
+    ...(input.configBinding ? { configBinding: input.configBinding } : {}),
     registrations,
     plans: {
       constructionOrder:

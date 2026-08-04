@@ -41,8 +41,11 @@ import {
 import { normalizeSpanned } from "@/parser/normalize";
 import type {
   ClassDeclaration,
+  ClassFieldDeclaration,
+  ClassHeritage,
   ClassMethodDeclaration,
   ClassMethodName,
+  ConfigFactoryCallDeclaration,
   ConstructorDeclaration,
   DeclarationExport,
   DefineApplicationDeclaration,
@@ -82,6 +85,7 @@ interface Collector {
   readonly classes: ClassDeclaration[];
   readonly beanFactories: DefineBeanDeclaration[];
   readonly applicationDefinitions: DefineApplicationDeclaration[];
+  readonly configFactoryCalls: ConfigFactoryCallDeclaration[];
   readonly unsupportedDeclarations: UnsupportedNamedDeclaration[];
 }
 
@@ -327,6 +331,110 @@ function constructorOf(
   };
 }
 
+// 这 4 个类字段节点类型没有 alias group，与 UNSUPPORTED_DECLARATION_KINDS 同理只能手写一份名单
+// （Issue #91 / #114 的表驱动纪律）。
+const CLASS_FIELD_TYPES = new Set<Node["type"]>([
+  "PropertyDefinition",
+  "TSAbstractPropertyDefinition",
+  "AccessorProperty",
+  "TSAbstractAccessorProperty",
+]);
+
+type ClassFieldNode = NodeOfType<
+  | "PropertyDefinition"
+  | "TSAbstractPropertyDefinition"
+  | "AccessorProperty"
+  | "TSAbstractAccessorProperty"
+>;
+
+function isClassField(node: Node): node is ClassFieldNode {
+  return CLASS_FIELD_TYPES.has(node.type);
+}
+
+function classFieldNameOf(field: ClassFieldNode): string | undefined {
+  if (field.computed) {
+    return undefined;
+  }
+  if (field.key.type === "Literal" && typeof field.key.value === "string") {
+    return field.key.value;
+  }
+  return identifierTextOf(field.key);
+}
+
+function classFieldOf(field: ClassFieldNode, context: LoweringContext): ClassFieldDeclaration {
+  const name = classFieldNameOf(field);
+  return {
+    kind: "class-field",
+    ...(name === undefined ? {} : { name }),
+    static: field.static,
+    span: spanOf(field, context),
+  };
+}
+
+// heritage 里出现的所有标识符名都收进来（含成员访问的属性名，宁多勿漏）：分析层只用它回答
+// "这个非直接调用的 extends 表达式是否引用了 ConfigProperties"，多收的名字最多造成一次多余的
+// 符号解析，漏收则复刻 #54 的静默跳过。
+function collectIdentifierNames(node: unknown, names: Set<string>): void {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectIdentifierNames(item, names);
+    }
+    return;
+  }
+  if (node === null || typeof node !== "object") {
+    return;
+  }
+  const type = Reflect.get(node, "type");
+  if (type === "Identifier") {
+    const name = Reflect.get(node, "name");
+    if (typeof name === "string") {
+      names.add(name);
+    }
+  }
+  for (const value of Object.values(node)) {
+    collectIdentifierNames(value, names);
+  }
+}
+
+function heritageExpressionOf(superClass: Node, context: LoweringContext): ClassHeritage {
+  const names = new Set<string>();
+  collectIdentifierNames(superClass, names);
+  return {
+    kind: "expression",
+    referencedNames: [...names].sort(),
+    span: spanOf(superClass, context),
+  };
+}
+
+function classHeritageOf(
+  superClass: Node | null | undefined,
+  context: LoweringContext,
+): ClassHeritage | undefined {
+  if (superClass === null || superClass === undefined) {
+    return undefined;
+  }
+  const target = unparenthesized(superClass);
+  const parenthesized = target !== superClass;
+  if (target.type === "CallExpression") {
+    const callee = entityNameOf(target.callee, context);
+    if (callee === undefined) {
+      return heritageExpressionOf(superClass, context);
+    }
+    return {
+      kind: "call",
+      callee,
+      arguments: target.arguments.map((argument) => expressionValueOf(argument, context)),
+      parenthesized,
+      span: spanOf(superClass, context),
+    };
+  }
+  const entity = entityNameOf(target, context);
+  if (entity === undefined) {
+    return heritageExpressionOf(superClass, context);
+  }
+  return { kind: "reference", entity, parenthesized, span: spanOf(superClass, context) };
+}
+
 function lowerClass(
   node: Class,
   topLevel: boolean,
@@ -336,6 +444,7 @@ function lowerClass(
 ): void {
   const typeParameters = typeParameterNamesOf(node);
   const methods = node.body.body.filter(is.Method);
+  const heritage = classHeritageOf(node.superClass, context);
   const name = identifierTextOf(node.id);
   collector.classes.push({
     kind: "class",
@@ -345,6 +454,10 @@ function lowerClass(
     export: declarationExportOf(node.id, mode, context),
     generic: typeParameters.size > 0,
     decorators: decoratorsOf(node.decorators, context),
+    ...(heritage === undefined ? {} : { heritage }),
+    fields: normalizeSpanned(
+      node.body.body.filter(isClassField).map((field) => classFieldOf(field, context)),
+    ),
     implements: normalizeSpanned(
       (node.implements ?? []).map((implemented) =>
         typeNodeOf(implemented, context, typeParameters),
@@ -610,6 +723,28 @@ function lowerBeanFactory(
 
 function variableDeclarationKind(node: VariableDeclaration): "const" | "let" | "var" {
   return node.kind === "let" || node.kind === "var" ? node.kind : "const";
+}
+
+function lowerConfigFactoryCall(
+  declarator: VariableDeclarator,
+  topLevel: boolean,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  const init = declarator.init;
+  if (init === null || init === undefined) {
+    return;
+  }
+  const matched = calledByTailName(init, "ConfigProperties", context);
+  if (matched === undefined) {
+    return;
+  }
+  collector.configFactoryCalls.push({
+    kind: "config-factory-call",
+    topLevel,
+    callee: matched.callee,
+    span: spanOf(declarator, context),
+  });
 }
 
 // ADR 0004 决策 5（Issue #120）：defineApplication 的 starters 只支持标识符数组字面量。其余形状照
@@ -885,6 +1020,7 @@ function visitStatement(
       for (const declarator of node.declarations) {
         lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
         lowerApplicationDefinition(declarator, topLevel, mode, collector, context);
+        lowerConfigFactoryCall(declarator, topLevel, collector, context);
         if (is.Function(declarator.init)) {
           visitFunctionBody(declarator.init, collector, context);
         }
@@ -992,6 +1128,7 @@ export function lowerSource(
     classes: [],
     beanFactories: [],
     applicationDefinitions: [],
+    configFactoryCalls: [],
     unsupportedDeclarations: [],
   };
   const context = { mapper: createSourceMapper(file, sourceText), sourceText };
@@ -1006,6 +1143,7 @@ export function lowerSource(
     classes: normalizeSpanned(collector.classes),
     beanFactories: normalizeSpanned(collector.beanFactories),
     applicationDefinitions: normalizeSpanned(collector.applicationDefinitions),
+    configFactoryCalls: normalizeSpanned(collector.configFactoryCalls),
     unsupportedDeclarations: normalizeSpanned(collector.unsupportedDeclarations),
   };
 }

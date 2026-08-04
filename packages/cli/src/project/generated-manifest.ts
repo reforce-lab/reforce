@@ -62,6 +62,15 @@ export interface ManifestBean {
   readonly lifecycle: ManifestLifecycle;
 }
 
+// config 条目（ADR 0005，#130）：恒为应用侧声明，不进 plans——实例由运行时绑定 phase 先于
+// 一切 bean 构造，bean 依赖可以指向 config id。
+export interface ManifestConfig {
+  readonly id: string;
+  readonly prefix: string;
+  readonly source: ManifestSourceReference;
+  readonly provides: readonly ManifestSymbolReference[];
+}
+
 interface ManifestPlans {
   readonly constructionOrder: readonly string[];
   readonly startActionOrder: readonly string[];
@@ -69,10 +78,15 @@ interface ManifestPlans {
 }
 
 export interface GeneratedManifest {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
+  readonly configs: readonly ManifestConfig[];
   readonly beans: readonly ManifestBean[];
   readonly plans: ManifestPlans;
 }
+
+// 与 compiler（analysis/config-provider.ts）及 @reforce/config 运行时同一条 prefix 规则；
+// 产物字节可能被手改，此处按线上协议复检。
+const configPrefixPattern = /^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)*$/;
 
 function isNonemptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -372,6 +386,27 @@ function isManifestBean(value: unknown): value is ManifestBean {
   );
 }
 
+function isManifestConfig(value: unknown): value is ManifestConfig {
+  if (!isObject(value) || !hasExactKeys(value, ["id", "prefix", "source", "provides"])) {
+    return false;
+  }
+  const idParts = beanIdParts(Reflect.get(value, "id"));
+  const prefix = Reflect.get(value, "prefix");
+  const source = Reflect.get(value, "source");
+  const provides = Reflect.get(value, "provides");
+  return (
+    idParts !== undefined &&
+    typeof prefix === "string" &&
+    configPrefixPattern.test(prefix) &&
+    isSourceReference(source) &&
+    // config 恒为应用侧声明：source.file 与 id 的 file 部分必须一致。
+    source.file === idParts.file &&
+    isArrayOf(provides, isSymbolReference) &&
+    provides.length > 0 &&
+    hasUniqueSymbols(provides)
+  );
+}
+
 function isPlans(value: unknown): value is ManifestPlans {
   const keys = ["constructionOrder", "startActionOrder", "cleanupActionOrder"] as const;
   if (!isObject(value) || !hasExactKeys(value, keys)) {
@@ -391,6 +426,7 @@ function exactlyCovers(values: readonly string[], expected: ReadonlySet<string>)
 function hasEagerDependenciesConstructedFirst(
   constructionOrder: readonly string[],
   beans: readonly ManifestBean[],
+  configIds: ReadonlySet<string>,
 ): boolean {
   const constructionIndexes = new Map(constructionOrder.map((id, index) => [id, index]));
   return beans.every((bean) => {
@@ -400,6 +436,10 @@ function hasEagerDependenciesConstructedFirst(
     }
     return bean.dependencies.every((dependency) => {
       if (dependency.mode !== "eager") {
+        return true;
+      }
+      // config 实例在绑定 phase 先于构造循环产生，指向它的 eager 边不受计划位置约束。
+      if (configIds.has(dependency.targetId)) {
         return true;
       }
       const dependencyIndex = constructionIndexes.get(dependency.targetId);
@@ -421,7 +461,12 @@ function hasMirroredLifecycleOrder(plans: ManifestPlans): boolean {
   return startShared.every((id, index) => id === cleanupShared[cleanupShared.length - 1 - index]);
 }
 
-function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): boolean {
+function hasValidPlans(
+  plans: ManifestPlans,
+  beans: readonly ManifestBean[],
+  configIds: ReadonlySet<string>,
+): boolean {
+  // plans 的已知 id 只含 bean：config 不进任何计划数组（绑定 phase 不是计划驱动的）。
   const knownIds = new Set(beans.map((bean) => bean.id));
   if (
     !hasUniqueKnownIds(plans.constructionOrder, knownIds) ||
@@ -431,7 +476,7 @@ function hasValidPlans(plans: ManifestPlans, beans: readonly ManifestBean[]): bo
   ) {
     return false;
   }
-  if (!hasEagerDependenciesConstructedFirst(plans.constructionOrder, beans)) {
+  if (!hasEagerDependenciesConstructedFirst(plans.constructionOrder, beans, configIds)) {
     return false;
   }
   const expectedStart = new Set(
@@ -474,8 +519,11 @@ function registerSourcePath(
 }
 
 // 大小写冲突检查按 origin 分命名空间：应用 bean 的路径相对项目根，starter bean 的路径相对各自
-// 包根，跨命名空间的同名路径不是同一磁盘位置，不构成冲突。
-function hasPortableSourcePaths(beans: readonly ManifestBean[]): boolean {
+// 包根，跨命名空间的同名路径不是同一磁盘位置，不构成冲突。config 恒属应用命名空间。
+function hasPortableSourcePaths(
+  beans: readonly ManifestBean[],
+  configs: readonly ManifestConfig[],
+): boolean {
   const portablePaths = new Map<string, string>();
   for (const bean of beans) {
     const sources = [
@@ -492,37 +540,59 @@ function hasPortableSourcePaths(beans: readonly ManifestBean[]): boolean {
       return false;
     }
   }
+  for (const config of configs) {
+    const sources = [
+      config.source,
+      ...config.provides.flatMap((provided) =>
+        provided.declaration === undefined ? [] : [provided.declaration],
+      ),
+    ];
+    if (sources.some((source) => !registerSourcePath("application", source, portablePaths))) {
+      return false;
+    }
+  }
   return true;
 }
 
 function isGeneratedManifest(value: unknown): value is GeneratedManifest {
   // schemaVersion 是硬版本门：无法识别的 schema 直接拒绝，不按错版契约解释产物字节。
+  // v2（ADR 0005，#130）新增顶层 configs；与 compiler 的 renderManifest 同步演进。
   if (
     !isObject(value) ||
-    !hasExactKeys(value, ["schemaVersion", "beans", "plans"]) ||
-    Reflect.get(value, "schemaVersion") !== 1
+    !hasExactKeys(value, ["schemaVersion", "configs", "beans", "plans"]) ||
+    Reflect.get(value, "schemaVersion") !== 2
   ) {
     return false;
   }
+  const configs = Reflect.get(value, "configs");
   const beans = Reflect.get(value, "beans");
   const plans = Reflect.get(value, "plans");
-  if (!isArrayOf(beans, isManifestBean) || !isPlans(plans)) {
+  if (
+    !isArrayOf(configs, isManifestConfig) ||
+    !isArrayOf(beans, isManifestBean) ||
+    !isPlans(plans)
+  ) {
     return false;
   }
-  // bean id 与源路径同规则：除精确唯一外，按 lowerCase 归一后（portable id）也必须唯一，
-  // 与 packages/context 的运行时校验互为双保险。
-  const ids = beans.map((bean) => bean.id);
+  const prefixes = configs.map((config) => config.prefix);
+  if (new Set(prefixes).size !== prefixes.length) {
+    return false;
+  }
+  // bean/config id 同一身份命名空间：除精确唯一外，按 lowerCase 归一后（portable id）也必须
+  // 唯一，与 packages/context 的运行时校验互为双保险。
+  const ids = [...beans.map((bean) => bean.id), ...configs.map((config) => config.id)];
   const portableIds = ids.map((id) => id.toLowerCase());
   const knownIds = new Set(ids);
+  const configIds = new Set(configs.map((config) => config.id));
   if (
     knownIds.size !== ids.length ||
     new Set(portableIds).size !== portableIds.length ||
-    !hasPortableSourcePaths(beans) ||
+    !hasPortableSourcePaths(beans, configs) ||
     beans.some((bean) => bean.dependencies.some((dependency) => !knownIds.has(dependency.targetId)))
   ) {
     return false;
   }
-  return hasValidPlans(plans, beans);
+  return hasValidPlans(plans, beans, configIds);
 }
 
 export function parseGeneratedManifestBytes(bytes: Uint8Array): GeneratedManifest | undefined {
