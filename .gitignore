@@ -6,6 +6,10 @@ dist/
 .reforce/
 *.tsbuildinfo
 
+# e2e fixture starter 的 dist 是手写的已构建面（reforce lib 的输入），必须提交
+!/e2e/fixtures/*/dist/
+!/e2e/fixtures/*/dist/**
+
 # turbo
 .turbo/
 

@@ -29,8 +29,18 @@ interface DevCompilerGateOptions {
   readonly tsconfigPath?: string;
   readonly project: ResolvedProject;
   readonly initialWatchInputs: CompilerWatchInputs;
+  // Install 信号（应用 package.json、bun.lock，见 dev/install-signals）不来自编译器，但必须与
+  // 编译器 watch 输入走同一条并集路径，才能经 gate 插件进入 rspack watcher、触发同一条
+  // 「重发现→重链接→重生成」链（ADR 0004 决策 17，Issue #148）。
+  readonly installSignalInputs?: CompilerWatchInputs;
   readonly generatedOutput: GeneratedOutputCommitter;
 }
+
+const emptyWatchInputs: CompilerWatchInputs = {
+  fileDependencies: [],
+  contextDependencies: [],
+  missingDependencies: [],
+};
 
 function dedupeSorted(paths: readonly string[]): readonly string[] {
   return [...new Set(paths)].sort(compareUtf16CodeUnits);
@@ -85,6 +95,7 @@ export class DevCompilerGate {
     this.stableWatchInputs = mergeWatchInputs(
       options.project.projectRoot,
       options.initialWatchInputs,
+      options.installSignalInputs ?? emptyWatchInputs,
     );
     this.generatedOutput = options.generatedOutput;
   }

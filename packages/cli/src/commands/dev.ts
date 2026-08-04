@@ -5,6 +5,7 @@ import { type DevWatchBuild, startDevWatchBuild } from "@/bundling/dev-watch";
 import { spawnDevChild } from "@/dev/child-process";
 import { DevChildSupervisor } from "@/dev/child-supervisor";
 import { DevCompilerGate } from "@/dev/compiler-gate";
+import { collectInstallSignalInputs } from "@/dev/install-signals";
 import { type DevCompilation, DevWatchCoordinator } from "@/dev/watch-coordinator";
 import { writerLeaseTokenEnvironmentVariable } from "@/dev-ipc";
 import { installTerminationSignalHandlers } from "@/process-signals";
@@ -208,6 +209,7 @@ export async function runDevCommand(
       ...tsconfigPath,
       project: resolution.project,
       initialWatchInputs: resolution.watchInputs,
+      installSignalInputs: await collectInstallSignalInputs(resolution.project.projectRoot),
       generatedOutput: transactions,
     });
     await gate.initialize();
