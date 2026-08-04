@@ -1,0 +1,44 @@
+{
+  "name": "@reforce/site-doc",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "dev": "waku dev",
+    "build": "waku build",
+    "start": "waku start",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.6.0",
+    "fumadocs-core": "^16.14.0",
+    "fumadocs-mdx": "^15.2.2",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@^16.14.0",
+    "fumapress": "1.0.0-beta.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-server-dom-webpack": "^19.2.8",
+    "waku": "1.0.0-beta.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "catalog:"
+  },
+  "optionalDependencies": {
+    "@takumi-rs/core-darwin-arm64": "2.5.6",
+    "@takumi-rs/core-darwin-x64": "2.5.6",
+    "@takumi-rs/core-linux-arm64-gnu": "2.5.6",
+    "@takumi-rs/core-linux-arm64-musl": "2.5.6",
+    "@takumi-rs/core-linux-x64-gnu": "2.5.6",
+    "@takumi-rs/core-linux-x64-musl": "2.5.6",
+    "@takumi-rs/core-win32-arm64-msvc": "2.5.6",
+    "@takumi-rs/core-win32-x64-msvc": "2.5.6"
+  }
+}
