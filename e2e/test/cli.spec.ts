@@ -1232,7 +1232,10 @@ describe.serial("built Reforce CLI", () => {
           FIXTURE_SERVER_HOST: "process-host",
           REFORCE_E2E_CONFIG_OUT: configOut,
         });
+        // startApplication 只等 .ready，而 config-probe.out 由另一个 bean 的 onContextStart 写，
+        // 两次写入间的调度间隙会被 20ms 轮询采样到（Issue #171）——先等内容落盘再断言精确值。
         // 进程 env 压过 profile 文件的 host；port 来自 .env.prod 覆盖 .env。
+        await waitForFileContent(configOut, "process-host:9000\n", started.child);
         expect(await readFile(configOut, "utf8")).toBe("process-host:9000\n");
         const shutdown = await shutdownWithIpc(started);
         stopped = true;
