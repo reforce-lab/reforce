@@ -14,8 +14,24 @@ Starter 库作者的构建收尾插件（ADR 0004，[#120](https://github.com/re
 
 ## 用法
 
-一份插件适配 unplugin 支持的全部打包器（Vite/Rollup/Rolldown/webpack/Rspack/Rsbuild/esbuild/
-Farm/Bun 等），按打包器取对应工厂：
+两个插件面共享同一份收尾逻辑，按打包器选择：
+
+**rslib / rsbuild（rspack 系）走 rsbuild 原生面。** unplugin 的 `writeBundle` 在 rspack 映射到
+afterEmit，早于 tsgo 写完 d.ts，而库模式编译读 dist 声明面，必报 `INVALID_LIBRARY_PACKAGE`
+（[#185](https://github.com/reforce-lab/reforce/issues/185)）；原生面的 `onAfterBuild` 在 dts
+完成后才触发：
+
+```ts
+// rslib.config.ts
+import { reforceStarterRsbuild } from "@reforce/bundler-plugin/rsbuild";
+
+export default {
+  lib: [{ bundle: false, dts: { tsgo: true }, format: "esm" }],
+  plugins: [reforceStarterRsbuild()],
+};
+```
+
+**其余打包器（Vite/Rollup/Rolldown/esbuild/Farm/Bun 等）走 unplugin 面**，按打包器取对应工厂：
 
 ```ts
 // vite.config.ts
@@ -35,13 +51,14 @@ await Bun.build({
 });
 ```
 
-选项：
+选项（两个面一致）：
 
 | 选项 | 默认 | 说明 |
 | --- | --- | --- |
 | `projectDirectory` | 进程工作目录 | 库项目根（含 `package.json` 与 leaf tsconfig） |
 | `tsconfigPath` | 自动选择 | 显式指定 leaf tsconfig，相对 `projectDirectory` 解析 |
-| `outputDirectory` | `"dist"` | meta 与注册 handle 的写入目录，相对项目根 |
+| `outputDirectory` | `"dist"` | meta 与注册 handle 的写入目录，相对项目根；`"."` 即包根布局 |
+| `exports` | `"patch"` | `"patch"` 补/校正 package.json 的 subpath；`"verify"` 只校验不改写 |
 | `publint` | `true` | 关闭发布产物校验 |
 
 不用打包器的作者直接跑 CLI：`reforce lib --project .`（产物写在包根，exports 需自行声明，
