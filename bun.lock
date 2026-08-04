@@ -80,6 +80,7 @@
         "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-testing": "workspace:*",
         "@reforce/tooling-tsconfig": "workspace:*",
+        "@reforce/web": "workspace:*",
         "@rslib/core": "catalog:",
         "@types/bun": "catalog:",
         "fast-check": "^4.9.0",
