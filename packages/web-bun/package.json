@@ -15,7 +15,7 @@
     "./reforce-meta": "./reforce-meta.json"
   },
   "scripts": {
-    "build": "rslib build && reforce lib --project . --tsconfig tsconfig.json",
+    "build": "rslib build && bun ../cli/dist/reforce.js lib --project . --tsconfig tsconfig.json",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
     "test": "bun test test it",
     "check": "biome check .",
