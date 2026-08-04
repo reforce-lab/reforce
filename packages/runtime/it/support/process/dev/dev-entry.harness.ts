@@ -1,6 +1,6 @@
+import { DevEntryController } from "@/dev-entry";
+import type { RspackHmrRuntime } from "@/hmr-manager";
 import type { CliReporterEvent, Reporter } from "@/reporter";
-import { DevEntryController } from "@/runtime/dev-entry";
-import type { RspackHmrRuntime } from "@/runtime/hmr-manager";
 
 const mode = process.argv[2];
 if (mode !== "strict-order" && mode !== "fatal") {

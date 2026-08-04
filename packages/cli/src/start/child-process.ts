@@ -1,7 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { isShutdownAcknowledgementMessage, type ShutdownRequestMessage } from "@/dev-ipc";
-import { withTimeout } from "@/with-timeout";
+import {
+  isShutdownAcknowledgementMessage,
+  type ShutdownRequestMessage,
+} from "@reforce/runtime/dev-ipc";
+import { withTimeout } from "@reforce/runtime/with-timeout";
 
 interface ProductionChildResult {
   readonly exitCode?: number;

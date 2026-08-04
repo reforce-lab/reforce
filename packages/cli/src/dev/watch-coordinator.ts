@@ -1,6 +1,6 @@
 import type { CompilerDiagnostic } from "@reforce/compiler";
+import { createFailureEvent, type Reporter } from "@reforce/runtime/reporter";
 import type { DevChildSupervisor } from "@/dev/child-supervisor";
-import { createFailureEvent, type Reporter } from "@/reporter";
 
 interface FailedDevCompilation {
   readonly status: "failure";

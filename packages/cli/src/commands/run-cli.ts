@@ -1,10 +1,10 @@
-import { Command, CommanderError } from "commander";
 import {
   type CliCommandName,
   createFailureEvent,
   PlainTextReporter,
   type Reporter,
-} from "@/reporter";
+} from "@reforce/runtime/reporter";
+import { Command, CommanderError } from "commander";
 
 export interface RunCliOptions {
   readonly argv?: readonly string[];

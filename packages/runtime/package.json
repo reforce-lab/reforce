@@ -1,0 +1,73 @@
+{
+  "name": "@reforce/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Process runtime that ships inside user dev and production artifacts via module replacement.",
+  "exports": {
+    "./production-runtime": {
+      "types": "./dist/production-runtime.d.ts",
+      "default": "./dist/production-runtime.js"
+    },
+    "./dev-runtime": {
+      "types": "./dist/dev-runtime.d.ts",
+      "default": "./dist/dev-runtime.js"
+    },
+    "./reporter": {
+      "types": "./dist/reporter.d.ts",
+      "default": "./dist/reporter.js"
+    },
+    "./bun-runtime": {
+      "types": "./dist/bun-runtime.d.ts",
+      "default": "./dist/bun-runtime.js"
+    },
+    "./dev-ipc": {
+      "types": "./dist/dev-ipc.d.ts",
+      "default": "./dist/dev-ipc.js"
+    },
+    "./process-signals": {
+      "types": "./dist/process-signals.d.ts",
+      "default": "./dist/process-signals.js"
+    },
+    "./with-timeout": {
+      "types": "./dist/with-timeout.d.ts",
+      "default": "./dist/with-timeout.js"
+    },
+    "./dev-hot-update": {
+      "types": "./dist/dev-hot-update.d.ts",
+      "default": "./dist/dev-hot-update.js"
+    },
+    "./lease-endpoint": {
+      "types": "./dist/lease-endpoint.d.ts",
+      "default": "./dist/lease-endpoint.js"
+    },
+    "./shutdown-controller": {
+      "types": "./dist/shutdown-controller.d.ts",
+      "default": "./dist/shutdown-controller.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rslib build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "bun test --timeout 300000 test it",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@reforce/context": "workspace:*",
+    "@swc/helpers": "catalog:",
+    "radashi": "^12.9.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-testing": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@rslib/core": "catalog:",
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -5,14 +5,14 @@ import {
   createCompiler,
   type LibraryGeneratedFile,
 } from "@reforce/compiler";
-import { isObject } from "radashi";
-import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
 import {
   captureFailure,
   createFailureEvent,
   type Reporter,
   reportShutdownFailure,
-} from "@/reporter";
+} from "@reforce/runtime/reporter";
+import { isObject } from "radashi";
+import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
 
 // reforce lib（ADR 0004 决策 1/4，#120/#147）：库模式编译的 CLI 面。产物写在包根——与 M1 起
 // 钉死的 starter 包缺省布局一致（exports "./reforce-meta" -> "./reforce-meta.json"）；要写进

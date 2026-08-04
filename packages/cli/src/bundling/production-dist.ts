@@ -4,8 +4,8 @@ import { compareUtf16CodeUnits, isRelativePosixPath, toPortablePath } from "@ref
 import { type BuildResult, createRsbuild, rspack } from "@rsbuild/core";
 import { isObject } from "radashi";
 import { renderProductionEntry } from "@/bundling/production-entry";
+import { resolveRuntimeEntryPath } from "@/bundling/runtime-locator";
 import type { ResolvedProject } from "@/compiler-types";
-import { resolveCliSupportModule } from "@/runtime-module-path";
 
 function assertAssetPath(path: string): void {
   if (!isRelativePosixPath(path)) {
@@ -134,10 +134,7 @@ export async function buildProductionDist(input: {
     "generated",
     "bootstrap.ts",
   );
-  const productionRuntimePath = resolveCliSupportModule({
-    supportModuleName: "production-runtime",
-    invokedEntryPath: process.argv[1],
-  });
+  const productionRuntimePath = resolveRuntimeEntryPath("production-runtime");
   const rsbuild = await createRsbuild({
     cwd: input.project.projectRoot,
     callerName: "reforce-cli",

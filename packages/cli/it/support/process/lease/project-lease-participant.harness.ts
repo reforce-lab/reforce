@@ -1,4 +1,4 @@
-import { createChildLeaseParticipant } from "@/project/lease-endpoint";
+import { createChildLeaseParticipant } from "@reforce/runtime/lease-endpoint";
 
 const leaseToken = process.argv[2];
 if (!leaseToken) {
