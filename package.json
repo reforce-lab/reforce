@@ -16,7 +16,8 @@
   "workspaces": [
     "e2e",
     "packages/*",
-    "tooling/*"
+    "tooling/*",
+    "sites/*"
   ],
   "catalog": {
     "@biomejs/biome": "^2.5.6",
@@ -36,7 +37,7 @@
     "prepare": "lefthook install && apm install && apm compile"
   },
   "devDependencies": {
-    "@biomejs/biome": "catalog:",
+    "@biomejs/biome": "^2.5.7",
     "@commitlint/cli": "^21.2.1",
     "@commitlint/config-conventional": "^21.2.0",
     "lefthook": "^2.1.10",
