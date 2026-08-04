@@ -15,7 +15,7 @@ import { generatedDirectoryPath } from "@/project/generated-paths";
 // （import 真实类与 schema 值，invoke 闭包让 tsc 背书 handler 契约——typed-edge 纪律的 web 面）。
 // 两个文件无条件产出：CLI 的 generated 事务按精确全集校验，无 web 内容即零 import 空表。
 
-const webRuntimeModuleSpecifier = "@reforce/web/generated-runtime";
+export const webRuntimeModuleSpecifier = "@reforce/web/generated-runtime";
 
 const schemaSlots = ["params", "query", "body", "response"] as const;
 

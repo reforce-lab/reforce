@@ -43,6 +43,9 @@ export interface ResolvedValueDeclaration {
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
   readonly starterLinkage: StarterLinkage;
+  // defineApplication 所在的应用模块（顶层至多一次由注册读取保证）；未注册任何 starter 时
+  // 缺省。web 接线的 webRequestSeeder 约定以它为查找作用域（ADR 0006 W2 的 #153 修订）。
+  readonly applicationModule?: ParsedSource;
   collectWatchInputs(): CompilerWatchInputs;
   resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined;
   resolveType(source: ParsedSource, type: TypeNode): LinkedType | undefined;
@@ -358,6 +361,7 @@ export async function createProjectLinker(
       return diagnostics;
     },
     starterLinkage,
+    ...(registrations.length === 0 ? {} : { applicationModule: registrations[0]?.source }),
     // Same timing constraint: the closures above keep resolving modules while analysis runs — a
     // re-export of the context specifier is resolved there for the first time, because
     // the external closure loader skips it — so this must be called after analysis finishes, never

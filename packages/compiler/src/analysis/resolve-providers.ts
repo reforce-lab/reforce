@@ -679,6 +679,9 @@ export function resolveProviders(
   drafts: readonly ProviderDraft[],
   linkage: StarterLinkage,
   diagnostics: CompilerDiagnostic[],
+  // 生成代码的显式需求（ADR 0006 W2 的 #153 接线）：web 引擎 bean 由生成的 bootstrap 经
+  // 容器解析，需求方不在 DI 图内，因此在这里显式入根，与 role:"root" 同一物化通道。
+  demandedBeanIds: ReadonlySet<string> = new Set(),
 ): readonly ProviderDraft[] {
   const candidates = indexCandidates(drafts, linkage.beans);
   const qualifierIndex = indexQualifiers(drafts, diagnostics);
@@ -697,7 +700,7 @@ export function resolveProviders(
   for (const bean of [...linkage.beans].sort((left, right) =>
     compareUtf16CodeUnits(left.id, right.id),
   )) {
-    if (bean.root) {
+    if (bean.root || demandedBeanIds.has(bean.id)) {
       materializeStarter(state, bean, { chain: [] });
     }
   }

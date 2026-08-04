@@ -67,14 +67,30 @@ export interface WebErrorHandlerModel {
   readonly order: number;
 }
 
+// 注册的 web 引擎 starter bean（ADR 0006 W2 的 #153 接线修订，约定记录于 #142/#152 评论区）：
+// starter meta 中 runtimeExport 导出名为 "WebEngine" 的 bean 即引擎。生成的 bootstrap 按此
+// import 引擎类、经容器取实例并交给 connectWebApplication，因此引擎 bean 无需 role:"root"——
+// bootstrap 本身就是它的需求方（resolveProviders 据此物化）。
+export interface WebEngineModel {
+  readonly beanId: string;
+  readonly moduleSpecifier: string;
+  readonly exportName: string;
+}
+
 export interface WebModel {
   // 已按 (path, method) 决定性排序。
   readonly routes: readonly RouteModel[];
   // 已按 (order, beanId) 决定性排序，数组顺序即分派顺序。
   readonly errorHandlers: readonly WebErrorHandlerModel[];
+  // 已按 beanId 决定性排序，数组顺序即引擎启动顺序（关闭时逆序）。
+  readonly engines: readonly WebEngineModel[];
+  // defineApplication 模块作用域内名为 webRequestSeeder 的顶层值（本地导出声明或一跳具名
+  // import），生成的 bootstrap 把它交给 connectWebApplication 完成每请求播种；缺省不播种。
+  readonly requestSeeder?: WebExportRefModel;
 }
 
 export const emptyWebModel: WebModel = Object.freeze({
   routes: Object.freeze([]),
   errorHandlers: Object.freeze([]),
+  engines: Object.freeze([]),
 });

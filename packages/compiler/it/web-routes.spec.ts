@@ -11,6 +11,7 @@ import {
 } from "@reforce/tooling-testing";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 import { type CompileSuccess, linkApplicationPackages, linkWebPackage } from "./support/project";
+import { nodeModulesTree, starterMetaSpan, starterPackage } from "./support/starters";
 
 // web 核心 IT（ADR 0006 W1/W3/W4/W5，#142 / #152）：路由表是编译器的第二种生成物——
 // routes.json 稳定序列化可 diff，routes.ts 是 typed-edge 背书的可执行表。这里钉住：
@@ -973,5 +974,284 @@ describe("full chain over a fake adapter", () => {
         "trace:418",
       ],
     });
+  });
+});
+
+// web 引擎接线（ADR 0006 W2 的 #153 修订，约定见 web-model.ts）：runtimeExport 导出名为
+// "WebEngine" 的 starter bean 即引擎——bootstrap 是它的需求方（无需 role:"root"），
+// 生成的 bootstrap 把路由表与容器交给 connectWebApplication，close 先排空引擎再走容器关闭序。
+describe("web engine wiring", () => {
+  function webEngineStarter(dist: ProjectTree): ProjectTree {
+    return starterPackage({
+      name: "@acme/web-engine",
+      meta: {
+        schemaVersion: 1,
+        starterDeps: [],
+        symbols: [{ id: "@acme/web-engine#WebEngine", file: "dist/index.d.ts", subpaths: ["."] }],
+        beans: [
+          {
+            id: "@acme/web-engine#WebEngine",
+            runtimeExport: { module: "@acme/web-engine", export: "WebEngine" },
+            provides: ["@acme/web-engine#WebEngine"],
+            dependencies: [],
+            source: starterMetaSpan("src/engine.ts"),
+          },
+        ],
+      },
+      dist,
+    });
+  }
+
+  const engineDeclaration = [
+    'import type { WebApplication, WebApplicationHandle } from "@reforce/web";',
+    "export declare class WebEngine {",
+    "  readonly name: string;",
+    "  start(application: WebApplication): WebApplicationHandle;",
+    "}",
+    "",
+  ].join("\n");
+
+  const engineRuntime = [
+    "export class WebEngine {",
+    '  name = "fake-engine";',
+    "  start(application) {",
+    '    globalThis.__wiring.push("engine:start:" + application.routes.length);',
+    "    return {",
+    "      close: () => {",
+    '        globalThis.__wiring.push("engine:close");',
+    "        return Promise.resolve();",
+    "      },",
+    "    };",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  function wiringTree(sources: Record<string, string>): ProjectTree {
+    return {
+      "tsconfig.json": webApplicationTsconfig(),
+      src: sources,
+      node_modules: nodeModulesTree({
+        "@acme/web-engine": webEngineStarter({
+          "index.js": engineRuntime,
+          "index.d.ts": engineDeclaration,
+        }),
+      }),
+    };
+  }
+
+  const pingController = [
+    'import { Injectable } from "@reforce/context";',
+    'import { Controller, Get } from "@reforce/web";',
+    '@Injectable() @Controller("/ping")',
+    "export class PingController {",
+    "  @Get()",
+    "  ping(): Response {",
+    '    return new Response("pong");',
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  function applicationSource(seeder: "exported" | "missing" | "unexported"): string {
+    const seederLine =
+      seeder === "missing"
+        ? []
+        : [`${seeder === "exported" ? "export " : ""}const webRequestSeeder = () => [];`];
+    return [
+      'import { defineApplication } from "@reforce/context";',
+      'import webEngine from "@acme/web-engine/reforce";',
+      ...seederLine,
+      "export default defineApplication({ starters: [webEngine] });",
+      "",
+    ].join("\n");
+  }
+
+  test("registering a web engine starter wires the generated bootstrap", async () => {
+    const { result } = await compileTree(
+      wiringTree({
+        "application.ts": applicationSource("exported"),
+        "ping-controller.ts": pingController,
+      }),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(generatedContent(result, "bootstrap.ts")).toBe(
+      [
+        'import { createApplicationContext } from "@reforce/context/generated-runtime";',
+        'import { connectWebApplication } from "@reforce/web/generated-runtime";',
+        'import { WebEngine as webEngine0 } from "@acme/web-engine";',
+        'import { webRequestSeeder as webSeeder0 } from "../../src/application.js";',
+        'import { applicationDefinition } from "./beans.js";',
+        'import { routeTable } from "./routes.js";',
+        "",
+        "export async function bootstrap() {",
+        "  const application = createApplicationContext(applicationDefinition);",
+        "  await application.start();",
+        "  return await connectWebApplication({",
+        "    context: application,",
+        "    table: routeTable,",
+        "    engines: [webEngine0],",
+        "    requestSeeds: webSeeder0,",
+        "  });",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const manifest = JSON.parse(generatedContent(result, "manifest.json")) as {
+      beans: readonly { id: string; origin: string }[];
+    };
+    expect(manifest.beans.map((bean) => bean.id)).toContain("@acme/web-engine#WebEngine");
+    // starter 包内文件不进 watch 面（#153）：包内容视为不可变，重建信号走项目内 manifest；
+    // symlink 场景下这些 realpath 会把 dev watcher 拖进项目外目录的失控扫描。context 侧的
+    // node_modules 目录由 watcher 的具名段忽略兜底，这里只钉文件面。
+    expect(
+      result.watchInputs.fileDependencies.filter((dependency) => dependency.includes("web-engine")),
+    ).toEqual([]);
+  });
+
+  test("the same wiring compiles to byte-identical bootstrap output", async () => {
+    const tree = wiringTree({
+      "application.ts": applicationSource("exported"),
+      "ping-controller.ts": pingController,
+    });
+    const first = await compileTree(tree);
+    const second = await compileTree(tree);
+    if (first.result.status === "failure" || second.result.status === "failure") {
+      throw new Error("Expected both compilations to succeed");
+    }
+
+    expect(generatedContent(first.result, "bootstrap.ts")).toBe(
+      generatedContent(second.result, "bootstrap.ts"),
+    );
+  });
+
+  test("without webRequestSeeder the bootstrap omits request seeding", async () => {
+    const { result } = await compileTree(
+      wiringTree({
+        "application.ts": applicationSource("missing"),
+        "ping-controller.ts": pingController,
+      }),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    const bootstrap = generatedContent(result, "bootstrap.ts");
+    expect(bootstrap).toContain("engines: [webEngine0],");
+    expect(bootstrap).not.toContain("requestSeeds");
+    expect(bootstrap).not.toContain("src/application.js");
+  });
+
+  test("an unexported webRequestSeeder is a hard error", async () => {
+    const { result } = await compileTree(
+      wiringTree({
+        "application.ts": applicationSource("unexported"),
+        "ping-controller.ts": pingController,
+      }),
+    );
+
+    expect(failureCodes(result)).toContain("INVALID_WEB_REQUEST_SEEDER");
+  });
+
+  test("an engine without any route still wires an empty table", async () => {
+    const { result } = await compileTree(
+      wiringTree({
+        "application.ts": applicationSource("missing"),
+      }),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(generatedContent(result, "bootstrap.ts")).toContain("connectWebApplication");
+    expect(JSON.parse(generatedContent(result, "routes.json"))).toEqual({
+      schemaVersion: 1,
+      routes: [],
+      errorHandlers: [],
+    });
+  });
+
+  test("bootstrap starts the engine and closes it before the container shuts down", async () => {
+    const { project, result } = await compileTree(
+      wiringTree({
+        "application.ts": applicationSource("exported"),
+        "ping-controller.ts": pingController,
+        "close-probe.ts": [
+          'import { Injectable, type OnContextClose } from "@reforce/context";',
+          "declare global {",
+          "  var __wiring: string[];",
+          "}",
+          "@Injectable()",
+          "export class CloseProbe implements OnContextClose {",
+          "  onContextClose(): void {",
+          '    globalThis.__wiring.push("bean:close");',
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+      }),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+    await linkApplicationPackages(project.projectRoot);
+    await linkWebPackage(project.projectRoot);
+    const generatedDirectory = path.join(project.projectRoot, ".reforce", "generated");
+    await mkdir(generatedDirectory, { recursive: true });
+    await Promise.all(
+      result.files.map((file) => writeFile(path.join(generatedDirectory, file.path), file.content)),
+    );
+    await writeFile(
+      path.join(project.projectRoot, "runner.ts"),
+      [
+        'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
+        "declare global {",
+        "  var __wiring: string[];",
+        "}",
+        "globalThis.__wiring = [];",
+        "const context = await bootstrap();",
+        'globalThis.__wiring.push("bootstrapped");',
+        "await context.close();",
+        "await context.close();",
+        "console.log(JSON.stringify(globalThis.__wiring));",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      path.join(project.projectRoot, "tsconfig.integration.json"),
+      `${JSON.stringify(
+        {
+          extends: "./tsconfig.json",
+          compilerOptions: { noEmit: true },
+          include: ["src", ".reforce/generated/**/*.ts", "runner.ts"],
+        },
+        undefined,
+        2,
+      )}\n`,
+    );
+    const typescriptPackage = fileURLToPath(import.meta.resolve("typescript/package.json"));
+    const typecheck = await runCommand(
+      process.execPath,
+      [path.join(path.dirname(typescriptPackage), "bin", "tsc"), "-p", "tsconfig.integration.json"],
+      { cwd: project.projectRoot },
+    );
+    expect(typecheck.exitCode).toBe(0);
+    expect(typecheck.stderr).toBe("");
+
+    const execution = await runCommand(
+      bunExecutable,
+      [path.join(project.projectRoot, "runner.ts")],
+      { cwd: project.projectRoot },
+    );
+    expect(execution.exitCode).toBe(0);
+    expect(JSON.parse(String(execution.stdout))).toEqual([
+      "engine:start:1",
+      "bootstrapped",
+      "engine:close",
+      "bean:close",
+    ]);
   });
 });
