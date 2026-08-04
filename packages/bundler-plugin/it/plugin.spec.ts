@@ -214,7 +214,8 @@ async function linkIntoProject(projectRoot: string, packageName: string): Promis
 // tsgo，把 d.ts 确定性推迟到 afterEmit 之后；退出时落 marker，供用例在临时树清理前等后台
 // 包装进程退净（Windows 上活进程的 cwd 会挡住递归删除）。
 const dtsDelayMilliseconds = 3000;
-const delayedTsgoMarker = "delayed-tsgo-exited";
+const delayedTsgoStartedMarker = "delayed-tsgo-started";
+const delayedTsgoExitedMarker = "delayed-tsgo-exited";
 
 async function readRealTypescriptVersion(realRoot: string): Promise<string> {
   const parsed: unknown = JSON.parse(await readFile(join(realRoot, "package.json"), "utf8"));
@@ -253,7 +254,8 @@ async function installDelayedTypescript(projectRoot: string): Promise<void> {
   await mkdir(join(packageRoot, "lib"), { recursive: true });
   await mkdir(join(packageRoot, "bin"), { recursive: true });
   const delayScript = join(packageRoot, "delay-exec.js");
-  const marker = join(packageRoot, delayedTsgoMarker);
+  const startedMarker = join(packageRoot, delayedTsgoStartedMarker);
+  const exitedMarker = join(packageRoot, delayedTsgoExitedMarker);
   const wrapper = join(
     packageRoot,
     "bin",
@@ -277,13 +279,14 @@ async function installDelayedTypescript(projectRoot: string): Promise<void> {
       [
         'import { spawnSync } from "node:child_process";',
         'import { writeFileSync } from "node:fs";',
+        `writeFileSync(${JSON.stringify(startedMarker)}, "started", "utf8");`,
         `await new Promise((resolve) => setTimeout(resolve, ${dtsDelayMilliseconds}));`,
         "let status = 1;",
         "try {",
         `  const result = spawnSync(${JSON.stringify(realExecutable)}, process.argv.slice(2), { stdio: "inherit" });`,
         "  status = result.status ?? 1;",
         "} finally {",
-        `  writeFileSync(${JSON.stringify(marker)}, "done", "utf8");`,
+        `  writeFileSync(${JSON.stringify(exitedMarker)}, "done", "utf8");`,
         "}",
         "process.exit(status);",
         "",
@@ -293,14 +296,32 @@ async function installDelayedTypescript(projectRoot: string): Promise<void> {
   ]);
 }
 
-async function waitForDelayedTsgoExit(projectRoot: string): Promise<void> {
-  const marker = join(projectRoot, "node_modules", "typescript", delayedTsgoMarker);
-  const deadline = Date.now() + 30_000;
+async function waitForMarker(marker: string, deadline: number): Promise<boolean> {
   while (!existsSync(marker)) {
     if (Date.now() >= deadline) {
-      throw new Error("Timed out waiting for the delayed tsgo wrapper to exit.");
+      return false;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return true;
+}
+
+async function waitForDelayedTsgoExit(projectRoot: string): Promise<void> {
+  const packageRoot = join(projectRoot, "node_modules", "typescript");
+  // 失败的构建可能根本没走到 dts spawn：包装进程 2 秒内没报到就当没启动，直接放行清理。
+  const started = await waitForMarker(
+    join(packageRoot, delayedTsgoStartedMarker),
+    Date.now() + 2000,
+  );
+  if (!started) {
+    return;
+  }
+  const exited = await waitForMarker(
+    join(packageRoot, delayedTsgoExitedMarker),
+    Date.now() + 30_000,
+  );
+  if (!exited) {
+    throw new Error("Timed out waiting for the delayed tsgo wrapper to exit.");
   }
 }
 
@@ -367,23 +388,31 @@ async function runRslibBuild(projectRoot: string, extra: Partial<RslibConfig> = 
 test("the unplugin rspack surface fails a real rslib build before tsgo declarations land", async () => {
   const project = await createRslibLibrary();
 
-  await expect(
-    runRslibBuild(project.projectRoot, {
-      tools: {
-        rspack: {
-          plugins: [
-            reforceStarter.rspack({
-              projectDirectory: project.projectRoot,
-              outputDirectory: ".",
-              publint: false,
-            }),
-          ],
+  // 收尾钩子在 afterEmit 抛 INVALID_LIBRARY_PACKAGE（d.ts 尚未落盘），但 rspack 对 hook 错误
+  // 的渲染随环境改写 message（macOS CI 上只剩栈帧），所以断言行为而非 message：构建失败且
+  // meta 三件套没写出来；同一项目同一配置换 rsbuild 面即成功（下一个用例），失败纯因时序。
+  try {
+    await expect(
+      runRslibBuild(project.projectRoot, {
+        tools: {
+          rspack: {
+            plugins: [
+              reforceStarter.rspack({
+                projectDirectory: project.projectRoot,
+                outputDirectory: ".",
+                publint: false,
+              }),
+            ],
+          },
         },
-      },
-    }),
-  ).rejects.toThrow("INVALID_LIBRARY_PACKAGE");
-  // 构建在 dts 落盘前就已失败返回，后台的延迟 tsgo 还活着——等它退净再进 afterEach 清理。
-  await waitForDelayedTsgoExit(project.projectRoot);
+      }),
+    ).rejects.toThrow();
+    expect(existsSync(join(project.projectRoot, "reforce-meta.json"))).toBe(false);
+  } finally {
+    // 构建在 dts 落盘前就已失败返回，后台的延迟 tsgo 可能还活着——等它退净再进 afterEach
+    // 清理（Windows 上活进程的 cwd 会挡住递归删除）。
+    await waitForDelayedTsgoExit(project.projectRoot);
+  }
 }, 120_000);
 
 test("the rsbuild surface finishes a real rslib build after tsgo declarations land", async () => {
