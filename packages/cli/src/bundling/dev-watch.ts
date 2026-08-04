@@ -175,6 +175,12 @@ export async function startDevWatchBuild(
               },
             });
           }
+          // symlink 的 workspace 包必须以 node_modules 形态进模块图：默认的 symlinks:true 会把
+          // 模块路径 realpath 成包的真实位置，starter 包根的 reforce.js 等文件因此逃过
+          // `**/node_modules/**` 忽略锚被 watch，rspack 原生 watcher 对这类项目外目录的扫描
+          // 会失控（实测整个 home 目录被递归爬取、600% CPU、项目内变更事件全部丢失）。
+          config.resolve ??= {};
+          config.resolve.symlinks = false;
           config.watchOptions = {
             ...config.watchOptions,
             aggregateTimeout: 200,
