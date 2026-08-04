@@ -1,4 +1,4 @@
-# @reforce/unplugin
+# @reforce/bundler-plugin
 
 Starter 库作者的构建收尾插件（ADR 0004，[#120](https://github.com/reforce-lab/reforce/issues/120)）。
 在打包器写完 dist 后运行 Reforce 库模式编译，把三份契约面产物写进输出目录，并补/校正
@@ -19,7 +19,7 @@ Farm/Bun 等），按打包器取对应工厂：
 
 ```ts
 // vite.config.ts
-import { reforceStarter } from "@reforce/unplugin";
+import { reforceStarter } from "@reforce/bundler-plugin";
 
 export default {
   plugins: [reforceStarter.vite()],
