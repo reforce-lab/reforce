@@ -147,4 +147,30 @@ describe("createResponseSerializer JSON rendering", () => {
 
     expect(serialize("anything")).rejects.toThrow(ResponseSerializationError);
   });
+
+  // 以下三例钉住 Issue #198 的快路径回退：无 replacer 的首次 stringify 撞上 bigint 会在任意
+  // 深度抛 TypeError，回退重试必须覆盖整棵树，而非 bigint 的 TypeError 不得被吞。
+  test("serializes a nested bigint as a JSON string", async () => {
+    const serialize = createResponseSerializer(passthroughSchema());
+
+    const response = await serialize({ page: { cursor: 512887731683791700033n } });
+
+    expect(await response.text()).toBe('{"page":{"cursor":"512887731683791700033"}}');
+  });
+
+  test("serializes bigint elements inside an array", async () => {
+    const serialize = createResponseSerializer(passthroughSchema());
+
+    const response = await serialize({ ids: [1n, 2n] });
+
+    expect(await response.text()).toBe('{"ids":["1","2"]}');
+  });
+
+  test("propagates the TypeError of a circular structure", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const serialize = createResponseSerializer(passthroughSchema());
+
+    expect(serialize(circular)).rejects.toThrow(TypeError);
+  });
 });

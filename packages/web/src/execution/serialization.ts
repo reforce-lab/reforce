@@ -8,14 +8,29 @@ import { ResponseSerializationError } from "@/errors";
 // - 否则 schema 暴露 Standard JSON Schema 导出（~standard.jsonSchema，spec v1.1）→ 由输出
 //   JSON Schema 预构建字段白名单投影（fast-json-stringify 思路的启动期特化）；
 // - 否则退化为 validate（Standard Schema 只保证单向校验；是否剥除多余字段取决于 vendor）。
-// bigint 一律序列化为 JSON 字符串（雪花 ID 语义，JSON.stringify 原生对 bigint 抛异常）。
+// bigint 一律序列化为 JSON 字符串（雪花 ID 语义，JSON.stringify 原生对 bigint 抛 TypeError）。
 
 function bigintReplacer(_key: string, value: unknown): unknown {
   return typeof value === "bigint" ? value.toString() : value;
 }
 
+// 传 replacer 会让引擎退出内置序列化快速路径、改为逐 key 回调：Bun 1.3.14/darwin-arm64 实测
+// 无 bigint 的常规响应上慢 4.3 倍（12.1M → 2.84M ops/s）。绝大多数响应不含 bigint，所以先走
+// 无 replacer 的快路径，真撞上 bigint 才带 replacer 重来一次（Issue #198）。循环引用抛的同样是
+// TypeError，重试会再抛一次并原样上抛，对外行为与只走 replacer 路径时一致。
+function renderJson(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch (cause) {
+    if (!(cause instanceof TypeError)) {
+      throw cause;
+    }
+    return JSON.stringify(value, bigintReplacer);
+  }
+}
+
 function jsonResponse(value: unknown): Response {
-  const rendered = JSON.stringify(value, bigintReplacer);
+  const rendered = renderJson(value);
   if (rendered === undefined) {
     throw new ResponseSerializationError("the handler return value is not JSON-serializable.");
   }
