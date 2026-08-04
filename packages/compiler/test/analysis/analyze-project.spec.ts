@@ -3,6 +3,7 @@ import { analyzeProject } from "@/analysis/analyze-project";
 import type { CompilerDiagnostic } from "@/api";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
+import { emptyStarterLinkage } from "@/linking/starter-linking";
 import type {
   ClassDeclaration,
   DecoratorUse,
@@ -60,6 +61,7 @@ function parsedSource(file: string, options: SourceOptions = {}): ParsedSource {
     namespaces: [],
     classes: options.classes ?? [],
     beanFactories: [],
+    applicationDefinitions: [],
     unsupportedDeclarations: [],
   };
   return {
@@ -75,6 +77,7 @@ function parsedSource(file: string, options: SourceOptions = {}): ParsedSource {
 function createLinker(diagnostics: readonly CompilerDiagnostic[] = []): ProjectLinker {
   return {
     diagnostics,
+    starterLinkage: emptyStarterLinkage,
     collectWatchInputs: () => ({
       fileDependencies: [],
       contextDependencies: [],

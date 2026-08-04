@@ -3,23 +3,20 @@ import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, CompilerWatchInputs, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import {
-  contextModuleSpecifier,
-  createExportBinder,
-  type ExternalDeclarationIndex,
-} from "@/linking/export-binding";
-import {
-  type ExternalDeclaration,
-  readExternalDeclarations,
-} from "@/linking/external-declarations";
+import { contextModuleSpecifier, createExportBinder } from "@/linking/export-binding";
+import { createExternalModuleStore, referencedModuleSpecifiers } from "@/linking/external-modules";
 import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import { createModuleRecord } from "@/linking/module-record";
+import { createModuleResolver, type ModuleRecord, moduleKey } from "@/linking/module-resolver";
+import { createPackageLocator } from "@/linking/package-locator";
 import {
-  createModuleResolver,
-  type ModuleRecord,
-  type ModuleResolver,
-  moduleKey,
-} from "@/linking/module-resolver";
+  createStarterLinkage,
+  emptyStarterLinkage,
+  loadStarterRegistry,
+  readStarterRegistrations,
+  type StarterLinkage,
+  starterSeedPaths,
+} from "@/linking/starter-linking";
 import type {
   ClassDeclaration,
   EntityName,
@@ -32,6 +29,7 @@ import { createWatchInputs } from "@/project/watch-inputs";
 
 export interface ProjectLinker {
   readonly diagnostics: readonly CompilerDiagnostic[];
+  readonly starterLinkage: StarterLinkage;
   collectWatchInputs(): CompilerWatchInputs;
   resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined;
   resolveType(source: ParsedSource, type: TypeNode): LinkedType | undefined;
@@ -43,49 +41,6 @@ export interface ProjectLinker {
 
 function entityText(entity: EntityName): string {
   return entity.kind === "identifier" ? entity.name : `${entityText(entity.left)}.${entity.right}`;
-}
-
-function referencedModuleSpecifiers(source: ParsedSource): readonly string[] {
-  const specifiers = new Set<string>();
-  for (const declaration of source.unit.imports) {
-    if (declaration.kind === "import") {
-      specifiers.add(declaration.moduleSpecifier);
-    }
-  }
-  for (const declaration of source.unit.exports) {
-    if (
-      declaration.kind === "reexport-named" ||
-      declaration.kind === "reexport-all" ||
-      declaration.kind === "namespace"
-    ) {
-      specifiers.add(declaration.moduleSpecifier);
-    }
-  }
-  return [...specifiers];
-}
-
-async function loadExternalDeclarations(
-  sources: readonly ParsedSource[],
-  resolveModule: ModuleResolver,
-  cache: LRUCache<string, SourceFileIr>,
-): Promise<ExternalDeclarationIndex> {
-  const externalPaths = new Set<string>();
-  for (const source of sources) {
-    for (const specifier of referencedModuleSpecifiers(source)) {
-      const target =
-        specifier === contextModuleSpecifier || isBuiltin(specifier)
-          ? undefined
-          : resolveModule(source, specifier, false);
-      if (target !== undefined && target.record === undefined) {
-        externalPaths.add(target.physicalPath);
-      }
-    }
-  }
-  const result = new Map<string, ReadonlyMap<string, ExternalDeclaration> | undefined>();
-  for (const physicalPath of [...externalPaths].sort(compareUtf16CodeUnits)) {
-    result.set(physicalPath, await readExternalDeclarations(physicalPath, cache));
-  }
-  return result;
 }
 
 export async function createProjectLinker(
@@ -102,14 +57,16 @@ export async function createProjectLinker(
     records.set(moduleKey(source.absolutePath), record);
     recordsByFileId.set(source.fileId, record);
   }
-  const { resolveModule, collectWatchDependencies } = createModuleResolver(
+  const { resolveModule, resolveFromDirectory, collectWatchDependencies } = createModuleResolver(
     records,
     diagnostics,
     project,
     customConditions,
   );
-  const externalDeclarations = await loadExternalDeclarations(sources, resolveModule, cache);
-  const binder = createExportBinder({ externalDeclarations, diagnostics, resolveModule });
+  const locatePackage = createPackageLocator();
+  // binder 的每次查询都现读 records，因此可以在外部闭包装载前创建：注册读取只会命中应用记录
+  // 与 @reforce/context 特例，装载后同一实例自动看见外部记录。
+  const binder = createExportBinder({ diagnostics, resolveModule });
 
   function recordFor(source: ParsedSource): ModuleRecord {
     const record = recordsByFileId.get(source.fileId);
@@ -118,6 +75,64 @@ export async function createProjectLinker(
     }
     return record;
   }
+
+  const registrations = readStarterRegistrations(
+    sources,
+    recordFor,
+    (record, callee) =>
+      callee.kind === "identifier" ? binder.resolveLocal(record, callee.name) : undefined,
+    diagnostics,
+  );
+  const registry = await loadStarterRegistry({
+    registrations,
+    resolveFromDirectory,
+    locatePackage,
+    diagnostics,
+  });
+
+  const externalStore = createExternalModuleStore({
+    records,
+    cache,
+    resolveModule,
+    locatePackage,
+    symbolTable: registry,
+    skipSpecifier: (specifier) => specifier === contextModuleSpecifier || isBuiltin(specifier),
+  });
+  const seeds = new Set<string>();
+  for (const source of sources) {
+    for (const specifier of referencedModuleSpecifiers(source.unit)) {
+      const target =
+        specifier === contextModuleSpecifier || isBuiltin(specifier)
+          ? undefined
+          : resolveModule(source, specifier, false);
+      if (target !== undefined && target.record === undefined) {
+        seeds.add(target.physicalPath);
+      }
+    }
+  }
+  for (const seed of starterSeedPaths(
+    registry,
+    resolveFromDirectory,
+    locatePackage,
+    resolveModule,
+  )) {
+    seeds.add(seed);
+  }
+  await externalStore.load([...seeds].sort(compareUtf16CodeUnits));
+
+  const starterLinkage =
+    registry.starters.length === 0
+      ? emptyStarterLinkage
+      : createStarterLinkage({
+          registry,
+          projectRoot: project.projectRoot,
+          diagnostics,
+          resolveFromDirectory,
+          locatePackage,
+          recordAt: (physicalPath) => records.get(physicalPath),
+          resolveModule,
+          resolveModuleExportFor: binder.resolveModuleExportFor,
+        });
 
   function resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined {
     const record = recordFor(source);
@@ -228,9 +243,10 @@ export async function createProjectLinker(
     get diagnostics() {
       return diagnostics;
     },
+    starterLinkage,
     // Same timing constraint: the closures above keep resolving modules while analysis runs — a
     // re-export of the context specifier is resolved there for the first time, because
-    // loadExternalDeclarations skips it — so this must be called after analysis finishes, never
+    // the external closure loader skips it — so this must be called after analysis finishes, never
     // snapshotted before it (Issue #26). Each call re-classifies every resolver dependency, which
     // is why compile() calls it exactly once.
     collectWatchInputs() {

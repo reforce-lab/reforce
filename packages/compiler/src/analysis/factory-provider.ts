@@ -320,7 +320,7 @@ export function analyzeFactoryProvider(
     provider: {
       kind: "factory",
       id: providerId(source.fileId, exportName),
-      source,
+      origin: { kind: "application", source },
       exportName,
       declarationSource: sourceReference(declaration.span),
       provides: [providedSymbol],

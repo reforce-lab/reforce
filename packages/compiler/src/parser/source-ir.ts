@@ -332,6 +332,64 @@ export interface DefineBeanDeclaration {
   readonly span: SourceSpan;
 }
 
+export type StartersArrayElement =
+  | {
+      readonly kind: "identifier";
+      readonly name: string;
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "unsupported-element";
+      readonly expressionKind: UnsupportedExpressionKind;
+      readonly span: SourceSpan;
+    };
+
+export type StartersOptionValue =
+  | {
+      readonly kind: "array";
+      readonly elements: readonly StartersArrayElement[];
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "unsupported";
+      readonly expressionKind: UnsupportedExpressionKind;
+      readonly span: SourceSpan;
+    };
+
+export type DefineApplicationOptionProperty =
+  | {
+      readonly kind: "starters";
+      readonly value: StartersOptionValue;
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "unsupported-property";
+      readonly propertyKind: "computed" | "spread" | "method" | "unknown-key";
+      readonly span: SourceSpan;
+    };
+
+export type DefineApplicationOptions =
+  | {
+      readonly kind: "object";
+      readonly properties: readonly DefineApplicationOptionProperty[];
+      readonly span: SourceSpan;
+    }
+  | {
+      readonly kind: "unsupported";
+      readonly expressionKind: UnsupportedExpressionKind;
+      readonly span: SourceSpan;
+    };
+
+export interface DefineApplicationDeclaration {
+  readonly kind: "define-application";
+  readonly topLevel: boolean;
+  readonly name?: string;
+  readonly export: DeclarationExport;
+  readonly callee: EntityName;
+  readonly options: DefineApplicationOptions;
+  readonly span: SourceSpan;
+}
+
 export type UnsupportedNamedDeclarationKind =
   | "type-alias"
   | "enum"
@@ -357,5 +415,6 @@ export interface SourceFileIr {
   readonly namespaces: readonly NamespaceDeclaration[];
   readonly classes: readonly ClassDeclaration[];
   readonly beanFactories: readonly DefineBeanDeclaration[];
+  readonly applicationDefinitions: readonly DefineApplicationDeclaration[];
   readonly unsupportedDeclarations: readonly UnsupportedNamedDeclaration[];
 }

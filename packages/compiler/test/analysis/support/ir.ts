@@ -36,6 +36,7 @@ export function singleFileIr(file: string, absolutePath: string) {
     namespaces: [],
     classes: [],
     beanFactories: [],
+    applicationDefinitions: [],
     unsupportedDeclarations: [],
   };
   return {

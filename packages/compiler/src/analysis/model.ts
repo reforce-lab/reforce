@@ -25,7 +25,21 @@ export interface DependencyModel {
   // so this is the only field that must stay mutable.
   mode: DependencyMode;
   readonly source: GeneratedSourceReferenceModel;
+  // 该边的契约符号：emission 用它写 type-only 类型标注（ADR 0004 决策 8，#120）。只进生成的
+  // import type 与 resolve<T>() 标注，不进 manifest / 运行时 JSON——序列化前必须剥掉。
+  readonly contract: LinkedSymbol;
 }
+
+// bean 的来源（ADR 0004，#120）：应用源集里的声明，或注册 starter 的 meta bean。starter bean 没有
+// 应用内 span，诊断用 sourceText（包名/包内路径:行:列）文本定位，manifest 的 origin 也从这里来。
+export type ProviderOriginModel =
+  | { readonly kind: "application"; readonly source: ParsedSource }
+  | {
+      readonly kind: "starter";
+      readonly origin: string;
+      readonly runtimeExport: { readonly module: string; readonly export: string };
+      readonly sourceText: string;
+    };
 
 export interface QualifierModel {
   readonly interfaceSymbol: LinkedSymbol;
@@ -34,7 +48,7 @@ export interface QualifierModel {
 
 interface ProviderBase {
   readonly id: string;
-  readonly source: ParsedSource;
+  readonly origin: ProviderOriginModel;
   readonly exportName: string;
   readonly declarationSource: GeneratedSourceReferenceModel;
   readonly provides: readonly LinkedSymbol[];

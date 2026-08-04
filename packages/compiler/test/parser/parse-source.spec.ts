@@ -528,6 +528,100 @@ test("does not record a dotted namespace as a module augmentation", () => {
   expect(unit.unsupportedDeclarations).toEqual([]);
 });
 
+test("lowers a default-exported defineApplication with starter identifiers in order", () => {
+  const unit = parseFile("export default defineApplication({ starters: [a, b] });");
+  const declaration = unit.applicationDefinitions[0];
+
+  expect(declaration?.export.kind).toBe("default-only");
+  expect(declaration?.options).toMatchObject({
+    kind: "object",
+    properties: [
+      {
+        kind: "starters",
+        value: {
+          kind: "array",
+          elements: [
+            { kind: "identifier", name: "a" },
+            { kind: "identifier", name: "b" },
+          ],
+        },
+      },
+    ],
+  });
+});
+
+test("lowers a named defineApplication declaration with an empty starters array", () => {
+  const unit = parseFile("export const app = defineApplication({ starters: [] });");
+  const declaration = unit.applicationDefinitions[0];
+
+  expect(declaration?.name).toBe("app");
+  expect(declaration?.export.kind).toBe("named");
+  expect(declaration?.options).toMatchObject({
+    kind: "object",
+    properties: [{ kind: "starters", value: { kind: "array", elements: [] } }],
+  });
+});
+
+test("keeps a non-array starters value unsupported", () => {
+  const unit = parseFile("export default defineApplication({ starters: list });");
+  const options = unit.applicationDefinitions[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineApplication options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "starters",
+    value: { kind: "unsupported", expressionKind: "identifier" },
+  });
+});
+
+test("records an unknown defineApplication option key as an unsupported property", () => {
+  const unit = parseFile('export default defineApplication({ starters: [], mode: "x" });');
+  const options = unit.applicationDefinitions[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineApplication options.");
+  }
+
+  expect(options.properties[1]).toMatchObject({
+    kind: "unsupported-property",
+    propertyKind: "unknown-key",
+  });
+});
+
+test("records a spread starters element as an unsupported element", () => {
+  const unit = parseFile("export default defineApplication({ starters: [...list] });");
+  const options = unit.applicationDefinitions[0]?.options;
+  if (options?.kind !== "object") {
+    throw new Error("Expected object-literal defineApplication options.");
+  }
+
+  expect(options.properties[0]).toMatchObject({
+    kind: "starters",
+    value: {
+      kind: "array",
+      elements: [{ kind: "unsupported-element", expressionKind: "other" }],
+    },
+  });
+});
+
+test("records nothing for a default-exported call to another function", () => {
+  const unit = parseFile("export default defineApp({ starters: [a] });");
+
+  expect(unit.applicationDefinitions).toEqual([]);
+});
+
+test("lowers a defineApplication declared inside a function body as non-top-level", () => {
+  const unit = parseFile(
+    ["function build(): void {", "  const app = defineApplication({ starters: [a] });", "}"].join(
+      "\n",
+    ),
+  );
+
+  expect(
+    unit.applicationDefinitions.map((declaration) => [declaration.name, declaration.topLevel]),
+  ).toEqual([["app", false]]);
+});
+
 test("rejects a source file when syntax is incomplete", () => {
   const input = {
     file: canonicalFileId("src/broken.ts"),

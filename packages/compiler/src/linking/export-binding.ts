@@ -1,6 +1,5 @@
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import type { ExternalDeclaration } from "@/linking/external-declarations";
 import type { LinkedSymbol } from "@/linking/model";
 import type {
   ImportReference,
@@ -10,19 +9,15 @@ import type {
 } from "@/linking/module-resolver";
 
 // ESM 的导出绑定语义：给定「某个模块导出的某个名字」，找出它最终绑定到哪个符号。
-// 覆盖 local-named、reexport-named、`export * as`、`export *` 的歧义与截断、以及解析到项目外
-// `.d.ts` 时的外部回退。依赖全部由 createExportBinder 注入，因此这一层可以脱离真实文件系统单测
-// （Issue #117）；上层的 project-linker 只消费结果，从不被这里回调。
+// 覆盖 local-named、reexport-named、`export * as`、`export *` 的歧义与截断。外部（npm 包）文件
+// 由 external-modules 的闭包加载建成同构 ModuleRecord 走同一算法（ADR 0004 决策 7，#120）；
+// 没有记录的解析目标（js-only、解析失败）就是解析不出符号。依赖全部由 createExportBinder 注入，
+// 因此这一层可以脱离真实文件系统单测（Issue #117）；上层的 project-linker 只消费结果，从不被
+// 这里回调。
 
 export const contextModuleSpecifier = "@reforce/context";
 
-export type ExternalDeclarationIndex = ReadonlyMap<
-  string,
-  ReadonlyMap<string, ExternalDeclaration> | undefined
->;
-
 interface ExportBinderInputs {
-  readonly externalDeclarations: ExternalDeclarationIndex;
   readonly diagnostics: CompilerDiagnostic[];
   readonly resolveModule: ModuleResolver;
 }
@@ -72,39 +67,16 @@ function contextSymbol(name: string): LinkedSymbol {
   });
 }
 
-export function createExportBinder({
-  externalDeclarations,
-  diagnostics,
-  resolveModule,
-}: ExportBinderInputs) {
+export function createExportBinder({ diagnostics, resolveModule }: ExportBinderInputs) {
   const namespaceTargets = new Map<string, NamespaceTarget>();
-
-  function externalSymbol(
-    moduleSpecifier: string,
-    imported: string,
-    physicalPath: string,
-  ): LinkedSymbol | undefined {
-    const directExport = externalDeclarations.get(physicalPath)?.get(imported);
-    if (directExport === undefined) {
-      return undefined;
-    }
-    return Object.freeze({
-      key: `external:${physicalPath}#${imported}`,
-      kind: directExport.kind,
-      name: imported,
-      moduleSpecifier,
-      generic: directExport.generic,
-    });
-  }
 
   function resolveModuleExport(
     target: ResolvedModule,
-    moduleSpecifier: string,
     exportedName: string,
     visited: Set<string>,
   ): LinkedSymbol | undefined {
     return target.record === undefined
-      ? externalSymbol(moduleSpecifier, exportedName, target.physicalPath)
+      ? undefined
       : resolveExport(target.record, exportedName, visited);
   }
 
@@ -136,7 +108,7 @@ export function createExportBinder({
     if (target === undefined) {
       return undefined;
     }
-    return resolveModuleExport(target, moduleSpecifier, exportedName, visited);
+    return resolveModuleExport(target, exportedName, visited);
   }
 
   function resolveReexportedName(
@@ -224,12 +196,7 @@ export function createExportBinder({
       if (target === undefined) {
         continue;
       }
-      const candidate = resolveModuleExport(
-        target,
-        declaration.moduleSpecifier,
-        exportedName,
-        new Set(visited),
-      );
+      const candidate = resolveModuleExport(target, exportedName, new Set(visited));
       if (candidate !== undefined && !candidates.some((item) => item.key === candidate.key)) {
         candidates.push(candidate);
       }
@@ -248,6 +215,9 @@ export function createExportBinder({
     }
     visited.add(visitKey);
 
+    if (record.ambiguousExports?.has(exportedName) === true) {
+      return undefined;
+    }
     const direct = directlyExportedLocal(record, exportedName);
     if (direct !== undefined) {
       return direct;
@@ -286,9 +256,7 @@ export function createExportBinder({
     if (target === undefined) {
       return undefined;
     }
-    return target.record === undefined
-      ? externalSymbol(reference.moduleSpecifier, importedName, target.physicalPath)
-      : resolveExport(target.record, importedName, visited);
+    return resolveModuleExport(target, importedName, visited);
   }
 
   function resolveLocal(
@@ -315,8 +283,17 @@ export function createExportBinder({
     const target = namespaceTargets.get(namespaceKey);
     return target === undefined
       ? undefined
-      : resolveModuleExport(target.target, target.moduleSpecifier, exportedName, new Set());
+      : resolveModuleExport(target.target, exportedName, new Set());
   }
 
-  return { resolveLocal, resolveImport, resolveNamespaceMember };
+  // starter 链接层（registry 交叉核对、契约坐标解析、根探测）需要对任意已解析模块按导出名取符号，
+  // 与 re-export 链共用同一套算法；每次调用独立 visited，互不污染。
+  function resolveModuleExportFor(
+    target: ResolvedModule,
+    exportedName: string,
+  ): LinkedSymbol | undefined {
+    return resolveModuleExport(target, exportedName, new Set());
+  }
+
+  return { resolveLocal, resolveImport, resolveModuleExportFor, resolveNamespaceMember };
 }

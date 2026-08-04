@@ -8,6 +8,17 @@ import type { ParsedSource } from "@/project/source-files";
 
 type LinkedSymbolKind = "class" | "interface" | "context" | "namespace" | "unsupported";
 
+// 外部符号的包视角坐标（ADR 0004 决策 7，#120）：key 以包根为锚，两份物理拷贝天然两个身份
+// （决策 10 不合并）；coordinate 是诊断与 manifest 用的展示形；metaSubpath 来自 meta 户口表，
+// 是 type-only import 的首选 specifier。
+export interface ExternalSymbolAttribution {
+  readonly packageName: string;
+  readonly version: string;
+  readonly packageRoot: string;
+  readonly coordinate: string;
+  readonly metaSubpath?: string;
+}
+
 export interface LinkedSymbol {
   readonly key: string;
   readonly kind: LinkedSymbolKind;
@@ -16,6 +27,7 @@ export interface LinkedSymbol {
   readonly source?: ParsedSource;
   readonly declaration?: ClassDeclaration | InterfaceDeclaration;
   readonly generic: boolean;
+  readonly external?: ExternalSymbolAttribution;
 }
 
 export interface LinkedType {

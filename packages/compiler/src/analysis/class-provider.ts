@@ -626,7 +626,7 @@ export function analyzeClassProvider(
     provider: {
       kind: "class",
       id,
-      source,
+      origin: { kind: "application", source },
       exportName,
       declarationSource: sourceReference(declaration.span),
       provides,

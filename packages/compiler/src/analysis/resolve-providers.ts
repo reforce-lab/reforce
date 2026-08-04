@@ -10,6 +10,8 @@ import {
 } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
+import type { LinkedSymbol } from "@/linking/model";
+import type { StarterBeanModel, StarterLinkage } from "@/linking/starter-linking";
 import type { NamespaceExportedMember } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";
 
@@ -92,23 +94,61 @@ function validateBeanIdentities(
   }
 }
 
-function indexProviderCandidates(
-  drafts: readonly ProviderDraft[],
-): ReadonlyMap<string, ProviderModel[]> {
-  const candidates = new Map<string, ProviderModel[]>();
-  for (const draft of drafts) {
-    for (const provided of draft.provider.provides) {
-      const existing = candidates.get(provided.key) ?? [];
-      existing.push(draft.provider);
-      candidates.set(provided.key, existing);
-    }
-  }
-  return candidates;
+// 链接候选：本地 provider 与（未物化的）starter bean 同表登记。选择规则见 ADR 0004（#120）
+// 决策 11/12/13：本地恒胜；starter 里 defaultBean 在存在其他候选时退出；歧义与缺失都是硬错。
+type CandidateEntry =
+  | { readonly kind: "local"; readonly provider: ProviderModel }
+  | { readonly kind: "starter"; readonly bean: StarterBeanModel };
+
+interface CandidateIndex {
+  readonly byKey: ReadonlyMap<string, readonly CandidateEntry[]>;
+  readonly byCoordinate: ReadonlyMap<
+    string,
+    readonly { readonly key: string; readonly origin: string }[]
+  >;
 }
 
-function providerSourceSpan(provider: ProviderModel): SourceSpan {
+function indexCandidates(
+  drafts: readonly ProviderDraft[],
+  starterBeans: readonly StarterBeanModel[],
+): CandidateIndex {
+  const byKey = new Map<string, CandidateEntry[]>();
+  const byCoordinate = new Map<string, { key: string; origin: string }[]>();
+  const registerCoordinate = (symbol: LinkedSymbol, origin: string): void => {
+    if (symbol.external === undefined) {
+      return;
+    }
+    const entries = byCoordinate.get(symbol.external.coordinate) ?? [];
+    if (!entries.some((entry) => entry.key === symbol.key && entry.origin === origin)) {
+      entries.push({ key: symbol.key, origin });
+    }
+    byCoordinate.set(symbol.external.coordinate, entries);
+  };
+  for (const draft of drafts) {
+    for (const provided of draft.provider.provides) {
+      const existing = byKey.get(provided.key) ?? [];
+      existing.push({ kind: "local", provider: draft.provider });
+      byKey.set(provided.key, existing);
+      registerCoordinate(provided, "application");
+    }
+  }
+  for (const bean of starterBeans) {
+    for (const provided of bean.provides) {
+      const existing = byKey.get(provided.key) ?? [];
+      existing.push({ kind: "starter", bean });
+      byKey.set(provided.key, existing);
+      registerCoordinate(provided, bean.origin);
+    }
+  }
+  return { byKey, byCoordinate };
+}
+
+function providerSourceSpan(provider: ProviderModel): SourceSpan | undefined {
+  if (provider.origin.kind !== "application") {
+    return undefined;
+  }
   return {
-    fileId: provider.source.fileId,
+    fileId: provider.origin.source.fileId,
     start: provider.declarationSource.start,
     end: provider.declarationSource.end,
   };
@@ -217,11 +257,13 @@ function qualifierNamespaceMember(qualifier: QualifierModel): NamespaceExportedM
 }
 
 function validatePrimaryCandidates(
-  candidates: ReadonlyMap<string, ProviderModel[]>,
+  candidates: CandidateIndex,
   diagnostics: CompilerDiagnostic[],
 ): void {
-  for (const [symbolKey, providers] of candidates) {
-    const primary = providers.filter((provider) => provider.primary);
+  for (const [symbolKey, entries] of candidates.byKey) {
+    const primary = entries.flatMap((entry) =>
+      entry.kind === "local" && entry.provider.primary ? [entry.provider] : [],
+    );
     if (primary.length <= 1) {
       continue;
     }
@@ -238,87 +280,195 @@ function validatePrimaryCandidates(
   }
 }
 
-function qualifiedDependencyProvider(
-  pending: PendingDependency,
-  qualifierIndex: ReadonlyMap<string, ProviderModel>,
-  drafts: readonly ProviderDraft[],
-  diagnostics: CompilerDiagnostic[],
+// 一条待解析边的需求上下文：应用侧边带注入点 span；starter 边继承把它拉进图的那条链
+// （MISSING_BEAN 的双侧定位与需求链都从这里来，ADR 0004 决策 13）。
+interface DemandContext {
+  readonly span?: SourceSpan;
+  readonly chain: readonly string[];
+  readonly consumer?: StarterBeanModel;
+}
+
+function demandRelated(demand: DemandContext): readonly DiagnosticRelatedInformation[] {
+  const related: DiagnosticRelatedInformation[] = demand.chain.map((id) => ({
+    message: `required through ${id}`,
+  }));
+  if (demand.consumer !== undefined) {
+    related.push({ message: `declared by ${demand.consumer.sourceText}` });
+  }
+  return related;
+}
+
+interface ResolutionState {
+  readonly candidates: CandidateIndex;
+  readonly qualifierIndex: ReadonlyMap<string, ProviderModel>;
+  readonly drafts: readonly ProviderDraft[];
+  readonly linkage: StarterLinkage;
+  readonly diagnostics: CompilerDiagnostic[];
+  readonly materialized: Map<string, MaterializedStarter>;
+  readonly queue: MaterializedStarter[];
+}
+
+interface MaterializedStarter {
+  readonly draft: ProviderDraft;
+  readonly bean: StarterBeanModel;
+  readonly demand: DemandContext;
+}
+
+function materializeStarter(
+  state: ResolutionState,
+  bean: StarterBeanModel,
+  demand: DemandContext,
+): ProviderModel {
+  const existing = state.materialized.get(bean.id);
+  if (existing !== undefined) {
+    return existing.draft.provider;
+  }
+  const provider: ProviderModel = {
+    kind: "class",
+    id: bean.id,
+    origin: {
+      kind: "starter",
+      origin: bean.origin,
+      runtimeExport: bean.runtimeExport,
+      sourceText: bean.sourceText,
+    },
+    exportName: bean.runtimeExport.export,
+    declarationSource: bean.metaSource,
+    provides: bean.provides,
+    primary: false,
+    qualifiers: [],
+    dependencies: [],
+    startHook: bean.lifecycle.start,
+    closeHook: bean.lifecycle.close,
+  };
+  const entry: MaterializedStarter = {
+    draft: { provider, pendingDependencies: [] },
+    bean,
+    demand,
+  };
+  state.materialized.set(bean.id, entry);
+  state.queue.push(entry);
+  return provider;
+}
+
+function otherCopyRelated(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+): readonly DiagnosticRelatedInformation[] {
+  const coordinate = symbol.external?.coordinate;
+  if (coordinate === undefined) {
+    return [];
+  }
+  return (state.candidates.byCoordinate.get(coordinate) ?? [])
+    .filter((entry) => entry.key !== symbol.key)
+    .map((entry) => ({
+      message: `${coordinate} is provided by ${entry.origin} through a different installed copy of the package`,
+    }));
+}
+
+function missingBeanHelp(demand: DemandContext, injectableMessage: boolean): string {
+  if (demand.consumer !== undefined) {
+    return "Provide the starter's open dependency with a local provider or another registered starter.";
+  }
+  return injectableMessage
+    ? "Mark the concrete class Injectable or register a starter that provides it."
+    : "Provide it with a local Injectable or defineBean provider, or register a starter that provides it.";
+}
+
+function reportMissing(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+  demand: DemandContext,
+  injectableMessage: boolean,
+): void {
+  state.diagnostics.push(
+    diagnostic({
+      code: "MISSING_BEAN",
+      message: injectableMessage
+        ? `No Injectable Bean provides ${symbol.name}.`
+        : `No Bean provides ${symbol.name}.`,
+      sourceSpan: demand.span,
+      related: [...demandRelated(demand), ...otherCopyRelated(state, symbol)],
+      help: missingBeanHelp(demand, injectableMessage),
+    }),
+  );
+}
+
+function selectStarterCandidate(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+  beans: readonly StarterBeanModel[],
+  demand: DemandContext,
 ): ProviderModel | undefined {
-  const qualifierMember = pending.linkedType.qualifierMember;
-  if (qualifierMember === undefined) {
+  // defaultBean 只在同契约存在其他候选时让位（决策 12）：全员 default 时它们仍是候选。
+  const preferred = beans.filter((bean) => !bean.defaultBean);
+  const pool = preferred.length > 0 ? preferred : beans;
+  const single = pool.length === 1 ? pool[0] : undefined;
+  if (single !== undefined) {
+    return materializeStarter(state, single, demand);
+  }
+  if (pool.length === 0) {
+    reportMissing(state, symbol, demand, false);
     return undefined;
   }
-  const selected = qualifierIndex.get(
-    qualifierIndexKey(pending.linkedType.symbol.key, qualifierMember),
-  );
-  if (selected !== undefined) {
-    return selected;
-  }
-  diagnostics.push(
+  state.diagnostics.push(
     diagnostic({
-      code: "UNKNOWN_BEAN_QUALIFIER",
-      message: `Unknown qualifier ${pending.linkedType.symbol.name}.${qualifierMember}.`,
-      sourceSpan: pending.linkedType.span,
-      related: qualifierAvailabilityRelated(drafts, pending.linkedType.symbol.key),
-      help: "Use one of the generated qualifier members for this interface.",
+      code: "AMBIGUOUS_BEAN",
+      message: `Multiple Beans provide ${symbol.name}.`,
+      sourceSpan: demand.span,
+      related: [
+        ...pool
+          .toSorted((left, right) => compareUtf16CodeUnits(left.id, right.id))
+          .map((bean) => ({ message: `${bean.id} (${bean.origin})` })),
+        ...demandRelated(demand),
+      ],
+      help: "Provide the contract locally to override the starters, or register only one providing starter.",
     }),
   );
   return undefined;
 }
 
-function unqualifiedDependencyProvider(
-  pending: PendingDependency,
-  candidates: ReadonlyMap<string, ProviderModel[]>,
-  diagnostics: CompilerDiagnostic[],
+function selectProvider(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+  demand: DemandContext,
 ): ProviderModel | undefined {
-  const available = candidates.get(pending.linkedType.symbol.key) ?? [];
-  if (pending.linkedType.symbol.kind === "class") {
-    const source = pending.linkedType.symbol.source;
-    const ownId =
-      source === undefined ? undefined : providerId(source.fileId, pending.linkedType.symbol.name);
-    const ownProvider = available.find(
+  const available = state.candidates.byKey.get(symbol.key) ?? [];
+  const locals = available.flatMap((entry) => (entry.kind === "local" ? [entry.provider] : []));
+  const starters = available.flatMap((entry) => (entry.kind === "starter" ? [entry.bean] : []));
+  if (symbol.kind === "class") {
+    const source = symbol.source;
+    const ownId = source === undefined ? undefined : providerId(source.fileId, symbol.name);
+    const ownProvider = locals.find(
       (provider) => provider.kind === "class" && provider.id === ownId,
     );
     if (ownProvider !== undefined) {
       return ownProvider;
     }
-    if (available.length === 0) {
-      diagnostics.push(
-        diagnostic({
-          code: "MISSING_BEAN",
-          message: `No Injectable Bean provides ${pending.linkedType.symbol.name}.`,
-          sourceSpan: pending.linkedType.span,
-          help: "Mark the concrete class Injectable or inject an application interface.",
-        }),
-      );
+    if (locals.length === 0 && starters.length === 0) {
+      reportMissing(state, symbol, demand, true);
       return undefined;
     }
   }
-  if (available.length === 1) {
-    return available[0];
+  const singleLocal = locals.length === 1 ? locals[0] : undefined;
+  if (singleLocal !== undefined) {
+    return singleLocal;
   }
-  if (available.length === 0) {
-    diagnostics.push(
-      diagnostic({
-        code: "MISSING_BEAN",
-        message: `No Bean provides ${pending.linkedType.symbol.name}.`,
-        sourceSpan: pending.linkedType.span,
-        help: "Declare a local Injectable wrapper or defineBean provider in this application.",
-      }),
-    );
-    return undefined;
+  if (locals.length === 0) {
+    return selectStarterCandidate(state, symbol, starters, demand);
   }
-  const primary = available.filter((provider) => provider.primary);
-  if (primary.length === 1) {
-    return primary[0];
+  const primary = locals.filter((provider) => provider.primary);
+  const singlePrimary = primary.length === 1 ? primary[0] : undefined;
+  if (singlePrimary !== undefined) {
+    return singlePrimary;
   }
   if (primary.length === 0) {
-    diagnostics.push(
+    state.diagnostics.push(
       diagnostic({
         code: "AMBIGUOUS_BEAN",
-        message: `Multiple Beans provide ${pending.linkedType.symbol.name}.`,
-        sourceSpan: pending.linkedType.span,
-        related: available.map(providerIdentityRelated),
+        message: `Multiple Beans provide ${symbol.name}.`,
+        sourceSpan: demand.span,
+        related: locals.map(providerIdentityRelated),
         help: "Mark one provider Primary or inject a generated qualifier.",
       }),
     );
@@ -326,27 +476,43 @@ function unqualifiedDependencyProvider(
   return undefined;
 }
 
-function dependencyProvider(
+function qualifiedDependencyProvider(
+  state: ResolutionState,
   pending: PendingDependency,
-  drafts: readonly ProviderDraft[],
-  candidates: ReadonlyMap<string, ProviderModel[]>,
-  qualifierIndex: ReadonlyMap<string, ProviderModel>,
-  diagnostics: CompilerDiagnostic[],
 ): ProviderModel | undefined {
-  return pending.linkedType.qualifierMember === undefined
-    ? unqualifiedDependencyProvider(pending, candidates, diagnostics)
-    : qualifiedDependencyProvider(pending, qualifierIndex, drafts, diagnostics);
+  const qualifierMember = pending.linkedType.qualifierMember;
+  if (qualifierMember === undefined) {
+    return undefined;
+  }
+  const selected = state.qualifierIndex.get(
+    qualifierIndexKey(pending.linkedType.symbol.key, qualifierMember),
+  );
+  if (selected !== undefined) {
+    return selected;
+  }
+  state.diagnostics.push(
+    diagnostic({
+      code: "UNKNOWN_BEAN_QUALIFIER",
+      message: `Unknown qualifier ${pending.linkedType.symbol.name}.${qualifierMember}.`,
+      sourceSpan: pending.linkedType.span,
+      related: qualifierAvailabilityRelated(state.drafts, pending.linkedType.symbol.key),
+      help: "Use one of the generated qualifier members for this interface.",
+    }),
+  );
+  return undefined;
 }
 
-function resolveProviderDependencies(
-  drafts: readonly ProviderDraft[],
-  candidates: ReadonlyMap<string, ProviderModel[]>,
-  qualifierIndex: ReadonlyMap<string, ProviderModel>,
-  diagnostics: CompilerDiagnostic[],
-): void {
-  for (const draft of drafts) {
+function resolveLocalDraftDependencies(state: ResolutionState): void {
+  for (const draft of state.drafts) {
     for (const pending of draft.pendingDependencies) {
-      const selected = dependencyProvider(pending, drafts, candidates, qualifierIndex, diagnostics);
+      const demand: DemandContext = {
+        span: pending.linkedType.span,
+        chain: [draft.provider.id],
+      };
+      const selected =
+        pending.linkedType.qualifierMember === undefined
+          ? selectProvider(state, pending.linkedType.symbol, demand)
+          : qualifiedDependencyProvider(state, pending);
       if (selected === undefined) {
         continue;
       }
@@ -355,6 +521,49 @@ function resolveProviderDependencies(
         targetId: selected.id,
         mode: pending.linkedType.lazy ? "explicit-lazy" : "eager",
         source: sourceReference(pending.sourceSpan),
+        contract: pending.linkedType.symbol,
+      });
+    }
+  }
+}
+
+function resolveStarterQueue(state: ResolutionState): void {
+  // 队列在循环中增长（选中新的 starter bean 即物化入队）；FIFO 顺序由确定的种子顺序与
+  // 确定的选择结果决定，输出经全局排序，不依赖这里的遍历次序。
+  for (let index = 0; index < state.queue.length; index += 1) {
+    const entry = state.queue[index];
+    if (entry === undefined) {
+      continue;
+    }
+    for (const edge of entry.bean.dependencies) {
+      const demand: DemandContext = {
+        span: entry.demand.span,
+        chain: [...entry.demand.chain, entry.bean.id],
+        consumer: entry.bean,
+      };
+      const symbol = state.linkage.resolveContract(entry.bean, edge.contract);
+      if (symbol === undefined) {
+        state.diagnostics.push(
+          diagnostic({
+            code: "MISSING_BEAN",
+            message: `No Bean provides ${edge.contract}.`,
+            sourceSpan: demand.span,
+            related: demandRelated(demand),
+            help: "Provide the starter's open dependency with a local provider or another registered starter.",
+          }),
+        );
+        continue;
+      }
+      const selected = selectProvider(state, symbol, demand);
+      if (selected === undefined) {
+        continue;
+      }
+      entry.draft.provider.dependencies.push({
+        parameterIndex: edge.index,
+        targetId: selected.id,
+        mode: "eager",
+        source: entry.bean.metaSource,
+        contract: symbol,
       });
     }
   }
@@ -362,11 +571,33 @@ function resolveProviderDependencies(
 
 export function resolveProviders(
   drafts: readonly ProviderDraft[],
+  linkage: StarterLinkage,
   diagnostics: CompilerDiagnostic[],
-): void {
-  validateBeanIdentities(drafts, diagnostics);
-  const candidates = indexProviderCandidates(drafts);
+): readonly ProviderDraft[] {
+  const candidates = indexCandidates(drafts, linkage.beans);
   const qualifierIndex = indexQualifiers(drafts, diagnostics);
   validatePrimaryCandidates(candidates, diagnostics);
-  resolveProviderDependencies(drafts, candidates, qualifierIndex, diagnostics);
+  const state: ResolutionState = {
+    candidates,
+    qualifierIndex,
+    drafts,
+    linkage,
+    diagnostics,
+    materialized: new Map(),
+    queue: [],
+  };
+  // 可达性即成员资格（决策 11）：应用本地 bean 都是根，role:"root" 的 starter bean 显式入根；
+  // 其余 starter bean 只有被某条已解析边选中才物化——不入名单的连坏引用都不报错。
+  for (const bean of [...linkage.beans].sort((left, right) =>
+    compareUtf16CodeUnits(left.id, right.id),
+  )) {
+    if (bean.root) {
+      materializeStarter(state, bean, { chain: [] });
+    }
+  }
+  resolveLocalDraftDependencies(state);
+  resolveStarterQueue(state);
+  const starterDrafts = [...state.materialized.values()].map((entry) => entry.draft);
+  validateBeanIdentities([...drafts, ...starterDrafts], diagnostics);
+  return starterDrafts;
 }

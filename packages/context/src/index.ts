@@ -1,4 +1,10 @@
 export {
+  type ApplicationDefinition,
+  type DefineApplicationOptions,
+  defineApplication,
+  type StarterDefinition,
+} from "@/application-declaration";
+export {
   defineBean,
   Injectable,
   Primary,
