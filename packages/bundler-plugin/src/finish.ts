@@ -20,6 +20,11 @@ export interface ReforceStarterOptions {
   readonly tsconfigPath?: string;
   /** meta 与注册 handle 的写入目录，相对项目根；默认 "dist"。 */
   readonly outputDirectory?: string;
+  /**
+   * exports subpath 处理："patch"（默认）补/校正 package.json；"verify" 只校验不改写，
+   * 语义对齐 reforce lib——不匹配即失败（#185）。
+   */
+  readonly exports?: "verify" | "patch";
   /** 关闭 publint 发布校验；默认开启。 */
   readonly publint?: boolean;
 }
@@ -55,6 +60,19 @@ interface PatchedExports {
   readonly content: string;
 }
 
+function resolveGeneratedTarget(
+  projectRoot: string,
+  outputDirectory: string,
+  files: readonly LibraryGeneratedFile[],
+  file: LibraryGeneratedFile["path"],
+): string {
+  const generated = files.find((candidate) => candidate.path === file);
+  if (generated === undefined) {
+    throw new Error(`Library compilation produced no ${file}.`);
+  }
+  return exportTarget(projectRoot, outputDirectory, generated.path);
+}
+
 function patchExportsContent(
   raw: string,
   projectRoot: string,
@@ -67,13 +85,8 @@ function patchExportsContent(
     throw new Error("package.json lost its exports map between compilation and patching.");
   }
   const exports: Record<string, unknown> = { ...parsed.exports };
-  const target = (file: LibraryGeneratedFile["path"]): string => {
-    const generated = files.find((candidate) => candidate.path === file);
-    if (generated === undefined) {
-      throw new Error(`Library compilation produced no ${file}.`);
-    }
-    return exportTarget(projectRoot, outputDirectory, generated.path);
-  };
+  const target = (file: LibraryGeneratedFile["path"]): string =>
+    resolveGeneratedTarget(projectRoot, outputDirectory, files, file);
   const desired: Record<string, unknown> = {
     [starterHandleSubpath]: {
       types: target("reforce.d.ts"),
@@ -94,6 +107,49 @@ function patchExportsContent(
   const indent = /\n([ \t]+)"/.exec(raw)?.[1] ?? "  ";
   const content = `${JSON.stringify({ ...parsed, exports }, undefined, indent)}\n`;
   return { changed, content };
+}
+
+// verify 语义对齐 cli/src/commands/lib.ts 的 findExportsProblem（#185）：接受字符串目标或
+// default 条件直写两种形态，其余形态（pattern、数组 fallback、深嵌条件）一律要求作者改成直写。
+function subpathReaches(target: unknown, expected: string): boolean {
+  if (typeof target === "string") {
+    return target === expected;
+  }
+  return isRecord(target) && target.default === expected;
+}
+
+function findExportsProblem(
+  raw: string,
+  projectRoot: string,
+  outputDirectory: string,
+  files: readonly LibraryGeneratedFile[],
+): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return "package.json cannot be read as JSON.";
+  }
+  const exports = isRecord(parsed) ? parsed.exports : undefined;
+  if (!isRecord(exports)) {
+    return "package.json must declare an exports map.";
+  }
+  const expectations = [
+    {
+      subpath: starterMetaSubpath,
+      target: resolveGeneratedTarget(projectRoot, outputDirectory, files, "reforce-meta.json"),
+    },
+    {
+      subpath: starterHandleSubpath,
+      target: resolveGeneratedTarget(projectRoot, outputDirectory, files, "reforce.js"),
+    },
+  ];
+  for (const { subpath, target } of expectations) {
+    if (!subpathReaches(exports[subpath], target)) {
+      return `exports must map "${subpath}" to "${target}".`;
+    }
+  }
+  return undefined;
 }
 
 async function runPublint(projectRoot: string): Promise<void> {
@@ -133,9 +189,16 @@ export async function finishStarterBuild(options: ReforceStarterOptions): Promis
   }
   const packageJsonPath = path.join(projectRoot, "package.json");
   const raw = await readFile(packageJsonPath, "utf8");
-  const patched = patchExportsContent(raw, projectRoot, outputDirectory, compilation.files);
-  if (patched.changed) {
-    await writeFile(packageJsonPath, patched.content, "utf8");
+  if (options.exports === "verify") {
+    const problem = findExportsProblem(raw, projectRoot, outputDirectory, compilation.files);
+    if (problem !== undefined) {
+      throw new Error(`reforce starter exports verification failed: ${problem}`);
+    }
+  } else {
+    const patched = patchExportsContent(raw, projectRoot, outputDirectory, compilation.files);
+    if (patched.changed) {
+      await writeFile(packageJsonPath, patched.content, "utf8");
+    }
   }
   if (options.publint !== false) {
     await runPublint(projectRoot);
