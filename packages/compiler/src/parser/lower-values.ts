@@ -6,17 +6,20 @@ import type {
   FunctionParameter,
   Node,
   NodeOfType,
+  ObjectPropertyKind,
   TSType,
 } from "yuku-parser";
 import { normalizeSpanned } from "@/parser/normalize";
 import type {
   ConstructorParameter,
+  DecoratorArgumentValue,
   DecoratorCallee,
   DecoratorUse,
   EntityName,
   ExpressionValue,
   FunctionBodyDescriptor,
   FunctionDescriptor,
+  ObjectLiteralProperty,
   TypeNode,
   UnsupportedExpressionKind,
 } from "@/parser/source-ir";
@@ -291,13 +294,101 @@ function numberLiteralOf(target: Node, context: LoweringContext): ExpressionValu
   return undefined;
 }
 
+function objectLiteralPropertyOf(
+  property: ObjectPropertyKind,
+  context: LoweringContext,
+): ObjectLiteralProperty {
+  if (property.type === "SpreadElement") {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "spread",
+      span: spanOf(property, context),
+    };
+  }
+  if (property.computed) {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "computed",
+      span: spanOf(property, context),
+    };
+  }
+  if (property.method) {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "method",
+      span: spanOf(property, context),
+    };
+  }
+  const key =
+    identifierTextOf(property.key) ??
+    (property.key.type === "Literal" && typeof property.key.value === "string"
+      ? property.key.value
+      : undefined);
+  if (key === undefined) {
+    return {
+      kind: "unsupported-property",
+      propertyKind: "computed",
+      span: spanOf(property, context),
+    };
+  }
+  return {
+    kind: "property",
+    key,
+    value: decoratorArgumentValueOf(property.value, context),
+    span: spanOf(property, context),
+  };
+}
+
+// 装饰器参数位的放宽形态（ADR 0006 W3/W5）：JSON 字面量树（marker 值）+ 标识符引用
+// （schema / 中间件类）。数组空洞没有节点，落在数组 span 上按 unsupported 处理；其余
+// 表达式照旧走窄的 expressionValueOf 分类。
+export function decoratorArgumentValueOf(
+  node: Node,
+  context: LoweringContext,
+): DecoratorArgumentValue {
+  const target = unparenthesized(node);
+  if (target.type === "Literal" && target.value === null) {
+    return { kind: "null-literal", span: spanOf(target, context) };
+  }
+  if (target.type === "ArrayExpression") {
+    return {
+      kind: "array-literal",
+      elements: target.elements.map((element): DecoratorArgumentValue => {
+        // 数组空洞（[a, , b]）没有自己的节点，只能挂在数组 span 上；spread 不是静态字面量。
+        if (element === null) {
+          return { kind: "unsupported", expressionKind: "other", span: spanOf(target, context) };
+        }
+        if (element.type === "SpreadElement") {
+          return { kind: "unsupported", expressionKind: "other", span: spanOf(element, context) };
+        }
+        return decoratorArgumentValueOf(element, context);
+      }),
+      span: spanOf(target, context),
+    };
+  }
+  if (target.type === "ObjectExpression") {
+    return {
+      kind: "object-literal",
+      properties: target.properties.map((property) => objectLiteralPropertyOf(property, context)),
+      span: spanOf(target, context),
+    };
+  }
+  if (target.type === "Identifier" || target.type === "MemberExpression") {
+    const entity = entityNameOf(target, context);
+    if (entity !== undefined) {
+      return { kind: "identifier-reference", entity, span: spanOf(target, context) };
+    }
+  }
+  return expressionValueOf(target, context);
+}
+
 function decoratorCalleeOf(
   node: Expression,
   context: LoweringContext,
 ): {
   readonly callee: DecoratorCallee;
   readonly called: boolean;
-  readonly arguments: readonly ExpressionValue[];
+  readonly arguments: readonly DecoratorArgumentValue[];
 } {
   const target = unparenthesized(node);
   if (target.type === "CallExpression") {
@@ -309,7 +400,7 @@ function decoratorCalleeOf(
         span: spanOf(target.callee, context),
       },
       called: true,
-      arguments: target.arguments.map((argument) => expressionValueOf(argument, context)),
+      arguments: target.arguments.map((argument) => decoratorArgumentValueOf(argument, context)),
     };
   }
   const callee = entityNameOf(target, context);

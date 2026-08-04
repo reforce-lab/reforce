@@ -12,6 +12,8 @@ import type {
 } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
+import type { WebModel } from "@/analysis/web-model";
+import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
@@ -23,6 +25,7 @@ interface AnalysisSuccess {
   readonly providers: readonly BeanProviderModel[];
   readonly configs: readonly ConfigProviderModel[];
   readonly plans: ExecutionPlansModel;
+  readonly web: WebModel;
 }
 
 interface AnalysisFailure {
@@ -119,6 +122,9 @@ export function analyzeProject(
     .toSorted((left, right) => compareUtf16CodeUnits(left.id, right.id));
   // 跨作用域裸边与请求内环（ADR 0006 W7）要看已解析的双侧 scope，必须排在 resolveProviders 之后。
   validateScopeRules(allProviders, diagnostics);
+  // 路由提取要在 provider 全集就位后进行：controller/中间件/错误处理器的 bean 身份与
+  // scope 校验都以最终 provider 表为准（ADR 0006 W3/W4，#152）。
+  const web = analyzeWebRoutes(sources, linker, allProviders, diagnostics);
   diagnostics.push(...linker.diagnostics);
 
   if (diagnostics.length > 0) {
@@ -133,5 +139,6 @@ export function analyzeProject(
     providers: Object.freeze(providers),
     configs: Object.freeze(configs),
     plans: createExecutionPlans(providers, new Set(configs.map((config) => config.id))),
+    web,
   };
 }

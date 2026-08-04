@@ -74,6 +74,15 @@ function generatedFiles(generation: string): readonly GeneratedFile[] {
       })}\n`,
     },
     { path: "qualifiers.d.ts", content: "export {};\n" },
+    {
+      path: "routes.json",
+      content: `${JSON.stringify({ schemaVersion: 1, routes: [], errorHandlers: [] })}\n`,
+    },
+    {
+      path: "routes.ts",
+      content:
+        "export const routeTable = {\n  schemaVersion: 1,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
+    },
   ];
 }
 
@@ -531,7 +540,14 @@ describe("directory transactions", () => {
       (await readProjectTree(join(project.projectRoot, ".reforce", "generated"))).map(
         (entry) => entry.path,
       ),
-    ).toEqual(["beans.ts", "bootstrap.ts", "manifest.json", "qualifiers.d.ts"]);
+    ).toEqual([
+      "beans.ts",
+      "bootstrap.ts",
+      "manifest.json",
+      "qualifiers.d.ts",
+      "routes.json",
+      "routes.ts",
+    ]);
   });
 
   test("rejects an incomplete generated file set before publishing", async () => {

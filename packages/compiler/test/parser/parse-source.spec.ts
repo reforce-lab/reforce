@@ -687,3 +687,125 @@ test("rejects a source file when syntax is incomplete", () => {
   }
   expect(result.diagnostics.map((item) => item.code)).toEqual(["PARSER_SYNTAX_ERROR"]);
 });
+
+test("lowers method decorators with route paths and identifier-valued option objects", () => {
+  const unit = parseFile(
+    [
+      '@Controller("/users")',
+      "export class UsersController {",
+      '  @Get("/:id", { params: idSchema, response: userSchema })',
+      "  show(context: RequestContext) { return context; }",
+      "}",
+    ].join("\n"),
+  );
+
+  const method = unit.classes[0]?.methods[0];
+  expect(method?.decorators).toHaveLength(1);
+  const decorator = method?.decorators[0];
+  expect(decorator?.callee).toMatchObject({ kind: "identifier", name: "Get" });
+  expect(decorator?.arguments[0]).toMatchObject({ kind: "string-literal", value: "/:id" });
+  expect(decorator?.arguments[1]).toMatchObject({
+    kind: "object-literal",
+    properties: [
+      {
+        kind: "property",
+        key: "params",
+        value: { kind: "identifier-reference", entity: { kind: "identifier", name: "idSchema" } },
+      },
+      {
+        kind: "property",
+        key: "response",
+        value: { kind: "identifier-reference", entity: { kind: "identifier", name: "userSchema" } },
+      },
+    ],
+  });
+});
+
+test("lowers JSON literal trees in decorator arguments", () => {
+  const unit = parseFile(
+    [
+      "export class Guarded {",
+      '  @Roles(["admin", { scope: "billing", depth: -2, active: true, note: null }])',
+      "  show() {}",
+      "}",
+    ].join("\n"),
+  );
+
+  const argument = unit.classes[0]?.methods[0]?.decorators[0]?.arguments[0];
+  expect(argument).toMatchObject({
+    kind: "array-literal",
+    elements: [
+      { kind: "string-literal", value: "admin" },
+      {
+        kind: "object-literal",
+        properties: [
+          { kind: "property", key: "scope", value: { kind: "string-literal", value: "billing" } },
+          { kind: "property", key: "depth", value: { kind: "number-literal", value: -2 } },
+          { kind: "property", key: "active", value: { kind: "boolean-literal", value: true } },
+          { kind: "property", key: "note", value: { kind: "null-literal" } },
+        ],
+      },
+    ],
+  });
+});
+
+test("keeps non-literal decorator argument forms unsupported", () => {
+  const unit = parseFile(
+    [
+      "export class Guarded {",
+      "  @Roles([...all], `admin`, compute(), { [key]: 1, ...rest })",
+      "  show() {}",
+      "}",
+    ].join("\n"),
+  );
+
+  const decoratorArguments = unit.classes[0]?.methods[0]?.decorators[0]?.arguments;
+  expect(decoratorArguments?.[0]).toMatchObject({
+    kind: "array-literal",
+    elements: [{ kind: "unsupported", expressionKind: "other" }],
+  });
+  expect(decoratorArguments?.[1]).toMatchObject({
+    kind: "unsupported",
+    expressionKind: "template",
+  });
+  expect(decoratorArguments?.[2]).toMatchObject({ kind: "unsupported", expressionKind: "call" });
+  expect(decoratorArguments?.[3]).toMatchObject({
+    kind: "object-literal",
+    properties: [
+      { kind: "unsupported-property", propertyKind: "computed" },
+      { kind: "unsupported-property", propertyKind: "spread" },
+    ],
+  });
+});
+
+test("collects top-level value declarations with direct-call initializers", () => {
+  const unit = parseFile(
+    [
+      'export const Roles = defineRouteMarker<readonly string[]>("roles");',
+      "export const userSchema = buildSchema();",
+      "const internal = 1;",
+      "let mutable = compute();",
+      'function scoped() { const nested = defineRouteMarker("nested"); return nested; }',
+    ].join("\n"),
+  );
+
+  expect(
+    unit.valueDeclarations.map((declaration) => [
+      declaration.name,
+      declaration.topLevel,
+      declaration.declarationKind,
+      declaration.export.kind,
+      declaration.initializer?.callee,
+    ]),
+  ).toMatchObject([
+    ["Roles", true, "const", "named", { kind: "identifier", name: "defineRouteMarker" }],
+    ["userSchema", true, "const", "named", { kind: "identifier", name: "buildSchema" }],
+    ["internal", true, "const", "none", undefined],
+    ["mutable", true, "let", "none", { kind: "identifier", name: "compute" }],
+    ["nested", false, "const", "none", { kind: "identifier", name: "defineRouteMarker" }],
+  ]);
+  expect(unit.valueDeclarations[0]?.initializer?.arguments[0]).toMatchObject({
+    kind: "string-literal",
+    value: "roles",
+  });
+});

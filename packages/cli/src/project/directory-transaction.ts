@@ -81,6 +81,8 @@ const generatedFilePaths = exactGeneratedFilePaths([
   "bootstrap.ts",
   "manifest.json",
   "qualifiers.d.ts",
+  "routes.json",
+  "routes.ts",
 ]);
 
 interface TransactionPaths {

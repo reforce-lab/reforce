@@ -101,6 +101,8 @@ describe("development compiler gate", () => {
       "qualifiers.d.ts",
       "manifest.json",
       "bootstrap.ts",
+      "routes.json",
+      "routes.ts",
     ]);
   });
 

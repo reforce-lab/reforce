@@ -64,6 +64,7 @@ function parsedSource(file: string, options: SourceOptions = {}): ParsedSource {
     beanFactories: [],
     applicationDefinitions: [],
     configFactoryCalls: [],
+    valueDeclarations: [],
     unsupportedDeclarations: [],
   };
   return {
@@ -85,6 +86,7 @@ function createLinker(diagnostics: readonly CompilerDiagnostic[] = []): ProjectL
       contextDependencies: [],
       missingDependencies: [],
     }),
+    resolveValueDeclaration: () => undefined,
     resolveEntity(_source, entity): LinkedSymbol | undefined {
       if (entity.kind !== "identifier" || entity.name !== "Injectable") {
         return undefined;

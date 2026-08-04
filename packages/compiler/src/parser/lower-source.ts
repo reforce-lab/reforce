@@ -25,6 +25,7 @@ import type {
 } from "yuku-parser";
 import {
   constructorParametersOf,
+  decoratorArgumentValueOf,
   decoratorsOf,
   entityNameOf,
   expressionKindOf,
@@ -68,6 +69,7 @@ import type {
   StartersOptionValue,
   UnsupportedNamedDeclaration,
   UnsupportedNamedDeclarationKind,
+  ValueDeclaration,
 } from "@/parser/source-ir";
 import type { CanonicalFileId } from "@/parser/source-location";
 import { createSourceMapper } from "@/parser/source-location";
@@ -86,6 +88,7 @@ interface Collector {
   readonly beanFactories: DefineBeanDeclaration[];
   readonly applicationDefinitions: DefineApplicationDeclaration[];
   readonly configFactoryCalls: ConfigFactoryCallDeclaration[];
+  readonly valueDeclarations: ValueDeclaration[];
   readonly unsupportedDeclarations: UnsupportedNamedDeclaration[];
 }
 
@@ -310,6 +313,7 @@ function classMethodOf(
     ...(returnType === undefined
       ? {}
       : { returnType: typeNodeOf(returnType, context, methodTypeParameters) }),
+    decorators: decoratorsOf(method.decorators ?? [], context),
     span: spanOf(method, context),
   };
 }
@@ -731,6 +735,48 @@ function variableDeclarationKind(node: VariableDeclaration): "const" | "let" | "
   return node.kind === "let" || node.kind === "var" ? node.kind : "const";
 }
 
+// 值声明名录（ADR 0006 W3/W5，#152）：marker 声明与 schema 引用目标都按"模块 × 名字"回查。
+// init 只在直接调用形态下保真（marker 识别需要 callee 尾名 + 字面量实参）；解构等无单一
+// 承载名的声明不进名录——它们无法被具名 import 引用为 schema/marker。
+function lowerValueDeclaration(
+  declaration: VariableDeclaration,
+  declarator: VariableDeclarator,
+  topLevel: boolean,
+  mode: ExportMode,
+  collector: Collector,
+  context: LoweringContext,
+): void {
+  const name = identifierTextOf(declarator.id);
+  if (name === undefined) {
+    return;
+  }
+  const init =
+    declarator.init === null || declarator.init === undefined
+      ? undefined
+      : unparenthesized(declarator.init);
+  const call = init?.type === "CallExpression" ? entityNameOf(init.callee, context) : undefined;
+  collector.valueDeclarations.push({
+    kind: "value-declaration",
+    topLevel,
+    declarationKind: variableDeclarationKind(declaration),
+    name,
+    export: declarationExportOf(declarator.id, mode, context),
+    ...(init?.type === "CallExpression" && call !== undefined
+      ? {
+          initializer: {
+            kind: "call",
+            callee: call,
+            arguments: init.arguments.map((argument) =>
+              decoratorArgumentValueOf(argument, context),
+            ),
+            span: spanOf(init, context),
+          },
+        }
+      : {}),
+    span: spanOf(declarator, context),
+  });
+}
+
 function lowerConfigFactoryCall(
   declarator: VariableDeclarator,
   topLevel: boolean,
@@ -1027,6 +1073,7 @@ function visitStatement(
         lowerBeanFactory(node, declarator, topLevel, mode, collector, context);
         lowerApplicationDefinition(declarator, topLevel, mode, collector, context);
         lowerConfigFactoryCall(declarator, topLevel, collector, context);
+        lowerValueDeclaration(node, declarator, topLevel, mode, collector, context);
         if (is.Function(declarator.init)) {
           visitFunctionBody(declarator.init, collector, context);
         }
@@ -1135,6 +1182,7 @@ export function lowerSource(
     beanFactories: [],
     applicationDefinitions: [],
     configFactoryCalls: [],
+    valueDeclarations: [],
     unsupportedDeclarations: [],
   };
   const context = { mapper: createSourceMapper(file, sourceText), sourceText };
@@ -1150,6 +1198,7 @@ export function lowerSource(
     beanFactories: normalizeSpanned(collector.beanFactories),
     applicationDefinitions: normalizeSpanned(collector.applicationDefinitions),
     configFactoryCalls: normalizeSpanned(collector.configFactoryCalls),
+    valueDeclarations: normalizeSpanned(collector.valueDeclarations),
     unsupportedDeclarations: normalizeSpanned(collector.unsupportedDeclarations),
   };
 }

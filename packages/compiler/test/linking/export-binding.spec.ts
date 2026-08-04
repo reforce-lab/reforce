@@ -95,6 +95,7 @@ function parsedSource(file: string, shape: ModuleShape): ParsedSource {
     beanFactories: [],
     applicationDefinitions: [],
     configFactoryCalls: [],
+    valueDeclarations: [],
     unsupportedDeclarations: [],
   };
   return {
