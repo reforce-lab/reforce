@@ -1,7 +1,8 @@
-import { cp, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { compareUtf16CodeUnits, isPathContained } from "@reforce/primitives";
 import { temporaryDirectory } from "tempy";
+import { removeWithWindowsRetry } from "@/windows-remove-retry";
 
 export type ProjectTree = {
   readonly [name: string]: ProjectTree | string | Uint8Array;
@@ -66,7 +67,7 @@ export async function createTemporaryProject(tree: ProjectTree = {}): Promise<Te
   return {
     projectRoot,
     cleanup() {
-      cleanupPromise ??= rm(projectRoot, { force: true, recursive: true });
+      cleanupPromise ??= removeWithWindowsRetry(projectRoot);
       return cleanupPromise;
     },
   };
