@@ -1,8 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { access, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -548,7 +547,13 @@ async function startDevelopment(input: {
     return { ...subprocess, ...input, readyPath, closedPath };
   } catch (error) {
     await forceCleanupProcess(subprocess);
-    throw error;
+    // 就绪超时最常见的原因是 dev 会话内的编译失败或子进程反复崩溃，
+    // 不带会话输出的超时错误在 CI 上无法定位（#153 Windows 排障实录）。
+    const output = subprocess.output();
+    throw new Error(
+      `Development session did not become ready: ${String(error)}\nstdout:\n${output.stdout}\nstderr:\n${output.stderr}`,
+      { cause: error },
+    );
   }
 }
 
@@ -1646,6 +1651,34 @@ describe.serial("starter consumption", () => {
     commandTimeout,
   );
 
+  // lockfile 不能只写一次：失败态的 watcher 刚建立，macOS 上 fs.watch 初期写入事件可能
+  // 永久丢失（Issue #86 探针实证；产品侧决议是"再保存一次即自愈"，不加常驻补偿）。e2e 按
+  // 同一语义周期性重写 lockfile 直到重发现完成，不赌单次事件必达（Issue #177 同理）。
+  async function recoverThroughLockfileWrites(
+    subprocess: SpawnedIpcProcess,
+    readyPath: string,
+    lockPath: string,
+  ): Promise<void> {
+    const deadline = Date.now() + 30_000;
+    let lockWrittenAt = 0;
+    for (;;) {
+      if (Date.now() - lockWrittenAt >= 2_000) {
+        lockWrittenAt = Date.now();
+        await writeFile(lockPath, '{"lockfileVersion": 1}\n');
+      }
+      if (await pathExists(readyPath)) {
+        return;
+      }
+      if (subprocess.child.exitCode !== null || subprocess.child.signalCode !== null) {
+        throw new Error(`Subprocess exited before creating ${readyPath}.`);
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for ${readyPath}`);
+      }
+      await sleep(20);
+    }
+  }
+
   test(
     "development recovers when a missing starter is installed and bun.lock lands",
     async () => {
@@ -1665,8 +1698,7 @@ describe.serial("starter consumption", () => {
         await waitForStderr(subprocess, "STARTER_META_NOT_FOUND");
         // 模拟 bun install：先落包内容（node_modules 不被 watch），bun.lock 收尾触发重发现。
         await installStarters(devRoot, starters);
-        await writeFile(join(devRoot, "bun.lock"), '{"lockfileVersion": 1}\n');
-        await waitForFile(readyPath, subprocess.child);
+        await recoverThroughLockfileWrites(subprocess, readyPath, join(devRoot, "bun.lock"));
         const result = await shutdownWithSignal(subprocess, devTerminationSignal);
         expect(result.exitCode, processFailure(subprocess, result)).toBe(0);
       } finally {

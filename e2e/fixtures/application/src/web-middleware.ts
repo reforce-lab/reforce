@@ -6,11 +6,7 @@ import { Roles } from "@/web-markers";
 // 自己的标签 append 到 x-onion 响应头——内层的后相先执行，因此头的值就是"内→外"的执行
 // 顺序证据，e2e 逐字节断言，且按响应隔离天然并发安全。
 
-async function tag(
-  context: RequestContext,
-  next: () => Promise<Response>,
-  label: string,
-): Promise<Response> {
+async function tag(next: () => Promise<Response>, label: string): Promise<Response> {
   const response = await next();
   response.headers.append("x-onion", label);
   return response;
@@ -19,8 +15,8 @@ async function tag(
 @Injectable()
 @Middleware({ phase: "observability", global: true })
 export class ObservabilityTrace {
-  handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {
-    return tag(context, next, "observability");
+  handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+    return tag(next, "observability");
   }
 }
 
@@ -37,14 +33,14 @@ export class RoleGuard {
         headers: { "content-type": "application/json" },
       });
     }
-    return tag(context, next, "admission");
+    return tag(next, "admission");
   }
 }
 
 @Injectable()
 @Middleware({ phase: "application", global: true })
 export class ApplicationTrace {
-  handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {
-    return tag(context, next, "application");
+  handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+    return tag(next, "application");
   }
 }
