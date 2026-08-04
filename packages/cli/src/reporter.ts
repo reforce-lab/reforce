@@ -1,6 +1,5 @@
 import type { Writable } from "node:stream";
-import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@reforce/compiler";
-import { ReforceRuntimeError, type RuntimeErrorCode } from "@reforce/context";
+import { ReforceRuntimeError } from "@reforce/context";
 import { isObject } from "radashi";
 
 export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain";
@@ -37,11 +36,23 @@ interface CliStatusEvent {
   readonly message: string;
 }
 
+// 诊断 wire shape 由 reporter 侧定义（ADR 0009，#191）：渲染只消费 code/message/sourceSpan，
+// reporter 因此不依赖 @reforce/compiler——这是把 reporter 随运行时拆出 cli 的前置。
+// CompilerDiagnostic 结构性满足本接口，对齐锚点见 compiler-types.ts。
+export interface ReportedDiagnostic {
+  readonly code: string;
+  readonly message: string;
+  readonly sourceSpan?: {
+    readonly fileId: string;
+    readonly start: { readonly line: number; readonly character: number };
+  };
+}
+
 interface CliDiagnosticEvent {
   readonly kind: "diagnostic";
   readonly command: "dev" | "build" | "lib";
   readonly phase: "project" | "compiler";
-  readonly diagnostic: CompilerDiagnostic;
+  readonly diagnostic: ReportedDiagnostic;
 }
 
 interface CliSuccessEvent {
@@ -56,7 +67,10 @@ interface CliFailureEvent {
   readonly phase: CliCommandPhase;
   readonly message: string;
   readonly cause: unknown;
-  readonly code: CliFailureCode | CompilerDiagnosticCode | RuntimeErrorCode;
+  // 值域是 CliFailureCode ∪ compiler 诊断码 ∪ RuntimeErrorCode；后两者的语汇属各自的包，
+  // reporter 只原样透传，类型如实坍缩为 string（ADR 0009）。构造点仍然静态成立：fallbackCode
+  // 收 CliFailureCode，ReforceRuntimeError.code 收 RuntimeErrorCode。
+  readonly code: string;
 }
 
 export type CliReporterEvent =
@@ -80,10 +94,10 @@ function isCompilerFailureCause(value: unknown): value is object {
   );
 }
 
-// 只校验形态（非空白字符串）、不做成员校验：compiler 包只导出 CompilerDiagnosticCode 类型，没有
-// 运行时成员列表可穷举，只能信任 compiler 产出的 code 原样透传。改成严格校验会把未列出的 code 打成
+// 只校验形态（非空白字符串）、不做成员校验：诊断码语汇属 compiler 包，这里没有（也不该有）
+// 运行时成员列表可穷举，只能信任 wire 上的 code 原样透传。改成严格校验会把未列出的 code 打成
 // fallback，属行为变更。
-function isCompilerDiagnosticCode(value: unknown): value is CompilerDiagnosticCode {
+function isReportedDiagnosticCode(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
@@ -95,7 +109,7 @@ function resolveFailureCode(cause: unknown): CliFailureEvent["code"] | undefined
     return undefined;
   }
   const code = Reflect.get(cause, "code");
-  return isCompilerDiagnosticCode(code) ? code : undefined;
+  return isReportedDiagnosticCode(code) ? code : undefined;
 }
 
 export function createFailureEvent(input: {
