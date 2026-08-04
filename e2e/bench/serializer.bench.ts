@@ -6,7 +6,8 @@
 // 复跑：`cd e2e && bun run bench:serializer`。
 
 import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
-import { createWebApplication, type PreparedRoute } from "@reforce/web";
+import { createWebApplication } from "@reforce/web";
+import type { PreparedRoute } from "@reforce/web/adapter";
 
 const iterations = 200_000;
 const rounds = 5;

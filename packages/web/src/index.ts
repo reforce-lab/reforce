@@ -1,11 +1,7 @@
-export type {
-  PreparedRoute,
-  RequestSeeder,
-  RouteMatch,
-  WebApplication,
-  WebApplicationHandle,
-  WebEngineAdapter,
-} from "@/adapter";
+// 引擎契约四类型（PreparedRoute/WebApplication/WebApplicationHandle/WebEngineAdapter）只从
+// "./adapter" subpath 暴露（#187）：引擎适配器作者不依赖应用作者入口。RequestSeeder 与其签名
+// 涉及的 RouteMatch 是应用作者面，保留在根入口。
+export type { RequestSeeder, RouteMatch } from "@/adapter";
 export {
   InvalidRouteTableError,
   ReforceWebError,

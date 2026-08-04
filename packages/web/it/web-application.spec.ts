@@ -7,14 +7,9 @@ import {
   type GeneratedResolver,
   type GeneratedSourceReference,
 } from "@reforce/context/generated-runtime";
+import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
 import type { GeneratedRouteTable } from "@/generated-runtime";
-import type {
-  RequestContext,
-  WebApplication,
-  WebApplicationHandle,
-  WebEngineAdapter,
-} from "@/index";
-import { createWebApplication } from "@/index";
+import { createWebApplication, type RequestContext } from "@/index";
 
 // 跨包全链路（ADR 0006 W1/W4/W7，#152）：真实 @reforce/context 运行时 + 引擎无关执行层 +
 // 契约的最小假适配器，走通"启动时一次性消费路由表 → 每请求开作用域并播种根请求 bean →
