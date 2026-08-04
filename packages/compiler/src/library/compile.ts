@@ -117,6 +117,15 @@ function rejectUnsupportedDecorators(
         ),
       );
     }
+    if (symbol?.kind === "context" && symbol.name === "RequestScoped") {
+      diagnostics.push(
+        unsupportedDeclaration(
+          "@RequestScoped cannot be expressed in starter meta v1; starter beans have no scope surface.",
+          decorator.span,
+          "Keep request-scoped Beans application-side for now.",
+        ),
+      );
+    }
   }
 }
 

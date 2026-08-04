@@ -110,6 +110,7 @@ interface ProviderInput {
   readonly offset?: number;
   readonly provides?: readonly LinkedSymbol[];
   readonly primary?: boolean;
+  readonly scope?: ProviderModel["scope"];
   readonly qualifiers?: readonly QualifierModel[];
   readonly order?: number;
   readonly dependencies?: DependencyModel[];
@@ -123,6 +124,7 @@ function provider(input: ProviderInput): ProviderModel {
     exportName: input.exportName,
     declarationSource: sourceReference(span(input.file, input.offset ?? 0)),
     provides: input.provides ?? [],
+    scope: input.scope ?? "singleton",
     primary: input.primary ?? false,
     ...(input.order === undefined ? {} : { order: input.order }),
     qualifiers: input.qualifiers ?? [],
@@ -143,6 +145,7 @@ function draft(
 interface PendingInput {
   readonly index?: number;
   readonly lazy?: boolean;
+  readonly current?: boolean;
   readonly qualifierMember?: string;
 }
 
@@ -155,6 +158,7 @@ function pending(symbol: LinkedSymbol, input: PendingInput = {}): PendingDepende
       symbol,
       typeArguments: [],
       lazy: input.lazy ?? false,
+      current: input.current ?? false,
       qualifierMember: input.qualifierMember,
       span: site,
     },

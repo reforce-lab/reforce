@@ -40,6 +40,9 @@ await runProductionApplication(
       get() {
         throw new Error("The production runtime ordering harness has no Beans.");
       },
+      async runInRequestScope(): Promise<never> {
+        throw new Error("The production runtime ordering harness has no request scope.");
+      },
       async close() {
         process.send?.({ type: "harness:application-closed" });
       },

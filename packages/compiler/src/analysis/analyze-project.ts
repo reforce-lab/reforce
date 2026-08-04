@@ -11,6 +11,7 @@ import type {
   ProviderModel,
 } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
+import { validateScopeRules } from "@/analysis/scope-rules";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
@@ -110,17 +111,19 @@ export function analyzeProject(
     linker.starterLinkage,
     diagnostics,
   );
-  diagnostics.push(...linker.diagnostics);
-
-  if (diagnostics.length > 0) {
-    return { status: "failure", diagnostics: nonEmptyDiagnostics(diagnostics) };
-  }
   // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
   // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。config 不进执行计划——它由
   // 绑定 phase 先于一切 bean 构造（ADR 0005 决策 6.1），指向 config 的 eager 边视为恒就绪。
   const allProviders = [...configAnalysis.drafts, ...drafts, ...starterDrafts]
     .map((draft) => draft.provider)
     .toSorted((left, right) => compareUtf16CodeUnits(left.id, right.id));
+  // 跨作用域裸边与请求内环（ADR 0006 W7）要看已解析的双侧 scope，必须排在 resolveProviders 之后。
+  validateScopeRules(allProviders, diagnostics);
+  diagnostics.push(...linker.diagnostics);
+
+  if (diagnostics.length > 0) {
+    return { status: "failure", diagnostics: nonEmptyDiagnostics(diagnostics) };
+  }
   const providers = allProviders.filter(isBeanProvider);
   const configs = allProviders.flatMap((provider) =>
     provider.kind === "config" ? [provider] : [],

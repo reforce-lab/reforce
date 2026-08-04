@@ -29,6 +29,7 @@ function classBean(input: ClassBeanInput) {
     id: `${input.file}#${input.exportName}`,
     origin: "application",
     kind: "class",
+    scope: "singleton",
     source: sourceReference(input.file),
     runtimeExport: { moduleSpecifier: specifier, exportName: input.exportName },
     provides: [
@@ -49,12 +50,20 @@ function classBean(input: ClassBeanInput) {
 
 interface Plans {
   readonly constructionOrder: readonly string[];
+  readonly requestConstructionOrder?: readonly string[];
   readonly startActionOrder: readonly string[];
   readonly cleanupActionOrder: readonly string[];
 }
 
 function manifestBytes(beans: readonly object[], plans: Plans): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify({ schemaVersion: 3, configs: [], beans, plans }));
+  return new TextEncoder().encode(
+    JSON.stringify({
+      schemaVersion: 4,
+      configs: [],
+      beans,
+      plans: { requestConstructionOrder: [], ...plans },
+    }),
+  );
 }
 
 function singleBeanManifestBytes(input: Omit<ClassBeanInput, "file" | "exportName">): Uint8Array {
@@ -169,6 +178,7 @@ function starterBean(input: StarterBeanInput = {}) {
     id: "@acme/starter-redis#RedisClient",
     origin: input.origin ?? "@acme/starter-redis@1.2.0",
     kind: "class",
+    scope: "singleton",
     source: sourceReference(input.sourceFile ?? "src/client.ts"),
     runtimeExport: {
       moduleSpecifier: input.moduleSpecifier ?? "@acme/starter-redis",

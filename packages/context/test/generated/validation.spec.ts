@@ -22,6 +22,7 @@ describe("generated definition validation", () => {
         kind: "class",
         id: "../resource.ts#",
         source: testSource("resource"),
+        scope: "singleton",
         target: Resource,
         dependencies: [],
         create: () => new Resource(),
@@ -232,17 +233,18 @@ describe("generated definition config validation", () => {
 
     const snapshot = snapshotApplicationDefinition(definition);
 
-    expect(snapshot.schemaVersion).toBe(3);
+    expect(snapshot.schemaVersion).toBe(4);
     expect(Object.isFrozen(snapshot.configs)).toBe(true);
     expect(Object.isFrozen(snapshot.configs[0])).toBe(true);
     expect(snapshot.configs[0]?.target).toBe(ServerConfig);
   });
 
-  test("rejects the retired schema versions 1 and 2", () => {
+  test("rejects the retired schema versions 1 through 3", () => {
     const { configs: _configs, ...rest } = testDefinition([consumerRegistration()]);
 
-    expectInvalid({ ...rest, configs: [], schemaVersion: 1 }, "schemaVersion must be 3");
-    expectInvalid({ ...rest, configs: [], schemaVersion: 2 }, "schemaVersion must be 3");
+    expectInvalid({ ...rest, configs: [], schemaVersion: 1 }, "schemaVersion must be 4");
+    expectInvalid({ ...rest, configs: [], schemaVersion: 2 }, "schemaVersion must be 4");
+    expectInvalid({ ...rest, configs: [], schemaVersion: 3 }, "schemaVersion must be 4");
   });
 
   test("rejects a definition without the configs field", () => {
@@ -386,6 +388,7 @@ describe("generated definition collection edges (schema v3)", () => {
       kind: "class",
       id: registryId,
       source: testSource("registry"),
+      scope: "singleton",
       target: Registry,
       dependencies: dependencies as readonly GeneratedDependency[], // 坏形状即测试输入，交给运行时校验裁决
       create: () => new Registry(),
@@ -526,6 +529,220 @@ describe("generated definition collection edges (schema v3)", () => {
   });
 });
 
+describe("generated definition request scope (schema v4)", () => {
+  class Clock {}
+  class RootContext {}
+  class Holder {}
+  const clockId = "src/clock.ts#Clock";
+  const rootId = "src/root.ts#RootContext";
+  const holderId = "src/holder.ts#Holder";
+
+  function clockRegistration(dependencies: readonly GeneratedDependency[] = []) {
+    return classBean({
+      id: clockId,
+      source: testSource("clock"),
+      target: Clock,
+      dependencies,
+      create: () => new Clock(),
+      hooks: {},
+    });
+  }
+
+  function rootRegistration(dependencies: readonly GeneratedDependency[] = []) {
+    return classBean({
+      id: rootId,
+      source: testSource("root"),
+      target: RootContext,
+      scope: "request",
+      dependencies,
+      create: () => new RootContext(),
+      hooks: {},
+    });
+  }
+
+  // 负向用例的坏形状不能经 classBean 构造——注册助手当场校验，异常会落在被断言的调用之外。
+  function rawRegistration(overrides: Record<string, unknown>): GeneratedBeanRegistration {
+    return {
+      kind: "class",
+      id: holderId,
+      source: testSource("holder"),
+      scope: "singleton",
+      target: Holder,
+      dependencies: [],
+      create: () => new Holder(),
+      hooks: {},
+      ...overrides,
+    } as unknown as GeneratedBeanRegistration; // 坏形状即测试输入，交给运行时校验裁决
+  }
+
+  function expectInvalid(definition: unknown, fragment: string): void {
+    const create = () => Reflect.apply(createApplicationContext, undefined, [definition]);
+    expect(create).toThrow(InvalidGeneratedDefinitionError);
+    expect(create).toThrow(fragment);
+  }
+
+  test("accepts a request Bean with a current handle edge and carries scope into the snapshot", () => {
+    const definition = testDefinition([
+      rootRegistration(),
+      rawRegistration({ dependencies: [testDependency(0, rootId, "current")] }),
+    ]);
+
+    const snapshot = snapshotApplicationDefinition(definition);
+
+    expect(snapshot.registrations.map((registration) => registration.scope)).toEqual([
+      "request",
+      "singleton",
+    ]);
+  });
+
+  test("rejects a registration without a scope", () => {
+    const definition = testDefinition([rawRegistration({ scope: undefined })]);
+
+    expectInvalid(definition, "scope");
+  });
+
+  test("rejects an unknown scope value", () => {
+    const definition = testDefinition([rawRegistration({ scope: "session" })]);
+
+    expectInvalid(definition, "scope");
+  });
+
+  test("rejects an eager singleton edge onto a request Bean", () => {
+    const definition = testDefinition([
+      rootRegistration(),
+      rawRegistration({ dependencies: [testDependency(0, rootId, "eager")] }),
+    ]);
+
+    expectInvalid(definition, "request");
+  });
+
+  test("rejects an explicit-lazy edge onto a request Bean", () => {
+    const definition = testDefinition([
+      rootRegistration(),
+      rawRegistration({ dependencies: [testDependency(0, rootId, "explicit-lazy")] }),
+    ]);
+
+    expectInvalid(definition, "request");
+  });
+
+  test("rejects a current edge onto a singleton", () => {
+    const definition = testDefinition([
+      clockRegistration(),
+      rawRegistration({ dependencies: [testDependency(0, clockId, "current")] }),
+    ]);
+
+    expectInvalid(definition, "current");
+  });
+
+  test("rejects a current edge declared by a request Bean", () => {
+    const definition = testDefinition([
+      rootRegistration(),
+      rawRegistration({
+        id: "src/peer.ts#Peer",
+        scope: "request",
+        dependencies: [testDependency(0, rootId, "current")],
+      }),
+    ]);
+
+    expectInvalid(definition, "current");
+  });
+
+  test("rejects a collection member targeting a request Bean", () => {
+    const definition = testDefinition([
+      rootRegistration(),
+      rawRegistration({
+        dependencies: [testCollectionDependency(0, [{ targetId: rootId, mode: "eager" }])],
+      }),
+    ]);
+
+    expectInvalid(definition, "request");
+  });
+
+  test("rejects a request Bean declaring lifecycle hooks", () => {
+    const definition = testDefinition([
+      rawRegistration({ id: rootId, scope: "request", hooks: { start: () => undefined } }),
+    ]);
+
+    expectInvalid(definition, "request");
+  });
+
+  test("rejects a request factory declaring dispose", () => {
+    const definition = testDefinition([
+      {
+        kind: "factory",
+        id: "src/trace.ts#trace",
+        source: testSource("trace"),
+        scope: "request",
+        definition: defineBean({ create: () => ({ traced: true }) }),
+        dependencies: [],
+        create: () => ({ traced: true }),
+        dispose: () => undefined,
+      },
+    ]);
+
+    expectInvalid(definition, "request");
+  });
+
+  test("rejects a construction plan listing a request Bean", () => {
+    const definition = testDefinition([rootRegistration()], {
+      constructionOrder: [rootId],
+      requestConstructionOrder: [],
+    });
+
+    expectInvalid(definition, "constructionOrder");
+  });
+
+  test("rejects a request plan that misses a request Bean", () => {
+    const definition = testDefinition([rootRegistration()], {
+      requestConstructionOrder: [],
+    });
+
+    expectInvalid(definition, "requestConstructionOrder");
+  });
+
+  test("rejects a request plan listing a singleton", () => {
+    const definition = testDefinition([clockRegistration(), rootRegistration()], {
+      requestConstructionOrder: [clockId, rootId],
+    });
+
+    expectInvalid(definition, "requestConstructionOrder");
+  });
+
+  test("eager request edges must precede their consumer in the request plan", () => {
+    const definition = testDefinition(
+      [
+        rootRegistration(),
+        rawRegistration({
+          id: "src/peer.ts#Peer",
+          scope: "request",
+          dependencies: [testDependency(0, rootId, "eager")],
+        }),
+      ],
+      { requestConstructionOrder: ["src/peer.ts#Peer", rootId] },
+    );
+
+    expectInvalid(definition, "must place eager dependency");
+  });
+
+  test("a request Bean's eager edge onto a singleton needs no plan position", () => {
+    const definition = testDefinition([
+      clockRegistration(),
+      rootRegistration([testDependency(0, clockId, "eager")]),
+    ]);
+
+    const snapshot = snapshotApplicationDefinition(definition);
+
+    expect(snapshot.plans.requestConstructionOrder).toEqual([rootId]);
+  });
+
+  test("rejects a definition without the requestConstructionOrder plan", () => {
+    const { plans, ...rest } = testDefinition([clockRegistration()]);
+    const { requestConstructionOrder: _requestConstructionOrder, ...retiredPlans } = plans;
+
+    expectInvalid({ ...rest, plans: retiredPlans }, "requestConstructionOrder");
+  });
+});
+
 describe("generated definition snapshots", () => {
   function mutablePosition(offset: number) {
     return { offset, line: 0, character: offset };
@@ -538,6 +755,7 @@ describe("generated definition snapshots", () => {
       kind: "class",
       id: "src/resource.ts#Resource",
       source: testSource("resource"),
+      scope: "singleton",
       target: Resource,
       dependencies,
       create: () => new Resource(),
@@ -557,6 +775,7 @@ describe("generated definition snapshots", () => {
       kind: "class",
       id: "src/resource.ts#Resource",
       source: { file: "src/resource.ts", start, end: mutablePosition(8) },
+      scope: "singleton",
       target: Resource,
       dependencies: [],
       create: () => new Resource(),
@@ -575,6 +794,7 @@ describe("generated definition snapshots", () => {
       kind: "factory",
       id: "src/resource.ts#resource",
       source: { file: "src/resource.ts", start, end: mutablePosition(8) },
+      scope: "singleton",
       definition: defineBean({ create: () => ({ connected: true }) }),
       dependencies: [],
       create: () => ({ connected: true }),

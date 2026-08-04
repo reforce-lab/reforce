@@ -159,7 +159,13 @@ function createLinker(input: LinkerInput = {}): ProjectLinker {
         }
         return undefined;
       }
-      return { symbol, typeArguments: type.typeArguments, lazy: false, span: type.span };
+      return {
+        symbol,
+        typeArguments: type.typeArguments,
+        lazy: false,
+        current: false,
+        span: type.span,
+      };
     },
     symbolForDeclaration(_source, declaration) {
       const name = declaration.name;

@@ -337,6 +337,8 @@ function materializeStarter(
     exportName: bean.runtimeExport.export,
     declarationSource: bean.metaSource,
     provides: bean.provides,
+    // starter meta v1 没有 scope 面：库模式编译拒绝 @RequestScoped，meta bean 恒为 singleton。
+    scope: "singleton",
     primary: false,
     qualifiers: [],
     dependencies: [],
@@ -599,10 +601,17 @@ function singleDependencyFor(
   return {
     parameterIndex: pending.index,
     targetId: selected.id,
-    mode: pending.linkedType.lazy ? "explicit-lazy" : "eager",
+    mode: singleDependencyMode(pending),
     source: sourceReference(pending.sourceSpan),
     contract: pending.linkedType.symbol,
   };
+}
+
+function singleDependencyMode(pending: PendingDependency): "eager" | "explicit-lazy" | "current" {
+  if (pending.linkedType.current) {
+    return "current";
+  }
+  return pending.linkedType.lazy ? "explicit-lazy" : "eager";
 }
 
 function resolveLocalDraftDependencies(state: ResolutionState): void {

@@ -7,7 +7,7 @@ import type { ExecutionPlansModel } from "@/analysis/model";
 interface PlanSingleDependency {
   readonly parameterIndex: number;
   readonly targetId: string;
-  mode: "eager" | "cycle-proxy" | "explicit-lazy";
+  mode: "eager" | "cycle-proxy" | "explicit-lazy" | "current";
 }
 
 interface PlanCollectionMember {
@@ -30,6 +30,7 @@ interface PlanEdgeRef {
 
 interface PlanProviderBase {
   readonly id: string;
+  readonly scope: "singleton" | "request";
   readonly dependencies: readonly PlanDependency[];
 }
 type PlanProvider =
@@ -216,10 +217,20 @@ export function createExecutionPlans(
   providers: readonly PlanProvider[],
   alwaysReady: ReadonlySet<string> = new Set(),
 ): ExecutionPlansModel {
-  markCycleProxyEdges(providers);
-  const constructionOrder = dependencyFirstOrder(providers, false, alwaysReady);
-  const fullLifecycleOrder = lifecycleOrder(providers);
-  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  // 计划按 scope 分组（ADR 0006 W7）：singleton 计划照旧；请求计划把 config 与全部 singleton
+  // 视为恒就绪（请求开启时它们必然已构造）。环标记只在 singleton 子图上跑——请求子图不设
+  // cycle proxy，请求内环在 scope-rules 已经硬错。
+  const singletons = providers.filter((provider) => provider.scope === "singleton");
+  const requests = providers.filter((provider) => provider.scope === "request");
+  markCycleProxyEdges(singletons);
+  const constructionOrder = dependencyFirstOrder(singletons, false, alwaysReady);
+  const requestAlwaysReady = new Set([
+    ...alwaysReady,
+    ...singletons.map((provider) => provider.id),
+  ]);
+  const requestConstructionOrder = dependencyFirstOrder(requests, false, requestAlwaysReady);
+  const fullLifecycleOrder = lifecycleOrder(singletons);
+  const providerById = new Map(singletons.map((provider) => [provider.id, provider]));
   const startActionOrder = fullLifecycleOrder.filter((id) => {
     const provider = providerById.get(id);
     return provider?.kind === "class" && provider.startHook;
@@ -230,6 +241,7 @@ export function createExecutionPlans(
   });
   return Object.freeze({
     constructionOrder: Object.freeze(constructionOrder),
+    requestConstructionOrder: Object.freeze(requestConstructionOrder),
     startActionOrder: Object.freeze(startActionOrder),
     cleanupActionOrder: Object.freeze(cleanupActionOrder),
   });

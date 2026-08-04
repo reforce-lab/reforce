@@ -655,8 +655,14 @@ function defineBeanOptionOf(
 
 function isDefineBeanKey(
   value: string | undefined,
-): value is "create" | "dispose" | "primary" | "qualifier" {
-  return value === "create" || value === "dispose" || value === "primary" || value === "qualifier";
+): value is "create" | "dispose" | "primary" | "qualifier" | "scope" {
+  return (
+    value === "create" ||
+    value === "dispose" ||
+    value === "primary" ||
+    value === "qualifier" ||
+    value === "scope"
+  );
 }
 
 function entityTail(entity: EntityName | undefined): string | undefined {

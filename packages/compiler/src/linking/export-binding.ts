@@ -79,7 +79,7 @@ function frameworkSymbol(
     kind,
     name,
     moduleSpecifier: specifier,
-    generic: kind === "context" && name === "Lazy",
+    generic: kind === "context" && (name === "Lazy" || name === "Current"),
   });
 }
 

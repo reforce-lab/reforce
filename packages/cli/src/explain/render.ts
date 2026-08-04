@@ -152,7 +152,17 @@ function dependencyLines(manifest: GeneratedManifest, bean: ManifestBean): reado
   });
 }
 
+// 请求 bean 走第二组计划（ADR 0006 W7，#151）：位置行标注 per request，与 singleton 计划分开呈现。
 function constructionLines(manifest: GeneratedManifest, bean: ManifestBean): readonly string[] {
+  if (bean.scope === "request") {
+    const requestIndex = manifest.plans.requestConstructionOrder.indexOf(bean.id);
+    if (requestIndex === -1) {
+      return [];
+    }
+    return [
+      `request construction position ${requestIndex + 1} of ${manifest.plans.requestConstructionOrder.length} · constructed once per request`,
+    ];
+  }
   const constructionIndex = manifest.plans.constructionOrder.indexOf(bean.id);
   if (constructionIndex === -1) {
     return [];
@@ -191,6 +201,8 @@ export function renderExplanation(input: {
   const { manifest, bean, starters, contracts } = input;
   return [
     `bean ${bean.id}`,
+    // singleton 是缺省语义，不加噪音；request scope 是读者必须知道的行为差异，单列一行。
+    ...(bean.scope === "request" ? ["scope request · one instance per request"] : []),
     `origin ${originDescription(bean.origin)} · declared at ${sourceDescription(bean)}`,
     `runtime import { ${bean.runtimeExport.exportName} } from "${bean.runtimeExport.moduleSpecifier}"`,
     ...contracts.flatMap((explanation) => contractLines(explanation, starters)),

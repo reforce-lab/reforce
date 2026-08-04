@@ -75,6 +75,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@reforce/config": "workspace:*",
         "@reforce/context": "workspace:*",
         "@reforce/tooling-rslib": "workspace:*",
         "@reforce/tooling-testing": "workspace:*",

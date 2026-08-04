@@ -349,6 +349,11 @@ export type DefineBeanOptionProperty =
       readonly span: SourceSpan;
     }
   | {
+      readonly kind: "scope";
+      readonly value: ExpressionValue;
+      readonly span: SourceSpan;
+    }
+  | {
       readonly kind: "unsupported-property";
       readonly propertyKind: "computed" | "spread" | "method" | "unknown-key";
       readonly span: SourceSpan;

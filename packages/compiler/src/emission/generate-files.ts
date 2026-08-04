@@ -181,6 +181,10 @@ function dependencyExpression(
   if (isCollectionDependency(dependency)) {
     return `resolver.resolveAll${typeArgument}(${dependency.parameterIndex})`;
   }
+  // current 边同理（#151）：resolver.current<T>() 产出 Current<T> 句柄，tsc 背书句柄的元素类型。
+  if (dependency.mode === "current") {
+    return `resolver.current${typeArgument}(${dependency.parameterIndex})`;
+  }
   return dependency.mode === "explicit-lazy"
     ? `resolver.lazy${typeArgument}(${dependency.parameterIndex})`
     : `resolver.resolve${typeArgument}(${dependency.parameterIndex})`;
@@ -192,6 +196,8 @@ function registrationExpression(
   contracts: ReadonlyMap<string, ContractImport>,
 ): string {
   const alias = `beanTarget${index}`;
+  // factoryBean 的 scope 由 defineBean 选项自证（同一字面量既是编译输入也是运行时输入），
+  // 不重复写入；classBean 无处自证，scope 必须显式落进生成物（ADR 0006 W7）。
   if (provider.kind === "factory") {
     return `const registration${index} = factoryBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  definition: ${alias},\n});`;
   }
@@ -205,7 +211,7 @@ function registrationExpression(
   ];
   const hooksBlock =
     hooks.length === 0 ? "{}" : `{\n${hooks.map((line) => `    ${line}`).join("\n")}\n  }`;
-  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  target: ${alias},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
+  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  scope: ${JSON.stringify(provider.scope)},\n  target: ${alias},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
 }
 
 function renderBeans(
@@ -256,7 +262,7 @@ function renderBeans(
     ...configRegistrations.flatMap((registration) => [registration, ""]),
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
-    "  schemaVersion: 3,",
+    "  schemaVersion: 4,",
     `  configs: [${configNames}],`,
     ...(configs.length > 0 ? ["  configBinding: createConfigBinding(),"] : []),
     `  registrations: [${names}],`,
@@ -380,6 +386,8 @@ function renderManifest(
   const beans = providers.map((provider) => ({
     id: provider.id,
     kind: provider.kind,
+    // scope 是编译期属性（ADR 0006 W7）：静态可查可 diff，运行时不做任何推断。
+    scope: provider.scope,
     origin: provider.origin.kind === "application" ? "application" : provider.origin.origin,
     source: provider.declarationSource,
     runtimeExport: {
@@ -401,7 +409,7 @@ function renderManifest(
       dispose: provider.kind === "factory" && provider.dispose,
     },
   }));
-  return `${json({ schemaVersion: 3, configs: manifestConfigs, beans, plans })}\n`;
+  return `${json({ schemaVersion: 4, configs: manifestConfigs, beans, plans })}\n`;
 }
 
 function renderBootstrap(): string {

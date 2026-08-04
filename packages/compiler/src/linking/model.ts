@@ -34,6 +34,9 @@ export interface LinkedType {
   readonly symbol: LinkedSymbol;
   readonly typeArguments: readonly TypeNode[];
   readonly lazy: boolean;
+  // Current<T> 句柄（ADR 0006 W7，#142 / #151）：singleton 跨 scope 访问请求态的唯一通道，
+  // 与 lazy 同为包装标记，二者互斥（嵌套包装在分析层点名拒绝）。
+  readonly current: boolean;
   readonly qualifierMember?: string;
   readonly span: SourceSpan;
 }

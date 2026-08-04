@@ -33,7 +33,7 @@ function functionOption(
 
 function literalOption(
   properties: readonly DefineBeanOptionProperty[],
-  kind: "primary" | "qualifier",
+  kind: "primary" | "qualifier" | "scope",
 ): boolean | string | undefined {
   const property = properties.find((item) => item.kind === kind);
   if (property?.kind !== kind) {
@@ -102,13 +102,125 @@ interface FactoryFunctions {
   readonly dispose?: FunctionDescriptor;
 }
 
-function factoryFunctions(
+// 请求作用域工厂允许 async create（ADR 0006 W7：请求计划本就在异步链里执行，await 照计划
+// 串行）；singleton 工厂保持同步——这是两种 scope 的规则性差异，不是遗漏。
+function factoryScope(
   properties: readonly DefineBeanOptionProperty[],
   exportName: string,
   optionsSpan: SourceSpan,
   diagnostics: CompilerDiagnostic[],
+): { readonly scope: "singleton" | "request"; readonly valid: boolean } {
+  if (!properties.some((property) => property.kind === "scope")) {
+    return { scope: "singleton", valid: true };
+  }
+  if (literalOption(properties, "scope") === "request") {
+    return { scope: "request", valid: true };
+  }
+  diagnostics.push(
+    diagnostic({
+      code: "INVALID_DEFINE_BEAN",
+      message: `${exportName}.scope must be the string literal "request" or be omitted.`,
+      sourceSpan: optionsSpan,
+      help: 'Declare scope: "request" for a request-scoped Bean; singleton is the default.',
+    }),
+  );
+  return { scope: "singleton", valid: false };
+}
+
+function factoryCreateOption(
+  properties: readonly DefineBeanOptionProperty[],
+  scope: "singleton" | "request",
+  exportName: string,
+  optionsSpan: SourceSpan,
+  diagnostics: CompilerDiagnostic[],
+): FunctionDescriptor | undefined {
+  const create = functionOption(properties, "create");
+  if (
+    create !== undefined &&
+    create.parameterCount === 0 &&
+    (!create.async || scope === "request")
+  ) {
+    return create;
+  }
+  diagnostics.push(
+    diagnostic({
+      code: "INVALID_DEFINE_BEAN",
+      message:
+        scope === "request"
+          ? `${exportName}.create must be a zero-parameter function.`
+          : `${exportName}.create must be a synchronous zero-parameter function.`,
+      sourceSpan: optionsSpan,
+      help:
+        scope === "request"
+          ? "Create the request value inside a zero-parameter create function; async is allowed."
+          : "Create the resource synchronously inside a zero-parameter create function.",
+    }),
+  );
+  return undefined;
+}
+
+interface FactoryDisposeSelection {
+  readonly valid: boolean;
+  readonly dispose?: FunctionDescriptor;
+}
+
+function factoryDisposeOption(
+  properties: readonly DefineBeanOptionProperty[],
+  scope: "singleton" | "request",
+  exportName: string,
+  optionsSpan: SourceSpan,
+  diagnostics: CompilerDiagnostic[],
+): FactoryDisposeSelection {
+  const hasDispose = properties.some((property) => property.kind === "dispose");
+  if (!hasDispose) {
+    return { valid: true };
+  }
+  // 请求实例的生命随请求结束，没有 context 级 cleanup 相位可挂（ADR 0006 W7）。
+  if (scope === "request") {
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_DEFINE_BEAN",
+        message: `${exportName} cannot declare dispose on a request-scoped factory.`,
+        sourceSpan: optionsSpan,
+        help: "Remove dispose: request instances end with their request, not with the context.",
+      }),
+    );
+    return { valid: false };
+  }
+  const dispose = functionOption(properties, "dispose");
+  if (dispose === undefined) {
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_DEFINE_BEAN",
+        message: `${exportName}.dispose must be an inline function.`,
+        sourceSpan: optionsSpan,
+        help: "Declare dispose(instance) inline or omit the option.",
+      }),
+    );
+    return { valid: false };
+  }
+  if (dispose.parameterCount !== 1) {
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_DEFINE_BEAN",
+        message: `${exportName}.dispose must accept exactly one instance parameter.`,
+        sourceSpan: dispose.span,
+        help: "Declare dispose(instance) with exactly one parameter.",
+      }),
+    );
+    return { valid: false };
+  }
+  return { valid: true, dispose };
+}
+
+function factoryFunctions(
+  properties: readonly DefineBeanOptionProperty[],
+  scope: "singleton" | "request",
+  exportName: string,
+  optionsSpan: SourceSpan,
+  diagnostics: CompilerDiagnostic[],
 ): FactoryFunctions | undefined {
-  const knownKinds = ["create", "dispose", "primary", "qualifier"] as const;
+  const knownKinds = ["create", "dispose", "primary", "qualifier", "scope"] as const;
   const duplicates = knownKinds.some(
     (kind) => properties.filter((property) => property.kind === kind).length > 1,
   );
@@ -118,48 +230,28 @@ function factoryFunctions(
         code: "INVALID_DEFINE_BEAN",
         message: `${exportName} has duplicate or unsupported defineBean options.`,
         sourceSpan: optionsSpan,
-        help: "Use one each of create, dispose, primary, and qualifier with literal property names.",
+        help: "Use one each of create, dispose, primary, qualifier, and scope with literal property names.",
       }),
     );
     return undefined;
   }
-  const create = functionOption(properties, "create");
-  if (create === undefined || create.async || create.parameterCount !== 0) {
-    diagnostics.push(
-      diagnostic({
-        code: "INVALID_DEFINE_BEAN",
-        message: `${exportName}.create must be a synchronous zero-parameter function.`,
-        sourceSpan: optionsSpan,
-        help: "Create the resource synchronously inside a zero-parameter create function.",
-      }),
-    );
+  const create = factoryCreateOption(properties, scope, exportName, optionsSpan, diagnostics);
+  if (create === undefined) {
     return undefined;
   }
-  const dispose = functionOption(properties, "dispose");
-  const hasDispose = properties.some((property) => property.kind === "dispose");
-  if (hasDispose && dispose === undefined) {
-    diagnostics.push(
-      diagnostic({
-        code: "INVALID_DEFINE_BEAN",
-        message: `${exportName}.dispose must be an inline function.`,
-        sourceSpan: optionsSpan,
-        help: "Declare dispose(instance) inline or omit the option.",
-      }),
-    );
+  const disposeSelection = factoryDisposeOption(
+    properties,
+    scope,
+    exportName,
+    optionsSpan,
+    diagnostics,
+  );
+  if (!disposeSelection.valid) {
     return undefined;
   }
-  if (dispose !== undefined && dispose.parameterCount !== 1) {
-    diagnostics.push(
-      diagnostic({
-        code: "INVALID_DEFINE_BEAN",
-        message: `${exportName}.dispose must accept exactly one instance parameter.`,
-        sourceSpan: dispose.span,
-        help: "Declare dispose(instance) with exactly one parameter.",
-      }),
-    );
-    return undefined;
-  }
-  return dispose === undefined ? { create } : { create, dispose };
+  return disposeSelection.dispose === undefined
+    ? { create }
+    : { create, dispose: disposeSelection.dispose };
 }
 
 function validFactoryProvidedType(
@@ -294,7 +386,22 @@ export function analyzeFactoryProvider(
   }
 
   const properties = declaration.options.properties;
-  const functions = factoryFunctions(properties, exportName, declaration.options.span, diagnostics);
+  const scopeSelection = factoryScope(
+    properties,
+    exportName,
+    declaration.options.span,
+    diagnostics,
+  );
+  if (!scopeSelection.valid) {
+    return undefined;
+  }
+  const functions = factoryFunctions(
+    properties,
+    scopeSelection.scope,
+    exportName,
+    declaration.options.span,
+    diagnostics,
+  );
   if (functions === undefined) {
     return undefined;
   }
@@ -324,6 +431,7 @@ export function analyzeFactoryProvider(
       exportName,
       declarationSource: sourceReference(declaration.span),
       provides: [providedSymbol],
+      scope: scopeSelection.scope,
       primary: literalOptions.primary,
       qualifiers: literalOptions.qualifiers,
       dependencies: [],

@@ -17,6 +17,7 @@ function bean(
 ): ManifestBean {
   return {
     kind: "class",
+    scope: "singleton",
     source: span,
     runtimeExport: { moduleSpecifier: "../../src/a.js", exportName: "A" },
     provides: [],
@@ -36,11 +37,12 @@ const cacheSymbol = {
 
 function manifestOf(beans: readonly ManifestBean[]): GeneratedManifest {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     configs: [],
     beans,
     plans: {
       constructionOrder: beans.map((entry) => entry.id),
+      requestConstructionOrder: [],
       startActionOrder: [],
       cleanupActionOrder: [],
     },

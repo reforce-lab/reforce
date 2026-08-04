@@ -8,6 +8,7 @@ export type RuntimeErrorCode =
   | "APPLICATION_START_FAILED"
   | "APPLICATION_CLEANUP_FAILED"
   | "CONFIG_BINDING_FAILED"
+  | "REQUEST_CONTEXT_MISSING"
   | "UNREGISTERED_BEAN_TARGET"
   | "APPLICATION_CONTEXT_STATE"
   | "INVALID_GENERATED_DEFINITION";
@@ -152,6 +153,24 @@ export class ConfigBindingError extends ReforceRuntimeError<"CONFIG_BINDING_FAIL
       ].join("\n"),
     );
     this.issues = issues;
+  }
+}
+
+// 请求作用域唯一的运行时失败模式（ADR 0006 W7）：请求外取请求态。Current 边点名双侧
+// beanId，读者能直接定位是哪条句柄在请求外被调用；context.get 一侧只有目标可点名。
+export class RequestContextMissingError extends ReforceRuntimeError<"REQUEST_CONTEXT_MISSING"> {
+  readonly code = "REQUEST_CONTEXT_MISSING" as const;
+  readonly targetBeanId: string;
+  readonly consumerBeanId?: string;
+
+  constructor(input: { readonly targetBeanId: string; readonly consumerBeanId?: string }) {
+    super(
+      input.consumerBeanId === undefined
+        ? `Request-scoped Bean "${input.targetBeanId}" was accessed outside an active request scope.`
+        : `Current dependency of "${input.consumerBeanId}" onto "${input.targetBeanId}" was read outside an active request scope.`,
+    );
+    this.targetBeanId = input.targetBeanId;
+    this.consumerBeanId = input.consumerBeanId;
   }
 }
 

@@ -31,11 +31,16 @@ export function testDefinition(
   registrations: readonly GeneratedBeanRegistration[],
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     configs: [],
     registrations,
     plans: {
-      constructionOrder: registrations.map((registration) => registration.id),
+      constructionOrder: registrations.flatMap((registration) =>
+        registration.scope === "singleton" ? [registration.id] : [],
+      ),
+      requestConstructionOrder: registrations.flatMap((registration) =>
+        registration.scope === "request" ? [registration.id] : [],
+      ),
       startActionOrder: registrations.flatMap((registration) =>
         registration.kind === "class" && registration.hooks.start ? [registration.id] : [],
       ),

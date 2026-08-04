@@ -3,6 +3,7 @@ import type {
   GeneratedBeanRegistration,
 } from "@/generated/contracts";
 import type { BeanClass, BeanDefinition, ContextState, Lazy } from "@/public-types";
+import { RequestScope } from "@/runtime/request-scope";
 
 interface ConstructingRecord {
   readonly state: "constructing";
@@ -33,6 +34,8 @@ export class ResolutionState {
   private readonly cycleProxyByTargetId = new Map<string, object>();
   private readonly lazyHandleByTargetId = new Map<string, Lazy<object>>();
   private readonly cleanupLedger = new Map<string, CleanupAction>();
+  // 每个 context 一套 ALS：两个 context 的请求上下文互不可见（与实例表同一隔离边界）。
+  readonly requestScope = new RequestScope();
   contextState: ContextState = "created";
   startPromise: Promise<void> | undefined;
   closePromise: Promise<void> | undefined;

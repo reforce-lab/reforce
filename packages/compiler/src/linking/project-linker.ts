@@ -152,12 +152,18 @@ export async function createProjectLinker(
     return binder.resolveNamespaceMember(namespace.key, entity.right);
   }
 
-  function resolveLazyType(
+  // Lazy<T> 与 Current<T> 同族（ADR 0006 W7）：都是"注入句柄、取值在调用时刻"的包装标记，
+  // 链接层只负责剥一层包装并打标；包装的合法组合（scope 两侧、嵌套）由分析层裁决。
+  function resolveHandleType(
     source: ParsedSource,
     type: Extract<TypeNode, { readonly kind: "reference" }>,
     outer: LinkedSymbol | undefined,
   ): { readonly matched: boolean; readonly type?: LinkedType } {
-    if (outer?.kind !== "context" || outer.name !== "Lazy" || type.typeArguments.length !== 1) {
+    if (
+      outer?.kind !== "context" ||
+      (outer.name !== "Lazy" && outer.name !== "Current") ||
+      type.typeArguments.length !== 1
+    ) {
       return { matched: false };
     }
     const inner = type.typeArguments[0];
@@ -172,7 +178,8 @@ export async function createProjectLinker(
           type: {
             symbol,
             typeArguments: inner.typeArguments,
-            lazy: true,
+            lazy: outer.name === "Lazy",
+            current: outer.name === "Current",
             span: type.span,
           },
         };
@@ -191,6 +198,7 @@ export async function createProjectLinker(
           symbol,
           typeArguments: type.typeArguments,
           lazy: false,
+          current: false,
           qualifierMember: type.name.right,
           span: type.span,
         }
@@ -202,15 +210,16 @@ export async function createProjectLinker(
       return undefined;
     }
     const outer = resolveEntity(source, type.name);
-    const lazy = resolveLazyType(source, type, outer);
-    if (lazy.matched) {
-      return lazy.type;
+    const handle = resolveHandleType(source, type, outer);
+    if (handle.matched) {
+      return handle.type;
     }
     if (outer !== undefined) {
       return {
         symbol: outer,
         typeArguments: type.typeArguments,
         lazy: false,
+        current: false,
         span: type.span,
       };
     }

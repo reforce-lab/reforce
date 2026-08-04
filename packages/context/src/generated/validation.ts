@@ -14,7 +14,7 @@ import type {
   GeneratedSourceReference,
 } from "@/generated/contracts";
 
-const singleDependencyModes = new Set(["eager", "cycle-proxy", "explicit-lazy"]);
+const singleDependencyModes = new Set(["eager", "cycle-proxy", "explicit-lazy", "current"]);
 const collectionMemberModes = new Set(["eager", "cycle-proxy"]);
 
 function fail(detail: string): never {
@@ -90,6 +90,13 @@ function validateGeneratedBeanId(value: unknown, path: string): string {
   }
   validateRelativePosixPath(id.slice(0, separator), `${path} file part`);
   return id;
+}
+
+function validateBeanScope(value: unknown, path: string): "singleton" | "request" {
+  if (value === "singleton" || value === "request") {
+    return value;
+  }
+  return fail(`${path}.scope must be "singleton" or "request".`);
 }
 
 function validateSourcePosition(
@@ -219,7 +226,7 @@ function validateClassRegistrationLocal(
   const registration = requireObject(value, path);
   requireExactKeys(
     registration,
-    ["kind", "id", "source", "target", "dependencies", "create", "hooks"],
+    ["kind", "id", "source", "scope", "target", "dependencies", "create", "hooks"],
     path,
   );
   if (Reflect.get(registration, "kind") !== "class") {
@@ -227,10 +234,20 @@ function validateClassRegistrationLocal(
   }
   validateGeneratedBeanId(Reflect.get(registration, "id"), `${path}.id`);
   validateSourceReference(Reflect.get(registration, "source"), `${path}.source`);
+  const scope = validateBeanScope(Reflect.get(registration, "scope"), path);
   requireFunction(Reflect.get(registration, "target"), `${path}.target`);
   requireFunction(Reflect.get(registration, "create"), `${path}.create`);
   validateDependencies(Reflect.get(registration, "dependencies"), `${path}.dependencies`);
   validateHooks(Reflect.get(registration, "hooks"), `${path}.hooks`);
+  // 请求 bean 没有 context 级生命周期（ADR 0006 W7）：start action 先于任何请求，cleanup
+  // 账本按 bean 记一次，二者都以 singleton 实例为前提。
+  const hooks = requireObject(Reflect.get(registration, "hooks"), `${path}.hooks`);
+  if (
+    scope === "request" &&
+    (Reflect.get(hooks, "start") !== undefined || Reflect.get(hooks, "close") !== undefined)
+  ) {
+    fail(`${path} is request-scoped and cannot declare lifecycle hooks.`);
+  }
 }
 
 function validateFactoryRegistrationLocal(
@@ -240,7 +257,7 @@ function validateFactoryRegistrationLocal(
   const registration = requireObject(value, path);
   requireExactKeys(
     registration,
-    ["kind", "id", "source", "definition", "dependencies", "create", "dispose"],
+    ["kind", "id", "source", "scope", "definition", "dependencies", "create", "dispose"],
     path,
   );
   if (Reflect.get(registration, "kind") !== "factory") {
@@ -248,6 +265,10 @@ function validateFactoryRegistrationLocal(
   }
   validateGeneratedBeanId(Reflect.get(registration, "id"), `${path}.id`);
   validateSourceReference(Reflect.get(registration, "source"), `${path}.source`);
+  const scope = validateBeanScope(Reflect.get(registration, "scope"), path);
+  if (scope === "request" && Reflect.get(registration, "dispose") !== undefined) {
+    return fail(`${path} is request-scoped and cannot declare dispose.`);
+  }
   if (!isObject(Reflect.get(registration, "definition"))) {
     return fail(`${path}.definition must be an object identity.`);
   }
@@ -328,47 +349,51 @@ function requireSameSet(
 }
 
 function validateEagerEdgePosition(
+  planName: string,
   edge: { readonly targetId: string; readonly mode: string },
   consumerId: string,
   consumerIndex: number,
   constructionIndex: ReadonlyMap<string, number>,
-  configIds: ReadonlySet<string>,
+  alwaysReadyIds: ReadonlySet<string>,
 ): void {
-  // Config instances are bound before the construction loop starts, so an edge onto a
-  // config is satisfied regardless of the consumer's plan position.
-  if (edge.mode !== "eager" || configIds.has(edge.targetId)) {
+  // Config instances are bound before the construction loop starts, and every singleton is
+  // constructed before any request plan runs, so edges onto always-ready ids are satisfied
+  // regardless of the consumer's plan position.
+  if (edge.mode !== "eager" || alwaysReadyIds.has(edge.targetId)) {
     return;
   }
   const dependencyIndex = constructionIndex.get(edge.targetId);
   if (dependencyIndex === undefined || dependencyIndex >= consumerIndex) {
     fail(
-      `plans.constructionOrder must place eager dependency "${edge.targetId}" before "${consumerId}".`,
+      `plans.${planName} must place eager dependency "${edge.targetId}" before "${consumerId}".`,
     );
   }
 }
 
 function validateEagerConstructionPositions(
-  constructionOrder: readonly string[],
+  planName: string,
+  order: readonly string[],
   registrations: readonly GeneratedBeanRegistration[],
-  configIds: ReadonlySet<string>,
+  alwaysReadyIds: ReadonlySet<string>,
 ): void {
-  const constructionIndex = new Map(constructionOrder.map((id, index) => [id, index]));
+  const constructionIndex = new Map(order.map((id, index) => [id, index]));
   for (const registration of registrations) {
     const consumerIndex = constructionIndex.get(registration.id);
     // Unreachable at runtime (requireSameSet already proved the plan covers every
     // registration), but Map.get is typed `number | undefined` and the comparison below
     // needs a number, so this guard exists to narrow it.
     if (consumerIndex === undefined) {
-      fail(`plans.constructionOrder omits "${registration.id}".`);
+      fail(`plans.${planName} omits "${registration.id}".`);
     }
     for (const dependency of registration.dependencies) {
       for (const edge of dependencyEdges(dependency)) {
         validateEagerEdgePosition(
+          planName,
           edge,
           registration.id,
           consumerIndex,
           constructionIndex,
-          configIds,
+          alwaysReadyIds,
         );
       }
     }
@@ -381,15 +406,47 @@ function validatePlans(
   configIds: ReadonlySet<string>,
 ): void {
   const plans = requireObject(value, "plans");
-  requireExactKeys(plans, ["constructionOrder", "startActionOrder", "cleanupActionOrder"], "plans");
+  requireExactKeys(
+    plans,
+    ["constructionOrder", "requestConstructionOrder", "startActionOrder", "cleanupActionOrder"],
+    "plans",
+  );
   const knownIds = new Set(registrations.map((registration) => registration.id));
+  // 计划按 scope 分组精确覆盖（ADR 0006 W7）：singleton 计划与请求计划互不越界，
+  // 请求计划把 config 与全部 singleton 视为恒就绪。
+  const singletonRegistrations = registrations.filter(
+    (registration) => registration.scope === "singleton",
+  );
+  const requestRegistrations = registrations.filter(
+    (registration) => registration.scope === "request",
+  );
+  const singletonIds = new Set(singletonRegistrations.map((registration) => registration.id));
+  const requestIds = new Set(requestRegistrations.map((registration) => registration.id));
   const constructionOrder = validatePlanArray(
     Reflect.get(plans, "constructionOrder"),
     "plans.constructionOrder",
     knownIds,
   );
-  requireSameSet(constructionOrder, knownIds, "plans.constructionOrder");
-  validateEagerConstructionPositions(constructionOrder, registrations, configIds);
+  requireSameSet(constructionOrder, singletonIds, "plans.constructionOrder");
+  validateEagerConstructionPositions(
+    "constructionOrder",
+    constructionOrder,
+    singletonRegistrations,
+    configIds,
+  );
+
+  const requestConstructionOrder = validatePlanArray(
+    Reflect.get(plans, "requestConstructionOrder"),
+    "plans.requestConstructionOrder",
+    knownIds,
+  );
+  requireSameSet(requestConstructionOrder, requestIds, "plans.requestConstructionOrder");
+  validateEagerConstructionPositions(
+    "requestConstructionOrder",
+    requestConstructionOrder,
+    requestRegistrations,
+    new Set([...configIds, ...singletonIds]),
+  );
 
   const expectedStart = new Set(
     registrations.flatMap((registration) =>
@@ -464,27 +521,64 @@ function validateRegistrationIdentities(
   }
 }
 
-// 计划与目标校验只关心"这条边最终指向谁、以什么模式"；集合边按成员展开成同构的目标边。
-function dependencyEdges(
-  dependency: GeneratedDependency,
-): readonly { readonly targetId: string; readonly mode: string }[] {
-  return dependency.mode === "collection" ? dependency.members : [dependency];
+// 计划与目标校验只关心"这条边最终指向谁、以什么模式"；集合边按成员展开成同构的目标边，
+// 保留成员身份——集合成员的 scope 规则比单边更紧（request bean 不入集合，ADR 0006 W7）。
+interface DependencyEdge {
+  readonly targetId: string;
+  readonly mode: string;
+  readonly collectionMember: boolean;
 }
 
+function dependencyEdges(dependency: GeneratedDependency): readonly DependencyEdge[] {
+  return dependency.mode === "collection"
+    ? dependency.members.map((member) => ({
+        targetId: member.targetId,
+        mode: member.mode,
+        collectionMember: true,
+      }))
+    : [{ targetId: dependency.targetId, mode: dependency.mode, collectionMember: false }];
+}
+
+// 跨作用域边规则（ADR 0006 W7）：current 是 singleton→request 的唯一通道；到 request 目标的
+// 其余合法形态只有"request 消费者的 eager 单边"。镜像编译器 scope-rules 的裁决，产物字节
+// 可能被手改，此处按线上协议复检。
 function validateTargetEdge(
-  edge: { readonly targetId: string; readonly mode: string },
-  consumerId: string,
-  beanIds: ReadonlySet<string>,
+  edge: DependencyEdge,
+  consumer: GeneratedBeanRegistration,
+  scopeById: ReadonlyMap<string, string>,
   configIds: ReadonlySet<string>,
 ): void {
   if (configIds.has(edge.targetId)) {
     if (edge.mode !== "eager") {
-      fail(`dependency of "${consumerId}" onto config "${edge.targetId}" must be eager.`);
+      fail(`dependency of "${consumer.id}" onto config "${edge.targetId}" must be eager.`);
     }
     return;
   }
-  if (!beanIds.has(edge.targetId)) {
-    fail(`dependency of "${consumerId}" references unknown Bean "${edge.targetId}".`);
+  const targetScope = scopeById.get(edge.targetId);
+  if (targetScope === undefined) {
+    fail(`dependency of "${consumer.id}" references unknown Bean "${edge.targetId}".`);
+  }
+  if (edge.mode === "current") {
+    if (consumer.scope !== "singleton") {
+      fail(`current dependency of "${consumer.id}" must belong to a singleton Bean.`);
+    }
+    if (targetScope !== "request") {
+      fail(
+        `current dependency of "${consumer.id}" must target a request-scoped Bean, not "${edge.targetId}".`,
+      );
+    }
+    return;
+  }
+  if (targetScope !== "request") {
+    return;
+  }
+  if (edge.collectionMember) {
+    fail(`collection member of "${consumer.id}" cannot target request-scoped "${edge.targetId}".`);
+  }
+  if (consumer.scope !== "request" || edge.mode !== "eager") {
+    fail(
+      `dependency of "${consumer.id}" onto request-scoped "${edge.targetId}" must be an eager edge from a request-scoped Bean.`,
+    );
   }
 }
 
@@ -492,11 +586,13 @@ function validateDependencyTargets(
   registrations: readonly GeneratedBeanRegistration[],
   configIds: ReadonlySet<string>,
 ): void {
-  const beanIds = new Set(registrations.map((registration) => registration.id));
+  const scopeById = new Map(
+    registrations.map((registration) => [registration.id, registration.scope]),
+  );
   for (const registration of registrations) {
     for (const dependency of registration.dependencies) {
       for (const edge of dependencyEdges(dependency)) {
-        validateTargetEdge(edge, registration.id, beanIds, configIds);
+        validateTargetEdge(edge, registration, scopeById, configIds);
       }
     }
   }
@@ -524,8 +620,8 @@ function validateApplicationDefinition(value: unknown): void {
     ["schemaVersion", "configs", "configBinding", "registrations", "plans"],
     "definition",
   );
-  if (Reflect.get(definition, "schemaVersion") !== 3) {
-    fail("definition.schemaVersion must be 3.");
+  if (Reflect.get(definition, "schemaVersion") !== 4) {
+    fail("definition.schemaVersion must be 4.");
   }
   const configCandidates = requireArray(Reflect.get(definition, "configs"), "definition.configs");
   const configs: GeneratedConfigRegistration[] = [];
@@ -594,6 +690,7 @@ function cloneClassRegistration<T extends object, THook extends object>(
     kind: "class",
     id: registration.id,
     source: cloneSource(registration.source),
+    scope: registration.scope,
     target: registration.target,
     dependencies: Object.freeze(registration.dependencies.map(cloneDependency)),
     create: registration.create,
@@ -611,6 +708,7 @@ function cloneFactoryRegistration<T extends object, TDispose extends object>(
     kind: "factory" as const,
     id: registration.id,
     source: cloneSource(registration.source),
+    scope: registration.scope,
     definition: registration.definition,
     dependencies: [] as const,
     create: registration.create,
@@ -668,7 +766,7 @@ export function snapshotApplicationDefinition(
 ): GeneratedApplicationDefinition {
   validateApplicationDefinition(definition);
   return Object.freeze({
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     configs: Object.freeze(definition.configs.map(cloneConfigRegistration)),
     // The binding is carried by reference: it is behavior, not data, and the bind contract
     // is per-call stateless, so a clone could only obscure its identity.
@@ -676,6 +774,7 @@ export function snapshotApplicationDefinition(
     registrations: Object.freeze(definition.registrations.map(cloneRegistration)),
     plans: Object.freeze({
       constructionOrder: Object.freeze([...definition.plans.constructionOrder]),
+      requestConstructionOrder: Object.freeze([...definition.plans.requestConstructionOrder]),
       startActionOrder: Object.freeze([...definition.plans.startActionOrder]),
       cleanupActionOrder: Object.freeze([...definition.plans.cleanupActionOrder]),
     }),
