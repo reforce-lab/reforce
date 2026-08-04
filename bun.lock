@@ -137,6 +137,7 @@
       "name": "@reforce/testing",
       "version": "0.0.0",
       "dependencies": {
+        "@reforce/context": "workspace:*",
         "@swc/helpers": "catalog:",
       },
       "devDependencies": {

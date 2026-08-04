@@ -11,11 +11,13 @@
   },
   "scripts": {
     "build": "rslib build",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "bun test test it",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
   "dependencies": {
+    "@reforce/context": "workspace:*",
     "@swc/helpers": "catalog:"
   },
   "devDependencies": {
