@@ -41,6 +41,9 @@ export type CompilerDiagnosticCode =
   | "INVALID_ROUTE_MARKER_VALUE"
   | "INVALID_ROUTE_SCHEMA"
   | "INVALID_MIDDLEWARE_DECLARATION"
+  | "INVALID_METHOD_MARKER"
+  | "INVALID_METHOD_MARKER_VALUE"
+  | "INVALID_INTERCEPTOR_DECLARATION"
   | "INVALID_WEB_REQUEST_SEEDER"
   | "DUPLICATE_STARTER_REGISTRATION"
   | "STARTER_META_NOT_FOUND"
@@ -145,7 +148,8 @@ export interface GeneratedFile {
     | "manifest.json"
     | "qualifiers.d.ts"
     | "routes.json"
-    | "routes.ts";
+    | "routes.ts"
+    | "weaving.json";
   readonly content: string;
 }
 

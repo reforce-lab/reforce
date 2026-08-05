@@ -65,6 +65,89 @@ function validateModuleSyntax(source: ParsedSource, diagnostics: CompilerDiagnos
   }
 }
 
+// 方法级织入在库模式硬错（ADR 0008 AM1，#202 范围定案）：meta v1 没有方法级槽位，静默丢弃
+// 违反"要么生效、要么编译错"；槽位演进等真实 starter 消费者出现时另开 issue。三种形态都拒：
+// defineMethodMarker 声明、@Interceptor 绑定、方法标记使用。
+function isMethodMarkerDeclaration(
+  source: ParsedSource,
+  declaration: ParsedSource["unit"]["valueDeclarations"][number],
+  linker: ProjectLinker,
+): boolean {
+  const callee = declaration.initializer?.callee;
+  if (callee === undefined) {
+    return false;
+  }
+  const symbol = linker.resolveEntity(source, callee);
+  return symbol?.kind === "context" && symbol.name === "defineMethodMarker";
+}
+
+function rejectMethodWeavingDeclarations(
+  source: ParsedSource,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): void {
+  for (const declaration of source.unit.valueDeclarations) {
+    if (isMethodMarkerDeclaration(source, declaration, linker)) {
+      diagnostics.push(
+        unsupportedDeclaration(
+          "defineMethodMarker cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+          declaration.span,
+          "Keep method markers and their marked Beans application-side for now.",
+        ),
+      );
+    }
+  }
+  for (const declaration of source.unit.classes) {
+    for (const decorator of declaration.decorators) {
+      if (decorator.callee.kind === "unsupported-expression") {
+        continue;
+      }
+      const symbol = linker.resolveEntity(source, decorator.callee);
+      if (symbol?.kind === "context" && symbol.name === "Interceptor") {
+        diagnostics.push(
+          unsupportedDeclaration(
+            "@Interceptor cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+            decorator.span,
+            "Keep interceptors application-side for now.",
+          ),
+        );
+      }
+    }
+    rejectMethodMarkerUses(source, declaration, linker, diagnostics);
+  }
+}
+
+function rejectMethodMarkerUses(
+  source: ParsedSource,
+  declaration: SourceFileIr["classes"][number],
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): void {
+  for (const method of declaration.methods) {
+    for (const decorator of method.decorators) {
+      if (decorator.callee.kind !== "identifier") {
+        continue;
+      }
+      if (linker.resolveEntity(source, decorator.callee) !== undefined) {
+        continue;
+      }
+      const resolved = linker.resolveValueDeclaration(source, decorator.callee.name);
+      if (
+        resolved !== undefined &&
+        isMethodMarkerDeclaration(resolved.source, resolved.declaration, linker)
+      ) {
+        diagnostics.push(
+          unsupportedDeclaration(
+            "Method markers cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+            decorator.span,
+            "Keep method markers and their marked Beans application-side for now.",
+          ),
+        );
+      }
+    }
+  }
+}
+
 function rejectUnsupportedCalls(
   source: ParsedSource,
   linker: ProjectLinker,
@@ -141,6 +224,7 @@ function collectLibraryDrafts(
       continue;
     }
     rejectUnsupportedCalls(source, linker, diagnostics);
+    rejectMethodWeavingDeclarations(source, linker, diagnostics);
     for (const declaration of source.unit.classes) {
       const draft = analyzeClassProvider(source, declaration, linker, diagnostics);
       if (draft !== undefined) {

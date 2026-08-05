@@ -68,6 +68,7 @@ export async function compile(
       analysis.configs,
       analysis.plans,
       analysis.web,
+      analysis.weaving,
       linker.starterLinkage,
     ),
     watchInputs,

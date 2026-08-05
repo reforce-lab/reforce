@@ -157,6 +157,7 @@ describe("generated output", () => {
       "bootstrap.ts",
       "routes.json",
       "routes.ts",
+      "weaving.json",
     ]);
   });
 
