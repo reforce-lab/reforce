@@ -115,6 +115,7 @@ test.skipIf(process.platform !== "win32")(
         "bootstrap.ts",
         "routes.json",
         "routes.ts",
+        "weaving.json",
       ]);
     }
   },
