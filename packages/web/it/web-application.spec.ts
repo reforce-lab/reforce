@@ -1,4 +1,3 @@
-import { describe, expect, test } from "bun:test";
 import type { Current } from "@reforce/context";
 import {
   classBean,
@@ -7,6 +6,7 @@ import {
   type GeneratedResolver,
   type GeneratedSourceReference,
 } from "@reforce/context/generated-runtime";
+import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
 import type { GeneratedRouteTable } from "@/generated-runtime";
 import { createWebApplication, type RequestContext } from "@/index";

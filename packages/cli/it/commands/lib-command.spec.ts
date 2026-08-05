@@ -1,7 +1,7 @@
-import { afterEach, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { runLibCommand } from "@/commands/lib";
 import { runCli } from "@/commands/run-cli";
 import { recordingReporter } from "../support/recording-reporter";

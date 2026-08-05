@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { hasExactKeys } from "@/project/exact-keys";
 
 const REQUIRED = ["schemaVersion", "mode", "leaseToken"] as const;

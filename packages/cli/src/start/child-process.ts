@@ -28,7 +28,7 @@ export interface LeaseParticipantAck {
   readonly participantToken: string;
 }
 
-class BunProductionChild implements ProductionChild {
+class NodeProductionChild implements ProductionChild {
   private readonly completion: Promise<ProductionChildResult>;
   private readonly messages: unknown[] = [];
   private readonly messageWaiters: Array<{
@@ -135,7 +135,7 @@ export function spawnProductionChild(input: {
   readonly projectRoot: string;
   readonly leaseToken: string;
 }): ProductionChild {
-  return new BunProductionChild(
+  return new NodeProductionChild(
     spawn(input.executable, [input.entryPath], {
       cwd: input.projectRoot,
       env: { ...process.env, REFORCE_LEASE_TOKEN: input.leaseToken },

@@ -24,7 +24,7 @@
       "!!.codex",
       "!!.agents",
       "!!.kimi-code",
-      "!!bun.lock",
+      "!!pnpm-lock.yaml",
       "!!.lsp.json",
       "!!.mcp.json"
     ]

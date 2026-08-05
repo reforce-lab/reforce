@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -6,6 +5,7 @@ import {
   type ProjectTree,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterEach, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler } from "@/index";
 import {
   applicationTsconfig,

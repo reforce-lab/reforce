@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import { ApplicationStartError, InvalidGeneratedDefinitionError } from "@reforce/context";
+import { describe, expect, test } from "vitest";
 import type { ShutdownAckMessage } from "@/dev-ipc";
 import type { CliReporterEvent, Reporter } from "@/reporter";
 import { ShutdownController } from "@/shutdown-controller";

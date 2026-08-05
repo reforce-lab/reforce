@@ -2,11 +2,11 @@ pre-commit:
   parallel: true
   commands:
     biome:
-      run: bunx biome check --write --no-errors-on-unmatched
+      run: pnpm exec biome check --write --no-errors-on-unmatched
       stage_fixed: true
 
 
 commit-msg:
   commands:
     commitlint:
-      run: bunx commitlint --edit {1}
+      run: pnpm exec commitlint --edit {1}

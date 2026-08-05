@@ -10,8 +10,8 @@ import { pathExists } from "@/project/fs-error";
 // 注册声明，因此「被本地 provider 完全遮蔽、一个 bean 都没进 manifest 的 starter」在这里不可见；
 // 该盲点在命令输出与交付说明中明示，补齐需要 manifest 记录注册表（编译器侧，超出本 issue）。
 //
-// 引入链的载体是 node_modules 布局而非 bun.lock：布局是链接器实际解析到的事实（哪个目录下装了
-// 哪份拷贝），bun.lock 只是安装计划；「分别由谁引入」按解析起点回答——从应用根解析到的拷贝记
+// 引入链的载体是 node_modules 布局而非 pnpm-lock.yaml：布局是链接器实际解析到的事实（哪个目录下装了
+// 哪份拷贝），pnpm-lock.yaml 只是安装计划；「分别由谁引入」按解析起点回答——从应用根解析到的拷贝记
 // 「应用直接可达」，从某个 starter 包根解析到的嵌套拷贝记「由该 starter 引入」。
 
 export interface InstalledStarterBean {

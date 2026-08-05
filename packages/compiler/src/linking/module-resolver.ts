@@ -1,4 +1,5 @@
 import * as nodeFileSystem from "node:fs";
+import { isBuiltin } from "node:module";
 import path from "node:path";
 import { isPathContained, isPathStrictlyContained } from "@reforce/primitives";
 import enhancedResolve from "enhanced-resolve";
@@ -153,6 +154,12 @@ export function createModuleResolver(
     specifier: string,
     reportFailure = true,
   ): ResolvedModule | undefined {
+    // Node 内置模块（node:http 等）不在文件系统上：按"可消费的外部符号"处理，永不解析也
+    // 永不报 MODULE_RESOLUTION_FAILED（#207：Node 引擎 starter 首次把 node:* 值引入
+    // 带进库模式编译）。
+    if (isBuiltin(specifier)) {
+      return undefined;
+    }
     const key = resolutionKey(containing, specifier);
     let result = resolvedModules.get(key);
     if (result === undefined) {

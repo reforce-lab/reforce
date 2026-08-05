@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
+import { describe, expect, test } from "vitest";
 import { compareUtf16CodeUnits } from "@/ordering";
 
 describe("compareUtf16CodeUnits", () => {

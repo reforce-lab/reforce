@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { type CompilerDiagnostic, createCompiler } from "@reforce/compiler";
-import { requireBunExecutable } from "@reforce/runtime/bun-runtime";
 import { writerLeaseTokenEnvironmentVariable } from "@reforce/runtime/dev-ipc";
+import { requireNodeExecutable } from "@reforce/runtime/node-runtime";
 import { installTerminationSignalHandlers } from "@reforce/runtime/process-signals";
 import {
   captureFailure,
@@ -232,7 +232,7 @@ export async function runDevCommand(
         await spawnDevChild({
           entryPath: resolve(resolution.project.projectRoot, ".reforce", "dev", "main.mjs"),
           cwd: resolution.project.projectRoot,
-          bunExecutable: requireBunExecutable(),
+          nodeExecutable: requireNodeExecutable(),
           env: { [writerLeaseTokenEnvironmentVariable]: writerLease.leaseToken },
           waitForReady: true,
           leaseParticipant: {

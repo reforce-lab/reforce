@@ -1,5 +1,5 @@
 {
-  "name": "@reforce/web-bun",
+  "name": "@reforce/web-node",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
-    "test": "bun test test it",
+    "test": "vitest run",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
@@ -31,8 +31,10 @@
     "@reforce/bundler-plugin": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
     "@rslib/core": "catalog:",
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

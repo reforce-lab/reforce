@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
+import { describe, expect, test } from "vitest";
 import { TransactionIsolationOnJoinError, TransactionSavepointUnsupportedError } from "@/errors";
 import type { MethodInterceptor, MethodInvocationContext } from "@/interception/interceptor";
 import { TransactionInterceptor } from "@/transaction/interceptor";

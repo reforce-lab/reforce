@@ -1,6 +1,6 @@
 import { defineApplication } from "@reforce/context";
 import type { RequestSeeder } from "@reforce/web";
-import webBun from "@reforce/web-bun/reforce";
+import webNode from "@reforce/web-node/reforce";
 import { HttpExchange, httpExchange } from "@/http-exchange";
 
 export * from "@/config-probe";
@@ -24,4 +24,4 @@ export const webRequestSeeder: RequestSeeder = (request, match) => [
   { target: httpExchange, instance: new HttpExchange(request, match) },
 ];
 
-export default defineApplication({ starters: [webBun] });
+export default defineApplication({ starters: [webNode] });

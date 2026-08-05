@@ -1,12 +1,17 @@
-import { afterEach, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveBunExecutable, runCommand, type TemporaryProject } from "@reforce/tooling-testing";
+import {
+  bundleEntry,
+  resolveNodeExecutable,
+  runCommand,
+  type TemporaryProject,
+} from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { createCompiler, type GeneratedFile } from "@/index";
 import { addQualifiedSelectionProbe, createPositiveApplication } from "./support/project";
 
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 const temporaryProjects: TemporaryProject[] = [];
 
 afterEach(async () => {
@@ -64,15 +69,10 @@ async function typecheckBuildAndRun(projectRoot: string, entryLines: readonly st
     [path.join(path.dirname(typescriptPackage), "bin", "tsc"), "-p", "tsconfig.integration.json"],
     { cwd: projectRoot },
   );
-  const build = await runCommand(
-    process.execPath,
-    ["build", "integration.ts", "--target=node", "--format=esm", "--outdir=dist"],
-    { cwd: projectRoot },
-  );
+  await bundleEntry({ entry: "integration.ts", cwd: projectRoot, outdir: "dist" });
   expect(typecheck.exitCode).toBe(0);
   expect(typecheck.stderr).toBe("");
-  expect(build.exitCode).toBe(0);
-  return await runCommand(bunExecutable, [path.join(projectRoot, "dist", "integration.js")], {
+  return await runCommand(nodeExecutable, [path.join(projectRoot, "dist", "integration.js")], {
     cwd: projectRoot,
   });
 }

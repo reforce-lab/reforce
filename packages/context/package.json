@@ -16,7 +16,7 @@
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
-    "test": "bun test test it",
+    "test": "vitest run",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
@@ -27,10 +27,13 @@
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
     "@rslib/core": "catalog:",
-    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
     "fast-check": "^4.9.0",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

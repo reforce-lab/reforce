@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import { defineBean, type MethodInterceptor, UnregisteredBeanTargetError } from "@reforce/context";
 import {
   classBean,
   type GeneratedMethodChain,
   invokeIntercepted,
 } from "@reforce/context/generated-runtime";
+import { describe, expect, test } from "vitest";
 import { createTestContext, type TestContextOverrides } from "@/test-context";
 import { testDefinition, testSource } from "./support/test-definition";
 

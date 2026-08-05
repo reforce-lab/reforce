@@ -1,4 +1,3 @@
-import { afterEach, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -6,9 +5,10 @@ import {
   createSubprocessRegistry,
   createTimeoutGuard,
   observeTypedMessages,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   send,
 } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { type LeaseParticipant, probeLeaseEndpoint } from "@/lease-endpoint";
 import { parseLeaseParticipant } from "../support/process/lease-participant";
 
@@ -18,7 +18,7 @@ const harnessPath = fileURLToPath(
 const windowsSignalHarnessPath = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 const subprocesses = createSubprocessRegistry();
 const withTimeout = createTimeoutGuard(2_000);
 
@@ -61,7 +61,7 @@ function spawnObservedProductionHarness(
   const shutdownAcknowledged = Promise.withResolvers<void>();
   const returned = Promise.withResolvers<void>();
   const child = spawn(
-    bunExecutable,
+    nodeExecutable,
     useWindowsSignalHarness ? [windowsSignalHarnessPath, harnessPath] : [harnessPath],
     {
       env: { ...process.env, REFORCE_LEASE_TOKEN: leaseToken },
@@ -119,7 +119,7 @@ test("production keeps its lease participant live through application cleanup an
   const shutdownAcknowledged = Promise.withResolvers<void>();
   const returned = Promise.withResolvers<void>();
   const events: string[] = [];
-  const child = spawn(bunExecutable, [harnessPath], {
+  const child = spawn(nodeExecutable, [harnessPath], {
     env: { ...process.env, REFORCE_LEASE_TOKEN: leaseToken },
     shell: false,
     stdio: ["ignore", "pipe", "pipe", "ipc"],

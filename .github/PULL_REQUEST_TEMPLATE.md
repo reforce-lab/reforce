@@ -16,10 +16,10 @@ Closes #<!-- issue 编号 -->
 
 ## 验证
 
-- [ ] `bun run check:write` 通过
-- [ ] `bun run typecheck` 通过
-- [ ] `bun run test` 通过（新增逻辑带测试）
-- [ ] `bun run build` 通过
+- [ ] `pnpm run check:write` 通过
+- [ ] `pnpm run typecheck` 通过
+- [ ] `pnpm run test` 通过（新增逻辑带测试）
+- [ ] `pnpm run build` 通过
 - [ ] 涉及架构决策 → 已在关联 issue 顶楼更新结论
 - [ ] 值得长期查阅的结论 → 已更新 Wiki
 

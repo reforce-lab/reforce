@@ -1,8 +1,8 @@
 import { lstat, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import { requireBunExecutable } from "@reforce/runtime/bun-runtime";
 import { isShutdownRequestMessage, type ShutdownAckMessage } from "@reforce/runtime/dev-ipc";
 import type { LeaseParticipant } from "@reforce/runtime/lease-endpoint";
+import { requireNodeExecutable } from "@reforce/runtime/node-runtime";
 import { installTerminationSignalHandlers } from "@reforce/runtime/process-signals";
 import {
   captureFailure,
@@ -19,7 +19,7 @@ export interface StartCommandOptions {
   readonly cwd: string;
   readonly projectDirectory: string;
   readonly reporter: Reporter;
-  readonly bunExecutable?: string;
+  readonly nodeExecutable?: string;
 }
 
 export interface StartCommandDependencies {
@@ -131,7 +131,7 @@ async function startProductionChild(input: {
   input.state.lease = lease;
   const entryPath = await resolveProductionEntry(projectRoot);
   const child = input.dependencies.spawnChild({
-    executable: input.options.bunExecutable ?? requireBunExecutable(),
+    executable: input.options.nodeExecutable ?? requireNodeExecutable(),
     entryPath,
     projectRoot,
     leaseToken: lease.leaseToken,

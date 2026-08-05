@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { BeanClass } from "@reforce/context";
@@ -8,12 +7,11 @@ import type {
 } from "@reforce/context/generated-runtime";
 import {
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
-import { parse } from "dotenv";
-import fc from "fast-check";
+import { afterEach, describe, expect, test } from "vitest";
 import { createConfigBinding } from "@/binding/bind-configs";
 import { ConfigProperties } from "@/config-properties";
 import { failingField, numberField, objectSchema, stringField } from "./support/standard-schema";
@@ -216,68 +214,12 @@ describe("createConfigBinding", () => {
     expect(instance.value).toBe("from-root-file");
   });
 
-  test("agrees with Bun's own .env auto-loading on the shared dialect", async () => {
-    // ADR 0005 决策 4.4：${} 展开是已知分歧（Bun 展开、dotenv parse 不展开），
-    // 因此生成器排除了 $；除此之外的任何分歧（例如 Bun 升级改了解析器）都必须让本测试红掉。
-    // 生成键还排除了当前进程已存在的变量、NODE_ENV 与 BUN_ 前缀：它们会改变子进程
-    // 行为或与继承环境串线，而不是解析方言本身的差异。
-    const bunExecutable = await resolveBunExecutable();
-    const valueCharacters = [];
-    for (let code = 0x20; code <= 0x7e; code++) {
-      const character = String.fromCharCode(code);
-      if (character !== "$" && character !== '"' && character !== "'" && character !== "\\") {
-        valueCharacters.push(character);
-      }
-    }
-    const keyArbitrary = fc
-      .stringMatching(/^[A-Z][A-Z0-9_]{0,8}$/)
-      .filter((key) => !(key in process.env) && key !== "NODE_ENV" && !key.startsWith("BUN_"));
-    const valueArbitrary = fc.string({
-      unit: fc.constantFrom(...valueCharacters),
-      maxLength: 20,
-    });
-    const entriesArbitrary = fc.uniqueArray(fc.tuple(keyArbitrary, valueArbitrary), {
-      selector: ([key]) => key,
-      minLength: 1,
-      maxLength: 4,
-    });
-
-    await fc.assert(
-      fc.asyncProperty(entriesArbitrary, async (entries) => {
-        const keys = entries.map(([key]) => key);
-        const content = `${entries.map(([key, value]) => `${key}=${value}`).join("\n")}\n`;
-        const script = [
-          `const keys = ${JSON.stringify(keys)};`,
-          "console.log(JSON.stringify(Object.fromEntries(keys.map((key) => [key, process.env[key] ?? null]))));",
-        ].join("\n");
-        const project = await createTemporaryProject({ ".env": content, "print.js": script });
-        try {
-          const result = await runCommand(bunExecutable, ["print.js"], {
-            cwd: project.projectRoot,
-            env: Object.fromEntries(keys.map((key) => [key, undefined])),
-          });
-          expect(result.exitCode).toBe(0);
-          const observed: unknown = JSON.parse(String(result.stdout));
-          const parsed = parse(content);
-          const expected = Object.fromEntries(keys.map((key) => [key, parsed[key] ?? null]));
-          expect(observed).toEqual(expected);
-        } finally {
-          await project.cleanup();
-        }
-      }),
-      { numRuns: 20 },
-    );
-  }, 120000);
-
   // dist 的新鲜度由 turbo 保证（本包 turbo.json 让 test 依赖自身 build），不在测试内重建：
   // rslib 构建会先清空 dist 再产出，清空窗口内并发的 compiler IT 经 junction 消费同一份
-  // dist，会撞出 TS2307 假失败（Issue #169）。代价是在包目录裸跑 `bun test it` 需先有 dist。
-  test("produces the same bound values under Node.js consuming the built dist", async () => {
-    const packageRoot = resolve(import.meta.dir, "..");
-    const nodeExecutable = Bun.which("node");
-    if (nodeExecutable === null) {
-      throw new Error("Node.js executable not found on PATH; the runtime-neutrality IT needs it");
-    }
+  // dist，会撞出 TS2307 假失败（Issue #169）。代价是在包目录裸跑 vitest 前需先有 dist。
+  test("produces the same bound values in a child process consuming the built dist", async () => {
+    const packageRoot = resolve(import.meta.dirname, "..");
+    const nodeExecutable = await resolveNodeExecutable();
     const indexUrl = pathToFileURL(resolve(packageRoot, "dist/index.js")).href;
     const runtimeUrl = pathToFileURL(resolve(packageRoot, "dist/generated-runtime.js")).href;
     const script = [
@@ -325,13 +267,16 @@ describe("createConfigBinding", () => {
     if (outcome.status !== "bound") {
       return;
     }
-    const bunInstance = outcome.instances.get("neutral");
-    if (!(bunInstance instanceof NeutralConfig)) {
+    const inProcessInstance = outcome.instances.get("neutral");
+    if (!(inProcessInstance instanceof NeutralConfig)) {
       throw new Error("bound instance must be a NeutralConfig");
     }
-    const nodeInstance: unknown = JSON.parse(String(nodeRun.stdout));
-    expect(nodeInstance).toEqual({ port: bunInstance.port, name: bunInstance.name });
-    expect(bunInstance.port).toBe(4321);
-    expect(bunInstance.name).toBe("neutral-service");
+    const childInstance: unknown = JSON.parse(String(nodeRun.stdout));
+    expect(childInstance).toEqual({
+      port: inProcessInstance.port,
+      name: inProcessInstance.name,
+    });
+    expect(inProcessInstance.port).toBe(4321);
+    expect(inProcessInstance.name).toBe("neutral-service");
   }, 120000);
 });

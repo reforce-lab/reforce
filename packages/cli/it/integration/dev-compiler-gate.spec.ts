@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, symlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCompiler, type GeneratedFile } from "@reforce/compiler";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 

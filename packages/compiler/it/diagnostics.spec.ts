@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import fc from "fast-check";
+import { afterEach, describe, expect, test } from "vitest";
 import { diagnostic, orderDiagnostics } from "@/diagnostics";
 import { type CompileResult, createCompiler } from "@/index";
 import type { CanonicalFileId, SourceSpan } from "@/parser/source-location";

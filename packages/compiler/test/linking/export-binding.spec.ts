@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import type { CompilerDiagnostic } from "@/api";
 import { createExportBinder } from "@/linking/export-binding";
 import { createModuleRecord } from "@/linking/module-record";

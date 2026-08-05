@@ -7,7 +7,7 @@ applyTo: "**"
 
 ## 事实纪律
 
-- 已有依赖或 API：先核对 `package.json` / `bun.lock` 和本地类型声明或源码；仅当本地无法确定、行为受版本影响或涉及外部服务时，再查对应版本的官方文档。
+- 已有依赖或 API：先核对 `package.json` / `pnpm-lock.yaml` 和本地类型声明或源码；仅当本地无法确定、行为受版本影响或涉及外部服务时，再查对应版本的官方文档。
 - 技术调研、选型、引入依赖或版本升级：必须联网核实当前官方文档、release 日志和包仓库。
 - 拿不准工具行为时，先在临时目录做最小实验，再下结论。
 
@@ -16,27 +16,27 @@ applyTo: "**"
 根脚本均基于turbo编排与包装：
 
 ```bash
-bun install                 # 装依赖 + git hooks
-bun run check:write         # Biome 自动修复
-bun run check               # Biome 校验（不修改文件）
-bun run typecheck           # 全仓类型检查
-bun run test                # 全仓测试
-bun run build               # 全仓构建
-bun run test:e2e            # 构建后执行完整用户链路
+pnpm install                 # 装依赖 + git hooks
+pnpm run check:write         # Biome 自动修复
+pnpm run check               # Biome 校验（不修改文件）
+pnpm run typecheck           # 全仓类型检查
+pnpm run test                # 全仓测试
+pnpm run build               # 全仓构建
+pnpm run test:e2e            # 构建后执行完整用户链路
 
 # 只跑单个子包：--filter=<包名>，多个任务同理
-bun run check:write --filter=<pkg>
-bun run check --filter=<pkg>
-bun run typecheck --filter=<pkg>
-bun run test --filter=<pkg>
-bun run build --filter=<pkg>
+pnpm run check:write --filter=<pkg>
+pnpm run check --filter=<pkg>
+pnpm run typecheck --filter=<pkg>
+pnpm run test --filter=<pkg>
+pnpm run build --filter=<pkg>
 ```
 
 未来如要增加全局脚本，请同步此节，并且贯彻turbo管理/编排的原则
 
 ## 基础项目纪律
 
-- 包管理器测试框架都是 **Bun**：不用 npm/pnpm/yarn/vitest/jest。
+- 包管理器是 **pnpm 11**（catalog 与 patchedDependencies 集中在 `pnpm-workspace.yaml`），运行时是 **Node.js**（`engines.node >=24`，本地与 CI 用 26），测试框架是 **Vitest**（统一配置工厂在 `@reforce/tooling-vitest`，TC39 装饰器经 unplugin-swc 降级，#207）：不用 npm/yarn/bun/jest。
 - Lint/Format 唯一工具和真相是 **Biome**。
 - 提交前先对相关 package 运行 `check:write` 自动修复，再确保 `check` / `typecheck` / `test` / `build` 全部通过；不必每次改动都验证全仓库。
 - 提交信息必须符合 conventional 规范，scope不得为空，否则 commit-msg hook 会拒绝。
@@ -55,7 +55,7 @@ bun run build --filter=<pkg>
   - 从对话和相关 diff 可确认任务延续当前未提交工作时，直接在当前工作区继续，不另建 worktree；仅在关联不明或可能覆盖冲突改动时询问
     owner。
   - 指定 PR、分支或 commit 时以指定引用为基线；全新任务默认基于 `main`。
-  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `bun install`；根 `prepare` 会执行
+  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `pnpm install`；根 `prepare` 会执行
     `apm install && apm compile`，生成
     `AGENTS.md` 及运行时配置。不要把未初始化 worktree 直接交给独立 agent。
 - 全仓库使用 TS7 (tsgo)：
@@ -123,7 +123,7 @@ bun run build --filter=<pkg>
   - 跨模块、filesystem、子进程和 Worker 行为放 `it/`；support 只放该层测试直接使用的项目构造器或 harness，包内不保存
     fixture。
   - 完整用户链路只放独立的 `@reforce/e2e` workspace，消费构建后的 dist；唯一完整应用模板是 `e2e/fixtures/application`。
-  - `bun run test` 运行 unit 与 IT，`bun run test:e2e` 单独运行完整链路。
+  - `pnpm run test` 运行 unit 与 IT，`pnpm run test:e2e` 单独运行完整链路。
 - **不测**：纯类型推导（typecheck 已覆盖）、第三方库行为、getter/setter 级别的透传、私有实现细节。
 - **测**：公开 API 的行为契约、边界值、已修过的 bug（防回归）。
 - **用例设计要全面**：负向测试/异常测试优先设计与考虑。正向测试则要有多场景，如场景合适，可以用 property-based

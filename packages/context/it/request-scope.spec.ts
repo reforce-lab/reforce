@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import type { GeneratedResolver } from "@/generated/contracts";
 import { classBean, createApplicationContext, factoryBean } from "@/generated-runtime";
 import {
