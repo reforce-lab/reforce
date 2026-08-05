@@ -1,7 +1,7 @@
 import type { ApplicationContext } from "@reforce/context";
 import { isObject } from "radashi";
-import { requireBunExecutable } from "@/bun-runtime";
 import { createChildLeaseParticipant } from "@/lease-endpoint";
+import { requireNodeExecutable } from "@/node-runtime";
 import { PlainTextReporter, type Reporter, reportShutdownFailure } from "@/reporter";
 import { installProcessShutdownHandlers, ShutdownController } from "@/shutdown-controller";
 
@@ -60,7 +60,7 @@ async function joinParentLease(): Promise<ChildLeaseParticipant | undefined> {
     return undefined;
   }
   if (typeof process.send !== "function") {
-    throw new Error("A production child lease token requires Bun process IPC.");
+    throw new Error("A production child lease token requires Node.js process IPC.");
   }
   const participant = await createChildLeaseParticipant(leaseToken);
   try {
@@ -85,7 +85,7 @@ export async function runProductionApplication(
   bootstrap: () => Promise<ApplicationContext>,
   dependencies: ProductionApplicationDependencies = defaultDependencies,
 ): Promise<void> {
-  requireBunExecutable();
+  requireNodeExecutable();
   const controller = new ShutdownController({
     command: "start",
     reporter: dependencies.reporter,

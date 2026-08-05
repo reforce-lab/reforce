@@ -1,9 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
 import {
   createTemporaryProject,
   type ProjectTree,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler } from "@/index";
 
 // 方法级织入的硬错矩阵 IT（ADR 0008 AM1，#202）：要么生效、要么编译错，无静默第三态。

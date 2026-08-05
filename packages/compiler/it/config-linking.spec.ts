@@ -1,14 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  bundleEntry,
   createTemporaryProject,
   type ProjectTree,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterEach, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 import { type CompileSuccess, linkApplicationPackages, linkConfigPackage } from "./support/project";
 import { nodeModulesTree, starterMetaSpan, starterPackage } from "./support/starters";
@@ -680,15 +681,10 @@ describe("config generation execution", () => {
     expect(typecheck.stdout).toBe("");
     expect(typecheck.exitCode).toBe(0);
 
-    const bundle = await runCommand(
-      process.execPath,
-      ["build", "integration.ts", "--target=node", "--format=esm", "--outdir=dist"],
-      { cwd: projectRoot },
-    );
-    expect(bundle.exitCode).toBe(0);
+    await bundleEntry({ entry: "integration.ts", cwd: projectRoot, outdir: "dist" });
 
     const execution = await runCommand(
-      await resolveBunExecutable(),
+      await resolveNodeExecutable(),
       [path.join(projectRoot, "dist", "integration.js")],
       { cwd: projectRoot, env: { ...process.env, REFORCE_PROFILE: undefined } },
     );

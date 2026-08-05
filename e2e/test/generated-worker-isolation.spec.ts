@@ -1,14 +1,15 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { cp, mkdir, symlink } from "node:fs/promises";
+import { cp, mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  bundleEntry,
   copyApplicationProject,
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterAll, beforeAll, expect, test } from "vitest";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -18,15 +19,15 @@ const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
 const contextRoot = join(workspaceRoot, "packages", "context");
 const configRoot = join(workspaceRoot, "packages", "config");
 const webRoot = join(workspaceRoot, "packages", "web");
-const webBunRoot = join(workspaceRoot, "packages", "web-bun");
+const webNodeRoot = join(workspaceRoot, "packages", "web-node");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
-const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
+const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 const commandTimeout = 120_000;
 let temporaryProject: TemporaryProject | undefined;
 let builtWorkerEntry: string | undefined;
 let workerHarness: string | undefined;
-let bunExecutable: string | undefined;
+let nodeExecutable: string | undefined;
 
 function commandFailure(result: { readonly stderr?: unknown; readonly stdout?: unknown }): string {
   return `stdout:\n${String(result.stdout)}\nstderr:\n${String(result.stderr)}`;
@@ -37,11 +38,11 @@ async function runBuiltWorkers(): Promise<unknown> {
     temporaryProject === undefined ||
     builtWorkerEntry === undefined ||
     workerHarness === undefined ||
-    bunExecutable === undefined
+    nodeExecutable === undefined
   ) {
     throw new Error("Generated application Worker fixture has not been built.");
   }
-  const result = await runCommand(bunExecutable, [workerHarness, builtWorkerEntry], {
+  const result = await runCommand(nodeExecutable, [workerHarness, builtWorkerEntry], {
     cwd: temporaryProject.projectRoot,
     timeout: commandTimeout,
   });
@@ -90,17 +91,17 @@ beforeAll(async () => {
       join(scopeRoot, "config"),
       process.platform === "win32" ? "junction" : "dir",
     ),
-    // fixture 应用现在是 web 应用（#153）：web 核心与 Bun 引擎 starter 同样以符号链接落地，
-    // 每个 Worker 里 bootstrap 会真的起 Bun.serve（端口 0），close 时排空停机。
+    // fixture 应用现在是 web 应用（#153）：web 核心与 Node 引擎 starter 同样以符号链接落地，
+    // 每个 Worker 里 bootstrap 会真的起 node:http 服务（端口 0），close 时排空停机。
     symlink(webRoot, join(scopeRoot, "web"), process.platform === "win32" ? "junction" : "dir"),
     symlink(
-      webBunRoot,
-      join(scopeRoot, "web-bun"),
+      webNodeRoot,
+      join(scopeRoot, "web-node"),
       process.platform === "win32" ? "junction" : "dir",
     ),
     symlink(
-      bunTypesRoot,
-      join(typesScopeRoot, "bun"),
+      nodeTypesRoot,
+      join(typesScopeRoot, "node"),
       process.platform === "win32" ? "junction" : "dir",
     ),
   ]);
@@ -118,22 +119,32 @@ beforeAll(async () => {
 
   builtWorkerEntry = join(temporaryProject.projectRoot, "dist", "worker-entry.mjs");
   workerHarness = join(temporaryProject.projectRoot, "worker-harness.ts");
-  bunExecutable = await resolveBunExecutable();
-  const build = await runCommand(
-    process.execPath,
-    ["build", "worker-entry.ts", "--target=node", "--format=esm", `--outfile=${builtWorkerEntry}`],
-    { cwd: temporaryProject.projectRoot, timeout: commandTimeout },
+  nodeExecutable = await resolveNodeExecutable();
+  // 静态拼装打包入口：esbuild 才能把生成物与应用源码（含 TC39 装饰器，经 SWC 降级）
+  // 收进同一个 bundle；每个 Worker 独立模块图的隔离语义保持不变。
+  await writeFile(
+    join(temporaryProject.projectRoot, "worker-bundle-entry.ts"),
+    [
+      'import * as applicationModule from "./project/src/application";',
+      'import * as bootstrapModule from "./project/.reforce/generated/bootstrap";',
+      'import { observeApplication } from "./worker-entry";',
+      "",
+      "await observeApplication(bootstrapModule, applicationModule);",
+      "",
+    ].join("\n"),
   );
-  if (build.exitCode !== 0) {
-    throw new Error(commandFailure(build));
-  }
+  await bundleEntry({
+    entry: "worker-bundle-entry.ts",
+    cwd: temporaryProject.projectRoot,
+    outfile: builtWorkerEntry,
+  });
 }, commandTimeout);
 
 afterAll(async () => {
   await temporaryProject?.cleanup();
 });
 
-test("keeps generated singleton state isolated in each Bun Worker", async () => {
+test("keeps generated singleton state isolated in each Node.js Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -142,7 +153,7 @@ test("keeps generated singleton state isolated in each Bun Worker", async () => 
   ]);
 });
 
-test("keeps generated cycle proxy state isolated in each Bun Worker", async () => {
+test("keeps generated cycle proxy state isolated in each Node.js Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -151,7 +162,7 @@ test("keeps generated cycle proxy state isolated in each Bun Worker", async () =
   ]);
 });
 
-test("keeps generated Lazy state isolated in each Bun Worker", async () => {
+test("keeps generated Lazy state isolated in each Node.js Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -170,7 +181,7 @@ test("keeps generated Lazy state isolated in each Bun Worker", async () => {
   ]);
 });
 
-test("resolves GreetingService behavior in each Bun Worker", async () => {
+test("resolves GreetingService behavior in each Node.js Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([
@@ -179,7 +190,7 @@ test("resolves GreetingService behavior in each Bun Worker", async () => {
   ]);
 });
 
-test("resolves SelectionProbe behavior in each Bun Worker", async () => {
+test("resolves SelectionProbe behavior in each Node.js Worker", async () => {
   const observations = await runBuiltWorkers();
 
   expect(observations).toMatchObject([

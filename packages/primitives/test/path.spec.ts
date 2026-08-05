@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
 import path, { posix, sep, win32 } from "node:path";
 import fc from "fast-check";
+import { describe, expect, test } from "vitest";
 import {
   isPathContained,
   isPathStrictlyContained,

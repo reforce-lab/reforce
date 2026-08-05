@@ -1,8 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCompiler } from "@reforce/compiler";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { startDevWatchBuild } from "@/bundling/dev-watch";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 import { collectInstallSignalInputs } from "@/dev/install-signals";
@@ -23,7 +23,7 @@ import {
   untilObserved,
 } from "../support/watch-harness";
 
-// ADR 0004（#120）决策 17、Issue #148：dev loop 三信号——应用 package.json 依赖增删、bun.lock
+// ADR 0004（#120）决策 17、Issue #148：dev loop 三信号——应用 package.json 依赖增删、pnpm-lock.yaml
 // install 收尾、已解析 starter meta 文件路径——都必须汇入既有的「重发现→重链接→重生成」路径。
 // 断言全部走事件序（编译回调 + 产物效果），不使用墙钟窗口（Issue #92/#94）；等待的是「改动的
 // 效果出现」而非「第几次编译」，以吞掉 watchpack 启动窗口的随机目录事件（Issue #86）。
@@ -136,7 +136,7 @@ async function generatedBeansContain(projectRoot: string, marker: string): Promi
   return content.includes(marker);
 }
 
-test("a bun.lock write after installing a registered starter recovers the failed watch", async () => {
+test("a pnpm-lock.yaml write after installing a registered starter recovers the failed watch", async () => {
   const { project, compilations, invalidations } = await setupSignalsWatch({
     sources: starterApplicationSources,
   });
@@ -150,9 +150,9 @@ test("a bun.lock write after installing a registered starter recovers the failed
   );
 
   // 模拟 bun install：先落包内容（node_modules 期间为半成品、被 watch 排除，不触发任何重建），
-  // 最后写 bun.lock 作为收尾信号——重发现必须由它触发。
+  // 最后写 pnpm-lock.yaml 作为收尾信号——重发现必须由它触发。
   await writeStarterPackage(join(project.projectRoot, "node_modules", "@acme", "starter-redis"));
-  const lockPath = join(project.projectRoot, "bun.lock");
+  const lockPath = join(project.projectRoot, "pnpm-lock.yaml");
   await writeFile(lockPath, '{"lockfileVersion": 1}\n');
 
   await untilObserved(compilations, () =>

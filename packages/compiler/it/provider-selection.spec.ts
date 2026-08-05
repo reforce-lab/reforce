@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 import { addQualifiedSelectionProbe, createPositiveApplication } from "./support/project";
 

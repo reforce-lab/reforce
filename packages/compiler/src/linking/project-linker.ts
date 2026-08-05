@@ -378,7 +378,7 @@ export async function createProjectLinker(
       // 丢弃的只有"已知包根的严格祖先且在项目外"的目录。
       // 单文件依赖不受限（跨目录 tsconfig extends 失效是 dev-watch-build 钉住的契约，文件监视
       // 不引发目录递归扫描），但已注册 starter 包内的文件除外——安装内容视为不可变，其变更的
-      // 重建信号是项目内 package.json / bun.lock（dev-watch-signals 钉住的通道）。
+      // 重建信号是项目内 package.json / pnpm-lock.yaml（dev-watch-signals 钉住的通道）。
       const starterRoots = registry.starters.map((starter) => starter.rootPath);
       const projectPrefix = `${project.projectRoot}${path.sep}`;
       const insideProject = (dependency: string) =>

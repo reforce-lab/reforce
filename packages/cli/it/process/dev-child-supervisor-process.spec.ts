@@ -1,13 +1,13 @@
-import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { resolveBunExecutable, waitUntil } from "@reforce/tooling-testing";
+import { resolveNodeExecutable, waitUntil } from "@reforce/tooling-testing";
 import { execa } from "execa";
+import { expect, test } from "vitest";
 import { DevChildSupervisor, type ManagedDevChild } from "@/dev/child-supervisor";
 
 const harnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-exit.harness.ts", import.meta.url),
 );
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 
 test("real child processes obey restart budget and never overlap", async () => {
   const exitCodes = [1, 1, 0];
@@ -24,7 +24,7 @@ test("real child processes obey restart budget and never overlap", async () => {
       spawnCount += 1;
       liveChildren += 1;
       maximumLiveChildren = Math.max(maximumLiveChildren, liveChildren);
-      const subprocess = execa(bunExecutable, [harnessPath, String(exitCode)], {
+      const subprocess = execa(nodeExecutable, [harnessPath, String(exitCode)], {
         reject: false,
         shell: false,
       });

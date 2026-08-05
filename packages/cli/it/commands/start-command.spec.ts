@@ -1,4 +1,3 @@
-import { afterEach, expect, test } from "bun:test";
 import { symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createChildLeaseParticipant } from "@reforce/runtime/lease-endpoint";
@@ -7,6 +6,7 @@ import {
   createTimeoutGuard,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { runStartCommand } from "@/commands/start";
 import { recordingReporter } from "../support/recording-reporter";
 

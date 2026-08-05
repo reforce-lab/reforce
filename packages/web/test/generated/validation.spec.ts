@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError } from "@/errors";
 import type { GeneratedRoute } from "@/generated/route-table";
 import { validateGeneratedRouteTable } from "@/generated/validation";

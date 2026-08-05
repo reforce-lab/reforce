@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
@@ -8,9 +7,14 @@ import {
   createChildLeaseParticipant,
   type LeaseParticipant,
 } from "@reforce/runtime/lease-endpoint";
-import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import {
+  bundleHarness,
+  createTemporaryProject,
+  type TemporaryProject,
+} from "@reforce/tooling-testing";
+import { afterEach, describe, expect, test } from "vitest";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
-import { spawnBunIpcHarness } from "../support/process/bun-ipc-harness";
+import { spawnNodeIpcHarness } from "../support/process/node-ipc-harness";
 
 interface FakeGateEndpoint {
   readonly port: number;
@@ -98,10 +102,10 @@ async function replaceGateRecord(gateRoot: string, contents: string): Promise<vo
 }
 
 async function spawnLeaseHolder(projectRoot: string, mode: "reader" | "writer") {
-  const harnessPath = fileURLToPath(
-    new URL("../support/process/lease/project-lease.harness.ts", import.meta.url),
+  const harnessPath = await bundleHarness(
+    fileURLToPath(new URL("../support/process/lease/project-lease.harness.ts", import.meta.url)),
   );
-  const subprocess = spawnBunIpcHarness(harnessPath, [projectRoot, mode]);
+  const subprocess = spawnNodeIpcHarness(harnessPath, [projectRoot, mode]);
   let message: unknown;
   try {
     message = await subprocess.waitForMessage("Lease holder did not publish readiness.");
@@ -467,7 +471,7 @@ describe("project lease", () => {
     const participantHarnessPath = fileURLToPath(
       new URL("../support/process/lease/project-lease-participant.harness.ts", import.meta.url),
     );
-    const participantProcess = spawnBunIpcHarness(participantHarnessPath, [holder.leaseToken]);
+    const participantProcess = spawnNodeIpcHarness(participantHarnessPath, [holder.leaseToken]);
     let participantClosed = false;
     let holderClosed = false;
     try {

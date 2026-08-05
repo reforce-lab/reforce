@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 import { ApplicationCleanupError, ApplicationStartError } from "@/index";
 
 // `expect(...).rejects` 只能断言「拒绝了」，拿不到 reason 本身。这些用例要继续检查 reason 的

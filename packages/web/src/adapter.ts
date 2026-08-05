@@ -4,7 +4,7 @@ import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 // 适配器契约（ADR 0006 W1/W2，#142 / #152）：与路由表 schema 一起版本化的公开面。引擎适配器
 // 在启动时一次性消费 WebApplication（每条 PreparedRoute 已完成校验器/序列化器/链的组装），
 // 把 method+path 灌进引擎原生注册面，热路径只调用 handle——框架抽象在热路径上不存在。
-// 本 milestone 只定义契约与引擎无关执行；真实引擎适配器（Bun.serve 等）是 #153。
+// 本 milestone 只定义契约与引擎无关执行；真实引擎适配器（@reforce/web-node，node:http）是 #153 与 #207。
 
 export interface RouteMatch {
   readonly method: HttpMethod;

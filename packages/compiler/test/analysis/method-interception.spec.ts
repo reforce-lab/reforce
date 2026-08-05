@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { type ChainEntryDraft, flattenChainEntries } from "@/analysis/method-interception";
 
 // 链压平的纯函数面（ADR 0008 AM1，#202 定案 3）：并集按 beanId 去重（首现记 provenance），

@@ -4,19 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:e2e": "bun test --timeout 120000 test",
-    "test:e2e:evidence": "bun test --timeout 120000 test --reporter=junit --reporter-outfile=e2e-junit.xml",
+    "test:e2e": "vitest run test",
+    "test:e2e:evidence": "vitest run test --reporter=junit --outputFile=e2e-junit.xml",
     "typecheck": "tsc && tsc -p fixtures/application/tsconfig.json",
     "check": "biome check .",
     "check:write": "biome check --write .",
-    "bench:http": "bun bench/http.bench.ts",
-    "bench:serializer": "bun bench/serializer.bench.ts"
+    "bench:http": "node bench/http.bench.ts",
+    "bench:serializer": "node bench/serializer.bench.ts"
   },
   "dependencies": {
     "@reforce/config": "workspace:*",
     "@reforce/context": "workspace:*",
     "@reforce/web": "workspace:*",
-    "@reforce/web-bun": "workspace:*"
+    "@reforce/web-node": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
@@ -24,8 +24,10 @@
     "@reforce/testing": "workspace:*",
     "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
-    "@types/bun": "catalog:",
+    "@reforce/tooling-vitest": "workspace:*",
+    "@types/node": "catalog:",
     "radashi": "^12.9.1",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

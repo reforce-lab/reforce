@@ -3,7 +3,7 @@
 // - 手动 stringify：handler 直接返回 new Response(JSON.stringify(value))（无 schema 路由）。
 // 另附裸 JSON.stringify 闭环参照（无 Response、无管线）。注意白名单侧输出比手动侧少一个
 // 字段（secret 被剥除），这正是它的功能；差值 = 投影 + 校验通道的代价减去少序列化一个字段。
-// 复跑：`cd e2e && bun run bench:serializer`。
+// 复跑：`pnpm --dir e2e run bench:serializer`。
 
 import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
 import { createWebApplication } from "@reforce/web";
@@ -137,7 +137,7 @@ for (let round = 0; round < rounds; round += 1) {
 }
 
 console.log(
-  `Bun ${Bun.version} · ${process.platform}-${process.arch} · iterations=${iterations} × rounds=${rounds}（取每轮最好值）`,
+  `Node.js ${process.version} · ${process.platform}-${process.arch} · iterations=${iterations} × rounds=${rounds}（取每轮最好值）`,
 );
 console.log("");
 console.log("| variant | ops/s |");

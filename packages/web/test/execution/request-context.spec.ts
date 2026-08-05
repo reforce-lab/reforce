@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { RequestContextState } from "@/execution/request-context";
 import { defineRouteMarker } from "@/routing/route-marker";
 

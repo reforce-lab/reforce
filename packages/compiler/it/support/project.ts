@@ -39,8 +39,8 @@ export async function linkApplicationPackages(projectRoot: string): Promise<void
     linkPackage(projectRoot, "@reforce/context", path.join(repositoryRoot, "packages", "context")),
     linkPackage(
       projectRoot,
-      "@types/bun",
-      path.dirname(fileURLToPath(import.meta.resolve("@types/bun/package.json"))),
+      "@types/node",
+      path.dirname(fileURLToPath(import.meta.resolve("@types/node/package.json"))),
     ),
   ]);
 }

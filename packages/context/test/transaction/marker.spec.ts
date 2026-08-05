@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { readTransactionalValue, Transactional } from "@/transaction/marker";
 
 // @Transactional 走 AM1 标记通道（#204 定案 2）；readTransactionalValue 是拦截器入口的

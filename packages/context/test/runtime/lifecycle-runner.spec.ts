@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
+import { describe, expect, test } from "vitest";
 import { classBean, createApplicationContext, factoryBean } from "@/generated-runtime";
 import { ApplicationStartError, defineBean } from "@/index";
 import { applicationCleanupError, rejection } from "../support/rejection";

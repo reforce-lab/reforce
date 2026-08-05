@@ -1,8 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
 import { access, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { writeProjectTree } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { createCompiler } from "@/index";
 
 const temporaryDirectories: string[] = [];

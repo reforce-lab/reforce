@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import {
   createTemporaryProject,
   type ProjectTree,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   type CompileLibraryResult,
   type CompileResult,
@@ -284,6 +284,59 @@ describe("library compile", () => {
 
     expect(generatedLibraryFile(result, "reforce.js")).toBe("export default Object.freeze({});\n");
     expect(generatedLibraryFile(result, "reforce.d.ts")).toContain("StarterDefinition");
+  });
+
+  test("compiles a starter library whose bean imports a Node.js builtin module", async () => {
+    // #207：Node 引擎 starter（@reforce/web-node）把 node:http 的值引入带进库模式编译；
+    // 内置模块没有文件落点，必须按外部符号静默通过，不得报 MODULE_RESOLUTION_FAILED。
+    const result = expectLibrarySuccess(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            "server.ts": [
+              'import { createServer } from "node:http";',
+              'import { Injectable } from "@reforce/context";',
+              "",
+              "@Injectable()",
+              "export class HttpProbe {",
+              "  listening(): boolean {",
+              "    return createServer().listening;",
+              "  }",
+              "}",
+              "",
+            ].join("\n"),
+            "index.ts": 'export { HttpProbe } from "./server";\n',
+          },
+          dist: {
+            "server.d.ts": [
+              "export declare class HttpProbe {",
+              "  listening(): boolean;",
+              "}",
+              "",
+            ].join("\n"),
+            "server.js": [
+              'import { createServer } from "node:http";',
+              "export class HttpProbe {",
+              "  listening() {",
+              "    return createServer().listening;",
+              "  }",
+              "}",
+              "",
+            ].join("\n"),
+            "index.d.ts": 'export { HttpProbe } from "./server.js";\n',
+            "index.js": 'export { HttpProbe } from "./server.js";\n',
+          },
+          exports: {
+            ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
+            "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
+            "./reforce-meta": "./reforce-meta.json",
+          },
+        }),
+      ),
+    );
+
+    const meta = parseMeta(result);
+    expect(meta.beans.map((bean) => bean.id)).toEqual(["@acme/starter-redis#HttpProbe"]);
   });
 
   test("normalizes dependency-starter contracts to meta coordinates and records starterDeps", async () => {

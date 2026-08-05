@@ -1,8 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCompiler } from "@reforce/compiler";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { startDevWatchBuild } from "@/bundling/dev-watch";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 import type { DevCompilation } from "@/dev/watch-coordinator";

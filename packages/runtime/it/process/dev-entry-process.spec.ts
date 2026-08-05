@@ -1,4 +1,3 @@
-import { afterEach, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -6,10 +5,11 @@ import {
   createSubprocessRegistry,
   createTimeoutGuard,
   observeTypedMessages,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   send,
 } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import {
   isDevChildLeaseParticipantMessage,
   isDevChildReadyMessage,
@@ -28,7 +28,7 @@ const handshakeHarnessPath = fileURLToPath(
 const windowsSignalHarnessPath = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 const subprocesses = createSubprocessRegistry();
 const withTimeout = createTimeoutGuard(5_000);
 
@@ -62,7 +62,7 @@ function spawnObservedDevelopmentHarness(
   const shutdownAcknowledged = Promise.withResolvers<void>();
   const signalObserved = Promise.withResolvers<void>();
   const child = spawn(
-    bunExecutable,
+    nodeExecutable,
     [
       ...(useWindowsSignalHarness
         ? [windowsSignalHarnessPath, handshakeHarnessPath]
@@ -139,8 +139,8 @@ function harnessObservation(result: {
   return parseObservation(output);
 }
 
-test("a real Bun process closes the old Context before applying updated ESM binding", async () => {
-  const result = await runCommand(bunExecutable, [harnessPath, "strict-order"], {
+test("a real Node.js process closes the old Context before applying updated ESM binding", async () => {
+  const result = await runCommand(nodeExecutable, [harnessPath, "strict-order"], {
     timeout: 10_000,
   });
   const observation = harnessObservation(result);
@@ -158,8 +158,8 @@ test("a real Bun process closes the old Context before applying updated ESM bind
   expect(Reflect.get(observation, "listenerDelta")).toBe(0);
 });
 
-test("a real Bun process keeps HMR fatal primary and exits nonzero after cleanup", async () => {
-  const result = await runCommand(bunExecutable, [harnessPath, "fatal"], { timeout: 10_000 });
+test("a real Node.js process keeps HMR fatal primary and exits nonzero after cleanup", async () => {
+  const result = await runCommand(nodeExecutable, [harnessPath, "fatal"], { timeout: 10_000 });
   const observation = harnessObservation(result);
 
   expect(result.exitCode).toBe(1);
@@ -174,7 +174,7 @@ test("a real Bun process keeps HMR fatal primary and exits nonzero after cleanup
 
 test("a failed bootstrap exits after cleanup without reporting child readiness", async () => {
   const messages: unknown[] = [];
-  const subprocess = spawn(bunExecutable, [bootstrapFailureHarnessPath], {
+  const subprocess = spawn(nodeExecutable, [bootstrapFailureHarnessPath], {
     env: {
       ...process.env,
       [writerLeaseTokenEnvironmentVariable]: "writer-harness-token",

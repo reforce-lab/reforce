@@ -1,14 +1,14 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { resolveBunExecutable } from "@reforce/tooling-testing";
+import { resolveNodeExecutable } from "@reforce/tooling-testing";
 
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 
 export interface IpcProcessOutcome {
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
 }
 
-export interface BunIpcHarness {
+export interface NodeIpcHarness {
   readonly child: ChildProcess;
   readonly output: () => { readonly stderr: string; readonly stdout: string };
   readonly sendMessage: (message: object) => Promise<void>;
@@ -16,11 +16,11 @@ export interface BunIpcHarness {
   readonly waitForMessage: (message: string) => Promise<unknown>;
 }
 
-export function spawnBunIpcHarness(
+export function spawnNodeIpcHarness(
   harnessPath: string,
   arguments_: readonly string[],
-): BunIpcHarness {
-  const child = spawn(bunExecutable, [harnessPath, ...arguments_], {
+): NodeIpcHarness {
+  const child = spawn(nodeExecutable, [harnessPath, ...arguments_], {
     shell: false,
     stdio: ["ignore", "pipe", "pipe", "ipc"],
     windowsHide: true,
@@ -74,7 +74,7 @@ export function spawnBunIpcHarness(
     output: () => ({ stderr, stdout }),
     async sendMessage(message) {
       if (!child.connected) {
-        throw new Error("Bun harness IPC channel is disconnected.");
+        throw new Error("The harness IPC channel is disconnected.");
       }
       await new Promise<void>((resolve, reject) => {
         child.send(message, (error) => {

@@ -1,9 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
 import {
   createTemporaryProject,
   type ProjectTree,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 import { applicationTsconfig } from "./support/project";
 

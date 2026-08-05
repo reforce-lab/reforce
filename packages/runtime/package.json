@@ -17,9 +17,9 @@
       "types": "./dist/reporter.d.ts",
       "default": "./dist/reporter.js"
     },
-    "./bun-runtime": {
-      "types": "./dist/bun-runtime.d.ts",
-      "default": "./dist/bun-runtime.js"
+    "./node-runtime": {
+      "types": "./dist/node-runtime.d.ts",
+      "default": "./dist/node-runtime.js"
     },
     "./dev-ipc": {
       "types": "./dist/dev-ipc.d.ts",
@@ -52,7 +52,7 @@
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
-    "test": "bun test --timeout 300000 test it",
+    "test": "vitest run",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
@@ -66,8 +66,10 @@
     "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
     "@rslib/core": "catalog:",
-    "@types/bun": "catalog:",
-    "typescript": "catalog:"
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

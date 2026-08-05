@@ -1,8 +1,8 @@
-// 基准 ①/③（#153）：裸 Bun.serve 同逻辑手写版（天花板基线）vs Reforce 全链路（构建产物）。
+// 基准 ①/③（#153）：裸 node:http 同逻辑手写版（天花板基线）vs Reforce 全链路（构建产物）。
 // - /health：最小路由（静态路径、零 schema、仍走 作用域+全局中间件链）→ 框架税下限；
 // - /users/:id：典型链路（三层洋葱 + marker 准入 + 参数 codec + 编码序列化）→ 基准 ③。
-// 方法学：同机同 Bun、两个目标都是独立子进程、逐个串行压测（互不抢核）；先预热再计时；
-// 结果打印为 markdown 表。复跑：`cd e2e && bun run bench:http`。
+// 方法学：同机同 Node、两个目标都是独立子进程、逐个串行压测（互不抢核）；先预热再计时；
+// 结果打印为 markdown 表。复跑：`pnpm --dir e2e run bench:http`。
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { join } from "node:path";
@@ -10,17 +10,17 @@ import { fileURLToPath } from "node:url";
 import {
   copyApplicationProject,
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
 } from "@reforce/tooling-testing";
-import { installApplicationPackages } from "../support/application-packages";
-import { formatRow, type LoadResult, runLoad } from "./load";
+import { installApplicationPackages } from "../support/application-packages.ts";
+import { formatRow, type LoadResult, runLoad } from "./load.ts";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 
 const connections = 32;
 const warmupMilliseconds = 2000;
@@ -54,7 +54,7 @@ async function startTarget(
   cwd: string,
   pattern: RegExp,
 ): Promise<StartedTarget> {
-  const child = spawn(bunExecutable, [...command], {
+  const child = spawn(nodeExecutable, [...command], {
     cwd,
     stdio: ["ignore", "ignore", "pipe"],
     env: { ...process.env },
@@ -83,7 +83,7 @@ const project = await createTemporaryProject();
 try {
   await copyApplicationProject(applicationFixture, project.projectRoot);
   await installApplicationPackages(project.projectRoot);
-  const build = await runCommand(bunExecutable, [cliEntry, "build", "--project", "."], {
+  const build = await runCommand(nodeExecutable, [cliEntry, "build", "--project", "."], {
     cwd: project.projectRoot,
     timeout: 120_000,
   });
@@ -91,7 +91,7 @@ try {
     throw new Error(`fixture build failed:\n${build.stdout}\n${build.stderr}`);
   }
 
-  console.error("[bench] measuring the bare Bun.serve baseline...");
+  console.error("[bench] measuring the bare node:http baseline...");
   const bare = await startTarget(
     [join(e2eRoot, "bench", "bare-server.ts")],
     project.projectRoot,
@@ -108,7 +108,7 @@ try {
   const reforce = await startTarget(
     [join(project.projectRoot, "dist", "main.mjs")],
     project.projectRoot,
-    /\[reforce\.web-bun\] listening on (http:\/\/[^\s]+)/,
+    /\[reforce\.web-node\] listening on (http:\/\/[^\s]+)/,
   );
   let reforceResults: Record<string, LoadResult>;
   try {
@@ -130,14 +130,14 @@ try {
     throw new Error("benchmark results are incomplete");
   }
   console.log(
-    `Bun ${Bun.version} · ${process.platform}-${process.arch} · connections=${connections} · warmup=${warmupMilliseconds}ms · duration=${durationMilliseconds}ms`,
+    `Node.js ${process.version} · ${process.platform}-${process.arch} · connections=${connections} · warmup=${warmupMilliseconds}ms · duration=${durationMilliseconds}ms`,
   );
   console.log("");
   console.log("| target | throughput | p50 | p99 | failures |");
   console.log("| --- | --- | --- | --- | --- |");
-  console.log(formatRow("bare Bun.serve · GET /health", bareHealth));
+  console.log(formatRow("bare node:http · GET /health", bareHealth));
   console.log(formatRow("Reforce · GET /health", reforceHealth, bareHealth));
-  console.log(formatRow("bare Bun.serve · GET /users/:id", bareChain));
+  console.log(formatRow("bare node:http · GET /users/:id", bareChain));
   console.log(
     formatRow("Reforce · GET /users/:id (3 middleware + marker + codec)", reforceChain, bareChain),
   );

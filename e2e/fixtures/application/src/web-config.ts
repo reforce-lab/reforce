@@ -1,5 +1,5 @@
 import { ConfigProperties } from "@reforce/config";
-import type { WebBunServeSettings } from "@reforce/web-bun";
+import type { WebNodeServeSettings } from "@reforce/web-node";
 
 interface WebServerValues {
   readonly port: number;
@@ -11,7 +11,7 @@ type SchemaResult =
   | { readonly value: WebServerValues; readonly issues?: undefined }
   | { readonly issues: readonly SchemaIssue[] };
 
-// 引擎特有配置走 ADR 0005 通道：@reforce/web-bun 声明对 WebBunServeSettings 的开放契约边，
+// 引擎特有配置走 ADR 0005 通道：@reforce/web-node 声明对 WebNodeServeSettings 的开放契约边，
 // 应用用 config class 闭合。port 默认 0（临时端口）——e2e 并发起多个实例不抢端口，实际
 // 端口从引擎的监听日志读取。
 export const webServerSchema = {
@@ -33,4 +33,4 @@ export const webServerSchema = {
 
 export class WebServerConfig
   extends ConfigProperties("webServer", webServerSchema)
-  implements WebBunServeSettings {}
+  implements WebNodeServeSettings {}

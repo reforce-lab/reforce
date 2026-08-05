@@ -1,4 +1,3 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -7,11 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   copyApplicationProject,
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
 import { sleep } from "radashi";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { installApplicationPackages } from "../support/application-packages";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -26,7 +26,7 @@ const windowsSignalFixture = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
 const commandTimeout = 120_000;
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 
 interface ApplicationFixture {
   readonly project: TemporaryProject;
@@ -302,7 +302,7 @@ async function createMonorepoProject(): Promise<TemporaryProject> {
 
 async function buildProject(projectRoot: string, arguments_: readonly string[] = []) {
   return await runCommand(
-    bunExecutable,
+    nodeExecutable,
     [cliEntry, "build", "--project", projectRoot, ...arguments_],
     {
       cwd: projectRoot,
@@ -434,7 +434,7 @@ function spawnStartCommand(input: {
   readonly extraEnv?: Readonly<Record<string, string>>;
 }): SpawnedIpcProcess {
   return spawnIpcProcess({
-    executable: bunExecutable,
+    executable: nodeExecutable,
     arguments: input.useWindowsSignalHarness
       ? [windowsSignalFixture, cliEntry, "start", "--project", input.projectRoot]
       : [cliEntry, "start", "--project", input.projectRoot],
@@ -520,7 +520,7 @@ function spawnDevCommand(input: {
     ...(input.tsconfigPath === undefined ? [] : ["--tsconfig", input.tsconfigPath]),
   ];
   return spawnIpcProcess({
-    executable: bunExecutable,
+    executable: nodeExecutable,
     arguments: process.platform === "win32" ? [windowsSignalFixture, ...arguments_] : arguments_,
     cwd: input.cwd,
     env: {
@@ -636,7 +636,7 @@ async function forceCleanup(started: StartedApplication): Promise<void> {
   await forceCleanupProcess(started);
 }
 
-describe.serial("built Reforce CLI", () => {
+describe.sequential("built Reforce CLI", () => {
   let application: ApplicationFixture | undefined;
 
   function currentApplication(): ApplicationFixture {
@@ -672,16 +672,16 @@ describe.serial("built Reforce CLI", () => {
   });
 
   test("prints help from the built CLI entry", async () => {
-    const result = await runCommand(bunExecutable, [cliEntry, "--help"], { timeout: 10_000 });
+    const result = await runCommand(nodeExecutable, [cliEntry, "--help"], { timeout: 10_000 });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("Usage: reforce");
   });
 
-  test("preserves the Bun shebang in the built CLI entry", async () => {
+  test("preserves the node shebang in the built CLI entry", async () => {
     const source = await readFile(cliEntry, "utf8");
 
-    expect(source.split("\n", 1)).toEqual(["#!/usr/bin/env bun"]);
+    expect(source.split("\n", 1)).toEqual(["#!/usr/bin/env node"]);
   });
 
   test("does not embed the build workspace path in the CLI entry", async () => {
@@ -695,7 +695,7 @@ describe.serial("built Reforce CLI", () => {
     const project = await createTemporaryProject();
     try {
       const result = await runCommand(
-        bunExecutable,
+        nodeExecutable,
         [cliEntry, "build", "--project", project.projectRoot],
         { timeout: 10_000 },
       );
@@ -790,7 +790,7 @@ describe.serial("built Reforce CLI", () => {
       const monorepo = await createMonorepoProject();
       try {
         const result = await runCommand(
-          bunExecutable,
+          nodeExecutable,
           [cliEntry, "build", "--project", join("apps", "api service")],
           { cwd: monorepo.projectRoot, timeout: commandTimeout },
         );
@@ -810,7 +810,7 @@ describe.serial("built Reforce CLI", () => {
       const monorepo = await createMonorepoProject();
       try {
         const result = await runCommand(
-          bunExecutable,
+          nodeExecutable,
           [
             cliEntry,
             "build",
@@ -1031,11 +1031,11 @@ describe.serial("built Reforce CLI", () => {
       const adminRoot = join(monorepo.projectRoot, adminDirectory);
       try {
         const [apiBuild, adminBuild] = await Promise.all([
-          runCommand(bunExecutable, [cliEntry, "build", "--project", apiDirectory], {
+          runCommand(nodeExecutable, [cliEntry, "build", "--project", apiDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
-          runCommand(bunExecutable, [cliEntry, "build", "--project", adminDirectory], {
+          runCommand(nodeExecutable, [cliEntry, "build", "--project", adminDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
@@ -1073,11 +1073,11 @@ describe.serial("built Reforce CLI", () => {
       let adminStarted: StartedApplication | undefined;
       try {
         const [apiBuild, adminBuild] = await Promise.all([
-          runCommand(bunExecutable, [cliEntry, "build", "--project", apiDirectory], {
+          runCommand(nodeExecutable, [cliEntry, "build", "--project", apiDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
-          runCommand(bunExecutable, [cliEntry, "build", "--project", adminDirectory], {
+          runCommand(nodeExecutable, [cliEntry, "build", "--project", adminDirectory], {
             cwd: monorepo.projectRoot,
             timeout: commandTimeout,
           }),
@@ -1121,12 +1121,12 @@ describe.serial("built Reforce CLI", () => {
   );
 
   test(
-    "runs the complete isolated production artifact with Bun",
+    "runs the complete isolated production artifact with Node.js",
     async () => {
       const fixture = currentApplication();
       const artifactRoot = fixture.isolatedArtifact.projectRoot;
-      const readyPath = join(artifactRoot, "bun-artifact.ready");
-      const closedPath = join(artifactRoot, "bun-artifact.closed");
+      const readyPath = join(artifactRoot, "node-artifact.ready");
+      const closedPath = join(artifactRoot, "node-artifact.closed");
 
       await executeArtifact({
         executable: process.execPath,
@@ -1135,7 +1135,7 @@ describe.serial("built Reforce CLI", () => {
         closedPath,
       });
 
-      expect(Reflect.get(process.versions, "bun")).toBe("1.3.14");
+      expect(Number(process.versions.node.split(".")[0])).toBeGreaterThanOrEqual(24);
       expect(await pathExists(join(artifactRoot, "src"))).toBe(false);
       expect(await pathExists(join(artifactRoot, "node_modules"))).toBe(false);
       expect(await pathExists(readyPath)).toBe(true);
@@ -1407,7 +1407,7 @@ async function compileStarterFixtures(workspaceRootPath: string): Promise<Compil
   await cp(starterCacheFixture, cacheRoot, { recursive: true });
   await installStarterCompilePackages(baseRoot);
   await installStarterCompilePackages(cacheRoot);
-  const baseResult = await runCommand(bunExecutable, [cliEntry, "lib", "--project", baseRoot], {
+  const baseResult = await runCommand(nodeExecutable, [cliEntry, "lib", "--project", baseRoot], {
     cwd: baseRoot,
     timeout: commandTimeout,
   });
@@ -1417,7 +1417,7 @@ async function compileStarterFixtures(workspaceRootPath: string): Promise<Compil
   await cp(baseRoot, join(cacheRoot, "node_modules", "@acme", "starter-base"), {
     recursive: true,
   });
-  const cacheResult = await runCommand(bunExecutable, [cliEntry, "lib", "--project", cacheRoot], {
+  const cacheResult = await runCommand(nodeExecutable, [cliEntry, "lib", "--project", cacheRoot], {
     cwd: cacheRoot,
     timeout: commandTimeout,
   });
@@ -1506,7 +1506,7 @@ export class MetricsReader {
 `;
 
 async function writeStarterApplicationSources(appRoot: string): Promise<void> {
-  // defineApplication 每应用至多一次：fixture 模板自带 web-bun 注册（#153），starter 场景
+  // defineApplication 每应用至多一次：fixture 模板自带 web-node 注册（#153），starter 场景
   // 用自己的注册整体替换 application.ts（本场景不消费 web 引擎与 worker barrel）。
   await writeFile(join(appRoot, "src", "application.ts"), starterRegistrationSource);
   await writeFile(join(appRoot, "src", "cache-config.ts"), cacheConfigSource);
@@ -1549,7 +1549,7 @@ async function waitForStderr(subprocess: SpawnedIpcProcess, expected: string): P
 
 const devTerminationSignal: NodeJS.Signals = process.platform === "win32" ? "SIGBREAK" : "SIGTERM";
 
-describe.serial("starter consumption", () => {
+describe.sequential("starter consumption", () => {
   let workspace: TemporaryProject;
   let starters: CompiledStarters;
   let appRoot: string;
@@ -1606,7 +1606,7 @@ describe.serial("starter consumption", () => {
     "explains an accepted default starter bean from the generated manifest",
     async () => {
       const result = await runCommand(
-        bunExecutable,
+        nodeExecutable,
         [cliEntry, "explain", "MemoryCache", "--project", appRoot],
         { cwd: appRoot, timeout: commandTimeout },
       );
@@ -1640,7 +1640,7 @@ describe.serial("starter consumption", () => {
       expect(manifest).toContain("CacheMetrics");
 
       const explain = await runCommand(
-        bunExecutable,
+        nodeExecutable,
         [cliEntry, "explain", "LocalCache", "--project", overrideRoot],
         { cwd: overrideRoot, timeout: commandTimeout },
       );
@@ -1665,7 +1665,7 @@ describe.serial("starter consumption", () => {
     for (;;) {
       if (Date.now() - lockWrittenAt >= 2_000) {
         lockWrittenAt = Date.now();
-        await writeFile(lockPath, '{"lockfileVersion": 1}\n');
+        await writeFile(lockPath, "lockfileVersion: '9.0'\n");
       }
       if (await pathExists(readyPath)) {
         return;
@@ -1681,7 +1681,7 @@ describe.serial("starter consumption", () => {
   }
 
   test(
-    "development recovers when a missing starter is installed and bun.lock lands",
+    "development recovers when a missing starter is installed and pnpm-lock.yaml lands",
     async () => {
       const devRoot = await createStarterApplication(workspace.projectRoot, "app-sudden-install");
       const suffix = randomUUID();
@@ -1697,9 +1697,9 @@ describe.serial("starter consumption", () => {
       try {
         // 注册的 starter 未安装：编译失败、保持 watch，不退出。
         await waitForStderr(subprocess, "STARTER_META_NOT_FOUND");
-        // 模拟 bun install：先落包内容（node_modules 不被 watch），bun.lock 收尾触发重发现。
+        // 模拟 pnpm install：先落包内容（node_modules 不被 watch），pnpm-lock.yaml 收尾触发重发现。
         await installStarters(devRoot, starters);
-        await recoverThroughLockfileWrites(subprocess, readyPath, join(devRoot, "bun.lock"));
+        await recoverThroughLockfileWrites(subprocess, readyPath, join(devRoot, "pnpm-lock.yaml"));
         const result = await shutdownWithSignal(subprocess, devTerminationSignal);
         expect(result.exitCode, processFailure(subprocess, result)).toBe(0);
       } finally {
@@ -1710,7 +1710,7 @@ describe.serial("starter consumption", () => {
   );
 
   test(
-    "development relinks after a starter upgrade lands through bun.lock",
+    "development relinks after a starter upgrade lands through pnpm-lock.yaml",
     async () => {
       const devRoot = await createStarterApplication(
         workspace.projectRoot,
@@ -1737,8 +1737,8 @@ describe.serial("starter consumption", () => {
         };
         packageJson.version = "2.0.0";
         await writeFile(installedCachePackage, `${JSON.stringify(packageJson, undefined, 2)}\n`);
-        await writeFile(join(devRoot, "bun.lock"), '{"lockfileVersion": 1}\n');
-        // 升级经 bun.lock 信号进入重发现→重链接→重生成：manifest 的 origin 换代即证据。
+        await writeFile(join(devRoot, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+        // 升级经 pnpm-lock.yaml 信号进入重发现→重链接→重生成：manifest 的 origin 换代即证据。
         await waitForFileContent(
           join(devRoot, ".reforce", "generated", "manifest.json"),
           "@acme/starter-cache@2.0.0",

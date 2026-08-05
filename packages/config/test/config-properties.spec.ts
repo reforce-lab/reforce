@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { describe, expect, test } from "vitest";
 import { ConfigProperties, readConfigPropertiesMetadata } from "@/config-properties";
 
 interface ServerValues {

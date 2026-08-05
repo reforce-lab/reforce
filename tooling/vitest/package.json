@@ -1,0 +1,25 @@
+{
+  "name": "@reforce/tooling-vitest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@swc/core": "^1.15.47",
+    "unplugin-swc": "^1.5.10",
+    "vitest": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

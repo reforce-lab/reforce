@@ -1,5 +1,5 @@
-import { afterEach, expect, test } from "bun:test";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { runBuildCommand } from "@/commands/build";
 import { recordingReporter } from "../support/recording-reporter";
 

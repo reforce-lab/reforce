@@ -1,7 +1,9 @@
 {
   "extends": "@reforce/tooling-tsconfig/base.json",
   "compilerOptions": {
-    "types": ["bun"]
+    "types": ["node"],
+    // bench/*.ts 由 Node type stripping 直跑，相对导入必须带显式 .ts 扩展名
+    "allowImportingTsExtensions": true
   },
-  "include": ["test", "support", "bench"]
+  "include": ["test", "support", "bench", "vitest.config.ts"]
 }

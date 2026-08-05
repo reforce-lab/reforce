@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { renderExplanation } from "@/explain/render";
 import { explainContracts } from "@/explain/selection";
 import type { InstalledStarter } from "@/explain/starter-metas";

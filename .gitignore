@@ -11,9 +11,9 @@ dist/
 !/e2e/fixtures/*/dist/**
 
 # 真 starter 包的 meta 三件套由 `reforce lib` 随 build 产出（#153），与 dist 同为构建产物
-/packages/web-bun/reforce-meta.json
-/packages/web-bun/reforce.js
-/packages/web-bun/reforce.d.ts
+/packages/web-node/reforce-meta.json
+/packages/web-node/reforce.js
+/packages/web-node/reforce.d.ts
 
 # turbo
 .turbo/
@@ -40,7 +40,7 @@ coverage/
 !.env.example
 
 # apm —— 真相源头是 apm.yml + .apm/，以下为编译/安装产物
-# （以 / 开头只匹配根目录；apm.lock.yaml 同 bun.lock 一样需要提交，不在此列）
+# （以 / 开头只匹配根目录；apm.lock.yaml 同 pnpm-lock.yaml 一样需要提交，不在此列）
 /AGENTS.md
 /CLAUDE.md
 .worktrees

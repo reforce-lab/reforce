@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { Controller, ErrorHandler, Get, Middleware, Use } from "@/routing/decorators";
 
 // 装饰器是编译期标记（ADR 0006 W3）：运行时必须保持 no-op；参数守卫只服务未经编译的调用方。

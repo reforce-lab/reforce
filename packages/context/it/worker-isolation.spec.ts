@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
 import { Worker } from "node:worker_threads";
+import { expect, test } from "vitest";
 
 interface WorkerObservation {
   readonly marker: number;

@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
 import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
+import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle } from "@/adapter";
 import { connectWebApplication } from "@/execution/connect";
 
 // connect 是生成的 bootstrap 的接线入口（#153）：这里用替身容器验证编排契约——引擎按序
 // 启动、close 先排空引擎再关容器、启动失败回收。真实容器与真实引擎分别由 web/it 与
-// @reforce/web-bun 的 IT 覆盖。
+// @reforce/web-node 的 IT 覆盖。
 
 const emptyTable = { schemaVersion: 1, routes: [], errorHandlers: [] };
 

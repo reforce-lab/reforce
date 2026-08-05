@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import type { MethodInterceptor, MethodInvocationContext } from "@/interception/interceptor";
 import type { GeneratedInterceptorEntry, GeneratedMethodChain } from "@/interception/invoke";
 import { invokeIntercepted } from "@/interception/invoke";

@@ -1,9 +1,9 @@
-import { afterAll, describe, expect, test } from "bun:test";
 import {
   createTemporaryProject,
   type ProjectTree,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 
 // 织入表 IT（ADR 0008 AM1，#202 定案 4/5）：weaving.json 是可 diff 的纯数据面，钉住——

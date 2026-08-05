@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { TsConfigJsonResolved } from "get-tsconfig";
+import { describe, expect, test } from "vitest";
 import { generatedDeclarationsAreIncluded } from "@/project/config-pattern-coverage";
 
 const tsconfigPath = path.join(path.parse(process.cwd()).root, "reforce-app", "tsconfig.json");

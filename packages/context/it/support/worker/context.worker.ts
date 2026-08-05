@@ -1,10 +1,35 @@
 import { parentPort } from "node:worker_threads";
-import { createApplicationContext, factoryBean } from "@/generated-runtime";
-import { defineBean } from "@/index";
-import { testDefinition, testSource } from "../../../test/support/test-definition";
+// Node Worker 走 type stripping，不读 tsconfig paths：值导入一律指向本包 dist 产物
+// （turbo 让 test 依赖自身 build，dist 新鲜度有保证），类型也只从 dist 取——src 与 dist
+// 的同名契约是两套类型身份，混用会在接缝处报错（#207）。
+import {
+  createApplicationContext,
+  factoryBean,
+  type GeneratedApplicationDefinition,
+  type GeneratedBeanRegistration,
+} from "../../../dist/generated-runtime.js";
+import { defineBean } from "../../../dist/index.js";
 
 if (!parentPort) {
   throw new Error("Worker message port is unavailable.");
+}
+
+const workerResourceId = "src/worker-resource.ts#workerResource";
+
+function workerDefinition(
+  registrations: readonly GeneratedBeanRegistration[],
+): GeneratedApplicationDefinition {
+  return {
+    schemaVersion: 4,
+    configs: [],
+    registrations,
+    plans: {
+      constructionOrder: [workerResourceId],
+      requestConstructionOrder: [],
+      startActionOrder: [],
+      cleanupActionOrder: [workerResourceId],
+    },
+  };
 }
 
 let creations = 0;
@@ -16,10 +41,14 @@ const definition = defineBean({
   },
 });
 const context = createApplicationContext(
-  testDefinition([
+  workerDefinition([
     factoryBean({
-      id: "src/worker-resource.ts#workerResource",
-      source: testSource("worker-resource"),
+      id: workerResourceId,
+      source: {
+        file: "src/worker-resource.ts",
+        start: { offset: 0, line: 0, character: 0 },
+        end: { offset: 0, line: 0, character: 0 },
+      },
       definition,
     }),
   ]),
