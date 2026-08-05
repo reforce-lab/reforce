@@ -3,6 +3,8 @@ import { analyzeClassProvider } from "@/analysis/class-provider";
 import { analyzeConfigProviders } from "@/analysis/config-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
+import type { WeavingModel } from "@/analysis/interception-model";
+import { analyzeMethodInterception } from "@/analysis/method-interception";
 import type {
   BeanProviderModel,
   ConfigProviderModel,
@@ -26,6 +28,7 @@ interface AnalysisSuccess {
   readonly configs: readonly ConfigProviderModel[];
   readonly plans: ExecutionPlansModel;
   readonly web: WebModel;
+  readonly weaving: WeavingModel;
 }
 
 interface AnalysisFailure {
@@ -132,6 +135,11 @@ export function analyzeProject(
   // 路由提取要在 provider 全集就位后进行：controller/中间件/错误处理器的 bean 身份与
   // scope 校验都以最终 provider 表为准（ADR 0006 W3/W4，#152）。
   const web = analyzeWebRoutes(sources, linker, allProviders, diagnostics, engineBeans);
+  // 织入分析同样要求完整 provider 表（ADR 0008 AM1，#202），且必须先于 createExecutionPlans：
+  // 它把每个被织 bean 的拦截器作为构造依赖边追加进 provider.dependencies，构造排序、
+  // cycle-proxy 改写与 request 计划全部沿既有机制生效。拦截器被强制为 singleton，追加边
+  // 不会引入新的跨作用域形态，validateScopeRules 先跑不受影响。
+  const weaving = analyzeMethodInterception(sources, linker, allProviders, diagnostics);
   diagnostics.push(...linker.diagnostics);
 
   if (diagnostics.length > 0) {
@@ -147,5 +155,6 @@ export function analyzeProject(
     configs: Object.freeze(configs),
     plans: createExecutionPlans(providers, new Set(configs.map((config) => config.id))),
     web,
+    weaving,
   };
 }

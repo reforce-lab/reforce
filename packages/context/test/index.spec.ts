@@ -13,6 +13,7 @@ test("the root entry exposes only the public programming model", () => {
     "ConfigBindingError",
     "EarlyBeanAccessError",
     "Injectable",
+    "Interceptor",
     "InvalidGeneratedDefinitionError",
     "Order",
     "Primary",
@@ -23,6 +24,8 @@ test("the root entry exposes only the public programming model", () => {
     "UnregisteredBeanTargetError",
     "defineApplication",
     "defineBean",
+    "defineMethodMarker",
+    "interceptPhases",
   ]);
 });
 
@@ -32,5 +35,6 @@ test("the generated entry exposes only registration and Context helpers", () => 
     "configBean",
     "createApplicationContext",
     "factoryBean",
+    "invokeIntercepted",
   ]);
 });

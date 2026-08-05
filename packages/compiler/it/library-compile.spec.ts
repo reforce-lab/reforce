@@ -557,6 +557,80 @@ describe("library compile", () => {
     expect(failure.diagnostics[0].message).toContain("Current");
   });
 
+  // 方法级织入在库模式硬错三形态（ADR 0008 AM1，#202 硬错 #10）：meta v1 没有方法级槽位，
+  // 静默丢弃违反"要么生效、要么编译错"。
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for defineMethodMarker declarations", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "markers.ts": [
+              'import { defineMethodMarker } from "@reforce/context";',
+              'export const Audited = defineMethodMarker<{ label: string }>("audited");',
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("defineMethodMarker");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for the Interceptor decorator", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "markers.ts": [
+              'import { defineMethodMarker } from "@reforce/context";',
+              'export const Audited = defineMethodMarker<{ label: string }>("audited");',
+              "",
+            ].join("\n"),
+            "client.ts": clientSource.replace(
+              "@Injectable()",
+              'import { Interceptor } from "@reforce/context";\nimport { Audited } from "./markers";\n@Injectable()\n@Interceptor({ marker: Audited })',
+            ),
+          },
+        }),
+      ),
+    );
+    const interceptor = failure.diagnostics.find((item) => item.message.includes("@Interceptor"));
+    expect(interceptor?.code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for method marker uses", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "markers.ts": [
+              'import { defineMethodMarker } from "@reforce/context";',
+              'export const Audited = defineMethodMarker<{ label: string }>("audited");',
+              "",
+            ].join("\n"),
+            "client.ts": [
+              'import { Injectable } from "@reforce/context";',
+              'import { Audited } from "./markers";',
+              "",
+              "@Injectable()",
+              "export class RedisClient {",
+              '  @Audited({ label: "ping" })',
+              "  async ping(): Promise<void> {}",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    const use = failure.diagnostics.find((item) => item.message.includes("Method markers"));
+    expect(use?.code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+  });
+
   test("reports LIBRARY_EXPORT_MISMATCH when a bean class is not publicly exported", async () => {
     const failure = expectLibraryFailure(
       await compileLibrary(

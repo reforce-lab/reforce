@@ -40,6 +40,15 @@ export function json(value: unknown): string {
   return rendered;
 }
 
+// 单行稳定序列化：$Woven 链表字面量里的标记值走它，键序与 json() 同一套稳定规则。
+export function compactJson(value: unknown): string {
+  const rendered = stableStringify(value);
+  if (rendered === undefined) {
+    throw new Error("Generated data is not serializable");
+  }
+  return rendered;
+}
+
 function indent(value: string, spaces: number): string {
   const prefix = " ".repeat(spaces);
   return value
