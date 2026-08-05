@@ -83,6 +83,10 @@ function generatedFiles(generation: string): readonly GeneratedFile[] {
       content:
         "export const routeTable = {\n  schemaVersion: 1,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
     },
+    {
+      path: "weaving.json",
+      content: `${JSON.stringify({ schemaVersion: 1, beans: [] })}\n`,
+    },
   ];
 }
 
@@ -547,6 +551,7 @@ describe("directory transactions", () => {
       "qualifiers.d.ts",
       "routes.json",
       "routes.ts",
+      "weaving.json",
     ]);
   });
 

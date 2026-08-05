@@ -83,6 +83,7 @@ const generatedFilePaths = exactGeneratedFilePaths([
   "qualifiers.d.ts",
   "routes.json",
   "routes.ts",
+  "weaving.json",
 ]);
 
 interface TransactionPaths {

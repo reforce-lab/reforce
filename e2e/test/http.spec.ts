@@ -182,6 +182,12 @@ describe.serial("HTTP application over the built artifact", () => {
       expect(created.status).toBe(200);
       expect(await created.json()).toEqual({ id: "created", name: "amy" });
 
+      // 方法级织入（ADR 0008 AM1，#202）：dist-only 链路里 $Woven 生效——拦截器把标记
+      // 字面量 append 进被织方法的返回轨迹，响应即织入证据
+      const woven = await fetch(`${base}/woven`);
+      expect(woven.status).toBe(200);
+      expect(await woven.json()).toEqual({ trail: ["service", "audited:report"] });
+
       // 静态路径路由与 404/405 冷路径
       const health = await fetch(`${base}/health`);
       expect(health.status).toBe(200);

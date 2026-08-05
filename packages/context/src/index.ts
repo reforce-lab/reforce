@@ -28,6 +28,19 @@ export {
   type RuntimeErrorCode,
   UnregisteredBeanTargetError,
 } from "@/errors";
+export {
+  Interceptor,
+  type InterceptorOptions,
+  type InterceptPhase,
+  interceptPhases,
+  type MethodInterceptor,
+  type MethodInvocationContext,
+} from "@/interception/interceptor";
+export {
+  defineMethodMarker,
+  type MethodMarker,
+  type MethodMetaValue,
+} from "@/interception/method-marker";
 export type {
   ApplicationContext,
   BeanClass,

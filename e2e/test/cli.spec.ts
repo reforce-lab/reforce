@@ -725,6 +725,7 @@ describe.serial("built Reforce CLI", () => {
       "qualifiers.d.ts",
       "routes.json",
       "routes.ts",
+      "weaving.json",
     ]);
     expect(await pathExists(join(fixture.project.projectRoot, "dist", "main.mjs"))).toBe(true);
     expect(chunkFiles.some((file) => file.endsWith(".mjs"))).toBe(true);

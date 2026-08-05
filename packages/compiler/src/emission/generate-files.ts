@@ -1,4 +1,5 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
+import type { WeavingModel, WovenBeanModel, WovenMethodModel } from "@/analysis/interception-model";
 import {
   type BeanProviderModel,
   type ConfigProviderModel,
@@ -10,8 +11,9 @@ import {
 } from "@/analysis/model";
 import type { WebModel } from "@/analysis/web-model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
+import { generateWeavingFile } from "@/emission/generate-weaving-file";
 import { generateWebFiles, webRuntimeModuleSpecifier } from "@/emission/generate-web-files";
-import { inlineJson, json, runtimeSpecifier } from "@/emission/render";
+import { compactJson, inlineJson, json, runtimeSpecifier } from "@/emission/render";
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
 
@@ -144,10 +146,124 @@ function dependencyExpression(
     : `resolver.resolve${typeArgument}(${dependency.parameterIndex})`;
 }
 
+// $Woven emission（ADR 0008 AM1，#202）：仅"存在非空链方法"的 bean 织出子类；打了标记但
+// 全部空链的 bean 不产 wrapper（标记是元数据，行为来自拦截器，织入表里可审）。
+interface WovenEmission {
+  readonly model: WovenBeanModel;
+  // 非空链方法（模型内已按方法名排序）。
+  readonly methods: readonly WovenMethodModel[];
+  // 用户构造参数个数：追加的拦截器边从它之后顺延，$Woven 构造尾参接链表。
+  readonly userParameterCount: number;
+}
+
+function wovenEmissions(
+  providers: readonly BeanProviderModel[],
+  weaving: WeavingModel,
+): ReadonlyMap<string, WovenEmission> {
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  const emissions = new Map<string, WovenEmission>();
+  for (const model of weaving.beans) {
+    const methods = model.methods.filter((method) => method.chain.length > 0);
+    const provider = providerById.get(model.beanId);
+    if (methods.length === 0 || provider === undefined) {
+      continue;
+    }
+    const interceptorIndexes = new Set(
+      methods.flatMap((method) => method.chain.map((entry) => entry.parameterIndex)),
+    );
+    emissions.set(model.beanId, {
+      model,
+      methods,
+      userParameterCount: provider.dependencies.length - interceptorIndexes.size,
+    });
+  }
+  return emissions;
+}
+
+function wovenChainsType(woven: WovenEmission): string {
+  const keys = woven.methods.map((method) => JSON.stringify(method.method)).join(" | ");
+  return `Readonly<Record<${keys}, GeneratedMethodChain>>`;
+}
+
+// override 的实参/返回类型全部经 Parameters/ReturnType/InstanceType 从用户类索引回来
+// （typed-edge 纪律）：beans.ts 过 tsc 即证明被织方法存在、签名兼容，生成代码零断言——
+// 唯一的 unsound 收窄集中在 invokeIntercepted 内部。
+function wovenOverride(alias: string, field: string, method: WovenMethodModel): string {
+  const signature = `InstanceType<typeof ${alias}>[${JSON.stringify(method.method)}]`;
+  return [
+    `  override ${method.method}(...args: Parameters<${signature}>): ReturnType<${signature}> {`,
+    `    return invokeIntercepted<ReturnType<${signature}>>(this.${field}.${method.method}, args, () =>`,
+    `      super.${method.method}(...args),`,
+    "    );",
+    "  }",
+  ].join("\n");
+}
+
+function wovenClassDeclaration(index: number, woven: WovenEmission): string {
+  const alias = `beanTarget${index}`;
+  const constructorParameters = [
+    ...Array.from(
+      { length: woven.userParameterCount },
+      (_, parameter) =>
+        `    argument${parameter}: ConstructorParameters<typeof ${alias}>[${parameter}],`,
+    ),
+    `    private readonly ${woven.model.chainFieldName}: ${wovenChainsType(woven)},`,
+  ];
+  const superArguments = Array.from(
+    { length: woven.userParameterCount },
+    (_, parameter) => `argument${parameter}`,
+  ).join(", ");
+  return [
+    `class ${alias}$Woven extends ${alias} {`,
+    "  constructor(",
+    ...constructorParameters,
+    "  ) {",
+    `    super(${superArguments});`,
+    "  }",
+    "",
+    ...woven.methods.map((method) => wovenOverride(alias, woven.model.chainFieldName, method)),
+    "}",
+  ].join("\n");
+}
+
+// create 改写：用户参 resolver 表达式不动，尾参内联链表字面量——entries 按编译期压平序，
+// interceptor 经追加依赖边的 resolver 槽位解析（typed-edge 同样生效），标记值单行稳定
+// 序列化、0 参标记落 undefined（运行时 ctx.value 词汇）。
+function wovenChainsLiteral(
+  provider: BeanProviderModel,
+  woven: WovenEmission,
+  contracts: ReadonlyMap<string, ContractImport>,
+): string {
+  const dependencyByIndex = new Map(
+    provider.dependencies.map((dependency) => [dependency.parameterIndex, dependency]),
+  );
+  const methods = woven.methods.map((method) => {
+    const entries = method.chain.map((entry) => {
+      const dependency = dependencyByIndex.get(entry.parameterIndex);
+      if (dependency === undefined) {
+        throw new Error(`Missing interceptor dependency ${entry.beanId} on ${provider.id}`);
+      }
+      const value = entry.value === null ? "undefined" : compactJson(entry.value);
+      return `        { interceptor: ${dependencyExpression(dependency, contracts)}, value: ${value} },`;
+    });
+    return [
+      `      ${method.method}: {`,
+      `        beanId: ${JSON.stringify(woven.model.beanId)},`,
+      `        method: ${JSON.stringify(method.method)},`,
+      "        entries: [",
+      ...entries.map((entry) => `  ${entry}`),
+      "        ],",
+      "      },",
+    ].join("\n");
+  });
+  return `{\n${methods.join("\n")}\n    }`;
+}
+
 function registrationExpression(
   provider: BeanProviderModel,
   index: number,
   contracts: ReadonlyMap<string, ContractImport>,
+  woven: WovenEmission | undefined,
 ): string {
   const alias = `beanTarget${index}`;
   // factoryBean 的 scope 由 defineBean 选项自证（同一字面量既是编译输入也是运行时输入），
@@ -155,30 +271,53 @@ function registrationExpression(
   if (provider.kind === "factory") {
     return `const registration${index} = factoryBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  definition: ${alias},\n});`;
   }
-  const argumentsList = provider.dependencies
-    .toSorted((left, right) => left.parameterIndex - right.parameterIndex)
+  const orderedDependencies = provider.dependencies.toSorted(
+    (left, right) => left.parameterIndex - right.parameterIndex,
+  );
+  // registration.target 保持用户类：bean 身份表与 testing replace 的键不换（ADR 0008 AM1）。
+  const userDependencies =
+    woven === undefined
+      ? orderedDependencies
+      : orderedDependencies.slice(0, woven.userParameterCount);
+  const argumentsList = userDependencies
     .map((dependency) => dependencyExpression(dependency, contracts))
     .join(", ");
+  const createExpression =
+    woven === undefined
+      ? `new ${alias}(${argumentsList})`
+      : `new ${alias}$Woven(${argumentsList.length === 0 ? "" : `${argumentsList}, `}${wovenChainsLiteral(provider, woven, contracts)})`;
   const hooks = [
     ...(provider.startHook ? ["start: (bean) => bean.onContextStart(),"] : []),
     ...(provider.closeHook ? ["close: (bean) => bean.onContextClose(),"] : []),
   ];
   const hooksBlock =
     hooks.length === 0 ? "{}" : `{\n${hooks.map((line) => `    ${line}`).join("\n")}\n  }`;
-  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  scope: ${JSON.stringify(provider.scope)},\n  target: ${alias},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => new ${alias}(${argumentsList}),\n  hooks: ${hooksBlock},\n});`;
+  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  scope: ${JSON.stringify(provider.scope)},\n  target: ${alias},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => ${createExpression},\n  hooks: ${hooksBlock},\n});`;
 }
 
 function renderBeans(
   providers: readonly BeanProviderModel[],
   configs: readonly ConfigProviderModel[],
   plans: ExecutionPlansModel,
+  weaving: WeavingModel,
   generatedDirectory: string,
   typeResolver: EmissionTypeResolver,
 ): string {
   const contracts = contractImports(providers, generatedDirectory, typeResolver);
+  const woven = wovenEmissions(providers, weaving);
+  const runtimeValueImports = [
+    "classBean",
+    ...(configs.length > 0 ? ["configBean"] : []),
+    "factoryBean",
+    ...(woven.size > 0 ? ["invokeIntercepted"] : []),
+  ];
+  const runtimeTypeImports = [
+    "GeneratedApplicationDefinition",
+    ...(woven.size > 0 ? ["GeneratedMethodChain"] : []),
+  ];
   const runtimeImports = [
-    `import { ${["classBean", ...(configs.length > 0 ? ["configBean"] : []), "factoryBean"].join(", ")} } from "${contextRuntimeModuleSpecifier}";`,
-    `import type { GeneratedApplicationDefinition } from "${contextRuntimeModuleSpecifier}";`,
+    `import { ${runtimeValueImports.join(", ")} } from "${contextRuntimeModuleSpecifier}";`,
+    `import type { ${runtimeTypeImports.join(", ")} } from "${contextRuntimeModuleSpecifier}";`,
     // 无 config 的应用不引入 @reforce/config：该依赖只在声明了 config class 时才需要安装。
     ...(configs.length > 0
       ? [`import { createConfigBinding } from "${configRuntimeModuleSpecifier}";`]
@@ -202,8 +341,12 @@ function renderBeans(
     (config, index) =>
       `const config${index} = configBean({\n  id: ${JSON.stringify(config.id)},\n  source: ${inlineJson(config.declarationSource, 2)},\n  target: configTarget${index},\n});`,
   );
+  const wovenClasses = providers.flatMap((provider, index) => {
+    const emission = woven.get(provider.id);
+    return emission === undefined ? [] : [wovenClassDeclaration(index, emission)];
+  });
   const registrations = providers.map((provider, index) =>
-    registrationExpression(provider, index, contracts),
+    registrationExpression(provider, index, contracts, woven.get(provider.id)),
   );
   const names = providers.map((_, index) => `registration${index}`).join(", ");
   const configNames = configs.map((_, index) => `config${index}`).join(", ");
@@ -213,6 +356,7 @@ function renderBeans(
     ...configImports,
     ...typeImports,
     "",
+    ...wovenClasses.flatMap((declaration) => [declaration, ""]),
     ...configRegistrations.flatMap((registration) => [registration, ""]),
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
@@ -412,13 +556,14 @@ export function generateFiles(
   configs: readonly ConfigProviderModel[],
   plans: ExecutionPlansModel,
   web: WebModel,
+  weaving: WeavingModel,
   typeResolver: EmissionTypeResolver,
 ): readonly GeneratedFile[] {
   const generatedDirectory = generatedDirectoryPath(project.projectRoot);
   return Object.freeze([
     {
       path: "beans.ts",
-      content: renderBeans(providers, configs, plans, generatedDirectory, typeResolver),
+      content: renderBeans(providers, configs, plans, weaving, generatedDirectory, typeResolver),
     },
     {
       path: "qualifiers.d.ts",
@@ -430,5 +575,6 @@ export function generateFiles(
     },
     { path: "bootstrap.ts", content: renderBootstrap(web, generatedDirectory) },
     ...generateWebFiles(project, web),
+    generateWeavingFile(weaving),
   ]);
 }

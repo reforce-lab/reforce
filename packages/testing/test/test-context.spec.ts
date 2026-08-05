@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { defineBean, UnregisteredBeanTargetError } from "@reforce/context";
-import { classBean } from "@reforce/context/generated-runtime";
+import { defineBean, type MethodInterceptor, UnregisteredBeanTargetError } from "@reforce/context";
+import {
+  classBean,
+  type GeneratedMethodChain,
+  invokeIntercepted,
+} from "@reforce/context/generated-runtime";
 import { createTestContext, type TestContextOverrides } from "@/test-context";
 import { testDefinition, testSource } from "./support/test-definition";
 
@@ -39,6 +43,53 @@ function verifyReplaceRejectsIncompatibleStubs(overrides: TestContextOverrides):
   overrides.replace(cacheBean, { read: (key: number) => `${key}` });
 }
 void verifyReplaceRejectsIncompatibleStubs;
+
+class Repo {
+  async save(): Promise<string> {
+    return "real";
+  }
+}
+
+// 手写一份与 $Woven emission 同构的注册（ADR 0008 AM1，#202）：create 换入织入子类，
+// registration.target 保持用户类——replace 的键因此不变。
+function wovenDefinition() {
+  const interceptorCalls: string[] = [];
+  const interceptor: MethodInterceptor = {
+    async intercept(context, next) {
+      interceptorCalls.push(`intercepted:${context.method}`);
+      return await next();
+    },
+  };
+
+  class Repo$Woven extends Repo {
+    constructor(private readonly chains: Readonly<Record<"save", GeneratedMethodChain>>) {
+      super();
+    }
+
+    override save(): Promise<string> {
+      return invokeIntercepted<Promise<string>>(this.chains.save, [], () => super.save());
+    }
+  }
+
+  const definition = testDefinition([
+    classBean({
+      id: "src/repo.ts#Repo",
+      source: testSource("repo"),
+      target: Repo,
+      dependencies: [],
+      create: () =>
+        new Repo$Woven({
+          save: {
+            beanId: "src/repo.ts#Repo",
+            method: "save",
+            entries: [{ interceptor, value: undefined }],
+          },
+        }),
+      hooks: {},
+    }),
+  ]);
+  return { definition, interceptorCalls };
+}
 
 describe("createTestContext", () => {
   test("空替换表的上下文提供原实现", async () => {
@@ -93,6 +144,33 @@ describe("createTestContext", () => {
 
     await expect(creation).rejects.toThrow(TypeError);
     await expect(creation).rejects.toThrow("must be synchronous");
+  });
+
+  test("不替换的被织 bean 照常走拦截链", async () => {
+    const { definition, interceptorCalls } = wovenDefinition();
+
+    const context = await createTestContext(definition, () => undefined);
+    const result = await context.get(Repo).save();
+
+    expect(result).toBe("real");
+    expect(interceptorCalls).toEqual(["intercepted:save"]);
+    await context.close();
+  });
+
+  // 织入语义定案（ADR 0008 AM1，#202）：replaceCreate 整体丢弃原 create 闭包，$Woven 与
+  // 链随之消失——replace 替换的是整个 bean 的行为（含织入增强，ADR 0007 口径），替身被
+  // 拦截器包裹反而会引入测不到的真实事务边界。本例把该语义钉死为契约。
+  test("replace 后的替身不被织入：拦截器不执行、原值直返", async () => {
+    const { definition, interceptorCalls } = wovenDefinition();
+
+    const context = await createTestContext(definition, (overrides) => {
+      overrides.replace(Repo, { save: async () => "stub" });
+    });
+    const result = await context.get(Repo).save();
+
+    expect(result).toBe("stub");
+    expect(interceptorCalls).toEqual([]);
+    await context.close();
   });
 
   test("配置回调返回后 replace 立即失效", async () => {
