@@ -14,6 +14,7 @@ import type {
 } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
+import { transactionInterceptorDraft } from "@/analysis/transaction-weaving";
 import type { WebModel } from "@/analysis/web-model";
 import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
@@ -116,10 +117,18 @@ export function analyzeProject(
   const engineBeans = linker.starterLinkage.beans.filter(
     (bean) => bean.runtimeExport.export === "WebEngine",
   );
+  // 事务拦截器合成注册（ADR 0008 AM2，#204 定案 6）：检测到 @Transactional 方法使用即入表，
+  // 它对 TransactionManager 契约的依赖走下面的正常解析——有使用无实现在编译期就是 MISSING_BEAN。
+  const transactionDraft = transactionInterceptorDraft(sources, linker);
+  const localDrafts = [
+    ...configAnalysis.drafts,
+    ...drafts,
+    ...(transactionDraft === undefined ? [] : [transactionDraft]),
+  ];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
   // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。
   const starterDrafts = resolveProviders(
-    [...configAnalysis.drafts, ...drafts],
+    localDrafts,
     linker.starterLinkage,
     diagnostics,
     new Set(engineBeans.map((bean) => bean.id)),
@@ -127,7 +136,7 @@ export function analyzeProject(
   // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
   // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。config 不进执行计划——它由
   // 绑定 phase 先于一切 bean 构造（ADR 0005 决策 6.1），指向 config 的 eager 边视为恒就绪。
-  const allProviders = [...configAnalysis.drafts, ...drafts, ...starterDrafts]
+  const allProviders = [...localDrafts, ...starterDrafts]
     .map((draft) => draft.provider)
     .toSorted((left, right) => compareUtf16CodeUnits(left.id, right.id));
   // 跨作用域裸边与请求内环（ADR 0006 W7）要看已解析的双侧 scope，必须排在 resolveProviders 之后。

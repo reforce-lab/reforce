@@ -288,3 +288,83 @@ test("constructs interceptor and woven bean cycles through the cycle proxy", asy
     trace: ["audit:before:repo", "save", "audit:after"],
   });
 });
+
+// 事务执行链路（ADR 0008 AM2，#204 定案 5/6）：合成注册的框架拦截器 + 应用侧
+// TransactionManager 实现真实走通——生成物过 tsc（框架契约的 typed-edge）、事务开闭与
+// 回滚经 fake manager 可见、activeTransaction() 在被织方法内可读。
+test("weaves @Transactional through the synthesized framework interceptor", async () => {
+  const stdout = await compileAndRun(
+    {
+      "manager.ts": [
+        'import { Injectable } from "@reforce/context";',
+        'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+        "",
+        "export const events: string[] = [];",
+        "",
+        "@Injectable()",
+        "export class RecordingManager implements TransactionManager<string> {",
+        "  private sequence = 0;",
+        "  async withTransaction<T>(options: TransactionOptions, fn: (resource: string) => Promise<T>): Promise<T> {",
+        "    this.sequence += 1;",
+        "    const resource = `tx${this.sequence}`;",
+        '    events.push(`begin:${resource}:${options.isolation ?? "default"}`);',
+        "    try {",
+        "      const result = await fn(resource);",
+        "      events.push(`commit:${resource}`);",
+        "      return result;",
+        "    } catch (error) {",
+        "      events.push(`rollback:${resource}`);",
+        "      throw error;",
+        "    }",
+        "  }",
+        "}",
+      ].join("\n"),
+      "orders.ts": [
+        'import { activeTransaction, Injectable, Transactional } from "@reforce/context";',
+        'import { events } from "./manager";',
+        "",
+        "@Injectable()",
+        "export class Orders {",
+        "  @Transactional()",
+        "  async save(): Promise<string> {",
+        "    events.push(`inside:${String(activeTransaction()?.resource)}`);",
+        '    return "saved";',
+        "  }",
+        "",
+        '  @Transactional({ isolation: "SERIALIZABLE" })',
+        "  async fail(): Promise<void> {",
+        '    throw new Error("boom");',
+        "  }",
+        "}",
+      ].join("\n"),
+    },
+    [
+      'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
+      'import { events } from "./src/manager.js";',
+      'import { Orders } from "./src/orders.js";',
+      "",
+      "const context = await bootstrap();",
+      "const result = await context.get(Orders).save();",
+      'let caught = "";',
+      "try {",
+      "  await context.get(Orders).fail();",
+      "} catch (error) {",
+      "  caught = error instanceof Error ? error.message : String(error);",
+      "}",
+      "await context.close();",
+      "console.log(JSON.stringify({ result, caught, events }));",
+    ],
+  );
+
+  expect(JSON.parse(stdout)).toEqual({
+    result: "saved",
+    caught: "boom",
+    events: [
+      "begin:tx1:default",
+      "inside:tx1",
+      "commit:tx1",
+      "begin:tx2:SERIALIZABLE",
+      "rollback:tx2",
+    ],
+  });
+});

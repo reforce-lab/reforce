@@ -631,6 +631,30 @@ describe("library compile", () => {
     expect(use?.code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
   });
 
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for @Transactional uses", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "client.ts": [
+              'import { Injectable, Transactional } from "@reforce/context";',
+              "",
+              "@Injectable()",
+              "export class RedisClient {",
+              "  @Transactional()",
+              "  async ping(): Promise<void> {}",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    const use = failure.diagnostics.find((item) => item.message.includes("@Transactional"));
+    expect(use?.code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+  });
+
   test("reports LIBRARY_EXPORT_MISMATCH when a bean class is not publicly exported", async () => {
     const failure = expectLibraryFailure(
       await compileLibrary(

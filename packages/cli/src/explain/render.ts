@@ -1,12 +1,17 @@
 import type { ContractExplanation, StandingAsideBean } from "@/explain/selection";
 import type { InstalledStarter } from "@/explain/starter-metas";
 import { multipleCopyGroups } from "@/explain/starter-metas";
+import type { WeavingMetaValue, WeavingMethod } from "@/explain/weaving";
 import type {
   GeneratedManifest,
   ManifestBean,
   ManifestSourceReference,
 } from "@/project/generated-manifest";
-import { manifestDependencyEdges, starterOriginPackageName } from "@/project/generated-manifest";
+import {
+  frameworkOriginId,
+  manifestDependencyEdges,
+  starterOriginPackageName,
+} from "@/project/generated-manifest";
 
 // explain 的输出契约：一行一个事实、无对齐留白、字段用 " · " 分隔——供人读也供脚本 grep。
 // origin 的用户可读呈现（M1 遗留账，PR #154）：`application` 展示为 "this application"，
@@ -17,13 +22,24 @@ function position(source: ManifestSourceReference): string {
 }
 
 function originDescription(origin: string): string {
-  return origin === "application" ? "this application" : `${origin} · registered starter`;
+  if (origin === "application") {
+    return "this application";
+  }
+  // 框架合成 bean（ADR 0008 AM2，#204 定案 6）：来源串无版本段，与 starter 措辞区分。
+  return origin === frameworkOriginId ? `${origin} · framework` : `${origin} · registered starter`;
 }
 
 function sourceDescription(bean: ManifestBean): string {
   const location = position(bean.source);
+  if (bean.origin === "application") {
+    return location;
+  }
+  // 框架 bean 的 source 指向把它拉进图的第一处 @Transactional 使用（应用路径，#204 定案 6）。
+  if (bean.origin === frameworkOriginId) {
+    return `${location} (first @Transactional use)`;
+  }
   // starter bean 的 source 相对发布包根（ADR 0004 风险 3 的既定处理），标注基准避免误当应用路径。
-  return bean.origin === "application" ? location : `${location} (package-relative)`;
+  return `${location} (package-relative)`;
 }
 
 function standingAsideDescription(entry: StandingAsideBean): string {
@@ -192,13 +208,55 @@ function copyLines(
     ]);
 }
 
+// @Transactional 行渲染生效语义（#204 定案 7）：织入表存原样字面量，缺省在呈现层补齐——
+// 传播缺省 REQUIRED、隔离缺省用数据库默认。其他标记原样渲染字面量。
+// Array.isArray 的否定分支收窄不掉 readonly 数组（其谓词是 any[]），改用 Reflect.get 读可选键。
+function metaOption(value: WeavingMetaValue, key: string): WeavingMetaValue | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return Reflect.get(value, key) as WeavingMetaValue | undefined; // 索引签名成员，值域即声明类型
+}
+
+function markerDescription(key: string, value: WeavingMetaValue): string {
+  if (key !== "transactional") {
+    return value === null ? `marker ${key}` : `marker ${key} · value ${JSON.stringify(value)}`;
+  }
+  const propagation = metaOption(value, "propagation");
+  const isolation = metaOption(value, "isolation");
+  return [
+    "marker transactional",
+    `effective propagation ${typeof propagation === "string" ? propagation : "REQUIRED"}`,
+    `effective isolation ${typeof isolation === "string" ? isolation : "database default"}`,
+  ].join(" · ");
+}
+
+// 织入面（ADR 0008 不变量 2，#204 定案 7）：链序即行序（外→内），每行一个事实回答
+// "这个方法被谁包、为什么是这个顺序"；空链方法照渲染（标记是元数据，表里可见即可审）。
+function weavingLines(
+  manifest: GeneratedManifest,
+  wovenMethods: readonly WeavingMethod[],
+): readonly string[] {
+  return wovenMethods.flatMap((method) => [
+    `woven method ${method.method}`,
+    ...Object.entries(method.markers).map(([key, value]) => `  ${markerDescription(key, value)}`),
+    ...(method.chain.length === 0
+      ? ["  chain empty · marked but no interceptor bound"]
+      : method.chain.map(
+          (entry, index) =>
+            `  chain [${index + 1}] ${entry.beanId} · ${dependencyTargetDescription(manifest, entry.beanId)} · phase ${entry.phase} · order ${entry.order} · via ${entry.marker}`,
+        )),
+  ]);
+}
+
 export function renderExplanation(input: {
   readonly manifest: GeneratedManifest;
   readonly bean: ManifestBean;
   readonly starters: readonly InstalledStarter[];
   readonly contracts: readonly ContractExplanation[];
+  readonly wovenMethods: readonly WeavingMethod[];
 }): readonly string[] {
-  const { manifest, bean, starters, contracts } = input;
+  const { manifest, bean, starters, contracts, wovenMethods } = input;
   return [
     `bean ${bean.id}`,
     // singleton 是缺省语义，不加噪音；request scope 是读者必须知道的行为差异，单列一行。
@@ -207,6 +265,7 @@ export function renderExplanation(input: {
     `runtime import { ${bean.runtimeExport.exportName} } from "${bean.runtimeExport.moduleSpecifier}"`,
     ...contracts.flatMap((explanation) => contractLines(explanation, starters)),
     ...dependencyLines(manifest, bean),
+    ...weavingLines(manifest, wovenMethods),
     ...constructionLines(manifest, bean),
     ...copyLines(manifest, bean, starters),
   ];

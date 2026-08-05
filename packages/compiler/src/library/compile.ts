@@ -13,8 +13,10 @@ import { diagnostic, orderDiagnostics } from "@/diagnostics";
 import { createLibrarySurface } from "@/library/dist-surface";
 import { buildLibraryMeta } from "@/library/meta";
 import { readLibraryPackage } from "@/library/package-exports";
+import type { LinkedSymbol } from "@/linking/model";
 import { createProjectLinker, type ProjectLinker } from "@/linking/project-linker";
 import type { SourceFileIr } from "@/parser/source-ir";
+import type { SourceSpan } from "@/parser/source-location";
 import type { ProjectState } from "@/project/project-config";
 import { snapshotStillMatches } from "@/project/project-snapshot";
 import { type ParsedSource, parseProjectSources } from "@/project/source-files";
@@ -102,19 +104,48 @@ function rejectMethodWeavingDeclarations(
       if (decorator.callee.kind === "unsupported-expression") {
         continue;
       }
-      const symbol = linker.resolveEntity(source, decorator.callee);
-      if (symbol?.kind === "context" && symbol.name === "Interceptor") {
-        diagnostics.push(
-          unsupportedDeclaration(
-            "@Interceptor cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
-            decorator.span,
-            "Keep interceptors application-side for now.",
-          ),
-        );
-      }
+      rejectFrameworkWeavingDecorator(
+        linker.resolveEntity(source, decorator.callee),
+        decorator.span,
+        diagnostics,
+      );
     }
     rejectMethodMarkerUses(source, declaration, linker, diagnostics);
   }
+}
+
+// 库模式拒绝的框架织入装饰器（#202 / #204）：@Interceptor 与 @Transactional 都表达不进
+// meta v1；@Transactional 在类位置本身也是误用，一并点名。
+const rejectedFrameworkWeavingDecorators = {
+  Interceptor: {
+    message:
+      "@Interceptor cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+    help: "Keep interceptors application-side for now.",
+  },
+  Transactional: {
+    message:
+      "@Transactional cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+    help: "Keep transactional Beans application-side for now.",
+  },
+} as const;
+
+function rejectFrameworkWeavingDecorator(
+  symbol: LinkedSymbol | undefined,
+  span: SourceSpan,
+  diagnostics: CompilerDiagnostic[],
+): void {
+  if (
+    symbol?.kind !== "context" ||
+    !Object.hasOwn(rejectedFrameworkWeavingDecorators, symbol.name)
+  ) {
+    return;
+  }
+  // Object.hasOwn 已证明成员资格，索引签名推不回字面量联合 // justified: 见上一行
+  const entry =
+    rejectedFrameworkWeavingDecorators[
+      symbol.name as keyof typeof rejectedFrameworkWeavingDecorators
+    ];
+  diagnostics.push(unsupportedDeclaration(entry.message, span, entry.help));
 }
 
 function rejectMethodMarkerUses(
@@ -128,7 +159,10 @@ function rejectMethodMarkerUses(
       if (decorator.callee.kind !== "identifier") {
         continue;
       }
-      if (linker.resolveEntity(source, decorator.callee) !== undefined) {
+      const entity = linker.resolveEntity(source, decorator.callee);
+      if (entity !== undefined) {
+        // 框架标记 @Transactional 解析成 context 合成符号（#204）：与用户标记同拒，不静默放行。
+        rejectFrameworkWeavingDecorator(entity, decorator.span, diagnostics);
         continue;
       }
       const resolved = linker.resolveValueDeclaration(source, decorator.callee.name);

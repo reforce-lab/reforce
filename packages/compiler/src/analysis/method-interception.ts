@@ -11,6 +11,12 @@ import {
   type WovenMethodModel,
 } from "@/analysis/interception-model";
 import { type ProviderModel, providerId, sourceReference } from "@/analysis/model";
+import {
+  transactionalMarkerKey,
+  transactionInterceptorBeanId,
+  transactionInterceptorSymbol,
+  validateTransactionalValue,
+} from "@/analysis/transaction-weaving";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
@@ -107,6 +113,21 @@ function methodMarkerDeclarationOf(
       `Method marker ${declaration.name} needs exactly one non-empty string literal key.`,
       argument?.span ?? initializer.span,
       { help: markerDeclarationHelp },
+    );
+    return undefined;
+  }
+  // 保留 key（ADR 0008 AM2，#204 定案 2）：裸词 "transactional" 恒指框架的 @Transactional，
+  // 用户同名声明会让织入表与 explain 输出出现两义，原位硬错。
+  if (argument.value === transactionalMarkerKey) {
+    report(
+      diagnostics,
+      "INVALID_METHOD_MARKER",
+      `Method marker key "${transactionalMarkerKey}" is reserved by the framework's @Transactional marker.`,
+      argument.span,
+      {
+        help: "Choose a different marker key; bind extra behavior to transactional methods with @Interceptor({ marker: Transactional }).",
+        related: [{ message: "reserved by @reforce/context Transactional" }],
+      },
     );
     return undefined;
   }
@@ -226,17 +247,25 @@ function markerMetaObjectOf(
 
 // marker 使用识别（markerUseOf 同款）：callee 解析不到已链接符号、却能落到
 // defineMethodMarker 声明的装饰器才算标记；其余解析不到的装饰器不属于 Reforce，保持沉默。
+// 框架标记 @Transactional 是唯一例外（#204 定案 2）：它解析成 context 合成符号、没有源内
+// 声明，落到保留 key，此后与用户标记走完全同一通道（硬错矩阵、织入表、链压平零特权）。
 function markerUseOf(
   source: ParsedSource,
   decorator: DecoratorUse,
   markers: ReadonlyMap<string, MethodMarkerDeclarationInfo>,
   linker: ProjectLinker,
 ): MethodMarkerDeclarationInfo | undefined {
-  // 注册表为空时零成本短路：无标记的项目不为每个装饰器付一次声明解析。
-  if (markers.size === 0 || decorator.callee.kind !== "identifier") {
+  if (decorator.callee.kind === "unsupported-expression") {
     return undefined;
   }
-  if (linker.resolveEntity(source, decorator.callee) !== undefined) {
+  const entitySymbol = linker.resolveEntity(source, decorator.callee);
+  if (entitySymbol !== undefined) {
+    return entitySymbol.kind === "context" && entitySymbol.name === "Transactional"
+      ? { key: transactionalMarkerKey, span: decorator.span }
+      : undefined;
+  }
+  // 注册表为空时零成本短路：无标记的项目不为每个装饰器付一次声明解析。
+  if (markers.size === 0 || decorator.callee.kind !== "identifier") {
     return undefined;
   }
   const resolved = linker.resolveValueDeclaration(source, decorator.callee.name);
@@ -303,6 +332,15 @@ function markedMethodOf(
     }
     const value = markerUseValueOf(decorator, diagnostics);
     if (value === undefined) {
+      valid = false;
+      continue;
+    }
+    // 框架标记的参数 schema 编译期钉死（#204 定案 2）：传播/隔离拼写错在这里硬错，
+    // 织入表里只存在合法值，运行时按表执行零决策（ADR 0008 不变量 4）。
+    if (
+      marker.key === transactionalMarkerKey &&
+      !validateTransactionalValue(value, decorator.span, diagnostics)
+    ) {
       valid = false;
       continue;
     }
@@ -547,7 +585,8 @@ function interceptorOptionsOf(
 }
 
 // marker 引用与 marker 使用同通道（resolveValueDeclaration 落声明注册表）；解析到其他已
-// 链接符号或落不进注册表都是硬错（#202 硬错 #8）。
+// 链接符号或落不进注册表都是硬错（#202 硬错 #8）。框架标记同通道（#204 定案 2）：
+// @Interceptor({ marker: Transactional }) 让用户拦截器挂上事务方法（观测类的第一方场景）。
 function interceptorMarkerKeyOf(
   source: ParsedSource,
   reference: MarkerReference,
@@ -556,8 +595,13 @@ function interceptorMarkerKeyOf(
   diagnostics: CompilerDiagnostic[],
 ): string | undefined {
   const entity = reference.entity;
+  const entitySymbol =
+    entity.kind === "identifier" ? linker.resolveEntity(source, entity) : undefined;
+  if (entitySymbol?.kind === "context" && entitySymbol.name === "Transactional") {
+    return transactionalMarkerKey;
+  }
   const resolved =
-    entity.kind === "identifier" && linker.resolveEntity(source, entity) === undefined
+    entity.kind === "identifier" && entitySymbol === undefined
       ? linker.resolveValueDeclaration(source, entity.name)
       : undefined;
   const info =
@@ -1002,7 +1046,25 @@ export function analyzeMethodInterception(
 ): WeavingModel {
   const markers = collectMethodMarkers(sources, linker, diagnostics);
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
-  const bindings = collectInterceptorBindings(sources, linker, markers, providerById, diagnostics);
+  const bindings = new Map(
+    collectInterceptorBindings(sources, linker, markers, providerById, diagnostics),
+  );
+  // 框架事务拦截器绑定（#204 定案 5/6）：合成 provider 在 analyze-project 里先于
+  // resolveProviders 入表（存在即证明有 @Transactional 使用），这里补上它的绑定——
+  // phase "transaction"、order 0 是 AM1 阶段表为它预留的唯一落位。用户经
+  // @Interceptor({ marker: Transactional }) 绑的拦截器与它同链参与压平。
+  if (providerById.has(transactionInterceptorBeanId)) {
+    bindings.set(transactionalMarkerKey, [
+      ...(bindings.get(transactionalMarkerKey) ?? []),
+      {
+        beanId: transactionInterceptorBeanId,
+        phase: "transaction",
+        order: 0,
+        markerKey: transactionalMarkerKey,
+        contract: transactionInterceptorSymbol,
+      },
+    ]);
+  }
   const scans = scanMarkedClasses(sources, linker, markers, diagnostics);
   reportOverrideDroppedMarkers(sources, linker, scans, providerById, diagnostics);
 

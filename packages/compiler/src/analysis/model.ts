@@ -59,10 +59,13 @@ export function isCollectionDependency(
 
 // bean 的来源（ADR 0004，#120）：应用源集里的声明，或注册 starter 的 meta bean。starter bean 没有
 // 应用内 span，诊断用 sourceText（包名/包内路径:行:列）文本定位，manifest 的 origin 也从这里来。
+// framework（ADR 0008 AM2，#204 定案 6）：编译器合成注册的框架 bean（事务拦截器），字段形状
+// 与 starter 同构——emission 的 runtimeExport 通道与 manifest origin 串写照抄，二分
+// `kind === "application"` 的既有消费点全部不受影响。
 export type ProviderOriginModel =
   | { readonly kind: "application"; readonly source: ParsedSource }
   | {
-      readonly kind: "starter";
+      readonly kind: "starter" | "framework";
       readonly origin: string;
       readonly runtimeExport: { readonly module: string; readonly export: string };
       readonly sourceText: string;

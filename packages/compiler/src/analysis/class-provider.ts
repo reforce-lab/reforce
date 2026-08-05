@@ -408,6 +408,30 @@ interface LinkedClassContracts {
   readonly closeHook: boolean;
 }
 
+function linkedImplementedType(
+  source: ParsedSource,
+  implementedType: TypeNode,
+  exportName: string,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): LinkedType | undefined {
+  // linker.resolveType already records its own diagnostic when it fails; only add
+  // TYPE_LINK_FAILED when it didn't, or the same implemented type gets reported twice (#108).
+  const diagnosticCount = linker.diagnostics.length;
+  const linked = linker.resolveType(source, implementedType);
+  if (linked === undefined && linker.diagnostics.length === diagnosticCount) {
+    diagnostics.push(
+      diagnostic({
+        code: "TYPE_LINK_FAILED",
+        message: `Cannot link an implemented interface on ${exportName}.`,
+        sourceSpan: implementedType.span,
+        help: "Implement a directly linked non-generic named interface.",
+      }),
+    );
+  }
+  return linked;
+}
+
 // config-provider 复用：同一套 implements 契约链接与 lifecycle 接口探测。
 export function linkedClassContracts(
   source: ParsedSource,
@@ -421,26 +445,19 @@ export function linkedClassContracts(
   let startHook = false;
   let closeHook = false;
   for (const implementedType of declaration.implements) {
-    // linker.resolveType already records its own diagnostic when it fails; only add
-    // TYPE_LINK_FAILED when it didn't, or the same implemented type gets reported twice (#108).
-    const diagnosticCount = linker.diagnostics.length;
-    const linked = linker.resolveType(source, implementedType);
+    const linked = linkedImplementedType(source, implementedType, exportName, linker, diagnostics);
     if (linked === undefined) {
-      if (linker.diagnostics.length === diagnosticCount) {
-        diagnostics.push(
-          diagnostic({
-            code: "TYPE_LINK_FAILED",
-            message: `Cannot link an implemented interface on ${exportName}.`,
-            sourceSpan: implementedType.span,
-            help: "Implement a directly linked non-generic named interface.",
-          }),
-        );
-      }
       continue;
     }
     if (linked.symbol.kind === "context") {
       startHook ||= linked.symbol.name === "OnContextStart";
       closeHook ||= linked.symbol.name === "OnContextClose";
+      // TransactionManager 是框架拥有的注入契约（ADR 0008 T4，#204 定案 3；WebEngineAdapter
+      // 同族先例）：implements 的类型实参（TransactionManager<R>）在契约身份上擦除，
+      // 注入边按合成符号 key 解析。其余 context 符号不是契约，保持沉默跳过。
+      if (linked.symbol.name === "TransactionManager") {
+        provided.push(linked.symbol);
+      }
       continue;
     }
     if (linked.symbol.kind === "unsupported") {

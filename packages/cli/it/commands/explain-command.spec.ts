@@ -293,3 +293,91 @@ test("a route query without a generated route table reports recovery guidance", 
     expect.stringContaining("Run reforce build or reforce dev first."),
   );
 });
+
+// 织入面（ADR 0008 AM2，#204 定案 7）：真实 compiler 编出 weaving.json 与合成注册，explain
+// 渲染被织方法的链行与生效语义；框架拦截器 bean 自身同样可解释。
+test("explains a transactional bean with its woven chain and effective semantics", async () => {
+  const project = await createExplainProject({
+    sources: {
+      "manager.ts": [
+        'import { Injectable } from "@reforce/context";',
+        'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        "export class SqlManager implements TransactionManager<string> {",
+        "  async withTransaction<T>(options: TransactionOptions, fn: (resource: string) => Promise<T>): Promise<T> {",
+        '    return await fn("tx");',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "orders.ts": [
+        'import { Injectable, Transactional } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        "export class Orders {",
+        '  @Transactional({ propagation: "REQUIRES_NEW" })',
+        "  async save(): Promise<void> {}",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+
+  const { exitCode, lines } = await explain(project, "Orders");
+
+  expect(exitCode).toBe(0);
+  expect(lines).toContain("woven method save");
+  expect(lines).toContain(
+    "  marker transactional · effective propagation REQUIRES_NEW · effective isolation database default",
+  );
+  expect(lines).toContain(
+    "  chain [1] @reforce/context#TransactionInterceptor · @reforce/context · framework · phase transaction · order 0 · via transactional",
+  );
+});
+
+test("explains the synthesized framework interceptor bean itself", async () => {
+  const project = await createExplainProject({
+    sources: {
+      "manager.ts": [
+        'import { Injectable } from "@reforce/context";',
+        'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        "export class SqlManager implements TransactionManager<string> {",
+        "  async withTransaction<T>(options: TransactionOptions, fn: (resource: string) => Promise<T>): Promise<T> {",
+        '    return await fn("tx");',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+      "orders.ts": [
+        'import { Injectable, Transactional } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        "export class Orders {",
+        "  @Transactional()",
+        "  async save(): Promise<void> {}",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  });
+
+  const { exitCode, lines } = await explain(project, "TransactionInterceptor");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toBe("bean @reforce/context#TransactionInterceptor");
+  expect(
+    lines.some((line) =>
+      line.startsWith("origin @reforce/context · framework · declared at src/orders.ts:"),
+    ),
+  ).toBe(true);
+  expect(
+    lines.some(
+      (line) =>
+        line.startsWith("dependency [0] -> src/manager.ts#SqlManager") &&
+        line.includes("this application · eager"),
+    ),
+  ).toBe(true);
+});
