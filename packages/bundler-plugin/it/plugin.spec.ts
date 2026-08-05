@@ -2,11 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  createTemporaryProject,
-  resolveNodeExecutable,
-  type TemporaryProject,
-} from "@reforce/tooling-testing";
+import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { createRslib, type RslibConfig } from "@rslib/core";
 import { build } from "esbuild";
 import { afterEach, expect, test } from "vitest";
@@ -211,9 +207,11 @@ async function linkIntoProject(projectRoot: string, packageName: string): Promis
 
 // typescript 不能直接链接真包：两侧插件面的断言都关于"d.ts 落盘相对 rspack afterEmit 的先后"，
 // 真 tsgo 的落盘时点随机器快慢漂移——macOS CI 上曾赶在 afterEmit 之前完成，令"unplugin 面
-// 必败"的断言假绿（#185）。这里装的 typescript 包版本同真，可执行文件先睡固定时长再转发真
-// tsgo，把 d.ts 确定性推迟到 afterEmit 之后；退出时落 marker，供用例在临时树清理前等后台
-// 包装进程退净（Windows 上活进程的 cwd 会挡住递归删除）。
+// 必败"的断言假绿（#185）。这里装的 typescript 包版本同真；rsbuild-plugin-dts 在 fork 出的
+// dts 子进程里以 `await import()` 拉取 lib/getExePath.js，假模块用顶层 await 先睡固定时长
+// 再返回真 tsgo 可执行文件路径，把 d.ts 确定性推迟到 afterEmit 之后——全平台都不产生脚本
+// wrapper spawn（Windows 上 .cmd wrapper 会被 Node ≥20.12 以 EINVAL 拒 spawn，#209）。
+// 子进程退出时落 marker，供用例在临时树清理前等它退净（Windows 上活进程的 cwd 会挡住递归删除）。
 const dtsDelayMilliseconds = 3000;
 const delayedTsgoStartedMarker = "delayed-tsgo-started";
 const delayedTsgoExitedMarker = "delayed-tsgo-exited";
@@ -250,50 +248,30 @@ async function installDelayedTypescript(projectRoot: string): Promise<void> {
   const realRoot = installedPackageRoot("typescript");
   const version = await readRealTypescriptVersion(realRoot);
   const realExecutable = await resolveRealTsgoExecutable(realRoot);
-  const nodeExecutable = await resolveNodeExecutable();
   const packageRoot = join(projectRoot, "node_modules", "typescript");
   await mkdir(join(packageRoot, "lib"), { recursive: true });
-  await mkdir(join(packageRoot, "bin"), { recursive: true });
-  const delayScript = join(packageRoot, "delay-exec.js");
   const startedMarker = join(packageRoot, delayedTsgoStartedMarker);
   const exitedMarker = join(packageRoot, delayedTsgoExitedMarker);
-  const wrapper = join(
-    packageRoot,
-    "bin",
-    process.platform === "win32" ? "tsgo-wrapper.cmd" : "tsgo-wrapper",
-  );
-  const wrapperContent =
-    process.platform === "win32"
-      ? `@echo off\r\n"${nodeExecutable}" "${delayScript}" %*\r\nexit /b %errorlevel%\r\n`
-      : `#!/bin/sh\nexec "${nodeExecutable}" "${delayScript}" "$@"\n`;
   await Promise.all([
     writeFile(
       join(packageRoot, "package.json"),
-      `${JSON.stringify({ name: "typescript", version })}\n`,
+      `${JSON.stringify({ name: "typescript", version, type: "module" })}\n`,
     ),
     writeFile(
       join(packageRoot, "lib", "getExePath.js"),
-      `export default function getExePath() {\n  return ${JSON.stringify(wrapper)};\n}\n`,
-    ),
-    writeFile(
-      delayScript,
       [
-        'import { spawnSync } from "node:child_process";',
         'import { writeFileSync } from "node:fs";',
         `writeFileSync(${JSON.stringify(startedMarker)}, "started", "utf8");`,
-        `await new Promise((resolve) => setTimeout(resolve, ${dtsDelayMilliseconds}));`,
-        "let status = 1;",
-        "try {",
-        `  const result = spawnSync(${JSON.stringify(realExecutable)}, process.argv.slice(2), { stdio: "inherit" });`,
-        "  status = result.status ?? 1;",
-        "} finally {",
+        `process.on("exit", () => {`,
         `  writeFileSync(${JSON.stringify(exitedMarker)}, "done", "utf8");`,
+        "});",
+        `await new Promise((resolve) => setTimeout(resolve, ${dtsDelayMilliseconds}));`,
+        "export default function getExePath() {",
+        `  return ${JSON.stringify(realExecutable)};`,
         "}",
-        "process.exit(status);",
         "",
       ].join("\n"),
     ),
-    writeFile(wrapper, wrapperContent, { mode: 0o755 }),
   ]);
 }
 
@@ -416,37 +394,31 @@ test("the unplugin rspack surface fails a real rslib build before tsgo declarati
   }
 }, 120_000);
 
-// #209：Node+pnpm 迁移后 Windows CI 独挂（d.ts 读取/解析环节，根因待 Windows 实机排查），
-// 临时跳过以保持 main 绿；修复后必须恢复正常运行。
-test.skipIf(process.platform === "win32")(
-  "the rsbuild surface finishes a real rslib build after tsgo declarations land",
-  async () => {
-    const project = await createRslibLibrary();
+test("the rsbuild surface finishes a real rslib build after tsgo declarations land", async () => {
+  const project = await createRslibLibrary();
 
-    await runRslibBuild(project.projectRoot, {
-      plugins: [
-        reforceStarterRsbuild({
-          projectDirectory: project.projectRoot,
-          tsconfigPath: "tsconfig.json",
-          outputDirectory: ".",
-          exports: "verify",
-          publint: false,
-        }),
-      ],
-    });
+  await runRslibBuild(project.projectRoot, {
+    plugins: [
+      reforceStarterRsbuild({
+        projectDirectory: project.projectRoot,
+        tsconfigPath: "tsconfig.json",
+        outputDirectory: ".",
+        exports: "verify",
+        publint: false,
+      }),
+    ],
+  });
 
-    const meta = JSON.parse(await readFile(join(project.projectRoot, "reforce-meta.json"), "utf8"));
-    expect(meta.schemaVersion).toBe(1);
-    expect(meta.beans.map((bean: { id: string }) => bean.id)).toEqual([
-      "@acme/starter-widget#Widget",
-    ]);
-    expect(await readFile(join(project.projectRoot, "reforce.js"), "utf8")).toContain(
-      "export default",
-    );
-    expect(await readFile(join(project.projectRoot, "reforce.d.ts"), "utf8")).toContain("export");
-  },
-  120_000,
-);
+  const meta = JSON.parse(await readFile(join(project.projectRoot, "reforce-meta.json"), "utf8"));
+  expect(meta.schemaVersion).toBe(1);
+  expect(meta.beans.map((bean: { id: string }) => bean.id)).toEqual([
+    "@acme/starter-widget#Widget",
+  ]);
+  expect(await readFile(join(project.projectRoot, "reforce.js"), "utf8")).toContain(
+    "export default",
+  );
+  expect(await readFile(join(project.projectRoot, "reforce.d.ts"), "utf8")).toContain("export");
+}, 120_000);
 
 test("the esbuild adapter runs the finishing hook through esbuild's build API", async () => {
   const project = await createLibrary();
