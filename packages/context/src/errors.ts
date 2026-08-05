@@ -1,4 +1,5 @@
 import type { ContextOperation, ContextState } from "@/public-types";
+import type { TransactionIsolation } from "@/transaction/manager";
 
 export type RuntimeErrorCode =
   | "EARLY_BEAN_ACCESS"
@@ -11,7 +12,10 @@ export type RuntimeErrorCode =
   | "REQUEST_CONTEXT_MISSING"
   | "UNREGISTERED_BEAN_TARGET"
   | "APPLICATION_CONTEXT_STATE"
-  | "INVALID_GENERATED_DEFINITION";
+  | "INVALID_GENERATED_DEFINITION"
+  | "TRANSACTION_SAVEPOINT_UNSUPPORTED"
+  | "TRANSACTION_ISOLATION_ON_JOIN"
+  | "TRANSACTION_ISOLATION_UNSUPPORTED";
 
 interface RuntimeErrorOptions {
   readonly cause?: unknown;
@@ -216,5 +220,63 @@ export class InvalidGeneratedDefinitionError extends ReforceRuntimeError<"INVALI
   constructor(detail: string, options: { readonly cause?: unknown } = {}) {
     super(`Generated application definition is invalid: ${detail}`, options);
     this.detail = detail;
+  }
+}
+
+// 事务运行时错误（ADR 0008 T3/T4，#204 定案 5）：共同原则是消灭静默降级——savepoint 缺失
+// 不退化为 REQUIRED，加入事务时的 isolation 声明不静默忽略（Spring 默认静默、要开
+// validateExistingTransaction 才拒绝；我们默认即拒绝）。
+
+export class TransactionSavepointUnsupportedError extends ReforceRuntimeError<"TRANSACTION_SAVEPOINT_UNSUPPORTED"> {
+  readonly code = "TRANSACTION_SAVEPOINT_UNSUPPORTED" as const;
+  readonly beanId: string;
+  readonly method: string;
+
+  constructor(input: { readonly beanId: string; readonly method: string }) {
+    super(
+      `NESTED transaction on "${input.beanId}.${input.method}" needs a savepoint, but the active TransactionManager does not implement withSavepoint().`,
+    );
+    this.beanId = input.beanId;
+    this.method = input.method;
+  }
+}
+
+export class TransactionIsolationOnJoinError extends ReforceRuntimeError<"TRANSACTION_ISOLATION_ON_JOIN"> {
+  readonly code = "TRANSACTION_ISOLATION_ON_JOIN" as const;
+  readonly beanId: string;
+  readonly method: string;
+  readonly declared: TransactionIsolation;
+  readonly active: TransactionIsolation | undefined;
+
+  constructor(input: {
+    readonly beanId: string;
+    readonly method: string;
+    readonly declared: TransactionIsolation;
+    readonly active: TransactionIsolation | undefined;
+  }) {
+    super(
+      `"${input.beanId}.${input.method}" declares isolation "${input.declared}" but participates in an active transaction ${
+        input.active === undefined ? "that declared no isolation" : `declared as "${input.active}"`
+      }; a joined transaction cannot change isolation.`,
+    );
+    this.beanId = input.beanId;
+    this.method = input.method;
+    this.declared = input.declared;
+    this.active = input.active;
+  }
+}
+
+// 核心不抛这个错：它是给 adapter 的统一词汇——声明的隔离级别底层不支持时必须抛错，
+// 不得静默降级到别的级别（#204 定案 2）。
+export class TransactionIsolationUnsupportedError extends ReforceRuntimeError<"TRANSACTION_ISOLATION_UNSUPPORTED"> {
+  readonly code = "TRANSACTION_ISOLATION_UNSUPPORTED" as const;
+  readonly isolation: TransactionIsolation;
+
+  constructor(input: { readonly isolation: TransactionIsolation; readonly cause?: unknown }) {
+    super(
+      `The underlying database does not support transaction isolation level "${input.isolation}".`,
+      { cause: input.cause },
+    );
+    this.isolation = input.isolation;
   }
 }

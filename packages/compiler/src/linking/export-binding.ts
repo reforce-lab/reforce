@@ -71,6 +71,13 @@ function directlyExportedLocal(
   return exported ? direct : undefined;
 }
 
+// 分析层合成注册需要与 import 短路完全同一的符号身份（ADR 0008 AM2，#204 定案 6）：
+// TransactionManager 契约边的 key 必须和用户 `implements TransactionManager` 落进 provides
+// 的 key 逐字符一致，才能走同一张候选表。
+export function contextFrameworkSymbol(name: string): LinkedSymbol {
+  return frameworkSymbol(contextModuleSpecifier, name);
+}
+
 function frameworkSymbol(
   specifier: keyof typeof frameworkSpecifierKinds,
   name: string,

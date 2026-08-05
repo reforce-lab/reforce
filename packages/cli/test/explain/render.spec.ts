@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderExplanation } from "@/explain/render";
 import { explainContracts } from "@/explain/selection";
 import type { InstalledStarter } from "@/explain/starter-metas";
+import type { WeavingMethod } from "@/explain/weaving";
 import type { GeneratedManifest, ManifestBean } from "@/project/generated-manifest";
 
 // explain 的呈现契约（#148 / M1 遗留账，PR #154）：origin 的用户可读形态、让位与胜出理由的
@@ -54,12 +55,14 @@ function render(
   manifest: GeneratedManifest,
   target: ManifestBean,
   starters: readonly InstalledStarter[] = [],
+  wovenMethods: readonly WeavingMethod[] = [],
 ): readonly string[] {
   return renderExplanation({
     manifest,
     bean: target,
     starters,
     contracts: explainContracts(manifest, starters, target),
+    wovenMethods,
   });
 }
 
@@ -216,5 +219,86 @@ describe("renderExplanation", () => {
     expect(lines).toContain(
       "  2.0.0 at node_modules/@acme/starter-a/node_modules/@acme/starter-redis · introduced by @acme/starter-a@1.0.0",
     );
+  });
+});
+
+// 织入面（ADR 0008 AM2，#204 定案 7）：链序即行序、@Transactional 渲染缺省补齐后的生效
+// 语义、空链方法照渲染；框架 bean 的 origin 与 declared-at 措辞独立于 starter。
+describe("renderExplanation weaving", () => {
+  const interceptorBean = bean({
+    id: "@reforce/context#TransactionInterceptor",
+    origin: "@reforce/context",
+    runtimeExport: {
+      moduleSpecifier: "@reforce/context/generated-runtime",
+      exportName: "TransactionInterceptor",
+    },
+  });
+  const transactionEntry = {
+    beanId: "@reforce/context#TransactionInterceptor",
+    phase: "transaction",
+    order: 0,
+    marker: "transactional",
+  };
+
+  test("renders the framework interceptor origin with its first-use declaration", () => {
+    const lines = render(manifestOf([interceptorBean]), interceptorBean);
+
+    expect(lines).toContain(
+      "origin @reforce/context · framework · declared at src/client.ts:1:1 (first @Transactional use)",
+    );
+  });
+
+  test("renders effective transactional semantics with defaults applied", () => {
+    const target = bean({ id: "src/service.ts#OrderService", origin: "application" });
+
+    const lines = render(
+      manifestOf([target, interceptorBean]),
+      target,
+      [],
+      [{ method: "save", markers: { transactional: null }, chain: [transactionEntry] }],
+    );
+
+    expect(lines).toContain("woven method save");
+    expect(lines).toContain(
+      "  marker transactional · effective propagation REQUIRED · effective isolation database default",
+    );
+    expect(lines).toContain(
+      "  chain [1] @reforce/context#TransactionInterceptor · @reforce/context · framework · phase transaction · order 0 · via transactional",
+    );
+  });
+
+  test("renders declared transactional literals over the defaults", () => {
+    const target = bean({ id: "src/service.ts#OrderService", origin: "application" });
+
+    const lines = render(
+      manifestOf([target, interceptorBean]),
+      target,
+      [],
+      [
+        {
+          method: "audit",
+          markers: { transactional: { propagation: "REQUIRES_NEW", isolation: "SERIALIZABLE" } },
+          chain: [transactionEntry],
+        },
+      ],
+    );
+
+    expect(lines).toContain(
+      "  marker transactional · effective propagation REQUIRES_NEW · effective isolation SERIALIZABLE",
+    );
+  });
+
+  test("renders a marked method with an empty chain as unbound", () => {
+    const target = bean({ id: "src/service.ts#OrderService", origin: "application" });
+
+    const lines = render(
+      manifestOf([target]),
+      target,
+      [],
+      [{ method: "save", markers: { audited: { label: "x" } }, chain: [] }],
+    );
+
+    expect(lines).toContain('  marker audited · value {"label":"x"}');
+    expect(lines).toContain("  chain empty · marked but no interceptor bound");
   });
 });

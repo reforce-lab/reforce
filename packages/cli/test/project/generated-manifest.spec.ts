@@ -254,6 +254,88 @@ describe("validateGeneratedManifestBytes starter origin", () => {
   });
 });
 
+// 框架合成 bean（ADR 0008 AM2，#204 定案 6）：origin 无版本段、runtimeExport 指向 context
+// 生成入口、source 指向应用侧首处 @Transactional 使用——与 starter/应用两套不变量都不同。
+describe("validateGeneratedManifestBytes framework origin", () => {
+  function frameworkInterceptorBean(
+    overrides: {
+      readonly id?: string;
+      readonly moduleSpecifier?: string;
+      readonly scope?: string;
+      readonly primary?: boolean;
+    } = {},
+  ) {
+    const specifier = overrides.moduleSpecifier ?? "@reforce/context/generated-runtime";
+    return {
+      id: overrides.id ?? "@reforce/context#TransactionInterceptor",
+      origin: "@reforce/context",
+      kind: "class",
+      scope: overrides.scope ?? "singleton",
+      source: sourceReference("src/service.ts"),
+      runtimeExport: {
+        moduleSpecifier: specifier,
+        exportName: (overrides.id ?? "@reforce/context#TransactionInterceptor").split("#")[1],
+      },
+      provides: [
+        {
+          displayName: "TransactionInterceptor",
+          moduleSpecifier: specifier,
+          exportName: (overrides.id ?? "@reforce/context#TransactionInterceptor").split("#")[1],
+        },
+      ],
+      dependencies: [dependency("src/manager.ts#SqlManager", "eager", "src/service.ts")],
+      primary: overrides.primary ?? false,
+      qualifiers: [],
+      lifecycle: { start: false, close: false, dispose: false },
+    };
+  }
+
+  function frameworkManifestBytes(interceptor: object & { readonly id?: string }): Uint8Array {
+    const manager = classBean({ file: "src/manager.ts", exportName: "SqlManager" });
+    const id =
+      typeof interceptor.id === "string"
+        ? interceptor.id
+        : "@reforce/context#TransactionInterceptor";
+    return manifestBytes([manager, interceptor], {
+      constructionOrder: [manager.id, id],
+      startActionOrder: [],
+      cleanupActionOrder: [],
+    });
+  }
+
+  test("accepts the synthesized transaction interceptor bean", () => {
+    const accepted = validateGeneratedManifestBytes(
+      frameworkManifestBytes(frameworkInterceptorBean()),
+    );
+
+    expect(accepted).toBe(true);
+  });
+
+  test("rejects a framework bean with a request scope", () => {
+    const accepted = validateGeneratedManifestBytes(
+      frameworkManifestBytes(frameworkInterceptorBean({ scope: "request" })),
+    );
+
+    expect(accepted).toBe(false);
+  });
+
+  test("rejects a framework bean whose runtime module is not the context generated entry", () => {
+    const accepted = validateGeneratedManifestBytes(
+      frameworkManifestBytes(frameworkInterceptorBean({ moduleSpecifier: "@acme/starter-redis" })),
+    );
+
+    expect(accepted).toBe(false);
+  });
+
+  test("rejects a framework origin claiming an unknown export", () => {
+    const accepted = validateGeneratedManifestBytes(
+      frameworkManifestBytes(frameworkInterceptorBean({ id: "@reforce/context#Backdoor" })),
+    );
+
+    expect(accepted).toBe(false);
+  });
+});
+
 describe("validateGeneratedManifestBytes collection dependencies (schema v3)", () => {
   function collectionDependency(
     members: readonly { readonly targetId: string; readonly mode: string }[],
