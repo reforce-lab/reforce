@@ -103,6 +103,7 @@ describe("development compiler gate", () => {
       "bootstrap.ts",
       "routes.json",
       "routes.ts",
+      "weaving.json",
     ]);
   });
 
