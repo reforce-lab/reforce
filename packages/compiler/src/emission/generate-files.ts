@@ -90,6 +90,21 @@ interface ContractImport {
   readonly alias: string;
 }
 
+// 框架契约（TransactionManager / TransactionInterceptor，#204 定案 6）：type-only import
+// 直接用符号携带的框架 specifier，不走 starter meta 户口表。
+function contractSpecifierOf(
+  symbol: LinkedSymbol,
+  generatedDirectory: string,
+  typeResolver: EmissionTypeResolver,
+): string | undefined {
+  if (symbol.kind === "context") {
+    return symbol.moduleSpecifier;
+  }
+  return symbol.source === undefined
+    ? typeResolver.contractImportSpecifier(symbol)
+    : runtimeSpecifier(generatedDirectory, symbol.source.absolutePath);
+}
+
 function contractImports(
   providers: readonly ProviderModel[],
   generatedDirectory: string,
@@ -102,10 +117,7 @@ function contractImports(
       if (bySymbolKey.has(symbol.key)) {
         continue;
       }
-      const specifier =
-        symbol.source === undefined
-          ? typeResolver.contractImportSpecifier(symbol)
-          : runtimeSpecifier(generatedDirectory, symbol.source.absolutePath);
+      const specifier = contractSpecifierOf(symbol, generatedDirectory, typeResolver);
       if (specifier !== undefined) {
         bySymbolKey.set(symbol.key, { symbol, specifier });
       }

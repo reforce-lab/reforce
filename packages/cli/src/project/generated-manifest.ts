@@ -237,6 +237,68 @@ export function starterOriginPackageName(origin: string): string | undefined {
   return isRelativePosixPath(packageName) ? packageName : undefined;
 }
 
+// 框架合成 bean 的来源串（ADR 0008 AM2，#204 定案 6）：与 starter 的 "包名@版本" 相区分——
+// 无版本段，starterOriginPackageName 对它返回 undefined，starter meta 发现与多拷贝呈现自动
+// 跳过。目前唯一实例是事务拦截器；生产方是 compiler/src/analysis/transaction-weaving.ts。
+export const frameworkOriginId = "@reforce/context";
+
+const frameworkRuntimeModule = "@reforce/context/generated-runtime";
+
+// 框架 bean 的专属不变量：id 恒为 `@reforce/context#TransactionInterceptor`，runtimeExport
+// 指向 context 的生成入口，declarationSource 指向把它拉进图的第一处 @Transactional 使用
+//（应用侧路径），无生命周期、无 qualifier、非 primary。
+function isFrameworkBean(
+  bean: {
+    readonly idParts: { readonly file: string; readonly exportName: string };
+    readonly kind: "class" | "factory";
+    readonly runtimeExport: ManifestExportReference;
+    readonly provides: readonly ManifestSymbolReference[];
+    readonly lifecycle: ManifestLifecycle;
+  },
+  primary: boolean,
+  qualifiers: readonly ManifestQualifier[],
+): boolean {
+  return (
+    bean.idParts.file === frameworkOriginId &&
+    bean.idParts.exportName === "TransactionInterceptor" &&
+    bean.kind === "class" &&
+    !primary &&
+    qualifiers.length === 0 &&
+    !bean.lifecycle.start &&
+    !bean.lifecycle.close &&
+    !bean.lifecycle.dispose &&
+    bean.runtimeExport.moduleSpecifier === frameworkRuntimeModule &&
+    bean.provides.some(
+      (provided) =>
+        provided.exportName === bean.runtimeExport.exportName &&
+        provided.moduleSpecifier === frameworkRuntimeModule,
+    )
+  );
+}
+
+// starter meta v1 没有 scope 面、框架 bean 由编译器合成：两者恒为 singleton。
+function isNonApplicationBean(
+  bean: {
+    readonly idParts: { readonly file: string; readonly exportName: string };
+    readonly kind: "class" | "factory";
+    readonly runtimeExport: ManifestExportReference;
+    readonly provides: readonly ManifestSymbolReference[];
+    readonly lifecycle: ManifestLifecycle;
+  },
+  origin: string,
+  scope: "singleton" | "request",
+  primary: boolean,
+  qualifiers: readonly ManifestQualifier[],
+): boolean {
+  if (scope !== "singleton") {
+    return false;
+  }
+  if (origin === frameworkOriginId) {
+    return isFrameworkBean(bean, primary, qualifiers);
+  }
+  return isStarterBean(bean, origin);
+}
+
 // starter bean 的专属不变量：id 是 `包名#导出名`，runtimeExport 是包内的裸 specifier（生成的
 // beans.ts 直接按包名 import），source 是发布包内的相对路径，因而不与 id 比对；M1 只有类构造
 // 语义的 starter bean（ADR 0004 M1 范围，#145）。
@@ -457,10 +519,12 @@ function isManifestBean(value: unknown): value is ManifestBean {
     return false;
   }
   if (origin !== "application") {
-    // starter meta v1 没有 scope 面：starter bean 恒为 singleton。
-    return (
-      scope === "singleton" &&
-      isStarterBean({ idParts, kind, runtimeExport, provides, lifecycle }, origin)
+    return isNonApplicationBean(
+      { idParts, kind, runtimeExport, provides, lifecycle },
+      origin,
+      scope,
+      Reflect.get(value, "primary") === true,
+      qualifiers,
     );
   }
   // 应用 bean：source.file 相对项目根且与 id 的 file 部分一致，runtimeExport 必须退回源码目录。

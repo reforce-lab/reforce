@@ -26,6 +26,9 @@ export {
   ReforceRuntimeError,
   RequestContextMissingError,
   type RuntimeErrorCode,
+  TransactionIsolationOnJoinError,
+  TransactionIsolationUnsupportedError,
+  TransactionSavepointUnsupportedError,
   UnregisteredBeanTargetError,
 } from "@/errors";
 export {
@@ -52,3 +55,14 @@ export type {
   QualifiedBean,
   RequestScopeSeed,
 } from "@/public-types";
+export type {
+  TransactionIsolation,
+  TransactionManager,
+  TransactionOptions,
+} from "@/transaction/manager";
+export {
+  Transactional,
+  type TransactionalValue,
+  type TransactionPropagation,
+} from "@/transaction/marker";
+export { type ActiveTransaction, activeTransaction } from "@/transaction/scope";

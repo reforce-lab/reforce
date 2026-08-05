@@ -21,7 +21,12 @@ test("the root entry exposes only the public programming model", () => {
     "ReforceRuntimeError",
     "RequestContextMissingError",
     "RequestScoped",
+    "TransactionIsolationOnJoinError",
+    "TransactionIsolationUnsupportedError",
+    "TransactionSavepointUnsupportedError",
+    "Transactional",
     "UnregisteredBeanTargetError",
+    "activeTransaction",
     "defineApplication",
     "defineBean",
     "defineMethodMarker",
@@ -31,6 +36,7 @@ test("the root entry exposes only the public programming model", () => {
 
 test("the generated entry exposes only registration and Context helpers", () => {
   expect(Object.keys(generatedRuntime).sort()).toEqual([
+    "TransactionInterceptor",
     "classBean",
     "configBean",
     "createApplicationContext",

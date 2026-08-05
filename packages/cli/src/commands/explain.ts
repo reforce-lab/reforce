@@ -17,6 +17,11 @@ import {
 } from "@/explain/routes";
 import { explainContracts } from "@/explain/selection";
 import { discoverInstalledStarters } from "@/explain/starter-metas";
+import {
+  type GeneratedWeavingTable,
+  parseGeneratedWeavingBytes,
+  wovenMethodsOf,
+} from "@/explain/weaving";
 import { isMissingPathError } from "@/project/fs-error";
 import {
   type GeneratedManifest,
@@ -90,6 +95,31 @@ async function readManifest(
     };
   }
   return { manifest };
+}
+
+// weaving.json 与 manifest 同为无条件生成物（AM1 起）：缺失或非法与 manifest 同级处理，
+// 不静默降级成"无织入信息"的输出（#204 定案 7）。
+async function readWeaving(
+  weavingPath: string,
+): Promise<{ readonly weaving?: GeneratedWeavingTable; readonly problem?: string }> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await readFile(weavingPath);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return {
+        problem: `No generated weaving table at ${weavingPath}. Run reforce build or reforce dev first.`,
+      };
+    }
+    throw error;
+  }
+  const weaving = parseGeneratedWeavingBytes(bytes);
+  if (weaving === undefined) {
+    return {
+      problem: `The generated weaving table at ${weavingPath} is not valid. Rebuild the application.`,
+    };
+  }
+  return { weaving };
 }
 
 type ExplainOutcome =
@@ -186,6 +216,16 @@ async function resolveExplanation(options: ExplainCommandOptions): Promise<Expla
   if (bean === undefined) {
     return beanLookupProblem(manifest, options.beanName, matches);
   }
+  const weavingPath = join(projectRoot, ".reforce", "generated", "weaving.json");
+  const { weaving, problem: weavingProblem } = await readWeaving(weavingPath);
+  if (weaving === undefined) {
+    return {
+      kind: "problem",
+      phase: "project",
+      code: "ARTIFACT_INVALID",
+      message: weavingProblem ?? "The generated weaving table is not readable.",
+    };
+  }
   const starters = await discoverInstalledStarters(projectRoot, starterPackageNames(manifest));
   return {
     kind: "lines",
@@ -194,6 +234,7 @@ async function resolveExplanation(options: ExplainCommandOptions): Promise<Expla
       bean,
       starters,
       contracts: explainContracts(manifest, starters, bean),
+      wovenMethods: wovenMethodsOf(weaving, bean.id),
     }),
   };
 }
