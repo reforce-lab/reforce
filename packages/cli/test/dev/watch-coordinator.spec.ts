@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
 import type { CompilerDiagnostic } from "@reforce/compiler";
 import type { CliReporterEvent, Reporter } from "@reforce/runtime/reporter";
+import { describe, expect, test } from "vitest";
 import { DevCommandController } from "@/commands/dev";
 import { DevChildSupervisor, type ManagedDevChild } from "@/dev/child-supervisor";
 import { DevWatchCoordinator } from "@/dev/watch-coordinator";

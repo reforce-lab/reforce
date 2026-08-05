@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { defineMethodMarker } from "@/interception/method-marker";
 
 // 标记是编译期元数据（ADR 0008 AM1，#202）：运行时必须保持 no-op；守卫只服务未经编译的调用方。

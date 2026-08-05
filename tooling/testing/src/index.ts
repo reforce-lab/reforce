@@ -1,9 +1,10 @@
-export { resolveBunExecutable } from "@/bun-executable";
+export { type BundleEntryOptions, bundleEntry, bundleHarness } from "@/bundle";
 export {
   type CommandOptions,
   runCommand,
   spawnCommand,
 } from "@/command";
+export { resolveNodeExecutable } from "@/node-executable";
 export {
   createSubprocessRegistry,
   createTimeoutGuard,

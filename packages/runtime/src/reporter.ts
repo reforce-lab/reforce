@@ -249,7 +249,7 @@ export class PlainTextReporter implements Reporter {
   report(event: CliReporterEvent): void {
     const line = `${renderEvent(event)}\n`;
     // 一次写失败不能让 reporter 余生失效：链上不挂 catch 时 pending 会永久 rejected，
-    // 之后每个 report 都被静默丢弃，Bun 还会把这些无 handler 的 rejection 记成进程失败
+    // 之后每个 report 都被静默丢弃，Node 对这些无 handler 的 rejection 默认按 unhandledRejection 崩进程
     // （命令本身成功也退出 1）。这里把失败降级为「记录首个错误、继续排队」，首个错误
     // 由 flush() 交回调用方；catch 挂在链尾也顺带兜住 write 的同步抛出（#25）。
     this.pending = this.pending

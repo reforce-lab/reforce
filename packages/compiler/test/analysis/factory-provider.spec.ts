@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { ProviderDraft } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
@@ -517,7 +517,7 @@ describe("factory provider analysis", () => {
 
     const outcome = analyze(declaration, portLinker);
 
-    expect(outcome.draft?.provider.primary).toBeTrue();
+    expect(outcome.draft?.provider.primary).toBe(true);
   });
 
   test("produces no pending dependencies", () => {

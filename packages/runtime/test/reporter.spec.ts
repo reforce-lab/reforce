@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import { Writable } from "node:stream";
+import { describe, expect, test } from "vitest";
 import { PlainTextReporter, type Reporter } from "@/reporter";
 
 class RecordingWritable extends Writable {

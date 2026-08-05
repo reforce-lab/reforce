@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { parseGeneratedWeavingBytes, wovenMethodsOf } from "@/explain/weaving";
 
 // 织入表信任边界（#204 定案 7）：形状镜像 compiler 的 generate-weaving-file；产物字节可能

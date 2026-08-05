@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { defineApplication, type StarterDefinition } from "@/index";
 
 const starters: readonly StarterDefinition[] = [];

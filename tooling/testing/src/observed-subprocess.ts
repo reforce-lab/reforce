@@ -7,7 +7,7 @@ export interface SubprocessRegistry {
   killAll(): Promise<void>;
 }
 
-// 每个 spec 建自己的 registry 并从自己的 afterEach 调 killAll：Bun 把所有 spec 文件跑在同一个进程里，
+// 每个 spec 建自己的 registry 并从自己的 afterEach 调 killAll：vitest 每个 spec 文件一个独立 fork，
 // 模块级的共享数组和模块级的 afterEach 都会跨文件串台（Issue #35）。
 export function createSubprocessRegistry(): SubprocessRegistry {
   const tracked: Array<{

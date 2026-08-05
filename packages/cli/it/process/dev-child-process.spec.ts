@@ -1,4 +1,3 @@
-import { afterEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,10 +5,11 @@ import { fileURLToPath } from "node:url";
 import { type LeaseParticipant, probeLeaseEndpoint } from "@reforce/runtime/lease-endpoint";
 import {
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   type TemporaryProject,
   waitUntil,
 } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { spawnDevChild } from "@/dev/child-process";
 
 const harnessPath = fileURLToPath(
@@ -21,7 +21,7 @@ const startupFailureHarnessPath = fileURLToPath(
 const silentShutdownHarnessPath = fileURLToPath(
   new URL("../support/process/dev/dev-child-silent-shutdown.harness.ts", import.meta.url),
 );
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 const projects: TemporaryProject[] = [];
 
 afterEach(async () => {
@@ -81,7 +81,7 @@ test("Windows-style child shutdown uses IPC acknowledgement", async () => {
   const child = await spawnDevChild({
     entryPath: harnessPath,
     cwd: process.cwd(),
-    bunExecutable,
+    nodeExecutable,
     platform: "win32",
     waitForReady: true,
   });
@@ -96,7 +96,7 @@ test("a clean child exit outranks a missing shutdown acknowledgement", async () 
   const child = await spawnDevChild({
     entryPath: silentShutdownHarnessPath,
     cwd: process.cwd(),
-    bunExecutable,
+    nodeExecutable,
     platform: "win32",
     waitForReady: true,
   });
@@ -112,7 +112,7 @@ test.skipIf(process.platform === "win32")(
     const child = await spawnDevChild({
       entryPath: harnessPath,
       cwd: process.cwd(),
-      bunExecutable,
+      nodeExecutable,
       waitForReady: true,
     });
 
@@ -131,7 +131,7 @@ test("a participant handshake timeout terminates the real child and closes its e
   const failure = spawnDevChild({
     entryPath: startupFailureHarnessPath,
     cwd: project.projectRoot,
-    bunExecutable,
+    nodeExecutable,
     applicationArguments: ["silent", observationPath],
     ipcTimeoutMilliseconds: 1_000,
     leaseParticipant: {
@@ -154,7 +154,7 @@ test("a readiness timeout terminates the child before removing its participant",
   const failure = spawnDevChild({
     entryPath: startupFailureHarnessPath,
     cwd: project.projectRoot,
-    bunExecutable,
+    nodeExecutable,
     applicationArguments: ["participant", observationPath],
     ipcTimeoutMilliseconds: 1_000,
     waitForReady: true,
@@ -186,7 +186,7 @@ test("a participant cleanup error is appended without replacing the readiness fa
   const failure = spawnDevChild({
     entryPath: startupFailureHarnessPath,
     cwd: project.projectRoot,
-    bunExecutable,
+    nodeExecutable,
     applicationArguments: ["participant", observationPath],
     ipcTimeoutMilliseconds: 1_000,
     waitForReady: true,

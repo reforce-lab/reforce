@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { type ContractExplanation, explainContracts } from "@/explain/selection";
 import type { InstalledStarter } from "@/explain/starter-metas";
 import type { GeneratedManifest, ManifestBean } from "@/project/generated-manifest";

@@ -6,7 +6,7 @@ const updatesDirectory = "updates";
 
 // manifest 的后缀必须与 chunk 后缀不同名：`[runtime]` 与入口 chunk 的 `[id]` 都是 `main`，共用后缀
 // 会让两份产物互相覆盖。两者都是 `.mjs` 而不是 `.json`——`import` chunk-loading 运行时读的是
-// `obj.default`，manifest 内容是 ES module，Bun 会按扩展名给 `.json` 选 JSON loader 并解析失败。
+// `obj.default`，manifest 内容是 ES module：Node 对 `.json` 的动态 import 要求 import attributes，按扩展名直读会失败。
 const manifestSuffix = "hot-update-manifest.mjs";
 const chunkSuffix = "hot-update.mjs";
 

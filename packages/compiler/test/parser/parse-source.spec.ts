@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { type ParseSourceInput, parseSource } from "@/parser/parse-source";
 import type { SourceFileIr, SourceKind } from "@/parser/source-ir";
 import type { CanonicalFileId } from "@/parser/source-location";

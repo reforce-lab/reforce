@@ -1,10 +1,10 @@
-import { describe, expect, test } from "bun:test";
 import type {
   ApplicationContext,
   BeanClass,
   BeanDefinition,
   RequestScopeSeed,
 } from "@reforce/context";
+import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
 import { createWebApplication } from "@/execution/web-application";

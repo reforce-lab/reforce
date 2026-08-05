@@ -167,7 +167,6 @@ export function createConfigBinding(
       const snapshot = loadEnvironmentSnapshot({
         root: options.root ?? process.cwd(),
         env: process.env,
-        bunAutoLoaded: typeof process.versions.bun === "string",
       });
       for (const warning of snapshot.warnings) {
         console.warn(`[reforce.config] ${warning}`);

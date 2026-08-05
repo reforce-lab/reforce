@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { createDevBuildId } from "@/bundling/build-id";
 
 test("a nonempty Rspack hash is the build identity", () => {

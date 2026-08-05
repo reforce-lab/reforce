@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
 import fc from "fast-check";
+import { describe, expect, test } from "vitest";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import type { CollectionMemberModel, SingleDependencyModel } from "@/analysis/model";
 
@@ -250,7 +250,7 @@ describe("execution plans", () => {
 
         createExecutionPlans(providers);
 
-        expect(hasEagerCycle(providers)).toBeFalse();
+        expect(hasEagerCycle(providers)).toBe(false);
       }),
     );
   });
@@ -265,8 +265,8 @@ describe("execution plans", () => {
         for (const provider of providers) {
           for (const dependency of provider.dependencies) {
             if (dependency.mode === "cycle-proxy") {
-              expect(isReachable(graph, provider.id, dependency.targetId)).toBeTrue();
-              expect(isReachable(graph, dependency.targetId, provider.id)).toBeTrue();
+              expect(isReachable(graph, provider.id, dependency.targetId)).toBe(true);
+              expect(isReachable(graph, dependency.targetId, provider.id)).toBe(true);
             }
           }
         }
@@ -299,7 +299,7 @@ describe("execution plans", () => {
             providers.some((provider) =>
               provider.dependencies.some((edge) => edge.mode === "cycle-proxy"),
             ),
-          ).toBeFalse();
+          ).toBe(false);
         },
       ),
     );

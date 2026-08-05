@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
 import { realpathSync, statSync } from "node:fs";
+import { expect, test } from "vitest";
 
 import { resolveRuntimeEntryPath } from "@/bundling/runtime-locator";
 

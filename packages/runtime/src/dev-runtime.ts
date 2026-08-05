@@ -1,4 +1,3 @@
-import { requireBunExecutable } from "@/bun-runtime";
 import { DevEntryController } from "@/dev-entry";
 import { hotUpdateManifestPattern } from "@/dev-hot-update";
 import {
@@ -10,6 +9,7 @@ import {
 } from "@/dev-ipc";
 import type { RspackHmrRuntime } from "@/hmr-manager";
 import { createChildLeaseParticipant } from "@/lease-endpoint";
+import { requireNodeExecutable } from "@/node-runtime";
 import { PlainTextReporter, reportShutdownFailure } from "@/reporter";
 import type { ShutdownResult } from "@/shutdown-controller";
 import { withTimeout } from "@/with-timeout";
@@ -32,16 +32,13 @@ export interface RunDevelopmentApplicationOptions {
 //
 // The pattern must track output.hotUpdateMainFilename in bundling/dev-watch.ts. It is `.mjs`, not
 // `.json`: the `import` chunk-loading runtime reads `obj.default`, so the manifest is an ES module
-// and Bun would otherwise pick a JSON loader for it (Issue #46).
+// and the runtime would otherwise pick a JSON loader for it (Issue #46).
 function isMissingHotUpdateManifest(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
   }
-  const locations = [
-    Reflect.get(error, "url"),
-    Reflect.get(error, "path"),
-    Reflect.get(error, "message"),
-  ];
+  // Node 动态 import 失败的 ERR_MODULE_NOT_FOUND 带 url；path 兜住 fs 系错误形状
+  const locations = [Reflect.get(error, "url"), Reflect.get(error, "path")];
   return locations.some(
     (location) =>
       typeof location === "string" && hotUpdateManifestPattern.test(location.replaceAll("\\", "/")),
@@ -69,7 +66,7 @@ export function createRspackHmrRuntime(hot: RspackHmrRuntime): RspackHmrRuntime 
 function sendToParent(message: object): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     if (!process.send) {
-      reject(new Error("Development child requires a Bun process IPC channel."));
+      reject(new Error("Development child requires a Node.js process IPC channel."));
       return;
     }
     process.send(message, (error) => {
@@ -118,7 +115,7 @@ function waitForParticipantAcknowledgement(
 export async function runDevelopmentApplication(
   options: RunDevelopmentApplicationOptions,
 ): Promise<0 | 1> {
-  requireBunExecutable();
+  requireNodeExecutable();
   const reporter = new PlainTextReporter();
   const leaseToken = process.env[writerLeaseTokenEnvironmentVariable];
   let endpoint: Awaited<ReturnType<typeof createChildLeaseParticipant>> | undefined;

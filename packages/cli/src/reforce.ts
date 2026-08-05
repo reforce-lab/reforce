@@ -1,7 +1,7 @@
-#!/usr/bin/env bun
-import { requireBunExecutable } from "@reforce/runtime/bun-runtime";
+#!/usr/bin/env node
+import { requireNodeExecutable } from "@reforce/runtime/node-runtime";
 import { runCli } from "@/commands/run-cli";
 
-requireBunExecutable();
+requireNodeExecutable();
 const exitCode = await runCli();
 process.exitCode = exitCode;

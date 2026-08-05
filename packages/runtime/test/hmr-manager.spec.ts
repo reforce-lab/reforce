@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { DevEntryController } from "@/dev-entry";
 import { DevHmrManager, type RspackHmrRuntime } from "@/hmr-manager";
 import type { CliReporterEvent, Reporter } from "@/reporter";

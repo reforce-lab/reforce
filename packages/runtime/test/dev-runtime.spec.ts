@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { createRspackHmrRuntime } from "@/dev-runtime";
 import type { RspackHmrRuntime } from "@/hmr-manager";
 
@@ -23,11 +23,11 @@ test("a missing Rspack update manifest is a no-op HMR check", async () => {
   expect(result).toBeNull();
 });
 
-test("a Bun missing-module error for an update manifest is a no-op HMR check", async () => {
-  const error = {
-    message:
-      "Cannot find module './updates/main.abc.hot-update-manifest.mjs' from '/project/.reforce/dev/main.mjs'",
-  };
+test("a missing manifest reported by path is also a no-op HMR check", async () => {
+  const error = Object.assign(new Error("missing update manifest"), {
+    code: "ENOENT",
+    path: "/project/.reforce/dev/updates/main.abc.hot-update-manifest.mjs",
+  });
   const runtime = createRspackHmrRuntime(rejectingRuntime(error));
 
   const result = await runtime.check(false);

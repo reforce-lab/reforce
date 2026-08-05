@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { classBean, createApplicationContext, factoryBean } from "@/generated-runtime";
 import { ApplicationContextStateError, defineBean } from "@/index";
 import { testDefinition, testDependency, testSource } from "../test/support/test-definition";

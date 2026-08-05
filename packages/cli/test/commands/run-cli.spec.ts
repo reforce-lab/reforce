@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test";
 import type { CliReporterEvent, Reporter } from "@reforce/runtime/reporter";
 import { createTemporaryProject } from "@reforce/tooling-testing";
+import { expect, test } from "vitest";
 import { runCli } from "@/commands/run-cli";
 
 class FirstFlushFailureReporter implements Reporter {

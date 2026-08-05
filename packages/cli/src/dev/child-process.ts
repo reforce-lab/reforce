@@ -18,7 +18,7 @@ import type { DevChildExit, ManagedDevChild } from "@/dev/child-supervisor";
 export interface SpawnDevChildOptions {
   readonly entryPath: string;
   readonly cwd: string;
-  readonly bunExecutable?: string;
+  readonly nodeExecutable?: string;
   readonly applicationArguments?: readonly string[];
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly platform?: NodeJS.Platform;
@@ -76,7 +76,7 @@ export async function spawnDevChild(options: SpawnDevChildOptions): Promise<Mana
   // 各写各的 `?? 5_000` 意味着调整默认值时会漏掉其中几处。
   const ipcTimeout = options.ipcTimeoutMilliseconds ?? 5_000;
   const child = spawn(
-    options.bunExecutable ?? process.execPath,
+    options.nodeExecutable ?? process.execPath,
     [options.entryPath, ...(options.applicationArguments ?? [])],
     {
       cwd: options.cwd,

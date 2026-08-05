@@ -49,31 +49,31 @@ lefthook 在 `pre-commit` 跑 Biome 自动修复，在 `commit-msg` 跑 commitli
 受影响 package 先分别运行以下命令：
 
 ```bash
-bun run check:write --filter=<package>
-bun run check --filter=<package>
-bun run typecheck --filter=<package>
-bun run test --filter=<package>
-bun run build --filter=<package>
+pnpm run check:write --filter=<package>
+pnpm run check --filter=<package>
+pnpm run typecheck --filter=<package>
+pnpm run test --filter=<package>
+pnpm run build --filter=<package>
 ```
 
 提交前再运行全仓门禁：
 
 ```bash
-bun run check:write
-bun run check
-bun run typecheck
-bun run test
-bun run build
-bun run test:e2e
+pnpm run check:write
+pnpm run check
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run test:e2e
 ```
 
-每个 Rslib workspace 的根 `tsconfig.json` 只包含 `src`，根 `tsconfig.node.json` 包含源码和 Rslib/tooling 配置；测试存在时，由 `test/tsconfig.json` 或 `it/tsconfig.json` 管理。所有配置保持 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`。Rslib 自动读取源码配置：SWC 生成 Bun 可执行的服务端 ESM，TSGo 生成 d.ts；两者都是 bundleless（所有 lib 条目设 `bundle: false`），`dist/` 与 `src/` 1:1 对应，公开入口落在 `dist/` 根、内部模块落在 `dist/<domain>/`。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
+每个 Rslib workspace 的根 `tsconfig.json` 只包含 `src`，根 `tsconfig.node.json` 包含源码和 Rslib/tooling 配置；测试存在时，由 `test/tsconfig.json` 或 `it/tsconfig.json` 管理。所有配置保持 `noEmit: true`，不使用 project references 或 `tsconfig.build.json`。Rslib 自动读取源码配置：SWC 生成 Node.js 可执行的服务端 ESM，TSGo 生成 d.ts；两者都是 bundleless（所有 lib 条目设 `bundle: false`），`dist/` 与 `src/` 1:1 对应，公开入口落在 `dist/` 根、内部模块落在 `dist/<domain>/`。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
 
-单元测试放 `test/`，并严格镜像被测源码路径（如 `src/parser/a.ts` 对应 `test/parser/a.spec.ts`）；跨模块、filesystem、子进程或 Worker 行为放 `it/`。包内不创建 fixture，IT 所需项目树和 harness 在测试 support 中构造。默认 `bun run test` 运行 unit 与 IT，完整 dist-only 用户链路单独运行 `bun run test:e2e`。
+单元测试放 `test/`，并严格镜像被测源码路径（如 `src/parser/a.ts` 对应 `test/parser/a.spec.ts`）；跨模块、filesystem、子进程或 Worker 行为放 `it/`。包内不创建 fixture，IT 所需项目树和 harness 在测试 support 中构造。默认 `pnpm run test` 运行 unit 与 IT，完整 dist-only 用户链路单独运行 `pnpm run test:e2e`。
 
 package exports 只公开 `dist`，仓库测试的跨 package import 由 Turbo 先构建上游依赖后消费产物，不设置仓库专用 export condition。Rsbuild 的 `development` / `production` mode 只控制用户应用行为，两种 mode 都必须消费 Reforce package 的 `dist`。
 
-CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Bun 1.3.14 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Bun 进程证据支持。
+CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 26 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Node.js 进程证据支持。
 
 Compiler 内置唯一的 Yuku parser。Parser-to-IR 测试只断言 Source IR、span 与 parser diagnostic 的必要字段；完整项目行为由 Compiler 集成测试和生成物执行测试负责，不提交整棵 Source IR 或 generated output 快照。
 

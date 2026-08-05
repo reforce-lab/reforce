@@ -1,28 +1,29 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  bundleHarness,
   createTemporaryProject,
   type ProjectTree,
   readProjectTree,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   type TemporaryProject,
   waitUntil,
 } from "@reforce/tooling-testing";
 import { execa, type ResultPromise } from "execa";
+import { afterEach, describe, expect, test } from "vitest";
 
-const harnessPath = fileURLToPath(
-  new URL("../support/process/dev/dev-command.harness.ts", import.meta.url),
+const harnessPath = await bundleHarness(
+  fileURLToPath(new URL("../support/process/dev/dev-command.harness.ts", import.meta.url)),
 );
 const windowsSignalHarnessPath = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
 );
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 const workspaceRoot = resolve("../..");
 const contextRoot = join(workspaceRoot, "packages", "context");
-const bunTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/bun/package.json")));
+const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 const projects: TemporaryProject[] = [];
 const processes: ResultPromise[] = [];
@@ -30,7 +31,7 @@ const processes: ResultPromise[] = [];
 function spawnDevCommandHarness(arguments_: readonly string[]): ResultPromise {
   const harnessArguments = [harnessPath, ...arguments_];
   return execa(
-    bunExecutable,
+    nodeExecutable,
     [
       ...(process.platform === "win32"
         ? [windowsSignalHarnessPath, ...harnessArguments]
@@ -113,8 +114,8 @@ async function createApplicationProject(tree: ProjectTree): Promise<TemporaryPro
     cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
     cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
     symlink(
-      bunTypesRoot,
-      join(project.projectRoot, "node_modules", "@types", "bun"),
+      nodeTypesRoot,
+      join(project.projectRoot, "node_modules", "@types", "node"),
       process.platform === "win32" ? "junction" : "dir",
     ),
     cp(radashiRoot, join(project.projectRoot, "node_modules", "radashi"), { recursive: true }),

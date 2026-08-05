@@ -1,5 +1,5 @@
-import { afterEach, expect, test } from "bun:test";
 import type { TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { createCompiler } from "@/index";
 import { createPositiveApplication, resolveProjectOrThrow } from "./support/project";
 

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   copyApplicationProject,
   copyProjectTree,

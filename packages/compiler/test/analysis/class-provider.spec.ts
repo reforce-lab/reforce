@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { analyzeClassProvider } from "@/analysis/class-provider";
 import type { ProviderDraft } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
@@ -955,7 +955,7 @@ describe("class provider analysis", () => {
 
     const outcome = analyze(declaration);
 
-    expect(outcome.draft?.provider.primary).toBeTrue();
+    expect(outcome.draft?.provider.primary).toBe(true);
   });
 
   test("provides its own class symbol", () => {

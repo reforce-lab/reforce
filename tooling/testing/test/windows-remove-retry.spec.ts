@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { removeWithWindowsRetry } from "@/windows-remove-retry";
 
 function filesystemError(code: string): Error & { readonly code: string } {

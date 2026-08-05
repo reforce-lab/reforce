@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, describe, expect, test } from "vitest";
 import { readRawConfig } from "@/project/tsconfig-jsonc";
 
 const projects: TemporaryProject[] = [];

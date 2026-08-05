@@ -1,4 +1,3 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -6,11 +5,12 @@ import { fileURLToPath } from "node:url";
 import {
   copyApplicationProject,
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
 import { sleep } from "radashi";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { installApplicationPackages } from "../support/application-packages";
 
 // HTTP 全链路 e2e（ADR 0006 / #153）：从构建产物起真实 Bun 服务、打真实端口。覆盖面即
@@ -23,7 +23,7 @@ const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const commandTimeout = 120_000;
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 
 interface StartedServer {
   readonly child: ChildProcess;
@@ -38,7 +38,7 @@ beforeAll(async () => {
   project = await createTemporaryProject();
   await copyApplicationProject(applicationFixture, project.projectRoot);
   await installApplicationPackages(project.projectRoot);
-  const build = await runCommand(bunExecutable, [cliEntry, "build", "--project", "."], {
+  const build = await runCommand(nodeExecutable, [cliEntry, "build", "--project", "."], {
     cwd: project.projectRoot,
     timeout: commandTimeout,
   });
@@ -59,7 +59,7 @@ function projectRoot(): string {
 }
 
 async function startServer(): Promise<StartedServer> {
-  const child = spawn(bunExecutable, [cliEntry, "start", "--project", "."], {
+  const child = spawn(nodeExecutable, [cliEntry, "start", "--project", "."], {
     cwd: projectRoot(),
     stdio: ["ignore", "pipe", "pipe", "ipc"],
     env: { ...process.env },
@@ -79,7 +79,7 @@ async function startServer(): Promise<StartedServer> {
   );
   const deadline = Date.now() + 30_000;
   for (;;) {
-    const match = stderr.match(/\[reforce\.web-bun\] listening on (http:\/\/[^\s]+)\//);
+    const match = stderr.match(/\[reforce\.web-node\] listening on (http:\/\/[^\s]+)\//);
     if (match?.[1] !== undefined) {
       return { child, completion, baseUrl: match[1], output: () => `${stdout}\n${stderr}` };
     }
@@ -131,7 +131,7 @@ async function withServer(run: (baseUrl: string, server: StartedServer) => Promi
   }
 }
 
-describe.serial("HTTP application over the built artifact", () => {
+describe.sequential("HTTP application over the built artifact", () => {
   test("the request surface behaves per route table over one running server", async () => {
     await withServer(async (base) => {
       // 路由命中 + 参数 codec 双向（线上 string → handler bigint → 线上 string）+ 洋葱顺序

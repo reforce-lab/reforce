@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { PreparedRoute, WebApplication } from "@reforce/web/adapter";
+import { describe, expect, test } from "vitest";
 import { WebEngine } from "@/index";
 
-// 真实 Bun.serve 上的引擎契约（#153）：原生 routes 分发、参数路由、404/405 冷路径、
-// 优雅关闭排空。路由的 handle 在这里用最小闭包替身——引擎的职责边界就是"把请求交给
-// handle"，作用域/洋葱链属于 @reforce/web 的测试面。
+// 真实 node:http 服务器上的引擎契约（#207，镜像 web-bun 时代的 Bun.serve 契约 #153）：
+// 路由分发、参数路由、404/405、优雅关闭排空。路由的 handle 用最小闭包替身——引擎的职责
+// 边界就是"把请求交给 handle"，作用域/洋葱链属于 @reforce/web 的测试面。
 
 function application(routes: readonly PreparedRoute[]): WebApplication {
   return { routes };
@@ -15,7 +17,7 @@ async function withEngine(
   run: (base: string, engine: WebEngine) => Promise<void>,
 ): Promise<void> {
   const engine = new WebEngine({ port: 0 });
-  const handle = engine.start(application(routes));
+  const handle = await engine.start(application(routes));
   const url = serverUrlOf(engine);
   try {
     await run(url, engine);
@@ -27,12 +29,13 @@ async function withEngine(
 // 引擎不公开 server 句柄（契约面只有 close），测试从监听日志外读端口会引入脆弱的
 // stdout 解析；这里对私有字段的反射读取只服务测试定位端口。
 function serverUrlOf(engine: WebEngine): string {
-  const server = Reflect.get(engine, "server") as { url: URL };
-  return server.url.href.replace(/\/$/, "");
+  const server = Reflect.get(engine, "server") as Server;
+  const address = server.address() as AddressInfo;
+  return `http://localhost:${address.port}`;
 }
 
-describe("WebEngine over a real Bun.serve", () => {
-  test("a parameterized route receives the native path params", async () => {
+describe("WebEngine over a real node:http server", () => {
+  test("a parameterized route receives the extracted path params", async () => {
     await withEngine(
       [
         {
@@ -63,7 +66,24 @@ describe("WebEngine over a real Bun.serve", () => {
     );
   });
 
-  test("an unknown path yields the 404 cold path", async () => {
+  test("a request body streams through to the route handler", async () => {
+    await withEngine(
+      [
+        {
+          method: "POST",
+          path: "/echo",
+          handle: async (request) => new Response(await request.text()),
+        },
+      ],
+      async (base) => {
+        const response = await fetch(`${base}/echo`, { method: "POST", body: "payload" });
+
+        expect(await response.text()).toBe("payload");
+      },
+    );
+  });
+
+  test("an unknown path yields 404", async () => {
     await withEngine(
       [{ method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) }],
       async (base) => {
@@ -95,7 +115,7 @@ describe("WebEngine over a real Bun.serve", () => {
       released = resolve;
     });
     const engine = new WebEngine({ port: 0 });
-    const handle = engine.start(
+    const handle = await engine.start(
       application([
         {
           method: "GET",
@@ -110,7 +130,7 @@ describe("WebEngine over a real Bun.serve", () => {
     const base = serverUrlOf(engine);
 
     const inflight = fetch(`${base}/slow`).then((response) => response.text());
-    // 确保请求已到达 handler（Bun.serve 接受连接是异步的）
+    // 确保请求已到达 handler（node:http 接受连接是异步的）
     await new Promise((resolve) => setTimeout(resolve, 50));
     let closed = false;
     const closing = handle.close().then(() => {
@@ -124,11 +144,28 @@ describe("WebEngine over a real Bun.serve", () => {
     expect(await inflight).toBe("drained");
   });
 
+  test("close resolves promptly with only idle keep-alive connections", async () => {
+    const engine = new WebEngine({ port: 0 });
+    const handle = await engine.start(
+      application([
+        { method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) },
+      ]),
+    );
+    const base = serverUrlOf(engine);
+    // undici 默认 keep-alive：请求结束后连接空闲驻留，close 不得被它拖住
+    await fetch(`${base}/items`);
+
+    const deadline = Date.now() + 5_000;
+    await handle.close();
+
+    expect(Date.now()).toBeLessThan(deadline);
+  });
+
   test("starting a running engine is rejected", async () => {
     const engine = new WebEngine({ port: 0 });
-    const handle = engine.start(application([]));
+    const handle = await engine.start(application([]));
     try {
-      expect(() => engine.start(application([]))).toThrow("already running");
+      await expect(engine.start(application([]))).rejects.toThrow("already running");
     } finally {
       await handle.close();
     }
@@ -136,7 +173,7 @@ describe("WebEngine over a real Bun.serve", () => {
 
   test("onContextClose after handle.close is an idempotent no-op", async () => {
     const engine = new WebEngine({ port: 0 });
-    const handle = engine.start(application([]));
+    const handle = await engine.start(application([]));
 
     await handle.close();
     await engine.onContextClose();

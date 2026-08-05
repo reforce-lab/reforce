@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import {
   chmod,
   mkdir,
@@ -13,11 +12,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GeneratedFile } from "@reforce/compiler";
 import {
+  bundleHarness,
   createTemporaryProject,
   readProjectTree,
   type TemporaryProject,
   testStallBudgetMilliseconds,
 } from "@reforce/tooling-testing";
+import { afterEach, describe, expect, test } from "vitest";
 import {
   DirectoryTransactionError,
   DirectoryTransactions,
@@ -26,10 +27,10 @@ import {
 import { errorCode, isMissingPathError } from "@/project/fs-error";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
 import {
-  type BunIpcHarness,
   type IpcProcessOutcome,
-  spawnBunIpcHarness,
-} from "../support/process/bun-ipc-harness";
+  type NodeIpcHarness,
+  spawnNodeIpcHarness,
+} from "../support/process/node-ipc-harness";
 
 const leases: ProjectLease[] = [];
 const projects: TemporaryProject[] = [];
@@ -251,7 +252,7 @@ async function restoreReadableIfPresent(path: string): Promise<void> {
 // 这里只保留 harness 退出这一个内层诊断钟——它先于外层触发，把「泛泛的用例超时」换成
 // 「harness 没退出」的现场信息。预算沿用共享停滞常量：抓「卡死」不是管「慢」（Issue #75、#81）。
 async function waitForHarnessExit(
-  harness: BunIpcHarness,
+  harness: NodeIpcHarness,
   timeoutMessage: string,
 ): Promise<IpcProcessOutcome> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -268,7 +269,7 @@ async function waitForHarnessExit(
   }
 }
 
-function detachHarness(harness: BunIpcHarness): readonly unknown[] {
+function detachHarness(harness: NodeIpcHarness): readonly unknown[] {
   const errors: unknown[] = [];
   try {
     if (harness.child.connected) {
@@ -304,7 +305,7 @@ function parseReadyLeaseToken(message: unknown): string | undefined {
 }
 
 function assertTransactionCrashOutcome(
-  holder: BunIpcHarness,
+  holder: NodeIpcHarness,
   result: IpcProcessOutcome,
   fault: { readonly faultPoint: string } | { readonly faultIndex: number },
   transactionKind: "generated" | "dist",
@@ -326,7 +327,7 @@ function assertTransactionCrashOutcome(
   );
 }
 
-async function cleanupTransactionHolder(holder: BunIpcHarness): Promise<void> {
+async function cleanupTransactionHolder(holder: NodeIpcHarness): Promise<void> {
   const errors: unknown[] = [];
   try {
     if (holder.child.exitCode === null && holder.child.signalCode === null) {
@@ -356,10 +357,10 @@ async function spawnTransactionCrash(
   transactionKind: "generated" | "dist" = "generated",
   expectedPoint?: string,
 ): Promise<string> {
-  const harnessPath = fileURLToPath(
-    new URL("../support/process/lease/project-lease.harness.ts", import.meta.url),
+  const harnessPath = await bundleHarness(
+    fileURLToPath(new URL("../support/process/lease/project-lease.harness.ts", import.meta.url)),
   );
-  const holder = spawnBunIpcHarness(harnessPath, [projectRoot, "writer"]);
+  const holder = spawnNodeIpcHarness(harnessPath, [projectRoot, "writer"]);
   try {
     const message = await holder.waitForMessage("Transaction holder did not publish readiness.");
     const leaseToken = parseReadyLeaseToken(message);

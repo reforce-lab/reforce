@@ -12,7 +12,7 @@ interface WindowsRemoveRetryOperations {
 
 // Windows 上杀毒实时扫描、搜索索引或 publint 一类刚爬扫过临时树的消费者会短暂持有句柄，
 // 递归删除会以 EBUSY/EPERM/ENOTEMPTY 瞬态失败（Issue #170）。这些码按 retryDelays 短退避
-// 熬过瞬态锁；其他错误码是真实失败，直接抛。总退避 ~630ms，远小于 bun test 的 5s hook 超时。
+// 熬过瞬态锁；其他错误码是真实失败，直接抛。总退避 ~630ms，远小于 vitest 的 hook 超时。
 function isTransientRemoveError(error: unknown): boolean {
   if (!(error instanceof Error) || !("code" in error)) {
     return false;

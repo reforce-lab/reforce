@@ -1,7 +1,7 @@
-import { afterEach, expect, test } from "bun:test";
 import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
+import { afterEach, expect, test } from "vitest";
 import { discoverInstalledStarters, multipleCopyGroups } from "@/explain/starter-metas";
 
 // explain 的静态 meta 发现（#148）：从 manifest 出现过的包出发、沿 starterDeps 递归；嵌套安装的

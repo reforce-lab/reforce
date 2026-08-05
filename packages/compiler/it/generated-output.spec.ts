@@ -1,4 +1,3 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -8,6 +7,7 @@ import type {
 } from "@reforce/context/generated-runtime";
 import type { TemporaryProject } from "@reforce/tooling-testing";
 import stableStringify from "json-stable-stringify";
+import { afterEach, describe, expect, test } from "vitest";
 import { createCompiler, type GeneratedFile } from "@/index";
 import {
   type CompilerProjectName,

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
 import { createErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";

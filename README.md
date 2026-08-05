@@ -1,7 +1,7 @@
 # 🌱 Reforce
 
-> 面向 Bun 时代的「Spring 式」应用框架生态。
-> A Spring-like application framework ecosystem for the Bun era.
+> 面向现代 Node.js 的「Spring 式」应用框架生态。
+> A Spring-like application framework ecosystem for modern Node.js.
 
 Reforce 是一个**长期项目**，目标是把 Spring 生态中被验证过的核心理念——IoC 容器、声明式装配、配置抽象、生命周期管理、自动装配（starter）、测试支持——用现代 TypeScript 工具链重新实现，而不是照搬 Java 的形制。
 
@@ -11,22 +11,23 @@ Reforce 是一个**长期项目**，目标是把 Spring 生态中被验证过的
 2. **第一性原理**：先问"这个问题在 2026 年的 JS 运行时里本质是什么"，再决定借鉴还是摒弃 Spring 的做法。
 3. **GitHub 是唯一知识来源**：需求 → Issues，规划 → Projects，决策 → ADR issue（**issue 即文档**，顶楼保持最新），长期知识 → Wiki。对话里的结论不落盘就当作不存在。
 
-## 技术栈基线（2026-08-02 核实）
+## 技术栈基线（2026-08-05 核实）
 
 | 领域 | 选型 | 版本 |
 | --- | --- | --- |
-| 包管理 / CLI / 应用运行时 | Bun | 1.3.14 |
+| 应用运行时 | Node.js | >=24（本地与 CI 用 26） |
+| 包管理 | pnpm | 11.20.0 |
 | 任务编排 / 缓存 | Turborepo | 2.10.8 |
 | 语言 | TypeScript（Go 原生编译器，2026-07-08 GA） | 7.0.2 |
 | Compiler 内置 parser | Yuku Parser | 0.8.3 |
 | Package 构建 | Rslib（SWC + TSGo d.ts） | 0.23.2 |
 | SWC 运行时 helpers | @swc/helpers | 0.5.23 |
-| 测试 | Bun test（内置 runner，与运行时同引擎） | 随 bun 1.3.14 |
+| 测试 | Vitest（TC39 装饰器经 unplugin-swc 降级，统一配置在 @reforce/tooling-vitest） | 4.1.10 |
 | Lint / Format | Biome | 2.5.6 |
 | 提交规范 | commitlint（Conventional Commits） | 21.2.1 |
 | Git hooks | lefthook | 2.1.10 |
 
-选型理由与已知坑见 [ADR 0001 · 技术栈基线](https://github.com/reforce-lab/reforce/issues/9)。
+选型理由与已知坑见 [ADR 0001 · 技术栈基线](https://github.com/reforce-lab/reforce/issues/9)；Bun → Node.js + pnpm + Vitest 的迁移决策见 [#207](https://github.com/reforce-lab/reforce/issues/207)。
 
 ## 仓库结构
 
@@ -57,19 +58,19 @@ Compiler 内置并只使用 Yuku parser，不提供 parser 选择或备用解析
 ## 快速开始
 
 ```bash
-bun install
-bun run check:write
-bun run check
-bun run typecheck
-bun run test
-bun run build
-bun run test:e2e
-bun packages/cli/dist/reforce.js --help
+pnpm install
+pnpm run check:write
+pnpm run check
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run test:e2e
+node packages/cli/dist/reforce.js --help
 ```
 
-每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，`tsconfig.node.json` 管理源码与 Rslib/tooling 配置；两者都继承 `@reforce/tooling-tsconfig/base.json` 的 `noEmit: true`，不使用 project references。Rslib 自动读取源码配置并负责生成 Bun 可执行的服务端 ESM 和 d.ts；两者都是 bundleless，`dist/` 与 `src/` 1:1 对应。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
+每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，`tsconfig.node.json` 管理源码与 Rslib/tooling 配置；两者都继承 `@reforce/tooling-tsconfig/base.json` 的 `noEmit: true`，不使用 project references。Rslib 自动读取源码配置并负责生成 Node.js 可执行的服务端 ESM 和 d.ts；两者都是 bundleless，`dist/` 与 `src/` 1:1 对应。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。
 
-包级单元测试位于 `test/`，路径严格镜像 `src`；跨模块、filesystem、子进程和 Worker 行为位于 `it/`。两个目录各自维护 `tsconfig.json`。默认 `bun run test` 运行 unit 与 IT；独立的 `@reforce/e2e` workspace 通过 `bun run test:e2e` 从构建后的 CLI 验证完整用户链路。
+包级单元测试位于 `test/`，路径严格镜像 `src`；跨模块、filesystem、子进程和 Worker 行为位于 `it/`。两个目录各自维护 `tsconfig.json`。默认 `pnpm run test` 运行 unit 与 IT；独立的 `@reforce/e2e` workspace 通过 `pnpm run test:e2e` 从构建后的 CLI 验证完整用户链路。
 
 package exports 只公开 `dist`。仓库内跨 package import、CLI dev/build 和用户应用都消费构建产物；Rsbuild 的 `development` / `production` mode 只描述用户应用是否启用开发能力，不改变 Reforce package 的解析入口。
 

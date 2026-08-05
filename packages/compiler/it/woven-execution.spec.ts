@@ -1,13 +1,14 @@
-import { afterAll, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  bundleEntry,
   createTemporaryProject,
-  resolveBunExecutable,
+  resolveNodeExecutable,
   runCommand,
   type TemporaryProject,
 } from "@reforce/tooling-testing";
+import { afterAll, expect, test } from "vitest";
 import { createCompiler } from "@/index";
 import { applicationTsconfig, linkApplicationPackages } from "./support/project";
 
@@ -16,7 +17,7 @@ import { applicationTsconfig, linkApplicationPackages } from "./support/project"
 // 被拦截（ADR 核心卖点：$Woven override 让 this.save() 也走链）、request-scoped 织入路径、
 // 拦截器↔被织 bean 成环走 cycle-proxy、抽象基类继承的类型边角。
 
-const bunExecutable = await resolveBunExecutable();
+const nodeExecutable = await resolveNodeExecutable();
 const temporaryProjects: TemporaryProject[] = [];
 
 afterAll(async () => {
@@ -69,14 +70,9 @@ async function compileAndRun(
   expect(typecheck.stderr).toBe("");
   expect(typecheck.stdout).toBe("");
   expect(typecheck.exitCode).toBe(0);
-  const build = await runCommand(
-    process.execPath,
-    ["build", "integration.ts", "--target=node", "--format=esm", "--outdir=dist"],
-    { cwd: project.projectRoot },
-  );
-  expect(build.exitCode).toBe(0);
+  await bundleEntry({ entry: "integration.ts", cwd: project.projectRoot, outdir: "dist" });
   const execution = await runCommand(
-    bunExecutable,
+    nodeExecutable,
     [path.join(project.projectRoot, "dist", "integration.js")],
     { cwd: project.projectRoot },
   );

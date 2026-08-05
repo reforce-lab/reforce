@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
 import { posix, win32 } from "node:path";
+import { expect, test } from "vitest";
 import { isProjectWatchFile } from "@/bundling/dev-watcher-ready";
 
 test("a gate watch input inside the project is watched", () => {
