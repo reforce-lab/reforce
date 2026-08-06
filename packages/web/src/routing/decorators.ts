@@ -1,13 +1,30 @@
 import type { BeanClass } from "@reforce/context";
 import type { RequestContext } from "@/execution/request-context";
-import type { ErrorHandlerOptions, MiddlewareOptions } from "@/routing/middleware";
+import type {
+  ErrorHandlerOptions,
+  MiddlewareOptions,
+  RouteErrorHandler,
+  RouteMiddleware,
+} from "@/routing/middleware";
 import { isWebPhase, type RouteSchemas } from "@/routing/vocabulary";
 
 // 路由装饰器与 @Injectable 同款纪律（ADR 0006 W3）：编译期静态读取、运行时 no-op、标准
-// TC39 装饰器。controller/中间件/错误处理器都是普通 bean——这里的标记只补充 web 语义，
-// bean 身份仍由 @Injectable() 声明。参数守卫服务未经编译的调用方（与 Qualifier 同理）。
+// TC39 装饰器。controller/中间件/错误处理器的 bean 身份由这些装饰器自身蕴含（编译器的
+// analysis/bean-roles.ts），不再并列 @Injectable()。参数守卫服务未经编译的调用方（与
+// Qualifier 同理）。
 
+// controller 没有固定形状，不收紧；中间件与错误处理器有，各自钉死自己的契约。
 type WebClassDecorator = <T extends BeanClass>(value: T, context: ClassDecoratorContext<T>) => void;
+
+type MiddlewareClassDecorator = <T extends BeanClass<RouteMiddleware>>(
+  value: T,
+  context: ClassDecoratorContext<T>,
+) => void;
+
+type ErrorHandlerClassDecorator = <T extends BeanClass<RouteErrorHandler>>(
+  value: T,
+  context: ClassDecoratorContext<T>,
+) => void;
 
 // handler 契约在装饰器签名处钉死：方法要么零参、要么恰好接收 RequestContext，返回值
 // 不设限（Response 原样透传，其余交给响应 schema 序列化）。
@@ -80,7 +97,7 @@ export function Put(path?: string, schemas?: RouteSchemas): RouteHandlerDecorato
   return routeDecorator("Put", path, schemas);
 }
 
-export function Middleware(options: MiddlewareOptions = {}): WebClassDecorator {
+export function Middleware(options: MiddlewareOptions = {}): MiddlewareClassDecorator {
   if (options === null || typeof options !== "object") {
     throw new TypeError("Middleware options must be an object when provided.");
   }
@@ -94,7 +111,7 @@ export function Middleware(options: MiddlewareOptions = {}): WebClassDecorator {
   return () => undefined;
 }
 
-export function ErrorHandler(options: ErrorHandlerOptions = {}): WebClassDecorator {
+export function ErrorHandler(options: ErrorHandlerOptions = {}): ErrorHandlerClassDecorator {
   if (options === null || typeof options !== "object") {
     throw new TypeError("ErrorHandler options must be an object when provided.");
   }
@@ -105,7 +122,7 @@ export function ErrorHandler(options: ErrorHandlerOptions = {}): WebClassDecorat
 // 挂载点（ADR 0006 W4）：@Use 在 controller 类上是路由组挂载、在 handler 方法上是单路由
 // 挂载；顺序永远由中间件自身的 (phase, order, beanId) 决定，与挂载点和书写顺序无关。
 export function Use(
-  ...middleware: readonly BeanClass[]
+  ...middleware: readonly BeanClass<RouteMiddleware>[]
 ): (value: unknown, context: ClassDecoratorContext | ClassMethodDecoratorContext) => void {
   for (const target of middleware) {
     if (typeof target !== "function") {

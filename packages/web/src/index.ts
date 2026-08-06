@@ -29,7 +29,9 @@ export {
   Use,
 } from "@/routing/decorators";
 export type {
+  ErrorHandlerHandle,
   ErrorHandlerOptions,
+  MiddlewareHandle,
   MiddlewareOptions,
   RouteErrorHandler,
   RouteMiddleware,
