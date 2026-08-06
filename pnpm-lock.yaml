@@ -224,6 +224,9 @@ importers:
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
       enhanced-resolve:
         specifier: ^5.24.5
         version: 5.24.5

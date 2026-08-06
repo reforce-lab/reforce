@@ -28,6 +28,8 @@ interface AnalysisSuccess {
   readonly status: "success";
   // 分析成功也可能有话要说：这里的诊断全是 warning（RFC 0011 OM2，#242）。
   readonly diagnostics: readonly CompilerDiagnostic[];
+  // 编译期见到的全部 logger 名，升序：logging.level.* 的校验拿它当封闭名单（RFC 0011 L5）。
+  readonly loggerNames: readonly string[];
   readonly providers: readonly BeanProviderModel[];
   readonly configs: readonly ConfigProviderModel[];
   readonly plans: ExecutionPlansModel;
@@ -175,6 +177,7 @@ export function analyzeProject(
   return {
     status: "success",
     diagnostics: Object.freeze(orderDiagnostics(diagnostics)),
+    loggerNames: loggers.names,
     providers: Object.freeze(providers),
     configs: Object.freeze(configs),
     plans: createExecutionPlans(providers, new Set(configs.map((config) => config.id))),
