@@ -513,6 +513,9 @@ importers:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.6
+      '@reforce/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@reforce/tooling-rslib':
         specifier: workspace:*
         version: link:../../tooling/rslib
