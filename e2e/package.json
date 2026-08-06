@@ -16,6 +16,8 @@
     "@reforce/config": "workspace:*",
     "@reforce/context": "workspace:*",
     "@reforce/web": "workspace:*",
+    "@reforce/web-fastify": "workspace:*",
+    "@reforce/web-hono": "workspace:*",
     "@reforce/web-node": "workspace:*"
   },
   "devDependencies": {
