@@ -55,7 +55,7 @@ export function testDefinition(
   } = {},
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     configs: input.configs ?? [],
     ...(input.configBinding ? { configBinding: input.configBinding } : {}),
     registrations,

@@ -4,6 +4,7 @@ import { analyzeConfigProviders } from "@/analysis/config-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
+import { synthesizeLoggerBeans } from "@/analysis/logger-synthesis";
 import { analyzeMethodInterception } from "@/analysis/method-interception";
 import type {
   BeanProviderModel,
@@ -125,11 +126,16 @@ export function analyzeProject(
   // 事务拦截器合成注册（ADR 0008 AM2，#204 定案 6）：检测到 @Transactional 方法使用即入表，
   // 它对 TransactionManager 契约的依赖走下面的正常解析——有使用无实现在编译期就是 MISSING_BEAN。
   const transactionDraft = transactionInterceptorDraft(sources, linker);
-  const localDrafts = [
+  const applicationDrafts = [
     ...configAnalysis.drafts,
     ...drafts,
     ...(transactionDraft === undefined ? [] : [transactionDraft]),
   ];
+  // logger bean 合成（RFC 0011 L2，#242）：与事务拦截器同一时机——collectProviderDrafts 之后、
+  // resolveProviders 之前。它要看全部 draft 的 pendingDependencies 才知道有哪些 logger 名，
+  // 又必须赶在解析开始前把自己的 draft 放进表里。
+  const loggers = synthesizeLoggerBeans({ drafts: applicationDrafts, linker, diagnostics });
+  const localDrafts = [...applicationDrafts, ...loggers.drafts];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
   // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。
   const starterDrafts = resolveProviders(
@@ -137,6 +143,7 @@ export function analyzeProject(
     linker.starterLinkage,
     diagnostics,
     new Set(engineBeans.map((bean) => bean.id)),
+    loggers.redirects,
   );
   // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
   // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。config 不进执行计划——它由

@@ -1,6 +1,7 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
 import { beanRoleSpecOf } from "@/analysis/bean-roles";
+import { redirectKey } from "@/analysis/logger-synthesis";
 import {
   type CollectionDependencyModel,
   type PendingDependency,
@@ -303,6 +304,8 @@ function demandRelated(demand: DemandContext): readonly DiagnosticRelatedInforma
 
 interface ResolutionState {
   readonly candidates: CandidateIndex;
+  // logger 依赖重定向表（RFC 0011 L2，#242）：`${consumerId}#${parameterIndex}` → logger bean id。
+  readonly loggerRedirects: ReadonlyMap<string, string>;
   readonly qualifierIndex: ReadonlyMap<string, ProviderModel>;
   readonly drafts: readonly ProviderDraft[];
   readonly linkage: StarterLinkage;
@@ -663,6 +666,27 @@ function singleDependencyMode(pending: PendingDependency): "eager" | "explicit-l
   return pending.linkedType.lazy ? "explicit-lazy" : "eager";
 }
 
+// 全设计唯一的解析特例（RFC 0011 L2，#242），所以它有名字。合成的 logger bean 刻意不进候选池
+// （provides 为空），消费者那条边由编译器点名指过去——走 selectProvider 的话，N 个 logger 同时
+// 提供 Logger 契约，每条 Logger 边都会是 AMBIGUOUS_BEAN。
+function redirectedLoggerDependency(
+  state: ResolutionState,
+  consumerId: string,
+  pending: PendingDependency,
+): SingleDependencyModel | undefined {
+  const targetId = state.loggerRedirects.get(redirectKey(consumerId, pending.index));
+  if (targetId === undefined) {
+    return undefined;
+  }
+  return {
+    parameterIndex: pending.index,
+    targetId,
+    mode: "eager",
+    source: sourceReference(pending.sourceSpan),
+    contract: pending.linkedType.symbol,
+  };
+}
+
 function resolveLocalDraftDependencies(state: ResolutionState): void {
   for (const draft of state.drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -672,6 +696,11 @@ function resolveLocalDraftDependencies(state: ResolutionState): void {
       };
       if (pending.collection === true) {
         draft.provider.dependencies.push(collectionDependencyFor(state, pending, demand));
+        continue;
+      }
+      const redirected = redirectedLoggerDependency(state, draft.provider.id, pending);
+      if (redirected !== undefined) {
+        draft.provider.dependencies.push(redirected);
         continue;
       }
       const dependency = singleDependencyFor(state, pending, demand);
@@ -746,12 +775,14 @@ export function resolveProviders(
   // 生成代码的显式需求（ADR 0006 W2 的 #153 接线）：web 引擎 bean 由生成的 bootstrap 经
   // 容器解析，需求方不在 DI 图内，因此在这里显式入根，与 role:"root" 同一物化通道。
   demandedBeanIds: ReadonlySet<string> = new Set(),
+  loggerRedirects: ReadonlyMap<string, string> = new Map(),
 ): readonly ProviderDraft[] {
   const candidates = indexCandidates(drafts, linkage.beans);
   const qualifierIndex = indexQualifiers(drafts, diagnostics);
   validatePrimaryCandidates(candidates, diagnostics);
   const state: ResolutionState = {
     candidates,
+    loggerRedirects,
     qualifierIndex,
     drafts,
     linkage,

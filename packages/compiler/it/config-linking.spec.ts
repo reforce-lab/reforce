@@ -160,11 +160,11 @@ describe("config recognition and generation", () => {
     );
     expect(beans).toContain("configBean({");
     expect(beans).toContain(`id: "${serverConfigId}"`);
-    expect(beans).toContain("schemaVersion: 4,");
+    expect(beans).toContain("schemaVersion: 5,");
     expect(beans).toContain("configBinding: createConfigBinding(),");
 
     const manifest = manifestOf(result);
-    expect(manifest.schemaVersion).toBe(4);
+    expect(manifest.schemaVersion).toBe(5);
     expect(manifest.configs.map((config) => config.id)).toEqual([serverConfigId]);
     expect(manifest.configs[0]?.prefix).toBe("server");
     const consumer = manifest.beans.find((bean) => bean.id === consumerId);

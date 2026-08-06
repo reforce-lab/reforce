@@ -107,7 +107,7 @@ interface ManifestPlans {
 }
 
 export interface GeneratedManifest {
-  readonly schemaVersion: 4;
+  readonly schemaVersion: 5;
   readonly configs: readonly ManifestConfig[];
   readonly beans: readonly ManifestBean[];
   readonly plans: ManifestPlans;
@@ -244,7 +244,17 @@ export function starterOriginPackageName(origin: string): string | undefined {
 // 一张表而不是一个字面量：合成 bean 归哪个框架包由它实现的契约决定（事务契约随 #204 的拆包
 // 迁到 @reforce/transaction），CLI 这道信任边界要比对的是"这个来源允许合成哪个 bean、从哪个
 // 生成入口 import"这一整组事实，认死一个包名会在下一个框架包出现时静默放行。
-const frameworkBeanSpecs = new Map([
+interface FrameworkBeanSpec {
+  /** 运行导出名。多数框架 bean 的 id exportName 与它相等，logger 是唯一的例外。 */
+  readonly exportName: string;
+  readonly runtimeModule: string;
+  /** id 的 exportName 不等于运行导出名时，用它校验 id 的形状。 */
+  readonly exportNamePattern?: RegExp;
+  /** 不提供任何契约的合成 bean（logger）；其余框架 bean 必须把自己列进 provides。 */
+  readonly providesNothing?: true;
+}
+
+const frameworkBeanSpecs = new Map<string, FrameworkBeanSpec>([
   [
     "@reforce/transaction",
     {
@@ -252,7 +262,22 @@ const frameworkBeanSpecs = new Map([
       runtimeModule: "@reforce/transaction/generated-runtime",
     },
   ],
+  [
+    // 框架 logger（RFC 0011 L2，#242）：唯一「一个运行导出承载 N 个 bean 身份」的形态。
+    // id 的 exportName 是 `Logger(<名字>)` 这个模式而不是一个定名，运行导出恒为 BoundLogger
+    // ——两者天然不等，而其余框架 bean 靠「相等」把关。它也刻意不提供任何契约（消费者由编译器
+    // 的重定向表点名），所以 provides 恒为空。
+    "@reforce/logging",
+    {
+      exportNamePattern: /^Logger\(.+\)$/u,
+      exportName: "BoundLogger",
+      runtimeModule: "@reforce/logging/generated-runtime",
+      providesNothing: true,
+    },
+  ],
 ]);
+
+export const loggingOriginId = "@reforce/logging";
 
 export function isFrameworkOrigin(origin: string): boolean {
   return frameworkBeanSpecs.has(origin);
@@ -277,9 +302,21 @@ function isFrameworkBean(
   if (spec === undefined) {
     return false;
   }
+  const identityHolds =
+    spec.exportNamePattern === undefined
+      ? bean.idParts.exportName === spec.exportName
+      : spec.exportNamePattern.test(bean.idParts.exportName) &&
+        bean.runtimeExport.exportName === spec.exportName;
+  const providesHold = spec.providesNothing
+    ? bean.provides.length === 0
+    : bean.provides.some(
+        (provided) =>
+          provided.exportName === bean.runtimeExport.exportName &&
+          provided.moduleSpecifier === spec.runtimeModule,
+      );
   return (
     bean.idParts.file === origin &&
-    bean.idParts.exportName === spec.exportName &&
+    identityHolds &&
     bean.kind === "class" &&
     !primary &&
     qualifiers.length === 0 &&
@@ -287,11 +324,7 @@ function isFrameworkBean(
     !bean.lifecycle.close &&
     !bean.lifecycle.dispose &&
     bean.runtimeExport.moduleSpecifier === spec.runtimeModule &&
-    bean.provides.some(
-      (provided) =>
-        provided.exportName === bean.runtimeExport.exportName &&
-        provided.moduleSpecifier === spec.runtimeModule,
-    )
+    providesHold
   );
 }
 
@@ -517,15 +550,19 @@ function isManifestBean(value: unknown): value is ManifestBean {
   const dependencies = Reflect.get(value, "dependencies");
   const qualifiers = Reflect.get(value, "qualifiers");
   const lifecycle = Reflect.get(value, "lifecycle");
+  // 框架 logger 是唯一「一个运行导出承载 N 个 bean 身份、且不提供任何契约」的形态，
+  // 下面两条通用不变量对它不成立，交给 frameworkBeanSpecs 里的 logger spec 单独把关
+  // （RFC 0011 L2，#242）。
+  const loggerShaped = origin === loggingOriginId;
   if (
     idParts === undefined ||
     !isNonemptyString(origin) ||
     (kind !== "class" && kind !== "factory") ||
     !isSourceReference(source) ||
     !isExportReference(runtimeExport) ||
-    runtimeExport.exportName !== idParts.exportName ||
+    (!loggerShaped && runtimeExport.exportName !== idParts.exportName) ||
     !isArrayOf(provides, isSymbolReference) ||
-    provides.length === 0 ||
+    (!loggerShaped && provides.length === 0) ||
     !hasUniqueSymbols(provides) ||
     !isArrayOf(dependencies, isDependency) ||
     typeof Reflect.get(value, "primary") !== "boolean" ||
@@ -792,7 +829,7 @@ function isGeneratedManifest(value: unknown): value is GeneratedManifest {
   if (
     !isObject(value) ||
     !hasExactKeys(value, ["schemaVersion", "configs", "beans", "plans"]) ||
-    Reflect.get(value, "schemaVersion") !== 4
+    Reflect.get(value, "schemaVersion") !== 5
   ) {
     return false;
   }

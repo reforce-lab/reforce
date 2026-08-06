@@ -277,6 +277,52 @@ function wovenChainsLiteral(
   return `{\n${methods.join("\n")}\n    }`;
 }
 
+function literalArgumentAlias(index: number): string {
+  return `beanTarget${index}$Literal`;
+}
+
+// 只有带字面量实参的 provider 需要子类：其余的 target 仍然是用户类本身，bean 身份表与
+// testing replace 的键都不换（ADR 0008 AM1）。
+function literalArgumentTarget(provider: BeanProviderModel, index: number): string | undefined {
+  if (provider.kind !== "class" || provider.literalArguments === undefined) {
+    return undefined;
+  }
+  return literalArgumentAlias(index);
+}
+
+function literalArgumentClassDeclaration(
+  provider: BeanProviderModel,
+  index: number,
+): readonly string[] {
+  const target = literalArgumentTarget(provider, index);
+  return target === undefined ? [] : [`class ${target} extends beanTarget${index} {}`];
+}
+
+// 依赖表达式与字面量按 parameterIndex 归并成一份实参表。先例是 wovenChainsLiteral 的尾参
+// 内联，区别只在这里的字面量可以落在任意参数位，不限于末位。
+function constructorArguments(
+  provider: BeanProviderModel,
+  dependencies: readonly DependencyModel[],
+  contracts: ReadonlyMap<string, ContractImport>,
+): string {
+  const literals = provider.kind === "class" ? (provider.literalArguments ?? []) : [];
+  if (literals.length === 0) {
+    return dependencies.map((dependency) => dependencyExpression(dependency, contracts)).join(", ");
+  }
+  const byIndex = new Map<number, string>();
+  for (const dependency of dependencies) {
+    byIndex.set(dependency.parameterIndex, dependencyExpression(dependency, contracts));
+  }
+  for (const literal of literals) {
+    byIndex.set(literal.index, compactJson(literal.value));
+  }
+  const width = Math.max(...byIndex.keys()) + 1;
+  return Array.from(
+    { length: width },
+    (_value, position) => byIndex.get(position) ?? "undefined",
+  ).join(", ");
+}
+
 function registrationExpression(
   provider: BeanProviderModel,
   index: number,
@@ -297,12 +343,15 @@ function registrationExpression(
     woven === undefined
       ? orderedDependencies
       : orderedDependencies.slice(0, woven.userParameterCount);
-  const argumentsList = userDependencies
-    .map((dependency) => dependencyExpression(dependency, contracts))
-    .join(", ");
+  const argumentsList = constructorArguments(provider, userDependencies, contracts);
+  // 逐 logger emit 一个子类（RFC 0011 L2，#242）：运行时的 claimClassTarget 要求每条 class
+  // registration 的 target 对象互不相同，N 个 logger bean 共用一个 BoundLogger 会当场
+  // fail("class target ... is duplicated")。子类对用户不可达，所以 context.get(BoundLogger)
+  // 抛 UnregisteredBeanTargetError——语义正确，logger 本来就不该按类取。
+  const target = literalArgumentTarget(provider, index) ?? alias;
   const createExpression =
     woven === undefined
-      ? `new ${alias}(${argumentsList})`
+      ? `new ${target}(${argumentsList})`
       : `new ${alias}$Woven(${argumentsList.length === 0 ? "" : `${argumentsList}, `}${wovenChainsLiteral(provider, woven, contracts)})`;
   const hooks = [
     ...(provider.startHook ? ["start: (bean) => bean.onContextStart(),"] : []),
@@ -310,7 +359,7 @@ function registrationExpression(
   ];
   const hooksBlock =
     hooks.length === 0 ? "{}" : `{\n${hooks.map((line) => `    ${line}`).join("\n")}\n  }`;
-  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  scope: ${JSON.stringify(provider.scope)},\n  target: ${alias},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => ${createExpression},\n  hooks: ${hooksBlock},\n});`;
+  return `const registration${index} = classBean({\n  id: ${JSON.stringify(provider.id)},\n  source: ${inlineJson(provider.declarationSource, 2)},\n  scope: ${JSON.stringify(provider.scope)},\n  target: ${target},\n  dependencies: ${inlineJson(runtimeDependencies(provider), 2)},\n  create: (resolver) => ${createExpression},\n  hooks: ${hooksBlock},\n});`;
 }
 
 function renderBeans(
@@ -361,7 +410,10 @@ function renderBeans(
   );
   const wovenClasses = providers.flatMap((provider, index) => {
     const emission = woven.get(provider.id);
-    return emission === undefined ? [] : [wovenClassDeclaration(index, emission)];
+    return [
+      ...literalArgumentClassDeclaration(provider, index),
+      ...(emission === undefined ? [] : [wovenClassDeclaration(index, emission)]),
+    ];
   });
   const registrations = providers.map((provider, index) =>
     registrationExpression(provider, index, contracts, woven.get(provider.id)),
@@ -378,7 +430,7 @@ function renderBeans(
     ...configRegistrations.flatMap((registration) => [registration, ""]),
     ...registrations.flatMap((registration) => [registration, ""]),
     "export const applicationDefinition = {",
-    "  schemaVersion: 4,",
+    "  schemaVersion: 5,",
     `  configs: [${configNames}],`,
     ...(configs.length > 0 ? ["  configBinding: createConfigBinding(),"] : []),
     `  registrations: [${names}],`,
@@ -525,7 +577,7 @@ function renderManifest(
       dispose: provider.kind === "factory" && provider.dispose,
     },
   }));
-  return `${json({ schemaVersion: 4, configs: manifestConfigs, beans, plans })}\n`;
+  return `${json({ schemaVersion: 5, configs: manifestConfigs, beans, plans })}\n`;
 }
 
 // web 接线（ADR 0006 W2 的 #153 修订）：路由表与容器只有生成代码同时拿得到，注册了 web 引擎

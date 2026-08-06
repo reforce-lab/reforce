@@ -96,8 +96,28 @@ interface ProviderBase {
   readonly role?: BeanRole;
 }
 
+// 字面量构造实参（RFC 0011 L2，#242）：按构造参数位内联一个编译期已知的值，emission 里与
+// 依赖表达式按 parameterIndex 归并。目前唯一的用途是把 logger 名与级别快照钉进合成的 logger
+// bean——它们是编译期事实，走依赖解析既没有 provider 可指，也会让运行时多一次查表。
+//
+// **只进编译器模型**：不进 runtimeDependencies()、不进 manifest、不进运行时 schema，
+// ADR 0004 决策 14 的「运行时 schema 一个字段不加」因此不破。
+export type LiteralArgumentValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly LiteralArgumentValue[]
+  | { readonly [key: string]: LiteralArgumentValue };
+
+export interface LiteralArgumentModel {
+  readonly index: number;
+  readonly value: LiteralArgumentValue;
+}
+
 interface ClassProviderModel extends ProviderBase {
   readonly kind: "class";
+  readonly literalArguments?: readonly LiteralArgumentModel[];
   readonly startHook: boolean;
   readonly closeHook: boolean;
 }

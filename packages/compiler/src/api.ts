@@ -64,7 +64,10 @@ export type CompilerDiagnosticCode =
   | "BEAN_ID_COLLISION"
   // 抑制注释（RFC 0011 D7，#242）。两者都是 warning：抑制机制本身出问题不该拦住编译。
   | "UNUSED_SUPPRESSION"
-  | "SUPPRESSION_NOT_APPLICABLE";
+  | "SUPPRESSION_NOT_APPLICABLE"
+  // 日志接线（RFC 0011 L2/L5，#242）。
+  | "DUPLICATE_LOGGER_NAME"
+  | "UNKNOWN_LOGGER_NAME";
 
 export interface CompilerDiagnostic {
   readonly kind: "compiler";
