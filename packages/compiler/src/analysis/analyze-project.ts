@@ -6,6 +6,8 @@ import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
 import {
   type CompileTimeLoggerLevels,
+  providedLoggerFactorySymbol,
+  spanOfMetaSource,
   synthesizeLoggerBeans,
   webFrameworkLoggerName,
 } from "@/analysis/logger-synthesis";
@@ -19,7 +21,12 @@ import type {
 } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
-import { transactionInterceptorDraft } from "@/analysis/transaction-weaving";
+import {
+  transactionFrameworkLoggerName,
+  transactionInterceptorBeanId,
+  transactionInterceptorDraft,
+  frameworkOriginId as transactionOriginId,
+} from "@/analysis/transaction-weaving";
 import { type WebModel, webEngineAdapterName, webPackageName } from "@/analysis/web-model";
 import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
@@ -134,7 +141,15 @@ export function analyzeProject(
   );
   // 事务拦截器合成注册（ADR 0008 AM2，#204 定案 6）：检测到 @Transactional 方法使用即入表，
   // 它对 TransactionManager 契约的依赖走下面的正常解析——有使用无实现在编译期就是 MISSING_BEAN。
-  const transactionDraft = transactionInterceptorDraft(sources, linker);
+  // 探针集合刻意不含事务 draft 自己：拦截器的 provides 只有 TransactionInterceptor，它永远
+  // 提供不了 LoggerFactory，所以答案与 synthesizeLoggerBeans 过去在内部算的完全一致。
+  // 不写这条注释的话，后来人会以为这是个顺序 bug 而去「修」它。
+  const loggerFactory = providedLoggerFactorySymbol([...configAnalysis.drafts, ...drafts], linker);
+  const transactionDraft = transactionInterceptorDraft(
+    sources,
+    linker,
+    loggerFactory !== undefined,
+  );
   const applicationDrafts = [
     ...configAnalysis.drafts,
     ...drafts,
@@ -148,13 +163,27 @@ export function analyzeProject(
   // demandedBeanIds——本地 draft 一律入图。装了引擎但没装任何日志绑定时不合成，见 synthesize。
   const loggers = synthesizeLoggerBeans({
     drafts: applicationDrafts,
-    linker,
+    loggerFactory,
     diagnostics,
-    frameworkLoggers: engineBeans.slice(0, 1).map((bean) => ({
-      name: webFrameworkLoggerName,
-      reason: webPackageName,
-      source: bean.metaSource,
-    })),
+    frameworkLoggers: [
+      ...engineBeans.slice(0, 1).map((bean) => ({
+        name: webFrameworkLoggerName,
+        reason: webPackageName,
+        span: spanOfMetaSource(bean.metaSource),
+      })),
+      // 事务那条与 web 那条的区别只在消费方式：web 由生成的 bootstrap 直接 get，事务是
+      // 拦截器的第 1 个构造参数，所以要带上 consumer 让重定向表接上那条边。
+      ...(transactionDraft === undefined
+        ? []
+        : [
+            {
+              name: transactionFrameworkLoggerName,
+              reason: transactionOriginId,
+              span: transactionDraft.span,
+              consumer: { beanId: transactionInterceptorBeanId, parameterIndex: 1 },
+            },
+          ]),
+    ],
     compileTimeLevels,
   });
   const localDrafts = [...applicationDrafts, ...loggers.drafts];

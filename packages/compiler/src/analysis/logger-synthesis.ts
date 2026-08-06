@@ -78,7 +78,7 @@ export function isLoggerLevelsContract(symbol: LinkedSymbol): boolean {
 // 优先取图里真实存在的那个 LoggerFactory 契约符号——绑定 bean（starter 的 PinoLoggerFactory、
 // 或用户自己 implements 的类）的 provides 里就有。这比从 Logger 边推导可靠：多副本安装下
 // external 归属必须与提供方逐字一致，否则合成的依赖边指向另一份包实例，落成 MISSING_BEAN。
-function providedLoggerFactorySymbol(
+export function providedLoggerFactorySymbol(
   drafts: readonly ProviderDraft[],
   linker: ProjectLinker,
 ): LinkedSymbol | undefined {
@@ -158,7 +158,7 @@ export const webFrameworkLoggerBeanId = loggerBeanId(webFrameworkLoggerName);
 // metaSource 与 SourceSpan 逐字段同构（差一个 file/fileId 的名字），所以这是改名不是伪造位置。
 // 框架 logger 没有用户源码位置，「它为什么在图里」的答案就是那条注册了 web 引擎的 starter meta
 // 条目——与引擎 bean 自己的 declarationSource 指向同一处。
-function spanOfMetaSource(source: GeneratedSourceReferenceModel): SourceSpan {
+export function spanOfMetaSource(source: GeneratedSourceReferenceModel): SourceSpan {
   // file 出自 starter 链接阶段，已满足 canonical 相对路径文法 // justified: 品牌只记录该校验
   const fileId = source.file as CanonicalFileId;
   return { fileId, start: source.start, end: source.end };
@@ -240,8 +240,16 @@ export interface FrameworkLoggerRequest {
   readonly name: string;
   /** 撞名诊断里指代请求方的文字，例如 `@reforce/web`。 */
   readonly reason: string;
-  /** 把它拉进图里的那条 starter meta 条目。 */
-  readonly source: GeneratedSourceReferenceModel;
+  /** 把它拉进图里的那处位置：web 是 starter meta 条目，事务是第一处 @Transactional 使用。 */
+  readonly span: SourceSpan;
+  /**
+   * 有构造参数消费它时给出那条边（RFC 0011 C5，#250）。web 那条框架 logger 由生成的
+   * bootstrap 直接 get，不经任何依赖边，所以缺席；事务拦截器则是按构造参数拿的。
+   */
+  readonly consumer?: {
+    readonly beanId: string;
+    readonly parameterIndex: number;
+  };
 }
 
 export interface LoggerSynthesis {
@@ -339,19 +347,31 @@ function loggerLevelsDraft(
 
 // 框架 logger 与用户 logger 的区别只在「谁把它拉进图里」：用户那条是构造参数，框架这条是
 // 「装了 web 引擎」。名字撞上时用户赢——`@LoggerName("reforce.web")` 是显式意图，框架不该覆盖它。
-function frameworkDemandsOf(
+function applyFrameworkDemands(
   requested: readonly FrameworkLoggerRequest[],
-  taken: ReadonlyMap<string, LoggerDemand>,
-): readonly LoggerDemand[] {
-  return requested
-    .filter((request) => !taken.has(request.name))
-    .map((request) => ({
-      // 框架 logger 没有消费者：consumerId 只用于撞名诊断的定位文案，这里给出请求方身份。
+  byName: Map<string, LoggerDemand>,
+  redirects: Map<string, string>,
+): void {
+  for (const request of requested) {
+    const demand = byName.get(request.name) ?? {
+      // 框架 logger 没有构造参数消费者：consumerId 只用于撞名诊断的定位文案，这里给请求方身份。
       consumerId: request.reason,
       parameterIndex: -1,
       loggerName: request.name,
-      span: spanOfMetaSource(request.source),
-    }));
+      span: request.span,
+    };
+    byName.set(request.name, demand);
+    if (request.consumer === undefined) {
+      continue;
+    }
+    // 名字被用户的 @LoggerName 占了也照样设重定向：loggerBeanId(name) 两种情形下是同一个
+    // id，消费者因此解析到用户那条 logger bean——正是「用户赢」该有的结果。跳过它反而会让
+    // 那条边悬空，落成 TransactionLogger 的 MISSING_BEAN。
+    redirects.set(
+      redirectKey(request.consumer.beanId, request.consumer.parameterIndex),
+      loggerBeanId(request.name),
+    );
+  }
 }
 
 // 名字 → 第一个要它的消费者，外加消费者那条边的重定向表。同一个消费者重复注入 Logger 不是
@@ -382,7 +402,8 @@ function collectLoggerDemands(
 
 export function synthesizeLoggerBeans(input: {
   readonly drafts: readonly ProviderDraft[];
-  readonly linker: ProjectLinker;
+  /** 图里真实存在的 LoggerFactory 契约符号；由调用方查一次，避免两处各查一遍再各自漂移。 */
+  readonly loggerFactory: LinkedSymbol | undefined;
   readonly diagnostics: CompilerDiagnostic[];
   /** 编译器自己要的 logger（框架输出面）；只有图里真有绑定时才合成。 */
   readonly frameworkLoggers?: readonly FrameworkLoggerRequest[];
@@ -390,14 +411,12 @@ export function synthesizeLoggerBeans(input: {
   readonly compileTimeLevels: CompileTimeLoggerLevels;
 }): LoggerSynthesis {
   const demands = loggerDemandsOf(input.drafts);
-  const provided = providedLoggerFactorySymbol(input.drafts, input.linker);
+  const provided = input.loggerFactory;
   const { byName, redirects } = collectLoggerDemands(demands, input.diagnostics);
   // 没有任何绑定时不合成框架 logger：那样等于替一个从没打算写日志的应用凭空造一条
   // LoggerFactory 的 MISSING_BEAN。用户自己注入 Logger 是另一回事——那是他要求的，报错正确。
   if (provided !== undefined) {
-    for (const demand of frameworkDemandsOf(input.frameworkLoggers ?? [], byName)) {
-      byName.set(demand.loggerName, demand);
-    }
+    applyFrameworkDemands(input.frameworkLoggers ?? [], byName, redirects);
   }
   // 全部 logger 共用同一个 LoggerFactory 契约符号：图里真有提供方就用提供方那个，否则从
   // 用户的 Logger 边推导（结局是 MISSING_BEAN，正是想要的）。两者都没有就是「既没绑定也

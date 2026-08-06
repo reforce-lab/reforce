@@ -5,7 +5,7 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
-import { applicationTsconfig } from "./support/project";
+import { applicationTsconfig, linkLoggingPackage } from "./support/project";
 
 // @Transactional 编译期语义 IT（ADR 0008 AM2，#204 定案 2/6）：框架标记走 AM1 通道、参数
 // schema 硬错、保留 key、事务拦截器合成注册与 TransactionManager 契约的编译期整图校验——
@@ -20,10 +20,16 @@ afterAll(async () => {
   await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
 });
 
-async function compileSources(sources: Record<string, string>): Promise<CompileResult> {
+async function compileSources(
+  sources: Record<string, string>,
+  options: { readonly linkLogging?: boolean } = {},
+): Promise<CompileResult> {
   const tree: ProjectTree = { "tsconfig.json": applicationTsconfig(), src: sources };
   const project = await createTemporaryProject(tree);
   temporaryProjects.push(project);
+  if (options.linkLogging === true) {
+    await linkLoggingPackage(project.projectRoot);
+  }
   const compiler = createCompiler();
   const resolution = await compiler.resolveProject({ projectDirectory: project.projectRoot });
   if (resolution.status === "failure") {
@@ -32,8 +38,11 @@ async function compileSources(sources: Record<string, string>): Promise<CompileR
   return await compiler.compile({ project: resolution.project });
 }
 
-async function compileSourcesOrThrow(sources: Record<string, string>): Promise<CompileSuccess> {
-  const result = await compileSources(sources);
+async function compileSourcesOrThrow(
+  sources: Record<string, string>,
+  options: { readonly linkLogging?: boolean } = {},
+): Promise<CompileSuccess> {
+  const result = await compileSources(sources, options);
   if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics));
   }
@@ -420,5 +429,87 @@ describe("reserved marker key and misuse", () => {
     });
 
     expect(failureCodes(result)).toContain("INVALID_METHOD_MARKER");
+  });
+});
+
+// C5（RFC 0011，#250）：事务此前零日志。拦截器持有这条 logger 边，但只在应用本来就绑了
+// LoggerFactory 时才有——否则每个用 @Transactional 的应用都会被迫装 @reforce/logging。
+describe("transaction logging edge", () => {
+  const loggerFactorySource = [
+    'import { Injectable } from "@reforce/context";',
+    'import type { Logger, LoggerFactory } from "@reforce/logging";',
+    "",
+    "@Injectable()",
+    "export class TestLoggerFactory implements LoggerFactory {",
+    "  create(name: string): Logger {",
+    "    return {",
+    "      isEnabled: () => true,",
+    "      trace() {},",
+    "      debug() {},",
+    "      info() {},",
+    "      warn() {},",
+    "      error() {},",
+    "      fatal() {},",
+    "    };",
+    "  }",
+    "}",
+  ].join("\n");
+
+  const transactionalService = [
+    'import { Injectable } from "@reforce/context";',
+    'import { Transactional } from "@reforce/transaction";',
+    "",
+    "@Injectable()",
+    "export class OrderService {",
+    "  @Transactional()",
+    "  async save(): Promise<void> {}",
+    "}",
+  ].join("\n");
+
+  test("synthesizes a reforce.transaction logger bean when a LoggerFactory is bound", async () => {
+    const result = await compileSourcesOrThrow(
+      {
+        "manager.ts": managerSource,
+        "logger-factory.ts": loggerFactorySource,
+        "service.ts": transactionalService,
+      },
+      { linkLogging: true },
+    );
+
+    expect(generatedContent(result, "beans.ts")).toContain('"reforce.transaction"');
+  });
+
+  test("hands that logger to the interceptor as its second constructor argument", async () => {
+    const result = await compileSourcesOrThrow(
+      {
+        "manager.ts": managerSource,
+        "logger-factory.ts": loggerFactorySource,
+        "service.ts": transactionalService,
+      },
+      { linkLogging: true },
+    );
+
+    const interceptor = (
+      JSON.parse(generatedContent(result, "manifest.json")) as {
+        beans: readonly { id: string; dependencies: readonly { parameterIndex: number }[] }[];
+      }
+    ).beans.find((bean) => bean.id === "@reforce/transaction#TransactionInterceptor");
+    expect(interceptor?.dependencies.map((edge) => edge.parameterIndex)).toEqual([0, 1]);
+  });
+
+  // 无绑定时无条件追加这条边是致命的：它会给一个从没打算写日志的应用凭空造出一条
+  // LoggerFactory 的 MISSING_BEAN。
+  test("leaves the interceptor at one dependency when nothing binds a LoggerFactory", async () => {
+    const result = await compileSourcesOrThrow({
+      "manager.ts": managerSource,
+      "service.ts": transactionalService,
+    });
+
+    const interceptor = (
+      JSON.parse(generatedContent(result, "manifest.json")) as {
+        beans: readonly { id: string; dependencies: readonly unknown[] }[];
+      }
+    ).beans.find((bean) => bean.id === "@reforce/transaction#TransactionInterceptor");
+    expect(interceptor?.dependencies).toHaveLength(1);
   });
 });
