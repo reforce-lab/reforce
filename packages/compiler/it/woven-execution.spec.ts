@@ -10,7 +10,11 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, expect, test } from "vitest";
 import { createCompiler } from "@/index";
-import { applicationTsconfig, linkApplicationPackages } from "./support/project";
+import {
+  applicationTsconfig,
+  linkApplicationPackages,
+  linkTransactionPackage,
+} from "./support/project";
 
 // $Woven 执行 IT（ADR 0008 AM1，#202）：生成物先过 tsc（typed-edge：override 签名、链表
 // 字面量、resolver 槽位全部结构校验）再真实执行。钉住——洋葱序与 ctx.value、self-invocation
@@ -34,6 +38,9 @@ async function compileAndRun(
   });
   temporaryProjects.push(project);
   await linkApplicationPackages(project.projectRoot);
+  // 事务契约拆包后（#204）生成物会 import @reforce/transaction/generated-runtime：这一层要真实
+  // 执行，链接的是包本体而不是符号短路。
+  await linkTransactionPackage(project.projectRoot);
   const compiler = createCompiler();
   const resolution = await compiler.resolveProject({ projectDirectory: project.projectRoot });
   if (resolution.status === "failure") {
@@ -283,13 +290,14 @@ test("constructs interceptor and woven bean cycles through the cycle proxy", asy
 
 // 事务执行链路（ADR 0008 AM2，#204 定案 5/6）：合成注册的框架拦截器 + 应用侧
 // TransactionManager 实现真实走通——生成物过 tsc（框架契约的 typed-edge）、事务开闭与
-// 回滚经 fake manager 可见、activeTransaction() 在被织方法内可读。
+// 回滚经 fake manager 可见、被织方法内 manager.current() 拿到的是本次边界的句柄而非池连接。
 test("weaves @Transactional through the synthesized framework interceptor", async () => {
   const stdout = await compileAndRun(
     {
       "manager.ts": [
-        'import { activeResourceFor, Injectable } from "@reforce/context";',
-        'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { activeResourceFor } from "@reforce/transaction";',
+        'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
         "",
         "export const events: string[] = [];",
         "",
@@ -315,7 +323,8 @@ test("weaves @Transactional through the synthesized framework interceptor", asyn
         "}",
       ].join("\n"),
       "orders.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         'import { events, RecordingManager } from "./manager";',
         "",
         "@Injectable()",

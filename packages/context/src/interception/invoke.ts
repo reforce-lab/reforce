@@ -1,3 +1,4 @@
+import { InterceptorReenteredError } from "@/errors";
 import type { MethodInterceptor, ReplacingMethodInterceptor } from "@/interception/interceptor";
 import type { MethodMetaValue } from "@/interception/method-marker";
 
@@ -35,7 +36,7 @@ export function invokeIntercepted<R>(
   let nextIndex = 0;
   const dispatch = async (index: number): Promise<Awaited<R>> => {
     if (index < nextIndex) {
-      throw new Error("Interceptor called next() more than once.");
+      throw new InterceptorReenteredError({ beanId: chain.beanId, method: chain.method });
     }
     nextIndex = index + 1;
     const entry = chain.entries[index];

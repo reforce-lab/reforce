@@ -3,7 +3,7 @@ import {
   isNestedTransactionManager,
   TransactionTimeoutError,
   TransactionTimeoutUnsupportedError,
-} from "@reforce/context";
+} from "@reforce/transaction";
 import { expect } from "vitest";
 import { mentions, rejectionOf, sleep, type TckCase, withDeadline } from "@/case";
 import type { TransactionTckHarness } from "@/harness";

@@ -52,8 +52,9 @@ pnpm run build --filter=<pkg>
     `apm compile --clean` 的孤儿扫描是 `<仓库根>.rglob("AGENTS.md")` 加一份硬编码 skip 列表，不读 `.gitignore`
     也无配置项，worktree 只要在仓库根里面，就会被它把 **被 git 跟踪**的 `AGENTS.md` 判成 orphan 删掉 （Issue #47、#52，上游
     microsoft/apm#2436）。
-  - 从对话和相关 diff 可确认任务延续当前未提交工作时，直接在当前工作区继续，不另建 worktree；仅在关联不明或可能覆盖冲突改动时询问
-    owner。
+  - 主工作区一律新建 worktree，没有"这次算延续未提交工作、可以原地干"这类自行判定。唯一例外是 owner 明确要求在当前工作区干：owner
+    主动说，或你问了、owner 答应了——判定权必须在 owner 手上，因为这个条件由你评估、又恰好对你省事。代价也不对等：多建一个用不上的
+    worktree 只花一次 `pnpm install`，少建一个就是多摊互不相关的改动缠在同一棵树上、测试红了分不清是谁弄的。
   - 指定 PR、分支或 commit 时以指定引用为基线；全新任务默认基于 `main`。
   - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `pnpm install`；根 `prepare` 会执行
     `apm install && apm compile`，生成

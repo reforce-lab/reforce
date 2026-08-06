@@ -226,15 +226,15 @@ describe("renderExplanation", () => {
 // 语义、空链方法照渲染；框架 bean 的 origin 与 declared-at 措辞独立于 starter。
 describe("renderExplanation weaving", () => {
   const interceptorBean = bean({
-    id: "@reforce/context#TransactionInterceptor",
-    origin: "@reforce/context",
+    id: "@reforce/transaction#TransactionInterceptor",
+    origin: "@reforce/transaction",
     runtimeExport: {
-      moduleSpecifier: "@reforce/context/generated-runtime",
+      moduleSpecifier: "@reforce/transaction/generated-runtime",
       exportName: "TransactionInterceptor",
     },
   });
   const transactionEntry = {
-    beanId: "@reforce/context#TransactionInterceptor",
+    beanId: "@reforce/transaction#TransactionInterceptor",
     phase: "transaction",
     order: 0,
     marker: "transactional",
@@ -244,7 +244,7 @@ describe("renderExplanation weaving", () => {
     const lines = render(manifestOf([interceptorBean]), interceptorBean);
 
     expect(lines).toContain(
-      "origin @reforce/context · framework · declared at src/client.ts:1:1 (first @Transactional use)",
+      "origin @reforce/transaction · framework · declared at src/client.ts:1:1 (first @Transactional use)",
     );
   });
 
@@ -263,7 +263,7 @@ describe("renderExplanation weaving", () => {
       "  marker transactional · effective propagation REQUIRED · effective isolation database default",
     );
     expect(lines).toContain(
-      "  chain [1] @reforce/context#TransactionInterceptor · @reforce/context · framework · phase transaction · order 0 · via transactional",
+      "  chain [1] @reforce/transaction#TransactionInterceptor · @reforce/transaction · framework · phase transaction · order 0 · via transactional",
     );
   });
 

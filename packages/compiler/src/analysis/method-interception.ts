@@ -126,7 +126,7 @@ function methodMarkerDeclarationOf(
       argument.span,
       {
         help: "Choose a different marker key; bind extra behavior to transactional methods with @Interceptor({ marker: Transactional }).",
-        related: [{ message: "reserved by @reforce/context Transactional" }],
+        related: [{ message: "reserved by @reforce/transaction Transactional" }],
       },
     );
     return undefined;
@@ -159,7 +159,7 @@ function collectMethodMarkers(
 
 // marker 使用识别（markerUseOf 同款）：callee 解析不到已链接符号、却能落到
 // defineMethodMarker 声明的装饰器才算标记；其余解析不到的装饰器不属于 Reforce，保持沉默。
-// 框架标记 @Transactional 是唯一例外（#204 定案 2）：它解析成 context 合成符号、没有源内
+// 框架标记 @Transactional 是唯一例外（#204 定案 2）：它解析成 transaction 合成符号、没有源内
 // 声明，落到保留 key，此后与用户标记走完全同一通道（硬错矩阵、织入表、链压平零特权）。
 function markerUseOf(
   source: ParsedSource,
@@ -172,7 +172,7 @@ function markerUseOf(
   }
   const entitySymbol = linker.resolveEntity(source, decorator.callee);
   if (entitySymbol !== undefined) {
-    return entitySymbol.kind === "context" && entitySymbol.name === "Transactional"
+    return entitySymbol.kind === "transaction" && entitySymbol.name === "Transactional"
       ? { key: transactionalMarkerKey, span: decorator.span }
       : undefined;
   }
@@ -489,7 +489,7 @@ function interceptorMarkerKeyOf(
   const entity = reference.entity;
   const entitySymbol =
     entity.kind === "identifier" ? linker.resolveEntity(source, entity) : undefined;
-  if (entitySymbol?.kind === "context" && entitySymbol.name === "Transactional") {
+  if (entitySymbol?.kind === "transaction" && entitySymbol.name === "Transactional") {
     return transactionalMarkerKey;
   }
   const resolved =

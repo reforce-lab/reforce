@@ -9,7 +9,7 @@ function bytesOf(value: unknown): Uint8Array {
 }
 
 const chainEntry = {
-  beanId: "@reforce/context#TransactionInterceptor",
+  beanId: "@reforce/transaction#TransactionInterceptor",
   phase: "transaction",
   order: 0,
   marker: "transactional",

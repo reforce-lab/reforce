@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readTransactionalValue, Transactional } from "@/transaction/marker";
+import { readTransactionalValue, Transactional } from "@/marker";
 
 // @Transactional 走 AM1 标记通道（#204 定案 2）；readTransactionalValue 是拦截器入口的
 // 运行时守卫，兜住未经编译的调用方（测试 N6 的守卫单元面）。

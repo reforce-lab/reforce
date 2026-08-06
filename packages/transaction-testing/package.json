@@ -1,5 +1,5 @@
 {
-  "name": "@reforce/transaction-tck",
+  "name": "@reforce/transaction-testing",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
+    "@reforce/transaction": "workspace:*",
     "@swc/helpers": "catalog:",
     "vitest": "catalog:"
   },

@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest";
-import type { TransactionManager, TransactionOptions } from "@/transaction/manager";
-import type { ActiveTransaction } from "@/transaction/scope";
-import { activeResourceFor, activeTransaction, runInTransaction } from "@/transaction/scope";
+import type { TransactionManager, TransactionOptions } from "@/manager";
+import type { ActiveTransaction } from "@/scope";
+import { activeRecordFor, activeResourceFor, runInTransaction } from "@/scope";
 
 // 事务 ALS 仓（#204 定案 4）：flow-local 记录、嵌套影子化、并发 flow 互不可见——传播语义的
-// 挂起/恢复全建立在这三条性质上。记录按 manager 身份分槽（ADR 0008 T4 多数据源定案），
-// 多数据源因此天然不串。
+// 挂起/恢复全建立在这三条性质上。记录按 manager 身份分槽，下面那条双 manager 用例是"ALS 按
+// manager 分槽"的唯一可执行证据。
 
 function managerOf(label: string): TransactionManager<string> {
   return {
@@ -29,7 +29,7 @@ describe("transaction scope", () => {
   const manager = managerOf("pool");
 
   test("no transaction is active outside a boundary", () => {
-    expect(activeTransaction()).toBeUndefined();
+    expect(activeResourceFor(manager)).toBeUndefined();
   });
 
   test("a nested run shadows the outer record and restores it afterwards", async () => {
@@ -74,14 +74,30 @@ describe("transaction scope", () => {
     });
   });
 
-  test("the probe surface reports the declared boundary metadata without the resource", async () => {
+  test("the in-package probe reports the metadata the boundary declared", async () => {
     await runInTransaction(
       manager,
       { resource: "tx", isolation: "SERIALIZABLE", timeout: 5_000, suspended: [] },
       async () => {
-        expect(activeTransaction()).toEqual({ isolation: "SERIALIZABLE", timeout: 5_000 });
+        expect(activeRecordFor(manager)).toEqual({
+          resource: "tx",
+          isolation: "SERIALIZABLE",
+          timeout: 5_000,
+          suspended: [],
+        });
       },
     );
+  });
+
+  // 探查恒需要钥匙（#204 定案 4 的修订）：没有"当前事务"这个单数对象，问哪个 manager 就得
+  // 把哪个 manager 递进来——只在 A 上开了边界，B 照样一无所知。
+  test("a boundary on one manager leaves another manager outside any transaction", async () => {
+    const opened = managerOf("opened");
+    const untouched = managerOf("untouched");
+
+    await runInTransaction(opened, recordOf("opened-tx"), async () => {
+      expect(activeRecordFor(untouched)).toBeUndefined();
+    });
   });
 
   test("current() resolves to the active resource inside a boundary and to the pool outside", async () => {

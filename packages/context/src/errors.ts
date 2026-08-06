@@ -1,6 +1,8 @@
 import type { ContextOperation, ContextState } from "@/public-types";
-import type { TransactionIsolation } from "@/transaction/manager";
 
+// 容器自己的错误码闭集。它不是"全框架的码表"——框架包各自持有自己的码（@reforce/transaction
+// 的七个 TRANSACTION_* 即是），因此 ReforceRuntimeError 的类型参数上界只能是 string：闭集留在
+// 这里做本包的自证，跨包的码由各自的类字面量声明，CLI 侧本来就按 string 消费（ADR 0009）。
 export type RuntimeErrorCode =
   | "EARLY_BEAN_ACCESS"
   | "BEAN_CREATION_FAILED"
@@ -13,22 +15,17 @@ export type RuntimeErrorCode =
   | "UNREGISTERED_BEAN_TARGET"
   | "APPLICATION_CONTEXT_STATE"
   | "INVALID_GENERATED_DEFINITION"
-  | "TRANSACTION_SAVEPOINT_UNSUPPORTED"
-  | "TRANSACTION_ISOLATION_ON_JOIN"
-  | "TRANSACTION_ISOLATION_UNSUPPORTED"
-  | "TRANSACTION_TIMEOUT_ON_JOIN"
-  | "TRANSACTION_TIMEOUT_UNSUPPORTED"
-  | "TRANSACTION_TIMEOUT"
-  | "TRANSACTION_RESOURCE_REUSED";
+  | "INTERCEPTOR_REENTERED";
 
 interface RuntimeErrorOptions {
   readonly cause?: unknown;
   readonly errors?: readonly unknown[];
 }
 
-export abstract class ReforceRuntimeError<
-  Code extends RuntimeErrorCode = RuntimeErrorCode,
-> extends Error {
+// Code 的上界是 string 而不是 RuntimeErrorCode：框架包（@reforce/transaction 起）在自己的包里
+// 声明自己的码，容器无从枚举。全仓零穷尽 switch、零 Record<RuntimeErrorCode, …>，reporter 本来
+// 就把 code 坦成 string（ADR 0009），因此放宽不丢任何检查。
+export abstract class ReforceRuntimeError<Code extends string = string> extends Error {
   abstract readonly code: Code;
   // TS disallows combining declare with override; declare alone already keeps the
   // field type-only, so super(message, { cause }) is not clobbered by a field init.
@@ -227,131 +224,21 @@ export class InvalidGeneratedDefinitionError extends ReforceRuntimeError<"INVALI
   }
 }
 
-// 事务运行时错误（ADR 0008 T3/T4，#204 定案 5）：共同原则是消灭静默降级——savepoint 缺失
-// 不退化为 REQUIRED，加入事务时的 isolation 声明不静默忽略（Spring 默认静默、要开
-// validateExistingTransaction 才拒绝；我们默认即拒绝）。
-
-export class TransactionSavepointUnsupportedError extends ReforceRuntimeError<"TRANSACTION_SAVEPOINT_UNSUPPORTED"> {
-  readonly code = "TRANSACTION_SAVEPOINT_UNSUPPORTED" as const;
+// 织入链重入（ADR 0008 AM1，#202 定案 2，#246 决议 5）：链不可重入是 v1 定案，违约信号因此
+// 必须是框架错误词汇而不是裸 Error——它要经得起用户兜底拦截器的 catch（拦截器契约注释里那条
+// instanceof 放行），也要能被 CLI 报出 code。不带 index：那是 dispatch 下标不是 entries 下标，
+// 读者按它去数拦截器会数错。
+//
+// "下一步怎么办"暂时并进 message：基类的 help 字段随 RFC 0011 D5（#242）落地，那条分支合了
+// 之后把后半句拆回 help。
+export class InterceptorReenteredError extends ReforceRuntimeError<"INTERCEPTOR_REENTERED"> {
+  readonly code = "INTERCEPTOR_REENTERED" as const;
   readonly beanId: string;
   readonly method: string;
 
   constructor(input: { readonly beanId: string; readonly method: string }) {
     super(
-      `NESTED transaction on "${input.beanId}.${input.method}" needs a savepoint, but the active TransactionManager does not implement withSavepoint().`,
-    );
-    this.beanId = input.beanId;
-    this.method = input.method;
-  }
-}
-
-export class TransactionIsolationOnJoinError extends ReforceRuntimeError<"TRANSACTION_ISOLATION_ON_JOIN"> {
-  readonly code = "TRANSACTION_ISOLATION_ON_JOIN" as const;
-  readonly beanId: string;
-  readonly method: string;
-  readonly declared: TransactionIsolation;
-  readonly active: TransactionIsolation | undefined;
-
-  constructor(input: {
-    readonly beanId: string;
-    readonly method: string;
-    readonly declared: TransactionIsolation;
-    readonly active: TransactionIsolation | undefined;
-  }) {
-    super(
-      `"${input.beanId}.${input.method}" declares isolation "${input.declared}" but participates in an active transaction ${
-        input.active === undefined ? "that declared no isolation" : `declared as "${input.active}"`
-      }; a joined transaction cannot change isolation.`,
-    );
-    this.beanId = input.beanId;
-    this.method = input.method;
-    this.declared = input.declared;
-    this.active = input.active;
-  }
-}
-
-// 核心不抛这个错：它是给 adapter 的统一词汇——声明的隔离级别底层不支持时必须抛错，
-// 不得静默降级到别的级别（#204 定案 2）。
-export class TransactionIsolationUnsupportedError extends ReforceRuntimeError<"TRANSACTION_ISOLATION_UNSUPPORTED"> {
-  readonly code = "TRANSACTION_ISOLATION_UNSUPPORTED" as const;
-  readonly isolation: TransactionIsolation;
-
-  constructor(input: { readonly isolation: TransactionIsolation; readonly cause?: unknown }) {
-    super(
-      `The underlying database does not support transaction isolation level "${input.isolation}".`,
-      { cause: input.cause },
-    );
-    this.isolation = input.isolation;
-  }
-}
-
-// timeout 族与 isolation 族并列而不抽成 TransactionOptionOnJoinError：Rule of Three 只有
-// 两次重复，各自的诊断字段与文案也不同，保持重复。
-export class TransactionTimeoutOnJoinError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT_ON_JOIN"> {
-  readonly code = "TRANSACTION_TIMEOUT_ON_JOIN" as const;
-  readonly beanId: string;
-  readonly method: string;
-  readonly declared: number;
-  readonly active: number | undefined;
-
-  constructor(input: {
-    readonly beanId: string;
-    readonly method: string;
-    readonly declared: number;
-    readonly active: number | undefined;
-  }) {
-    super(
-      `"${input.beanId}.${input.method}" declares timeout ${input.declared}ms but participates in an active transaction ${
-        input.active === undefined ? "that declared no timeout" : `declared as ${input.active}ms`
-      }; an already open transaction cannot change its time budget.`,
-    );
-    this.beanId = input.beanId;
-    this.method = input.method;
-    this.declared = input.declared;
-    this.active = input.active;
-  }
-}
-
-// 核心不抛这个错：它是给 adapter 的统一词汇——底层不能精确实现"整个事务边界的墙钟上限"时
-// 必须抛错，不得用 statement_timeout 一类语义不等价的近似冒充。
-export class TransactionTimeoutUnsupportedError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT_UNSUPPORTED"> {
-  readonly code = "TRANSACTION_TIMEOUT_UNSUPPORTED" as const;
-  readonly timeout: number;
-
-  constructor(input: { readonly timeout: number; readonly cause?: unknown }) {
-    super(
-      `The underlying database driver cannot enforce a per-transaction timeout of ${input.timeout}ms.`,
-      { cause: input.cause },
-    );
-    this.timeout = input.timeout;
-  }
-}
-
-// 核心不抛这个错：adapter 把驱动私有的超时错误（Prisma P2028 等）映射成框架词汇，原错误
-// 留在 cause 里——调用方 catch 一个类型即可，不必认得每家驱动的错误码。
-export class TransactionTimeoutError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT"> {
-  readonly code = "TRANSACTION_TIMEOUT" as const;
-  readonly timeout: number;
-
-  constructor(input: { readonly timeout: number; readonly cause?: unknown }) {
-    super(`Transaction exceeded its declared timeout of ${input.timeout}ms and was rolled back.`, {
-      cause: input.cause,
-    });
-    this.timeout = input.timeout;
-  }
-}
-
-// 运行时护栏（ADR 0008 T4）：REQUIRES_NEW 拿回了同一 manager 上某个被挂起边界的资源，说明
-// withTransaction 没有开新事务。能力边界写在拦截器的护栏处——它只抓"直接把外层 resource
-// 原样返回"这类粗糙实现。
-export class TransactionResourceReusedError extends ReforceRuntimeError<"TRANSACTION_RESOURCE_REUSED"> {
-  readonly code = "TRANSACTION_RESOURCE_REUSED" as const;
-  readonly beanId: string;
-  readonly method: string;
-
-  constructor(input: { readonly beanId: string; readonly method: string }) {
-    super(
-      `REQUIRES_NEW on "${input.beanId}.${input.method}" received a resource that belongs to a suspended outer transaction; withTransaction() must begin a transaction unrelated to any outer one.`,
+      `An interceptor on "${input.beanId}.${input.method}" called next() more than once; the interception chain is not re-entrant. Retry at the call site: each call opens a fresh chain and a fresh transaction.`,
     );
     this.beanId = input.beanId;
     this.method = input.method;
