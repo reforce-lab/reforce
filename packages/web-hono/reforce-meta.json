@@ -1,0 +1,71 @@
+{
+  "beans": [
+    {
+      "dependencies": [
+        {
+          "contract": "@reforce/web-hono#WebHonoServeSettings",
+          "open": true
+        },
+        {
+          "collection": true,
+          "contract": "@reforce/web-hono#HonoConfigurer",
+          "open": true
+        },
+        {
+          "collection": true,
+          "contract": "@reforce/web-hono#HonoRouteCustomizer",
+          "open": true
+        }
+      ],
+      "id": "@reforce/web-hono#WebEngine",
+      "lifecycle": {
+        "close": "onContextClose"
+      },
+      "provides": [
+        "@reforce/web-hono#WebEngine",
+        "@reforce/web:dist/adapter.d.ts#WebEngineAdapter"
+      ],
+      "runtimeExport": {
+        "export": "WebEngine",
+        "module": "@reforce/web-hono"
+      },
+      "source": {
+        "end": {
+          "character": 1,
+          "line": 126,
+          "offset": 4915
+        },
+        "file": "src/engine.ts",
+        "start": {
+          "character": 7,
+          "line": 25,
+          "offset": 1155
+        }
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "starterDeps": [],
+  "symbols": [
+    {
+      "file": "dist/bridges.d.ts",
+      "id": "@reforce/web-hono#HonoConfigurer",
+      "subpaths": ["."]
+    },
+    {
+      "file": "dist/bridges.d.ts",
+      "id": "@reforce/web-hono#HonoRouteCustomizer",
+      "subpaths": ["."]
+    },
+    {
+      "file": "dist/engine.d.ts",
+      "id": "@reforce/web-hono#WebEngine",
+      "subpaths": ["."]
+    },
+    {
+      "file": "dist/settings.d.ts",
+      "id": "@reforce/web-hono#WebHonoServeSettings",
+      "subpaths": ["."]
+    }
+  ]
+}
