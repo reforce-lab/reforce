@@ -1,3 +1,4 @@
+import type { BeanRole } from "@/analysis/bean-roles";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol, LinkedType } from "@/linking/model";
@@ -88,6 +89,11 @@ interface ProviderBase {
   readonly order?: number;
   readonly qualifiers: readonly QualifierModel[];
   readonly dependencies: DependencyModel[];
+  // 框架角色（bean-roles.ts）：由角色装饰器或框架合成注册写入。角色 bean 照常构造、照常
+  // 注入自己的依赖，但不进按类型解析的候选集。标记落在 provider 模型而不是解析时反查装饰器，
+  // 是因为合成的事务拦截器（transaction-weaving.ts）完全绕过用户装饰器，它同样不该被谁注入。
+  // 编译器内部字段，不进 generated manifest。
+  readonly role?: BeanRole;
 }
 
 interface ClassProviderModel extends ProviderBase {

@@ -1,4 +1,5 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { claimRoleBean } from "@/analysis/bean-roles";
 import {
   chainFieldNameFor,
   compareChainEntries,
@@ -42,7 +43,7 @@ const markerDeclarationHelp =
 const markerValueHelp =
   "Method marker values must be static JSON literals: string, number, boolean, null, array, or object literals.";
 const interceptorHelp =
-  "Declare interceptors as @Injectable() @Interceptor({ marker, phase?, order? }) singleton classes.";
+  "Declare interceptors as @Interceptor({ marker, phase?, order? }) singleton classes.";
 
 function report(
   diagnostics: CompilerDiagnostic[],
@@ -621,8 +622,8 @@ function interceptorMarkerKeyOf(
   return info.key;
 }
 
-// 拦截器 bean 认领（claimWebBean 同款约束）：@Injectable 单例类 provider——拦截器随被织
-// bean 的构造依赖边解析，请求作用域实例无从在 singleton 构造期就位。
+// 拦截器 bean 认领：bean 身份、singleton 约束与 @Injectable 共存拒绝都由 @Interceptor 这个
+// 角色装饰器在 class-provider 一处判定（bean-roles.ts），这里只补织入侧要用的契约符号。
 function claimInterceptorBean(
   source: ParsedSource,
   declaration: ClassDeclaration,
@@ -630,33 +631,15 @@ function claimInterceptorBean(
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): { readonly beanId: string; readonly contract: LinkedSymbol } | undefined {
-  const exportName = declaration.name;
-  const beanId = exportName === undefined ? undefined : providerId(source.fileId, exportName);
-  const provider = beanId === undefined ? undefined : providerById.get(beanId);
-  if (beanId === undefined || provider === undefined || provider.kind !== "class") {
-    report(
-      diagnostics,
-      "INVALID_INTERCEPTOR_DECLARATION",
-      `${exportName ?? "An interceptor class"} must also be marked @Injectable(): an interceptor is an ordinary Bean.`,
-      declaration.span,
-      { help: interceptorHelp },
-    );
-    return undefined;
-  }
-  if (provider.scope !== "singleton") {
-    report(
-      diagnostics,
-      "INVALID_INTERCEPTOR_DECLARATION",
-      `${declaration.name} cannot be request-scoped: an interceptor is constructed with the Beans it weaves.`,
-      declaration.span,
-    );
+  const claim = claimRoleBean(source, declaration, "interceptor", providerById, diagnostics);
+  if (claim === undefined) {
     return undefined;
   }
   const contract = linker.symbolForDeclaration(source, declaration);
   if (contract === undefined) {
-    throw new Error(`Missing linked symbol for interceptor ${beanId}`);
+    throw new Error(`Missing linked symbol for interceptor ${claim.beanId}`);
   }
-  return { beanId, contract };
+  return { beanId: claim.beanId, contract };
 }
 
 function interceptorBindingOf(

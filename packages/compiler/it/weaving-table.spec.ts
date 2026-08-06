@@ -57,7 +57,6 @@ function generatedContent(result: CompileSuccess, filePath: GeneratedFile["path"
 
 const interceptorClass = (name: string, marker: string, options: string): string =>
   [
-    "@Injectable()",
     `@Interceptor({ marker: ${marker}${options} })`,
     `export class ${name} implements MethodInterceptor {`,
     "  async intercept(context: MethodInvocationContext, next: () => Promise<unknown>): Promise<unknown> {",

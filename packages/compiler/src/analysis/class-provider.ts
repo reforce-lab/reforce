@@ -1,5 +1,12 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import {
+  type BeanRole,
+  beanRoleOfDecorator,
+  beanRoleSpecOf,
+  reportRoleRequestScope,
+  soleBeanRoleOf,
+} from "@/analysis/bean-roles";
+import {
   type PendingDependency,
   type ProviderDraft,
   providerId,
@@ -45,6 +52,26 @@ function contextDecorators(
     result.set(symbol.name, existing);
   }
   return result;
+}
+
+// 角色装饰器扫描（bean-roles.ts）：context 与 web 两个框架面的角色装饰器走同一次解析，
+// 因为它们对 bean 身份的作用完全一致。
+function beanRolesOf(
+  source: ParsedSource,
+  decorators: readonly DecoratorUse[],
+  linker: ProjectLinker,
+): ReadonlySet<BeanRole> {
+  const roles = new Set<BeanRole>();
+  for (const decorator of decorators) {
+    if (!isEntityDecorator(decorator)) {
+      continue;
+    }
+    const role = beanRoleOfDecorator(linker.resolveEntity(source, decorator.callee));
+    if (role !== undefined) {
+      roles.add(role);
+    }
+  }
+  return roles;
 }
 
 function stringDecoratorArgument(decorator: DecoratorUse): string | undefined {
@@ -214,6 +241,7 @@ interface ClassDecoratorSelection {
   readonly qualifierDecorators: readonly DecoratorUse[];
   readonly explicitQualifier?: string;
   readonly order?: number;
+  readonly role?: BeanRole;
 }
 
 function validateMarkerDecorators(
@@ -278,6 +306,54 @@ function orderFrom(
   return value;
 }
 
+// bean 身份判定：角色装饰器与 @Injectable() 是两条互斥的声明入口（bean-roles.ts）。
+// markerDecorators 只在"两条入口都没走"时用来点名——Primary/RequestScoped/Qualifier/Order
+// 本身不构成身份。
+function declaresBean(
+  role: BeanRole | undefined,
+  injectable: readonly DecoratorUse[],
+  markerDecorators: readonly DecoratorUse[],
+  declaration: ClassDeclaration,
+  diagnostics: CompilerDiagnostic[],
+): boolean {
+  if (role !== undefined) {
+    if (injectable.length === 0) {
+      return true;
+    }
+    // 角色装饰器已经蕴含 bean 身份：并列的 @Injectable() 携带零比特信息。允许两种写法等于
+    // 两种风格，评审时永远要争，所以原位拒绝而不是"允许但不必填"。
+    addInvalidDecoratorDiagnostic(
+      diagnostics,
+      `${beanRoleSpecOf(role).decorator} already declares this class a Bean; remove Injectable.`,
+      injectable[0]?.span ?? declaration.span,
+    );
+    return false;
+  }
+  if (injectable.length === 0) {
+    for (const decorator of markerDecorators) {
+      addInvalidDecoratorDiagnostic(
+        diagnostics,
+        "Primary, RequestScoped, Qualifier, and Order can only mark a Bean class.",
+        decorator.span,
+      );
+    }
+    return false;
+  }
+  if (
+    injectable.length !== 1 ||
+    injectable[0]?.called !== true ||
+    injectable[0]?.arguments.length !== 0
+  ) {
+    addInvalidDecoratorDiagnostic(
+      diagnostics,
+      "Injectable must appear exactly once as @Injectable().",
+      injectable[0]?.span ?? declaration.span,
+    );
+    return false;
+  }
+  return true;
+}
+
 function classDecoratorSelection(
   source: ParsedSource,
   declaration: ClassDeclaration,
@@ -290,36 +366,31 @@ function classDecoratorSelection(
   const requestScopedDecorators = decorators.get("RequestScoped") ?? [];
   const qualifierDecorators = decorators.get("Qualifier") ?? [];
   const orderDecorators = decorators.get("Order") ?? [];
-  if (injectable.length === 0) {
-    for (const decorator of [
-      ...primaryDecorators,
-      ...requestScopedDecorators,
-      ...qualifierDecorators,
-      ...orderDecorators,
-    ]) {
-      addInvalidDecoratorDiagnostic(
-        diagnostics,
-        "Primary, RequestScoped, Qualifier, and Order can only mark an Injectable class.",
-        decorator.span,
-      );
-    }
-    return undefined;
-  }
-  if (
-    injectable.length !== 1 ||
-    injectable[0]?.called !== true ||
-    injectable[0]?.arguments.length !== 0
-  ) {
-    addInvalidDecoratorDiagnostic(
-      diagnostics,
-      "Injectable must appear exactly once as @Injectable().",
-      injectable[0]?.span ?? declaration.span,
-    );
+  const role = soleBeanRoleOf(beanRolesOf(source, declaration.decorators, linker));
+  const declared = declaresBean(
+    role,
+    injectable,
+    [...primaryDecorators, ...requestScopedDecorators, ...qualifierDecorators, ...orderDecorators],
+    declaration,
+    diagnostics,
+  );
+  if (!declared) {
     return undefined;
   }
   validateMarkerDecorators("Primary", primaryDecorators, declaration, diagnostics);
   validateMarkerDecorators("RequestScoped", requestScopedDecorators, declaration, diagnostics);
   const requestScoped = requestScopedDecorators.length >= 1;
+  // 角色 bean 恒为 singleton（bean-roles.ts）：框架在启动期一次性解析它们，请求态经
+  // RequestContext / Current<T> 流动。
+  if (role !== undefined && requestScoped) {
+    reportRoleRequestScope(
+      role,
+      declaration.name ?? "An anonymous class",
+      declaration.span,
+      diagnostics,
+    );
+    return undefined;
+  }
   // @Order 只服务集合成员排序，而请求作用域 bean 不能入集合（ADR 0006 W7 交叉形态从紧），
   // 两个标记同时出现只能是误解，原位拒绝。
   const orderOnRequestScoped = requestScoped ? orderDecorators.at(0) : undefined;
@@ -339,6 +410,7 @@ function classDecoratorSelection(
     qualifierDecorators,
     explicitQualifier,
     ...(order === undefined ? {} : { order }),
+    ...(role === undefined ? {} : { role }),
   };
 }
 
@@ -359,7 +431,7 @@ function exportedInjectableName(
   diagnostics.push(
     diagnostic({
       code: "INVALID_INJECTABLE",
-      message: "An Injectable must be a top-level, non-abstract, non-generic direct named export.",
+      message: "A Bean must be a top-level, non-abstract, non-generic direct named export.",
       sourceSpan: declaration.span,
       help: "Export a named concrete class directly from its defining module.",
     }),
@@ -947,6 +1019,7 @@ export function analyzeClassProvider(
       scope: selection.requestScoped ? "request" : "singleton",
       primary: selection.primary,
       ...(selection.order === undefined ? {} : { order: selection.order }),
+      ...(selection.role === undefined ? {} : { role: selection.role }),
       qualifiers,
       dependencies: [],
       startHook: contracts.startHook,

@@ -63,7 +63,6 @@ const auditInterceptorSource = [
   'import { Injectable, Interceptor } from "@reforce/context";',
   'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
   'import { Audited } from "@/markers";',
-  "@Injectable()",
   "@Interceptor({ marker: Audited })",
   "export class AuditInterceptor implements MethodInterceptor<{ label: string }> {",
   "  async intercept(context: MethodInvocationContext<{ label: string }>, next: () => Promise<unknown>): Promise<unknown> {",
@@ -211,27 +210,27 @@ describe("marker values (hard errors #6-#7)", () => {
 });
 
 describe("interceptor declarations (hard error #8)", () => {
-  test("rejects an interceptor class without @Injectable", async () => {
+  test("rejects an interceptor class marked @Injectable: the role decorator already declares the Bean", async () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/context";',
         'import { Audited } from "@/markers";',
+        "@Injectable()",
         "@Interceptor({ marker: Audited })",
         "export class BareInterceptor {}",
       ].join("\n"),
     });
 
-    expect(failureCodes(result)).toContain("INVALID_INTERCEPTOR_DECLARATION");
+    expect(failureCodes(result)).toContain("INVALID_DECORATOR_USAGE");
   });
 
   test("rejects a request-scoped interceptor", async () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Injectable, Interceptor, RequestScoped } from "@reforce/context";',
+        'import { Interceptor, RequestScoped } from "@reforce/context";',
         'import { Audited } from "@/markers";',
-        "@Injectable()",
         "@RequestScoped()",
         "@Interceptor({ marker: Audited })",
         "export class RequestScopedInterceptor {}",
@@ -246,7 +245,6 @@ describe("interceptor declarations (hard error #8)", () => {
       "markers.ts": markerSource,
       "interceptor.ts": [
         'import { Injectable, Interceptor } from "@reforce/context";',
-        "@Injectable()",
         '@Interceptor({ phase: "cache" })',
         "export class MarkerlessInterceptor {}",
       ].join("\n"),
@@ -261,7 +259,6 @@ describe("interceptor declarations (hard error #8)", () => {
       "interceptor.ts": [
         'import { Injectable, Interceptor } from "@reforce/context";',
         'import { Audited } from "@/markers";',
-        "@Injectable()",
         "@Interceptor({ marker: Audited, global: true })",
         "export class UnknownOptionInterceptor {}",
       ].join("\n"),
@@ -273,7 +270,6 @@ describe("interceptor declarations (hard error #8)", () => {
       "interceptor.ts": [
         'import { Injectable, Interceptor } from "@reforce/context";',
         'import { Audited } from "@/markers";',
-        "@Injectable()",
         '@Interceptor({ marker: Audited, phase: "security" })',
         "export class UnknownPhaseInterceptor {}",
       ].join("\n"),
@@ -288,7 +284,6 @@ describe("interceptor declarations (hard error #8)", () => {
         'import { Injectable, Interceptor } from "@reforce/context";',
         "@Injectable()",
         "export class NotAMarker {}",
-        "@Injectable()",
         "@Interceptor({ marker: NotAMarker })",
         "export class WrongMarkerInterceptor {}",
       ].join("\n"),

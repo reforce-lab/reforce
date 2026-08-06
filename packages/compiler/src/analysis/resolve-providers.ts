@@ -1,5 +1,6 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
+import { beanRoleSpecOf } from "@/analysis/bean-roles";
 import {
   type CollectionDependencyModel,
   type PendingDependency,
@@ -432,7 +433,47 @@ function selectStarterCandidate(
   return undefined;
 }
 
+// 角色 bean 不可被解析（bean-roles.ts）：它由框架构造与调度，注入它拿到的是一个游离于
+// 调用链之外的实例。候选表照旧收录它——selectProvider 的"自身 class 符号直取"特例走 ownId
+// 直接命中，抽掉入表只会把这条诊断退化成误导性的 MISSING_BEAN。
+//
+// 已知缺口（有意保留）：用户手写 context.get(RoleGuard) 拦不住。运行时 get() 必须保持万能，
+// 框架自己就在用它解析角色实例；堵它要新增一遍 .get() 调用点分析，对别名与间接引用还不可靠。
+function rejectRoleBeanDependency(
+  state: ResolutionState,
+  provider: ProviderModel,
+  demand: DemandContext,
+  span: SourceSpan | undefined,
+): boolean {
+  if (provider.role === undefined) {
+    return false;
+  }
+  const spec = beanRoleSpecOf(provider.role);
+  state.diagnostics.push(
+    diagnostic({
+      code: "ROLE_BEAN_AS_DEPENDENCY",
+      message: `${provider.exportName} plays the ${spec.label} role: the framework resolves and schedules it, so it cannot be injected as a dependency.`,
+      sourceSpan: span,
+      related: [providerIdentityRelated(provider), ...demandRelated(demand)],
+      help: `Extract the shared logic into an @Injectable() service and inject that service into the ${spec.label}.`,
+    }),
+  );
+  return true;
+}
+
 function selectProvider(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+  demand: DemandContext,
+): ProviderModel | undefined {
+  const selected = selectCandidate(state, symbol, demand);
+  if (selected === undefined || rejectRoleBeanDependency(state, selected, demand, demand.span)) {
+    return undefined;
+  }
+  return selected;
+}
+
+function selectCandidate(
   state: ResolutionState,
   symbol: LinkedSymbol,
   demand: DemandContext,
@@ -492,7 +533,10 @@ function qualifiedDependencyProvider(
     qualifierIndexKey(pending.linkedType.symbol.key, qualifierMember),
   );
   if (selected !== undefined) {
-    return selected;
+    const demand: DemandContext = { span: pending.linkedType.span, chain: [] };
+    return rejectRoleBeanDependency(state, selected, demand, pending.linkedType.span)
+      ? undefined
+      : selected;
   }
   state.diagnostics.push(
     diagnostic({
@@ -553,13 +597,18 @@ function compareCollectionMembers(
 // 集合成员资格 = 图里所有提供该契约的候选（决策 11 的可达性语义照旧：被集合选中的 starter bean
 // 由此物化入图）。defaultBean 沿用单边的让位规则（决策 12）：存在任何其他候选即退出，全员
 // default 时全部入集合。空集合合法——零成员注入空数组，不是 MISSING_BEAN。
+//
+// 角色 bean 静默排除（bean-roles.ts）：中间件只要实现了某个被集合注入的接口就会混进集合，
+// 还丢掉编译期压平好的链顺序。这里不报错——空集合本就合法，"少一个成员"没有可点名的错误点。
 function collectionMemberIds(
   state: ResolutionState,
   symbol: LinkedSymbol,
   demand: DemandContext,
 ): readonly string[] {
   const available = state.candidates.byKey.get(symbol.key) ?? [];
-  const locals = available.flatMap((entry) => (entry.kind === "local" ? [entry.provider] : []));
+  const locals = available.flatMap((entry) =>
+    entry.kind === "local" && entry.provider.role === undefined ? [entry.provider] : [],
+  );
   const starters = available.flatMap((entry) => (entry.kind === "starter" ? [entry.bean] : []));
   const preferred = starters.filter((bean) => !bean.defaultBean);
   const pool = locals.length > 0 || preferred.length > 0 ? preferred : starters;

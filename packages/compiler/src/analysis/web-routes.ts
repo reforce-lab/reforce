@@ -1,4 +1,5 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { type BeanRole, beanRoleSpecOf, claimRoleBean } from "@/analysis/bean-roles";
 import { type ProviderModel, providerId, sourceReference } from "@/analysis/model";
 import {
   emptyWebModel,
@@ -31,8 +32,8 @@ import type {
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
-// web 路由分析（ADR 0006 W1/W3/W4/W5，#142 / #152）：controller/中间件/错误处理器都是普通
-// bean（@Injectable），web 装饰器只补充路由语义。这里静态提取路由表：路径归并与冲突检测、
+// web 路由分析（ADR 0006 W1/W3/W4/W5，#142 / #152）：controller/中间件/错误处理器都是 bean，
+// 身份由各自的角色装饰器蕴含（bean-roles.ts）。这里静态提取路由表：路径归并与冲突检测、
 // marker 字面量提取、schema 引用核实、中间件链按 (阶段, order, beanId) 压平写死。
 
 const routeMethodByDecorator = {
@@ -287,48 +288,21 @@ interface WebBeanClaim {
   readonly beanId: string;
 }
 
-// controller/中间件/错误处理器都是普通 bean：类必须另有 @Injectable()（由 class-provider
-// 产出候选），且必须 singleton——它们在启动时一次性解析，请求态经 RequestContext / Current
-// 流动（ADR 0006 W4/W7）。
+// controller/中间件/错误处理器的 bean 身份由各自的角色装饰器蕴含（bean-roles.ts）：身份、
+// singleton 约束、@Injectable 共存拒绝都在 class-provider 一处判定，这里只把认领结果翻译成
+// web 侧的引用形状。
 function claimWebBean(
   source: ParsedSource,
   declaration: ClassDeclaration,
-  role: string,
+  role: BeanRole,
   providerById: ReadonlyMap<string, ProviderModel>,
   diagnostics: CompilerDiagnostic[],
 ): WebBeanClaim | undefined {
-  const exportName = declaration.name;
-  if (exportName === undefined) {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_DECLARATION",
-      `A ${role} class must be a named class declaration.`,
-      declaration.span,
-    );
+  const claim = claimRoleBean(source, declaration, role, providerById, diagnostics);
+  if (claim === undefined) {
     return undefined;
   }
-  const beanId = providerId(source.fileId, exportName);
-  const provider = providerById.get(beanId);
-  if (provider === undefined || provider.kind !== "class") {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_DECLARATION",
-      `${exportName} must also be marked @Injectable(): a ${role} is an ordinary Bean.`,
-      declaration.span,
-      { help: "Add @Injectable() next to the web decorator." },
-    );
-    return undefined;
-  }
-  if (provider.scope !== "singleton") {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_DECLARATION",
-      `${exportName} cannot be request-scoped: a ${role} is resolved once at startup and reads request state through RequestContext or Current<T>.`,
-      declaration.span,
-    );
-    return undefined;
-  }
-  return { ref: { source, exportName }, beanId };
+  return { ref: { source, exportName: claim.exportName }, beanId: claim.beanId };
 }
 
 function singleCalledDecorator(
@@ -755,7 +729,7 @@ function useTargetsOf(
         report(
           diagnostics,
           "INVALID_MIDDLEWARE_DECLARATION",
-          "Use only accepts application classes marked @Injectable() @Middleware().",
+          "Use only accepts application classes marked @Middleware().",
           argument.span,
         );
         continue;
@@ -882,10 +856,16 @@ interface WebBeanRegistry {
   readonly errorHandlers: readonly WebErrorHandlerModel[];
 }
 
+const webRoles = [
+  "controller",
+  "middleware",
+  "error-handler",
+] as const satisfies readonly BeanRole[];
+
 function scanRoles(scan: ClassRoleScan): readonly string[] {
-  return ["Controller", "Middleware", "ErrorHandler"].filter(
-    (role) => (scan.web.get(role)?.length ?? 0) > 0,
-  );
+  return webRoles
+    .map((role) => beanRoleSpecOf(role).decorator)
+    .filter((decorator) => (scan.web.get(decorator)?.length ?? 0) > 0);
 }
 
 function registerMiddleware(
@@ -940,7 +920,7 @@ function registerErrorHandler(
   const claim = claimWebBean(
     scan.source,
     scan.declaration,
-    "error handler",
+    "error-handler",
     providerById,
     diagnostics,
   );
