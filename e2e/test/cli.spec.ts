@@ -181,26 +181,40 @@ async function waitForFile(path: string, child?: ChildProcess): Promise<void> {
   }
 }
 
-async function waitForFileContent(
+// 到点返回 false 而不是抛：调用方据此决定重试还是判死。子进程先退出仍是硬失败——继续轮询
+// 只会把「进程崩了」拖成一个没有信息量的超时。
+async function pollForFileContent(
   path: string,
   expected: string,
+  timeoutMilliseconds: number,
   child?: ChildProcess,
-): Promise<void> {
-  const deadline = Date.now() + 30_000;
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMilliseconds;
   for (;;) {
     try {
       if ((await readFile(path, "utf8")).includes(expected)) {
-        return;
+        return true;
       }
     } catch {}
     if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
       throw new Error(`Subprocess exited before ${path} contained ${expected}.`);
     }
     if (Date.now() >= deadline) {
-      throw new Error(`Timed out waiting for ${path} to contain ${expected}.`);
+      return false;
     }
     await sleep(20);
   }
+}
+
+async function waitForFileContent(
+  path: string,
+  expected: string,
+  child?: ChildProcess,
+): Promise<void> {
+  if (await pollForFileContent(path, expected, 30_000, child)) {
+    return;
+  }
+  throw new Error(`Timed out waiting for ${path} to contain ${expected}.`);
 }
 
 function isShutdownAcknowledgement(
@@ -557,6 +571,54 @@ async function startDevelopment(input: {
   }
 }
 
+// 哨兵重写的节奏钟（packages/cli/it/support/watch-harness.ts 同款取值理由）：只控制「多久
+// 没等到就重写哨兵」，不判失败——判死仍归 vitest 的用例击杀钟 commandTimeout。
+const watchDeliveryRetouchIntervalMilliseconds = 3_000;
+
+// 事件流就绪屏障（Issue #224，#177 在 e2e 层的同款）：macOS 上 fs.watch 创建后 ≤10ms 窗口内
+// 的写入事件可能永久丢失（nodejs/node#52601，#86 探针实证）。dev 报 ready 只证明首轮构建完成
+// 与应用已启动，不证明事件流已就绪——真实用户从 dev 启动到首次保存隔着秒级，永远在窗口外，
+// 测试却是 ready 后毫秒级内首次编辑，押的是平台竞态而不是本仓库的重建逻辑。
+//
+// #177 的屏障靠 in-process 的 invalidations / compilations 钩子取投递证据，这一层拿不到
+// （CLI 是子进程），改用本层已有的可观测量：生成的 beans.ts 出现哨兵 bean 名。哨兵写入自己
+// 可能正落在丢失窗口内——丢失是永久的，重写是唯一自愈手段，停滞一个节奏钟就带新序号重写。
+//
+// 返回前等完整个重启往返（closed → ready），因此调用方之后的编辑不会和屏障自己的重启抢
+// marker 文件。closed marker 是追加写，调用方在自己的编辑前需要再清一次。
+async function establishWatchDelivery(input: {
+  readonly development: StartedDevelopment;
+  readonly projectRoot: string;
+}): Promise<void> {
+  const sentinelPath = join(input.projectRoot, "src", "watch-delivery-probe.ts");
+  const generatedBeansPath = join(input.projectRoot, ".reforce", "generated", "beans.ts");
+  await rm(input.development.readyPath, { force: true });
+  await rm(input.development.closedPath, { force: true });
+  for (let attempt = 0; ; attempt += 1) {
+    await writeFile(
+      sentinelPath,
+      [
+        'import { Injectable } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        `export class WatchDeliveryProbe {} // watch-delivery-${attempt}`,
+        "",
+      ].join("\n"),
+    );
+    const delivered = await pollForFileContent(
+      generatedBeansPath,
+      "WatchDeliveryProbe",
+      watchDeliveryRetouchIntervalMilliseconds,
+      input.development.child,
+    );
+    if (delivered) {
+      await waitForFile(input.development.closedPath, input.development.child);
+      await waitForFile(input.development.readyPath, input.development.child);
+      return;
+    }
+  }
+}
+
 async function shutdownWithIpc(started: StartedApplication) {
   const requestId = randomUUID();
   await sendIpc(started.child, { type: "reforce:shutdown", requestId });
@@ -853,7 +915,13 @@ describe.sequential("built Reforce CLI", () => {
           await pathExists(join(monorepo.projectRoot, "apps", "api service", ".reforce")),
         ).toBe(false);
 
-        await rm(development.readyPath);
+        // 首次编辑必须发生在事件流已就绪之后，否则押注的是 macOS 的启动窗口而不是本仓库的
+        // 重建逻辑（Issue #224）。屏障自己也走一次重启，closed marker 是追加写，因此下面
+        // 两个 marker 都要清掉——末尾断言的两行 closed 是「本次编辑重启 + 最终关停」。
+        await establishWatchDelivery({ development, projectRoot });
+
+        await rm(development.readyPath, { force: true });
+        await rm(development.closedPath, { force: true });
         await writeFile(
           join(projectRoot, "src", "leaf-update.ts"),
           [
