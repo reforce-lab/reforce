@@ -29,14 +29,27 @@ function renderJson(value: unknown): string | undefined {
   }
 }
 
+const encoder = new TextEncoder();
+
+// content-length 是适配器的缓冲/流式判据（#232，见 adapter.ts 的契约块）：带它即"整体已在内存中"，
+// 引擎可以走 Buffer 路径把 etag / 压缩这类需要完整体的能力打开。new Response(str) 不会自动
+// 带这个头，所以显式设是有意义的。
+//
+// 长度必须是**字节数**而不是字符数：JSON.stringify 不转义非 ASCII，"汉字" 是 2 char / 6 byte。
+// 这里先编码再把字节交给 Response，而不是编码一次只为量长度——Response 内部本来也要编码，
+// 这样反而少一趟。
 function jsonResponse(value: unknown): Response {
   const rendered = renderJson(value);
   if (rendered === undefined) {
     throw new ResponseSerializationError("the handler return value is not JSON-serializable.");
   }
-  return new Response(rendered, {
+  const bytes = encoder.encode(rendered);
+  return new Response(bytes, {
     status: 200,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "content-length": String(bytes.byteLength),
+    },
   });
 }
 

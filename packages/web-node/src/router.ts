@@ -3,9 +3,9 @@ import Router from "find-my-way";
 
 // node:http 没有原生 routes 表，路由分发整体由本模块承担（ADR 0006 契约不变，#207）：启动时把
 // PreparedRoute[] 注册进 find-my-way 的 radix 树，热路径 = find() → 拷参数 → route.handle。
-// #211 之前这里是逐条 pattern 线性扫描的手写匹配器（O(路由总数)，且 Allow 集合在每个请求上聚合）。
+// #211 之前这里是逐条 pattern 线性扫描的手写匹配器（O(路由总数)）。
 // 静态段命中优先于参数段命中——这是本路由自己的既有契约（由 test/router.spec.ts 钉住），radix
-// 树原生就是这个优先级，无需额外代码维持；形状命中但方法不符 → 405 + Allow；无命中 → 404。
+// 树原生就是这个优先级，无需额外代码维持；未命中与方法不符一律 404（WebEngineAdapter 契约，#232）。
 
 export type Dispatch =
   | {
@@ -13,7 +13,6 @@ export type Dispatch =
       readonly route: PreparedRoute;
       readonly params: Readonly<Record<string, string>>;
     }
-  | { readonly kind: "method-mismatch"; readonly allowed: readonly string[] }
   | { readonly kind: "miss" };
 
 type HttpMethod = PreparedRoute["method"];
@@ -62,19 +61,6 @@ function toParams(found: Readonly<Record<string, string | undefined>>): Record<s
   return params;
 }
 
-// find-my-way 没有内建的 405/Allow，hasRoute/findRoute 又是按注册模式精确查（hasRoute("GET",
-// "/users/self") 对已注册的 /users/:id 返回 false），只有 find() 能回答"这个路径在别的方法下
-// 能不能命中"。逐个方法探测只发生在 find() 已经落空的错误路径上，正常命中的请求不付这份成本。
-function probeAllowed(registry: Registry, pathname: string): readonly string[] {
-  const allowed: HttpMethod[] = [];
-  for (const candidate of registry.methods.values()) {
-    if (registry.router.find(candidate, pathname) !== null) {
-      allowed.push(candidate);
-    }
-  }
-  return allowed.toSorted();
-}
-
 export function createRouter(
   routes: readonly PreparedRoute[],
   maxParamLength?: number,
@@ -92,10 +78,6 @@ export function createRouter(
       if (route !== undefined) {
         return { kind: "match", route, params: toParams(found.params) };
       }
-    }
-    const allowed = probeAllowed(registry, pathname);
-    if (allowed.length > 0) {
-      return { kind: "method-mismatch", allowed };
     }
     return { kind: "miss" };
   };
