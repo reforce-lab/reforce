@@ -1,7 +1,9 @@
 // 天花板基线（#153 基准 ①，#207 迁移到 node:http）：与 fixture 应用同逻辑的手写服务器。
-// 路由分发用与 @reforce/web-node 相同的段匹配规则——两侧的差值因此只剩框架抽象（请求
-// 作用域 + 洋葱链 + schema 校验/decode + 特化序列化），不含路由查找差异。逻辑对齐
-// /health 与 /users/:id（数字校验、admission 头检查、bigint 往返、响应形状）。
+// 路由分发写成能匹配同一组路径的最小形式（两条硬编码分支 + 一个正则）。#211 之前它与
+// @reforce/web-node 用的是同一套段匹配规则，两侧差值不含路由查找；现在 web-node 走
+// find-my-way 的 radix 树，这里刻意不跟进——基线的定义就是"手写能做到的最快"，差值里因此
+// 含一份路由查找差异（本例只有 2 条路由，radix 相对正则的优势体现不出来，这份差异很小）。
+// 逻辑对齐 /health 与 /users/:id（数字校验、admission 头检查、bigint 往返、响应形状）。
 import { createServer } from "node:http";
 
 const server = createServer((request, response) => {
