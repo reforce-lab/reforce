@@ -144,12 +144,8 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     }
     const outcome = dispatch(method, url.pathname);
     if (outcome.kind === "miss") {
+      // 未命中与方法不符都是 404，不带 Allow（WebEngineAdapter 契约）
       response.writeHead(404);
-      response.end();
-      return;
-    }
-    if (outcome.kind === "method-mismatch") {
-      response.writeHead(405, { allow: outcome.allowed.join(", ") });
       response.end();
       return;
     }

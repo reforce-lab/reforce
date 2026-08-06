@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import type { RouteMarker } from "@/routing/route-marker";
+import { metaLookup, type RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue, RouteSchemas } from "@/routing/vocabulary";
 
 // 路由 schema 已经带着类型（ADR 0006 W5）：把它接到 handler 上，handler 里就不必再用
@@ -45,7 +45,7 @@ export class RequestContextState implements RequestContext {
   readonly url: URL;
   readonly method: HttpMethod;
   readonly path: string;
-  private readonly metaByKey: Readonly<Record<string, RouteMetaValue>>;
+  private readonly lookupMeta: ReturnType<typeof metaLookup>;
   private validatedParams: unknown;
   private queryValidated = false;
   private validatedQuery: unknown;
@@ -56,7 +56,7 @@ export class RequestContextState implements RequestContext {
     this.url = inputs.url;
     this.method = inputs.method;
     this.path = inputs.path;
-    this.metaByKey = inputs.meta;
+    this.lookupMeta = metaLookup(inputs.meta);
     this.validatedParams = inputs.params;
   }
 
@@ -73,9 +73,7 @@ export class RequestContextState implements RequestContext {
   }
 
   meta<T extends RouteMetaValue>(marker: RouteMarker<T>): T | undefined {
-    // 表里的值由编译器从 @Marker(value: T) 的字面量参数提取而来，T 在声明处即被钉死，
-    // 运行时序列化形态推不回字面量类型 // justified: 见上一行
-    return this.metaByKey[marker.key] as T | undefined;
+    return this.lookupMeta(marker);
   }
 
   applyValidated(source: "body" | "params" | "query", value: unknown): void {

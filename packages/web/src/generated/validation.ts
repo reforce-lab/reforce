@@ -144,9 +144,9 @@ function validateRoutePath(value: unknown, path: string): void {
 
 // 路由形状归一（与 compiler 的 shapeKey 同源，见 analysis/web-routes.ts 的 routePathOf）：参数段
 // 只贡献一个 ":"，参数名不参与区分。这里比编译期多一步过滤空段——编译期的 path 已被
-// literalSegmentPattern 校验过不含空段，而本文件按不可信输入处理，而引擎把 /p、/p/、//p 视作
-// 同一条路由（web-node 走 find-my-way 的 ignoreTrailingSlash / ignoreDuplicateSlashes，#211），
-// 不过滤就漏掉这类等价重复。改归一规则时两侧要同步。
+// literalSegmentPattern 校验过不含空段，而本文件按不可信输入处理；而 adapter.ts 的
+// WebEngineAdapter 契约要求所有引擎把 /p、/p/、//p 视作同一路径，不过滤就漏掉这类等价重复，
+// 于是出现"编译期判为重复、运行时是两条路由"。改归一规则时两侧要同步。
 function routeShapeOf(path: string): string {
   return path
     .split("/")
