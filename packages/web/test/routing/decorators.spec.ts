@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { Controller, ErrorHandler, Get, Middleware, Use } from "@/routing/decorators";
+import type { RouteMiddleware } from "@/routing/middleware";
 
 // 装饰器是编译期标记（ADR 0006 W3）：运行时必须保持 no-op；参数守卫只服务未经编译的调用方。
 
@@ -44,6 +45,7 @@ describe("route decorator runtime guards", () => {
   });
 
   test("Use rejects a non-class argument", () => {
-    expect(() => Use("middleware" as unknown as new () => object)).toThrow(TypeError);
+    // 守卫服务未经编译的 JS 调用方，类型系统在这里被绕过 // justified: 见上一行
+    expect(() => Use("middleware" as unknown as new () => RouteMiddleware)).toThrow(TypeError);
   });
 });
