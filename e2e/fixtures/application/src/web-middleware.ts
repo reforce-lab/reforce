@@ -19,7 +19,8 @@ export class ObservabilityTrace {
 }
 
 // 准入短路（guard 语义）：路由声明了 @Roles 且请求没带 x-user 就直接 403，不调 next()——
-// 校验在全部中间件之后执行，因此被短路的请求连 body 都不会读。
+// 校验在全部中间件之后执行，因此被短路的请求不会进 reforce 的 body 解析。引擎侧读没读完
+// socket 各家不同（web-node 没读，fastify 一定读完才进 handler）。
 @Middleware({ phase: "admission", global: true })
 export class RoleGuard {
   handle(context: RequestContext, next: () => Promise<Response>): Response | Promise<Response> {

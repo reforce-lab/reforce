@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { installApplicationPackages } from "../support/application-packages";
 
 // HTTP 全链路 e2e（ADR 0006 / #153）：从构建产物起真实 Bun 服务、打真实端口。覆盖面即
-// #153 验收清单——路由命中与 404/405、洋葱顺序与 guard 短路、marker 元数据、请求校验
+// #153 验收清单——路由命中与 404（未命中与方法不符同待遇）、洋葱顺序与 guard 短路、marker 元数据、请求校验
 // 错误形态、codec 双向、响应白名单、并发请求作用域隔离、错误处理器兜底、优雅关闭排空。
 // 服务就绪信号 = 引擎监听日志（ready 文件写在 onContextStart，早于 listen，不可用作 HTTP 就绪）。
 
@@ -188,14 +188,15 @@ describe.sequential("HTTP application over the built artifact", () => {
       expect(woven.status).toBe(200);
       expect(await woven.json()).toEqual({ trail: ["service", "audited:report"] });
 
-      // 静态路径路由与 404/405 冷路径
+      // 静态路径路由与 404 冷路径：未命中与方法不符都是裸 404，不带 Allow
+      // （WebEngineAdapter 契约）。OPTIONS 预检因此归引擎生态的 cors 中间件。
       const health = await fetch(`${base}/health`);
       expect(health.status).toBe(200);
       expect(await health.text()).toBe("ok");
       expect((await fetch(`${base}/nowhere`)).status).toBe(404);
       const wrongMethod = await fetch(`${base}/health`, { method: "DELETE" });
-      expect(wrongMethod.status).toBe(405);
-      expect(wrongMethod.headers.get("allow")).toBe("GET");
+      expect(wrongMethod.status).toBe(404);
+      expect(wrongMethod.headers.get("allow")).toBeNull();
 
       // 错误处理器接管与框架默认兜底
       const teapot = await fetch(`${base}/boom/teapot`);

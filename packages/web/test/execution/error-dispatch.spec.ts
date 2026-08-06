@@ -73,6 +73,22 @@ describe("createErrorDispatcher", () => {
     });
   });
 
+  test("the sanitized 400 declares content-length in bytes", async () => {
+    const dispatch = createErrorDispatcher([]);
+    // issue 文案可以带非 ASCII，长度必须按字节数算
+    const error = new RequestValidationError({
+      source: "body",
+      issues: [{ message: "名称必填", path: ["name"] }],
+    });
+
+    const response = await dispatch(error, requestContext());
+
+    const body = await response.clone().text();
+    expect(response.headers.get("content-length")).toBe(
+      String(new TextEncoder().encode(body).length),
+    );
+  });
+
   test("any other unhandled error falls back to an empty 500", async () => {
     const dispatch = createErrorDispatcher([]);
 
