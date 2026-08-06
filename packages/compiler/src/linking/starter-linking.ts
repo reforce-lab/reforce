@@ -62,7 +62,11 @@ export interface StarterBeanModel {
   readonly rootPath: string;
   readonly runtimeExport: { readonly module: string; readonly export: string };
   readonly provides: readonly LinkedSymbol[];
-  readonly dependencies: readonly { readonly index: number; readonly contract: string }[];
+  readonly dependencies: readonly {
+    readonly index: number;
+    readonly contract: string;
+    readonly collection: boolean;
+  }[];
   readonly defaultBean: boolean;
   readonly root: boolean;
   readonly lifecycle: { readonly start: boolean; readonly close: boolean };
@@ -677,6 +681,7 @@ export function createStarterLinkage(inputs: StarterLinkageInputs): StarterLinka
       dependencies: bean.dependencies.map((dependency, index) => ({
         index,
         contract: dependency.contract,
+        collection: dependency.collection,
       })),
       defaultBean: bean.defaultBean,
       root: bean.role === "root",

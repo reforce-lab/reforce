@@ -709,6 +709,21 @@ function resolveStarterQueue(state: ResolutionState): void {
         );
         continue;
       }
+      if (edge.collection) {
+        // 直接复用 collectionMemberIds（#228）：成员资格、defaultBean 让位、@Order 排序、角色 bean
+        // 静默排除全在里面）。不能走 collectionDependencyFor——它吃的是 local 形态的
+        // PendingDependency，而 starter 边只有 {index, contract}。
+        entry.draft.provider.dependencies.push({
+          parameterIndex: edge.index,
+          members: collectionMemberIds(state, symbol, demand).map((targetId) => ({
+            targetId,
+            mode: "eager",
+          })),
+          source: entry.bean.metaSource,
+          contract: symbol,
+        });
+        continue;
+      }
       const selected = selectProvider(state, symbol, demand);
       if (selected === undefined) {
         continue;
