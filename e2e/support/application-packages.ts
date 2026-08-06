@@ -13,6 +13,8 @@ const contextRoot = join(workspaceRoot, "packages", "context");
 const configRoot = join(workspaceRoot, "packages", "config");
 const webRoot = join(workspaceRoot, "packages", "web");
 const webNodeRoot = join(workspaceRoot, "packages", "web-node");
+const webHonoRoot = join(workspaceRoot, "packages", "web-hono");
+const webFastifyRoot = join(workspaceRoot, "packages", "web-fastify");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -21,9 +23,18 @@ function link(target: string, path: string): Promise<void> {
   return symlink(target, path, process.platform === "win32" ? "junction" : "dir");
 }
 
+// 换引擎的 e2e 需要三个引擎包同时可解析（fixture 只改 import，不动 controller/middleware）。
+// 只在 workspace 模式下装：dist-only 模式是「用户只拿到发布产物」的形态，那条链路由
+// web-node 一家代表就够，不必为它把三份 dist 都搬一遍。
+const extraEngineRoots: Readonly<Record<string, string>> = {
+  "web-hono": webHonoRoot,
+  "web-fastify": webFastifyRoot,
+};
+
 export async function installApplicationPackages(
   projectRoot: string,
   contextDistribution: "dist-only" | "workspace" = "workspace",
+  extraEngines: readonly string[] = [],
 ): Promise<void> {
   const scopeRoot = join(projectRoot, "node_modules", "@reforce");
   const typesScopeRoot = join(projectRoot, "node_modules", "@types");
@@ -53,6 +64,13 @@ export async function installApplicationPackages(
       link(configRoot, configTarget),
       link(webRoot, webTarget),
       link(webNodeRoot, webNodeTarget),
+      ...extraEngines.map((name) => {
+        const root = extraEngineRoots[name];
+        if (root === undefined) {
+          throw new Error(`Unknown extra engine package: ${name}`);
+        }
+        return link(root, join(scopeRoot, name));
+      }),
     ]);
     return;
   }
