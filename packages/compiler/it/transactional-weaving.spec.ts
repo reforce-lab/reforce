@@ -162,7 +162,6 @@ describe("transaction interceptor synthesis", () => {
         'import { Injectable, Interceptor, Transactional } from "@reforce/context";',
         'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
         "",
-        "@Injectable()",
         '@Interceptor({ marker: Transactional, phase: "observability" })',
         "export class TransactionTraceInterceptor implements MethodInterceptor {",
         "  async intercept(context: MethodInvocationContext, next: () => Promise<unknown>): Promise<unknown> {",

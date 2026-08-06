@@ -1,4 +1,3 @@
-import { Injectable } from "@reforce/context";
 import { Middleware, type RequestContext } from "@reforce/web";
 import { Roles } from "@/web-markers";
 
@@ -12,7 +11,6 @@ async function tag(next: () => Promise<Response>, label: string): Promise<Respon
   return response;
 }
 
-@Injectable()
 @Middleware({ phase: "observability", global: true })
 export class ObservabilityTrace {
   handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
@@ -22,7 +20,6 @@ export class ObservabilityTrace {
 
 // 准入短路（guard 语义）：路由声明了 @Roles 且请求没带 x-user 就直接 403，不调 next()——
 // 校验在全部中间件之后执行，因此被短路的请求连 body 都不会读。
-@Injectable()
 @Middleware({ phase: "admission", global: true })
 export class RoleGuard {
   handle(context: RequestContext, next: () => Promise<Response>): Response | Promise<Response> {
@@ -37,7 +34,6 @@ export class RoleGuard {
   }
 }
 
-@Injectable()
 @Middleware({ phase: "application", global: true })
 export class ApplicationTrace {
   handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {

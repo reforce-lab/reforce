@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { LRUCache } from "lru-cache";
+import { beanRoleOfDecorator } from "@/analysis/bean-roles";
 import { analyzeClassProvider } from "@/analysis/class-provider";
 import type { ProviderDraft } from "@/analysis/model";
 import type {
@@ -182,6 +183,34 @@ function rejectMethodMarkerUses(
   }
 }
 
+// web 角色装饰器在库模式硬错：角色装饰器现在蕴含 bean 身份（bean-roles.ts），不拒的话
+// 一个只写 @Controller() 的类会静默变成没有任何 web 语义的 meta bean。@Interceptor 由
+// rejectMethodWeavingDeclarations 以同样理由先一步拒掉。
+function rejectWebRoleDecorators(
+  source: ParsedSource,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): void {
+  for (const declaration of source.unit.classes) {
+    for (const decorator of declaration.decorators) {
+      if (decorator.callee.kind === "unsupported-expression") {
+        continue;
+      }
+      const symbol = linker.resolveEntity(source, decorator.callee);
+      if (symbol?.kind !== "web" || beanRoleOfDecorator(symbol) === undefined) {
+        continue;
+      }
+      diagnostics.push(
+        unsupportedDeclaration(
+          `@${symbol.name} cannot be expressed in starter meta v1; meta v1 has no web surface.`,
+          decorator.span,
+          "Keep controllers, middleware, and error handlers application-side for now.",
+        ),
+      );
+    }
+  }
+}
+
 function rejectUnsupportedCalls(
   source: ParsedSource,
   linker: ProjectLinker,
@@ -259,6 +288,7 @@ function collectLibraryDrafts(
     }
     rejectUnsupportedCalls(source, linker, diagnostics);
     rejectMethodWeavingDeclarations(source, linker, diagnostics);
+    rejectWebRoleDecorators(source, linker, diagnostics);
     for (const declaration of source.unit.classes) {
       const draft = analyzeClassProvider(source, declaration, linker, diagnostics);
       if (draft !== undefined) {

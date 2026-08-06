@@ -101,6 +101,9 @@ export function transactionInterceptorDraft(
       provides: [transactionInterceptorSymbol],
       scope: "singleton",
       primary: false,
+      // 合成的拦截器同样是角色 bean（bean-roles.ts）：它绕过用户装饰器入表，但"由框架调度、
+      // 不可被谁注入"的规则与手写 @Interceptor 完全一致，靠的就是这个字段而不是反查装饰器。
+      role: "interceptor",
       qualifiers: [],
       dependencies: [],
       startHook: false,

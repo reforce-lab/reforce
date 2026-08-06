@@ -319,7 +319,7 @@ describe("class provider analysis", () => {
     expect(outcome.codes).toEqual([]);
   });
 
-  test("rejects Primary on a class that is not Injectable", () => {
+  test("rejects Primary on a class that is not a Bean", () => {
     const declaration = classDeclaration({ decorators: [decorator("Primary")] });
 
     const outcome = analyze(declaration);
@@ -327,7 +327,7 @@ describe("class provider analysis", () => {
     expect(outcome.codes).toEqual(["INVALID_DECORATOR_USAGE"]);
   });
 
-  test("rejects Qualifier on a class that is not Injectable", () => {
+  test("rejects Qualifier on a class that is not a Bean", () => {
     const declaration = classDeclaration({
       decorators: [decorator("Qualifier", { arguments: [stringLiteral("fast")] })],
     });
