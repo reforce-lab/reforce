@@ -56,6 +56,7 @@ interface SourceOptions {
 
 function parsedSource(file: string, options: SourceOptions = {}): ParsedSource {
   const unit: SourceFileIr = {
+    suppressions: [],
     imports: options.imports ?? [],
     exports: options.exports ?? [],
     interfaces: [],

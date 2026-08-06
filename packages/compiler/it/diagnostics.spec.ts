@@ -299,3 +299,84 @@ describe("compiler diagnostics", () => {
     expect(result.diagnostics.map((item) => item.code)).toEqual(["UNSUPPORTED_TYPE_DECLARATION"]);
   });
 });
+
+// —— 警告生命周期（RFC 0011 OM2，#242）——
+// UNUSED_SUPPRESSION 是本仓第一条 warning，正好当整条链路的验收用例：warning 随 success 返回、
+// 抑制生效、命中 error 的抑制不生效、全部被抑制仍是 success。
+
+describe("warning lifecycle", () => {
+  test("returns a warning alongside a successful compilation", async () => {
+    const result = await compileSource(
+      [
+        "// reforce-ignore MISSING_BEAN: nothing here reports it",
+        'export const marker = "ok";',
+        "",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe("success");
+    expect(result.diagnostics.map((item) => [item.code, item.severity])).toEqual([
+      ["UNUSED_SUPPRESSION", "warning"],
+    ]);
+  });
+
+  // 抑制自身产生的诊断也必须可抑制，否则「上面那条先留着」这种最常见的写法无路可走——
+  // 这正是求值要迭代到不动点而不是一遍过的原因。
+  test("suppresses a warning on the line the comment points at", async () => {
+    const result = await compileSource(
+      [
+        "// reforce-ignore UNUSED_SUPPRESSION: the one below is deliberate",
+        "// reforce-ignore MISSING_BEAN: nothing here reports it",
+        'export const marker = "ok";',
+        "",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe("success");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  // 全部被抑制必须走 success：把抑制放在 failure() 之后会撞上
+  // "Compile failure requires a diagnostic"。
+  test("stays successful when every warning is suppressed", async () => {
+    const result = await compileSource(
+      [
+        "// reforce-ignore UNUSED_SUPPRESSION: the one below is deliberate",
+        "// reforce-ignore MISSING_BEAN: nothing here reports it",
+        'export const marker = "ok";',
+        "",
+      ].join("\n"),
+    );
+    expect(result.status).toBe("success");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  // 抑制一条 error 意味着 emission 会拿着不完整的分析结果发射实参缺失的构造调用。
+  test("refuses to suppress an error and says so", async () => {
+    const result = await compileSource(
+      [
+        'import { Injectable } from "@reforce/context";',
+        "",
+        "interface Absent {}",
+        "",
+        "// reforce-ignore MISSING_BEAN: please just build",
+        "@Injectable() export class Consumer { constructor(readonly absent: Absent) {} }",
+        "",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe("failure");
+    expect(result.diagnostics.map((item) => item.code)).toContain("MISSING_BEAN");
+    expect(result.diagnostics.map((item) => item.code)).toContain("SUPPRESSION_NOT_APPLICABLE");
+  });
+
+  // severity 排在 code 之前：同一处位置上 error 必须先于 warning 出现。
+  test("orders errors ahead of warnings", () => {
+    const ordered = orderDiagnostics([
+      diagnostic({ code: "UNUSED_SUPPRESSION", severity: "warning", message: "a" }),
+      diagnostic({ code: "TYPE_LINK_FAILED", message: "a" }),
+    ]);
+
+    expect(ordered.map((item) => item.severity)).toEqual(["error", "warning"]);
+  });
+});

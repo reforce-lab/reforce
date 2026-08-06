@@ -1,6 +1,11 @@
 import type { CompilerDiagnostic } from "@reforce/compiler";
 import { createFailureEvent, type Reporter } from "@reforce/runtime/reporter";
 import type { DevChildSupervisor } from "@/dev/child-supervisor";
+import {
+  applyDiagnosticPolicy,
+  type DiagnosticPolicy,
+  permissiveDiagnosticPolicy,
+} from "@/diagnostic-policy";
 import { reportDiagnostics } from "@/diagnostic-reporting";
 
 interface FailedDevCompilation {
@@ -11,6 +16,9 @@ interface FailedDevCompilation {
 
 interface SuccessfulDevCompilation {
   readonly status: "success";
+  // 成功也可能带诊断，且必然全是 warning（RFC 0011 OM2，#242）。dev 下 warning 不拦子进程：
+  // 图完整、产物可用，拦下只会把「有话要说」变成「跑不起来」。
+  readonly diagnostics: readonly CompilerDiagnostic[];
   readonly buildId: string;
   readonly validateAssets: () => Promise<void>;
 }
@@ -20,14 +28,17 @@ export type DevCompilation = FailedDevCompilation | SuccessfulDevCompilation;
 export class DevWatchCoordinator {
   private readonly reporter: Reporter;
   private readonly supervisor: DevChildSupervisor;
+  private readonly diagnosticPolicy: DiagnosticPolicy;
   private healthyBuildIdValue: string | undefined;
 
   constructor(options: {
     readonly reporter: Reporter;
     readonly supervisor: DevChildSupervisor;
+    readonly diagnosticPolicy?: DiagnosticPolicy;
   }) {
     this.reporter = options.reporter;
     this.supervisor = options.supervisor;
+    this.diagnosticPolicy = options.diagnosticPolicy ?? permissiveDiagnosticPolicy;
   }
 
   get healthyBuildId(): string | undefined {
@@ -62,6 +73,12 @@ export class DevWatchCoordinator {
       await this.supervisor.acceptBuildFailure();
       return;
     }
+    reportDiagnostics({
+      reporter: this.reporter,
+      command: "dev",
+      phase: "compiler",
+      diagnostics: applyDiagnosticPolicy(this.diagnosticPolicy, compilation.diagnostics),
+    });
     try {
       await compilation.validateAssets();
     } catch (error) {

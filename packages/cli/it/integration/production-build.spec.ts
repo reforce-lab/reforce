@@ -263,7 +263,12 @@ describe("production stack frame relocation", () => {
 
     expect(line).toBeGreaterThanOrEqual(0);
     const entry = sourceMap.findEntry(line, column);
-    expect(entry.originalSource?.endsWith("src/thrower.ts")).toBe(true);
+    // findEntry 找不到映射时返回空对象，用 in 收窄比 optional chaining 更诚实：
+    // 「没有映射」必须是失败，不是 undefined 与期望值不等。
+    if (!("originalSource" in entry)) {
+      throw new Error(`The bundle carries no source mapping at ${line}:${column}.`);
+    }
+    expect(entry.originalSource.endsWith("src/thrower.ts")).toBe(true);
     // thrower.ts 的 throw 在第 2 行；SourceMap 的行号是 0-based。
     expect(entry.originalLine).toBe(1);
   }, 60_000);

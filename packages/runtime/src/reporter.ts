@@ -60,6 +60,14 @@ export interface ReportedDiagnostic {
     readonly sourceSpan?: ReportedSpan;
   }[];
   readonly help?: string;
+  // 机器可读的修复建议（RFC 0011 D4，#242）：json 原样输出，human 渲染成一行 note。
+  // 只渲染，不应用——改写用户源码是另一个主题，本波不做 `reforce fix`。
+  readonly suggestions?: readonly {
+    readonly message: string;
+    readonly span: ReportedSpan;
+    readonly replacement: string;
+    readonly applicability: "machine-applicable" | "maybe-incorrect" | "has-placeholders";
+  }[];
 }
 
 interface CliDiagnosticEvent {
@@ -101,11 +109,13 @@ export interface Reporter {
   flush(): Promise<void>;
 }
 
+// 不再看 severity（RFC 0011 OM2，#242）：诊断有了 warning 之后，把 severity === "error" 写进
+// 判别式会让一条 warning 当 cause 时落回 fallbackCode，丢掉它自己的码。kind === "compiler"
+// 加上形态校验已经足够判别。
 function isCompilerFailureCause(value: unknown): value is object {
   return (
     isObject(value) &&
     Reflect.get(value, "kind") === "compiler" &&
-    Reflect.get(value, "severity") === "error" &&
     typeof Reflect.get(value, "message") === "string" &&
     Array.isArray(Reflect.get(value, "related"))
   );

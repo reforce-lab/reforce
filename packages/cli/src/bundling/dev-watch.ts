@@ -226,6 +226,8 @@ export async function startDevWatchBuild(
     const assets = await collectAssets(devOutputRoot);
     await options.onCompilation({
       status: "success",
+      // gate 成功时带的诊断全是 warning，随成功一起流到 coordinator 去上报（RFC 0011 OM2，#242）。
+      diagnostics: gateResult.diagnostics,
       buildId,
       validateAssets: async () => {
         if (!assets.some((asset) => asset.path === "main.mjs" && asset.role === "entry")) {

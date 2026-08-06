@@ -30,6 +30,7 @@ export function singleFileIr(file: string, absolutePath: string) {
     span: spanAt(),
   });
   const emptyUnit: SourceFileIr = {
+    suppressions: [],
     imports: [],
     exports: [],
     interfaces: [],

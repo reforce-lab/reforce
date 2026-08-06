@@ -3,7 +3,7 @@ import { compareUtf16CodeUnits } from "@reforce/primitives";
 import stableStringify from "json-stable-stringify";
 import type { GeneratedSourceReferenceModel, ProviderDraft } from "@/analysis/model";
 import type { CompilerDiagnostic, LibraryGeneratedFile } from "@/api";
-import { diagnostic } from "@/diagnostics";
+import { diagnostic, hasErrorDiagnostic } from "@/diagnostics";
 import type { LibrarySurface, LibrarySurfaceSymbol } from "@/library/dist-surface";
 import { subpathSpecifier } from "@/linking/external-modules";
 import type { ExternalSymbolAttribution, LinkedSymbol } from "@/linking/model";
@@ -321,7 +321,8 @@ export async function buildLibraryMeta(
     }
   }
 
-  if (diagnostics.length > 0) {
+  // 只有 error 才拦住 meta 发射：warning 说明分析结果完整，只是有话要说（RFC 0011 OM2，#242）。
+  if (hasErrorDiagnostic(diagnostics)) {
     return [];
   }
 

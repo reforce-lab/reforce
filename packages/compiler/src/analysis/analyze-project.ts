@@ -18,13 +18,15 @@ import { transactionInterceptorDraft } from "@/analysis/transaction-weaving";
 import { type WebModel, webEngineAdapterName, webPackageName } from "@/analysis/web-model";
 import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic } from "@/diagnostics";
+import { diagnostic, hasErrorDiagnostic, orderDiagnostics } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type { ClassDeclaration } from "@/parser/source-ir";
 import type { ParsedSource } from "@/project/source-files";
 
 interface AnalysisSuccess {
   readonly status: "success";
+  // 分析成功也可能有话要说：这里的诊断全是 warning（RFC 0011 OM2，#242）。
+  readonly diagnostics: readonly CompilerDiagnostic[];
   readonly providers: readonly BeanProviderModel[];
   readonly configs: readonly ConfigProviderModel[];
   readonly plans: ExecutionPlansModel;
@@ -154,7 +156,9 @@ export function analyzeProject(
   const weaving = analyzeMethodInterception(sources, linker, allProviders, diagnostics);
   diagnostics.push(...linker.diagnostics);
 
-  if (diagnostics.length > 0) {
+  // 闸门只看 error：有 error 说明 provider 表不完整，继续走 emission 会生成实参缺失的构造
+  // 调用；warning 不影响图的完整性，随 success 一起返回（RFC 0011 OM2，#242）。
+  if (hasErrorDiagnostic(diagnostics)) {
     return { status: "failure", diagnostics: nonEmptyDiagnostics(diagnostics) };
   }
   const providers = allProviders.filter(isBeanProvider);
@@ -163,6 +167,7 @@ export function analyzeProject(
   );
   return {
     status: "success",
+    diagnostics: Object.freeze(orderDiagnostics(diagnostics)),
     providers: Object.freeze(providers),
     configs: Object.freeze(configs),
     plans: createExecutionPlans(providers, new Set(configs.map((config) => config.id))),

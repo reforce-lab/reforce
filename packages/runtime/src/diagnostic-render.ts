@@ -122,6 +122,17 @@ export function renderHumanDiagnostic(
       lines.push(`    ${style(["cyan"], "-->", options.stream)} ${positionOf(related.sourceSpan)}`);
     }
   }
+  for (const suggestion of diagnostic.suggestions ?? []) {
+    // applicability 必须一起打出来：machine-applicable 与 has-placeholders 是两种完全不同的
+    // 「照做」，不标出来读者无从判断能不能直接抄。
+    lines.push(
+      renderNoteLine(
+        `suggestion(${suggestion.applicability})`,
+        `${suggestion.message} → ${suggestion.replacement}`,
+        options,
+      ),
+    );
+  }
   if (diagnostic.help !== undefined) {
     lines.push(renderNoteLine("help", diagnostic.help, options));
   }

@@ -52,6 +52,8 @@ export function parseSource(input: ParseSourceInput): ParseSourceResult {
       // the flag must not follow whatever the parser happens to default to.
       preserveParens: true,
       semanticErrors: false,
+      // 保持 false：抑制注释从 parsed.comments 的平铺列表读，那份数据与本开关无关且恒带
+      // offset；attachComments: true 交出的 AttachedComment 反而没有 offset（RFC 0011 D7，#242）。
       attachComments: false,
     });
     const earliest = parsed.diagnostics
@@ -62,7 +64,7 @@ export function parseSource(input: ParseSourceInput): ParseSourceResult {
     }
     return {
       status: "success",
-      unit: lowerSource(input.file, input.sourceText, parsed.program),
+      unit: lowerSource(input.file, input.sourceText, parsed.program, parsed.comments),
     };
   } catch {
     return syntaxFailure(input, 0, 0);

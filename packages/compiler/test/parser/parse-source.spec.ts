@@ -846,3 +846,71 @@ test("sees an object literal through as / satisfies / parenthesis wrappers", () 
     "object-literal",
   ]);
 });
+
+// —— 抑制注释（RFC 0011 D7，#242）——
+
+test("reads a suppression comment as applying to the next line", () => {
+  const unit = parseFile(
+    [
+      "// reforce-ignore UNUSED_SUPPRESSION: kept while the starter lands",
+      "export class A {}",
+      "",
+    ].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([
+    {
+      kind: "suppression",
+      code: "UNUSED_SUPPRESSION",
+      explanation: "kept while the starter lands",
+      span: expect.objectContaining({ start: expect.objectContaining({ line: 0 }) }),
+      targetLine: 1,
+    },
+  ]);
+});
+
+// explanation 是语法的一部分（照 Biome）：抑制是长期承诺，写下它的人必须留下为什么。
+test("rejects a suppression that carries no explanation", () => {
+  const unit = parseFile(
+    ["// reforce-ignore UNUSED_SUPPRESSION:", "export class A {}", ""].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});
+
+// 行尾注释属于它所在那一行的代码，读成「抑制下一行」会让作用范围差一行。
+test("ignores a suppression that trails code on its own line", () => {
+  const unit = parseFile(
+    [
+      "export class A {} // reforce-ignore UNUSED_SUPPRESSION: trailing",
+      "export class B {}",
+      "",
+    ].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});
+
+test("does not read suppression-shaped text inside a string literal", () => {
+  const unit = parseFile(
+    ['export const note = "// reforce-ignore UNUSED_SUPPRESSION: not a comment";', ""].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});
+
+test("locates the suppressed line the same way under CRLF", () => {
+  const unit = parseFile(
+    ["// reforce-ignore UNUSED_SUPPRESSION: crlf", "export class A {}", ""].join("\r\n"),
+  );
+
+  expect(unit.suppressions.map((item) => item.targetLine)).toEqual([1]);
+});
+
+test("keeps a block comment out of the suppression list", () => {
+  const unit = parseFile(
+    ["/* reforce-ignore UNUSED_SUPPRESSION: block */", "export class A {}", ""].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});

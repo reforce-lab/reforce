@@ -9,6 +9,7 @@ import type { ProjectState } from "@/project/project-config";
 import { snapshotStillMatches } from "@/project/project-snapshot";
 import { parseProjectSources } from "@/project/source-files";
 import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
+import { applySuppressions } from "@/suppressions";
 
 function failure(
   diagnostics: readonly CompilerDiagnostic[],
@@ -56,12 +57,26 @@ export async function compile(
   );
   const analysis = analyzeProject(parsed.sources, linker);
   const watchInputs = mergeWatchInputs(parsed.watchInputs, linker.collectWatchInputs());
+  // 抑制在分派之前应用（RFC 0011 D7，#242）。抑制只作用于 warning，所以失败分析里那些 error
+  // 一条不少地留下，failure() 拿得到诊断；成功分析这边压掉全部 warning 后也仍然是 success——
+  // 这正是最容易漏的一条：把抑制放在 failure() 之后，「全部被抑制」会撞上
+  // "Compile failure requires a diagnostic"。
+  const suppressionSources = parsed.sources.map((source) => ({
+    fileId: source.fileId,
+    suppressions: source.unit.suppressions,
+  }));
   if (analysis.status === "failure") {
-    return failure(analysis.diagnostics, watchInputs);
+    return failure(
+      applySuppressions(analysis.diagnostics, suppressionSources).diagnostics,
+      watchInputs,
+    );
   }
   return {
     status: "success",
-    diagnostics: [],
+    // 分析成功即无 error，而抑制只会追加 warning，所以这里必然全是 warning。
+    diagnostics: orderDiagnostics(
+      applySuppressions(analysis.diagnostics, suppressionSources).diagnostics,
+    ),
     files: generateFiles(
       request.project,
       analysis.providers,

@@ -8,6 +8,12 @@ import {
 } from "@reforce/runtime/reporter";
 import { buildProductionDist } from "@/bundling/production-dist";
 import type { Compiler, ResolvedProject } from "@/compiler-types";
+import {
+  applyDiagnosticPolicy,
+  type DiagnosticPolicy,
+  deniedByDiagnosticPolicy,
+  permissiveDiagnosticPolicy,
+} from "@/diagnostic-policy";
 import { reportDiagnostics } from "@/diagnostic-reporting";
 import { DirectoryTransactionError, DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
@@ -17,6 +23,7 @@ export interface BuildCommandOptions {
   readonly projectDirectory: string;
   readonly tsconfigPath?: string;
   readonly reporter: Reporter;
+  readonly diagnosticPolicy?: DiagnosticPolicy;
 }
 
 export interface BuildCommandDependencies {
@@ -40,6 +47,7 @@ async function buildResolvedProject(input: {
   readonly project: ResolvedProject;
   readonly lease: ProjectLease;
   readonly reporter: Reporter;
+  readonly diagnosticPolicy: DiagnosticPolicy;
 }): Promise<0 | 1> {
   const transactions = await DirectoryTransactions.create({
     projectRoot: input.project.projectRoot,
@@ -51,6 +59,10 @@ async function buildResolvedProject(input: {
     reportCompilerDiagnostics(input.reporter, "compiler", compilation.diagnostics);
     return 1;
   }
+  // 成功路径也要遍历诊断（RFC 0011 OM2，#242）：编译成功不再等于零诊断，只遍历 failure 分支
+  // 会让 warning 编出来就消失。
+  const warnings = applyDiagnosticPolicy(input.diagnosticPolicy, compilation.diagnostics);
+  reportCompilerDiagnostics(input.reporter, "compiler", warnings);
   await transactions.commitGenerated(compilation.files);
   const prepared = await transactions.prepareDist();
   let expectedFiles: readonly string[];
@@ -77,7 +89,8 @@ async function buildResolvedProject(input: {
     command: "build",
     message: `Built ${input.project.projectRoot}.`,
   });
-  return 0;
+  // 产物照常落盘：图是完整的，产物有效。非零退出只是给 CI 的闸门信号。
+  return deniedByDiagnosticPolicy(input.diagnosticPolicy, warnings) ? 1 : 0;
 }
 
 function reportUnexpectedFailure(reporter: Reporter, error: unknown): void {
@@ -143,6 +156,7 @@ export async function runBuildCommand(
         project: resolution.project,
         lease,
         reporter: options.reporter,
+        diagnosticPolicy: options.diagnosticPolicy ?? permissiveDiagnosticPolicy,
       });
     }
   } catch (error) {

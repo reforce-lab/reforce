@@ -57,6 +57,7 @@ describe("development watch coordination", () => {
     const coordinator = new DevWatchCoordinator({ reporter, supervisor });
     await coordinator.acceptCompilation({
       status: "success",
+      diagnostics: [],
       buildId: "rspack:healthy",
       validateAssets: async () => undefined,
     });
@@ -88,6 +89,7 @@ describe("development watch coordination", () => {
 
     await coordinator.acceptCompilation({
       status: "success",
+      diagnostics: [],
       buildId: "rspack:healthy",
       validateAssets: async () => {
         order.push("validate");
@@ -111,12 +113,14 @@ describe("development watch coordination", () => {
     const coordinator = new DevWatchCoordinator({ reporter, supervisor });
     await coordinator.acceptCompilation({
       status: "success",
+      diagnostics: [],
       buildId: "rspack:healthy",
       validateAssets: async () => undefined,
     });
 
     await coordinator.acceptCompilation({
       status: "success",
+      diagnostics: [],
       buildId: "rspack:invalid",
       validateAssets: async () => {
         throw new Error("missing chunk");

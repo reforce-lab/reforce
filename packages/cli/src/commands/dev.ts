@@ -15,6 +15,7 @@ import { DevChildSupervisor } from "@/dev/child-supervisor";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 import { collectInstallSignalInputs } from "@/dev/install-signals";
 import { type DevCompilation, DevWatchCoordinator } from "@/dev/watch-coordinator";
+import type { DiagnosticPolicy } from "@/diagnostic-policy";
 import { reportDiagnostics } from "@/diagnostic-reporting";
 import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
@@ -24,6 +25,9 @@ export interface DevCommandOptions {
   readonly projectDirectory: string;
   readonly tsconfigPath?: string;
   readonly reporter: Reporter;
+  // dev 只用得上 levels：--deny-warnings 的语义是「退非零」，而 dev 是常驻 watch，没有可退的
+  // 时刻。一次性命令（build/lib）那边才让它决定退出码。
+  readonly diagnosticPolicy?: DiagnosticPolicy;
 }
 
 export interface DevCommandDependencies {

@@ -61,12 +61,18 @@ export type CompilerDiagnosticCode =
   | "UNKNOWN_BEAN_QUALIFIER"
   | "DUPLICATE_BEAN_QUALIFIER"
   | "INVALID_BEAN_QUALIFIER"
-  | "BEAN_ID_COLLISION";
+  | "BEAN_ID_COLLISION"
+  // 抑制注释（RFC 0011 D7，#242）。两者都是 warning：抑制机制本身出问题不该拦住编译。
+  | "UNUSED_SUPPRESSION"
+  | "SUPPRESSION_NOT_APPLICABLE";
 
 export interface CompilerDiagnostic {
   readonly kind: "compiler";
   readonly code: CompilerDiagnosticCode;
-  readonly severity: "error";
+  // warning 与 error 的区别不是「多严重」，而是「图完不完整」（RFC 0011 OM2，#242）：error 意味着
+  // 分析结果不足以发射生成物，warning 意味着结果完整、只是有话要说。所以 warning 随 success 一起
+  // 返回，而 status 只看有没有 error。
+  readonly severity: "error" | "warning";
   readonly message: string;
   readonly sourceSpan?: SourceSpan;
   readonly related: readonly {
@@ -74,6 +80,15 @@ export interface CompilerDiagnostic {
     readonly sourceSpan?: SourceSpan;
   }[];
   readonly help?: string;
+  // 机器可读的修复建议（RFC 0011 D4，#242）。只定字段、只渲染，不做应用器：改写用户源码是
+  // 另一个主题。结构必须是纯 plain 值——determinism 的 stableStructuralKey 不处理 Date/Map/Set，
+  // 遇到会退化成 {}，让两条不同的建议算出同一个 key。
+  readonly suggestions?: readonly {
+    readonly message: string;
+    readonly span: SourceSpan;
+    readonly replacement: string;
+    readonly applicability: "machine-applicable" | "maybe-incorrect" | "has-placeholders";
+  }[];
   readonly cause?: {
     readonly name: string;
     readonly message: string;
@@ -102,7 +117,7 @@ export type ProjectResolutionResult =
   | {
       readonly status: "success";
       readonly project: ResolvedApplicationProject;
-      readonly diagnostics: readonly [];
+      readonly diagnostics: readonly CompilerDiagnostic[];
       readonly watchInputs: CompilerWatchInputs;
     }
   | {
@@ -131,7 +146,7 @@ export interface LibraryGeneratedFile {
 export type CompileLibraryResult =
   | {
       readonly status: "success";
-      readonly diagnostics: readonly [];
+      readonly diagnostics: readonly CompilerDiagnostic[];
       readonly packageName: string;
       readonly files: readonly LibraryGeneratedFile[];
       readonly watchInputs: CompilerWatchInputs;
@@ -159,7 +174,8 @@ export interface GeneratedFile {
 export type CompileResult =
   | {
       readonly status: "success";
-      readonly diagnostics: readonly [];
+      // 成功不再等于零诊断（RFC 0011 OM2，#242）：这里的诊断全是 warning，error 一条都不会有。
+      readonly diagnostics: readonly CompilerDiagnostic[];
       readonly files: readonly GeneratedFile[];
       readonly watchInputs: CompilerWatchInputs;
     }

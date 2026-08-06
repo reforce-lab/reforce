@@ -11,6 +11,11 @@ import {
   type Reporter,
 } from "@reforce/runtime/reporter";
 import { Command, CommanderError, Option } from "commander";
+import {
+  type DiagnosticPolicy,
+  diagnosticLevelNames,
+  parseDiagnosticLevels,
+} from "@/diagnostic-policy";
 
 export interface RunCliOptions {
   readonly argv?: readonly string[];
@@ -22,7 +27,12 @@ interface ProjectOptions {
   readonly project: string;
 }
 
-interface CompileProjectOptions extends ProjectOptions {
+interface DiagnosticOptions {
+  readonly denyWarnings?: boolean;
+  readonly diagnosticLevel?: readonly string[];
+}
+
+interface CompileProjectOptions extends ProjectOptions, DiagnosticOptions {
   readonly tsconfig?: string;
 }
 
@@ -46,11 +56,37 @@ function configureProjectOption(command: Command): Command {
     );
 }
 
+function collectRepeated(value: string, previous: readonly string[]): readonly string[] {
+  return [...previous, value];
+}
+
+// 只有跑编译器的命令才有诊断可调级；explain/start 不编译，挂上去只会是一条永远无效的选项。
+function configureDiagnosticOptions(command: Command): Command {
+  return command
+    .option(
+      "--deny-warnings",
+      "exit non-zero when any warning is reported; generated output is still written",
+    )
+    .option(
+      `--diagnostic-level <CODE=${diagnosticLevelNames.join("|")}>`,
+      "raise, lower or silence one diagnostic code; repeatable. Only warnings can be re-levelled: an error means the analysis could not produce a complete graph",
+      collectRepeated,
+      [],
+    );
+}
+
 function configureCompileOptions(command: Command): Command {
-  return configureProjectOption(command).option(
+  return configureDiagnosticOptions(configureProjectOption(command)).option(
     "--tsconfig <file>",
     "leaf application tsconfig, resolved inside --project",
   );
+}
+
+function diagnosticPolicyOf(commandOptions: DiagnosticOptions): DiagnosticPolicy {
+  return {
+    denyWarnings: commandOptions.denyWarnings === true,
+    levels: parseDiagnosticLevels(commandOptions.diagnosticLevel ?? []),
+  };
 }
 
 async function reportCliFailure(
@@ -138,6 +174,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       projectDirectory: commandOptions.project,
       tsconfigPath: commandOptions.tsconfig,
       reporter: currentReporter(),
+      diagnosticPolicy: diagnosticPolicyOf(commandOptions),
     });
   });
 
@@ -151,6 +188,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       projectDirectory: commandOptions.project,
       tsconfigPath: commandOptions.tsconfig,
       reporter: currentReporter(),
+      diagnosticPolicy: diagnosticPolicyOf(commandOptions),
     });
   });
 
@@ -164,6 +202,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       projectDirectory: commandOptions.project,
       ...(commandOptions.tsconfig === undefined ? {} : { tsconfigPath: commandOptions.tsconfig }),
       reporter: currentReporter(),
+      diagnosticPolicy: diagnosticPolicyOf(commandOptions),
     });
   });
 
