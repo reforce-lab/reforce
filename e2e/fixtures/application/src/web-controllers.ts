@@ -1,4 +1,4 @@
-import { type Current, Injectable } from "@reforce/context";
+import type { Current } from "@reforce/context";
 import { Controller, Get, Post, type RequestContext } from "@reforce/web";
 import type { RequestAudit } from "@/http-exchange";
 import { Roles } from "@/web-markers";
@@ -11,7 +11,6 @@ import {
   userResponseSchema,
 } from "@/web-schemas";
 
-@Injectable()
 @Controller("/users")
 export class UsersController {
   @Get("/:id", { params: snowflakeParamsSchema, response: userResponseSchema })
@@ -29,7 +28,6 @@ export class UsersController {
   }
 }
 
-@Injectable()
 @Controller("/audit")
 export class AuditController {
   constructor(private readonly audit: Current<RequestAudit>) {}
@@ -45,7 +43,6 @@ export class AuditController {
   }
 }
 
-@Injectable()
 @Controller("/health")
 export class HealthController {
   @Get()
@@ -54,7 +51,6 @@ export class HealthController {
   }
 }
 
-@Injectable()
 @Controller("/boom")
 export class BoomController {
   @Get("/teapot")

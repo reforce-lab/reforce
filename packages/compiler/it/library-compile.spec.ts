@@ -644,7 +644,7 @@ describe("library compile", () => {
             ].join("\n"),
             "client.ts": clientSource.replace(
               "@Injectable()",
-              'import { Interceptor } from "@reforce/context";\nimport { Audited } from "./markers";\n@Injectable()\n@Interceptor({ marker: Audited })',
+              'import { Interceptor } from "@reforce/context";\nimport { Audited } from "./markers";\n@Interceptor({ marker: Audited })',
             ),
           },
         }),

@@ -6,7 +6,6 @@ import { Audited } from "@/method-markers";
 // 方法级织入的最小取证场景（ADR 0008 AM1，#202，x-onion 同款取证法）：拦截器把标记值
 // append 到被织方法的返回轨迹，HTTP 响应逐字节断言即 dist-only 链路的织入证据。
 
-@Injectable()
 @Interceptor({ marker: Audited })
 export class AuditInterceptor implements MethodInterceptor<{ label: string }> {
   async intercept(
@@ -26,7 +25,6 @@ export class AuditedReport {
   }
 }
 
-@Injectable()
 @Controller("/woven")
 export class WovenController {
   constructor(private readonly report: AuditedReport) {}
