@@ -65,7 +65,7 @@ jobs:
       - uses: microsoft/apm-action@v1
         if: runner.os != 'Windows'
         with:
-          apm-version: "0.26.0"
+          apm-version: "0.27.0"
           setup-only: true
 
       - name: Install APM on Windows
@@ -73,9 +73,9 @@ jobs:
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP "apm-windows-x86_64.zip"
-          $destination = Join-Path $env:RUNNER_TEMP "apm-0.26.0"
-          Invoke-WebRequest -Uri "https://github.com/microsoft/apm/releases/download/v0.26.0/apm-windows-x86_64.zip" -OutFile $archive
-          $expectedHash = "1b74a90c7ee6373ab2926addd110c1dbc5934a9675e5f436cac4d04f46cce2f5"
+          $destination = Join-Path $env:RUNNER_TEMP "apm-0.27.0"
+          Invoke-WebRequest -Uri "https://github.com/microsoft/apm/releases/download/v0.27.0/apm-windows-x86_64.zip" -OutFile $archive
+          $expectedHash = "1a7703864babee7deaab3d13b4fe50b51ea5c1ae2edb2dae46fbbab5a6cead9d"
           $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actualHash -ne $expectedHash) {
             throw "APM archive hash mismatch: $actualHash"
@@ -147,7 +147,7 @@ jobs:
 
       - uses: microsoft/apm-action@v1
         with:
-          apm-version: "0.26.0"
+          apm-version: "0.27.0"
           setup-only: true
 
       - name: Install dependencies
