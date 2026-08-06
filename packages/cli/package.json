@@ -6,6 +6,9 @@
   "bin": {
     "reforce": "./dist/reforce.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
