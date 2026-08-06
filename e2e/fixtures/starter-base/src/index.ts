@@ -1,4 +1,4 @@
-import { Injectable } from "@reforce/context";
+import { defineStarter, Injectable } from "@reforce/context";
 
 export interface Clock {
   now(): number;
@@ -10,3 +10,5 @@ export class SystemClock implements Clock {
     return Date.now();
   }
 }
+
+export const clock = defineStarter();

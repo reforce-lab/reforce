@@ -16,7 +16,13 @@ import {
   type CompileSuccess,
   linkApplicationPackages,
 } from "./support/project";
-import { nodeModulesTree, starterMetaSpan, starterPackage } from "./support/starters";
+import {
+  nodeModulesTree,
+  starterHandleDeclaration,
+  starterHandleRuntime,
+  starterMetaSpan,
+  starterPackage,
+} from "./support/starters";
 
 // 集合注入 IT（ADR 0006 W6，#142 / #150）：readonly T[] 是集合边的唯一合法书写（ReadonlyArray<T>
 // 等价），成员资格与最终顺序在编译期封闭——@Order(n) 升序优先，同序值与无序成员按 beanId 决胜。
@@ -428,10 +434,12 @@ describe("starter members", () => {
     "export declare class ConsoleSink implements AuditSink {",
     "  write(entry: string): void;",
     "}",
+    starterHandleDeclaration("auditStarter"),
     "",
   ].join("\n");
 
   const auditDistRuntime = [
+    starterHandleRuntime("auditStarter"),
     "export class FileSink {",
     "  write(entry) {}",
     "}",
@@ -479,7 +487,7 @@ describe("starter members", () => {
     return {
       "application.ts": [
         'import { defineApplication } from "@reforce/context";',
-        'import auditStarter from "@acme/starter-audit/reforce";',
+        'import { auditStarter } from "@acme/starter-audit";',
         "",
         "export default defineApplication({ starters: [auditStarter] });",
         "",
@@ -561,10 +569,12 @@ describe("starter beans consuming collection edges", () => {
     "export declare class Hub {",
     "  constructor(plugins: readonly HubPlugin[]);",
     "}",
+    starterHandleDeclaration("hubStarter"),
     "",
   ].join("\n");
 
   const hubDistRuntime = [
+    starterHandleRuntime("hubStarter"),
     "export class Hub {",
     "  constructor(plugins) {",
     "    this.plugins = plugins;",
@@ -608,7 +618,7 @@ describe("starter beans consuming collection edges", () => {
       src: {
         "application.ts": [
           'import { defineApplication } from "@reforce/context";',
-          'import hubStarter from "@acme/starter-hub/reforce";',
+          'import { hubStarter } from "@acme/starter-hub";',
           "",
           "export default defineApplication({ starters: [hubStarter] });",
           "",
@@ -708,7 +718,7 @@ describe("starter beans consuming collection edges", () => {
       src: {
         "application.ts": [
           'import { defineApplication } from "@reforce/context";',
-          'import hubStarter from "@acme/starter-hub/reforce";',
+          'import { hubStarter } from "@acme/starter-hub";',
           "",
           "export default defineApplication({ starters: [hubStarter] });",
           "",
@@ -765,7 +775,7 @@ describe("starter beans consuming collection edges", () => {
       src: {
         "application.ts": [
           'import { defineApplication } from "@reforce/context";',
-          'import hubStarter from "@acme/starter-hub/reforce";',
+          'import { hubStarter } from "@acme/starter-hub";',
           "",
           "export default defineApplication({ starters: [hubStarter] });",
           "",

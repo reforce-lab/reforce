@@ -3,9 +3,9 @@ import { dirname, join } from "node:path";
 
 // dev-watch 三信号 IT（Issue #148）用的最小 starter 包。meta 手写：CLI 层只关心「watch 输入
 // 变化触发重发现」，meta 由 `reforce lib` 真实编译的闭环归 compiler IT 与 e2e 把守。
-// 形状与 packages/compiler/it/support/starters.ts 的契约一致（"." / "./reforce" /
-// "./reforce-meta" 三个 subpath），但 CLI 的 IT 不允许反向依赖 compiler 的测试 support，
-// 因此这里保留一份只含本层所需字段的副本。
+// 形状与 packages/compiler/it/support/starters.ts 的契约一致（"." / "./reforce-meta" 两个
+// subpath，注册 handle 是主入口的具名导出），但 CLI 的 IT 不允许反向依赖 compiler 的测试
+// support，因此这里保留一份只含本层所需字段的副本。
 
 export const starterName = "@acme/starter-redis";
 export const starterVersion = "1.2.0";
@@ -18,6 +18,7 @@ const distDeclaration = [
   "  get(key: string): string;",
   "}",
   "export declare class MetricsPusher {}",
+  'export declare const redisStarter: import("@reforce/context").StarterDefinition;',
   "",
 ].join("\n");
 
@@ -28,6 +29,7 @@ const distRuntime = [
   "  }",
   "}",
   "export class MetricsPusher {}",
+  "export const redisStarter = Object.freeze({});",
   "",
 ].join("\n");
 
@@ -87,18 +89,10 @@ export async function writeStarterPackage(
       type: "module",
       exports: {
         ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-        "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
         "./reforce-meta": "./reforce-meta.json",
       },
     })}\n`,
     "reforce-meta.json": options.meta ?? starterMeta(),
-    "reforce.d.ts": [
-      'import type { StarterDefinition } from "@reforce/context";',
-      "declare const starter: StarterDefinition;",
-      "export default starter;",
-      "",
-    ].join("\n"),
-    "reforce.js": "export default Object.freeze({});\n",
     "dist/index.d.ts": distDeclaration,
     "dist/index.js": distRuntime,
   };
@@ -112,7 +106,7 @@ export async function writeStarterPackage(
 export const starterApplicationSources = {
   "application.ts": [
     'import { defineApplication } from "@reforce/context";',
-    'import redisStarter from "@acme/starter-redis/reforce";',
+    'import { redisStarter } from "@acme/starter-redis";',
     "",
     "export default defineApplication({ starters: [redisStarter] });",
     "",

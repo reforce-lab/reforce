@@ -1,12 +1,13 @@
 # @reforce/bundler-plugin
 
 Starter 库作者的构建收尾插件（ADR 0004，[#120](https://github.com/reforce-lab/reforce/issues/120)）。
-在打包器写完 dist 后运行 Reforce 库模式编译，把三份契约面产物写进输出目录，并补/校正
+在打包器写完 dist 后运行 Reforce 库模式编译，把契约面产物写进输出目录，并补/校正
 `package.json` 的 exports subpath：
 
-- `reforce-meta.json` —— 预编译 bean 注册表，应用编译器在链接期归并（subpath `./reforce-meta`）；
-- `reforce.js` / `reforce.d.ts` —— `defineApplication({ starters: [...] })` 用的注册 handle
-  （subpath `./reforce`）。
+- `reforce-meta.json` —— 预编译 bean 注册表，应用编译器在链接期归并（subpath `./reforce-meta`）。
+
+`defineApplication({ starters: [...] })` 用的注册 handle 不是产物：包作者在主入口手写
+`export const <槽名> = defineStarter()`（`@reforce/context`），使用者具名 import 它。
 
 收尾最后用 [publint](https://publint.dev) 校验发布产物（`pack: false`，纯文件系统校验，
 不拉起包管理器），error 级问题直接判失败，兜住 exports/main 指向缺失文件这类事故；
@@ -57,7 +58,7 @@ await Bun.build({
 | --- | --- | --- |
 | `projectDirectory` | 进程工作目录 | 库项目根（含 `package.json` 与 leaf tsconfig） |
 | `tsconfigPath` | 自动选择 | 显式指定 leaf tsconfig，相对 `projectDirectory` 解析 |
-| `outputDirectory` | `"dist"` | meta 与注册 handle 的写入目录，相对项目根；`"."` 即包根布局 |
+| `outputDirectory` | `"dist"` | meta 的写入目录，相对项目根；`"."` 即包根布局 |
 | `exports` | `"patch"` | `"patch"` 补/校正 package.json 的 subpath；`"verify"` 只校验不改写 |
 | `publint` | `true` | 关闭发布产物校验 |
 

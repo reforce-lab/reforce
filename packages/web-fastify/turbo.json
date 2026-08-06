@@ -4,7 +4,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "reforce-meta.json", "reforce.js", "reforce.d.ts"]
+      "outputs": ["dist/**", "reforce-meta.json"]
     }
   }
 }

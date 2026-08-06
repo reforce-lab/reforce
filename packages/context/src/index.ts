@@ -2,6 +2,7 @@ export {
   type ApplicationDefinition,
   type DefineApplicationOptions,
   defineApplication,
+  defineStarter,
   type StarterDefinition,
 } from "@/application-declaration";
 export {

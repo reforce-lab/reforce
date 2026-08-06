@@ -10,8 +10,8 @@ import { reforceStarter } from "@/index";
 import { reforceStarterRsbuild } from "@/rsbuild";
 
 // 作者侧插件 IT（ADR 0004 决策 4，#120/#147）：收尾钩子跑库模式编译、meta 写作者配置的输出目录、
-// 自动补/校正 exports 的 ./reforce-meta（与 ./reforce）subpath、publint 兜发布事故。库模式编译
-// 语义由 compiler 的 library-compile IT 钉住，这里只验插件面。
+// 自动补/校正 exports 的 ./reforce-meta subpath、publint 兜发布事故。库模式编译语义由 compiler
+// 的 library-compile IT 钉住，这里只验插件面。
 
 const projects: TemporaryProject[] = [];
 
@@ -88,15 +88,8 @@ test("writeBundle compiles meta into the output directory and patches exports", 
   expect(meta.beans.map((bean: { id: string }) => bean.id)).toEqual([
     "@acme/starter-widget#Widget",
   ]);
-  expect(await readFile(join(project.projectRoot, "dist", "reforce.js"), "utf8")).toContain(
-    "export default",
-  );
   const packageJson = JSON.parse(await readFile(join(project.projectRoot, "package.json"), "utf8"));
   expect(packageJson.exports["./reforce-meta"]).toBe("./dist/reforce-meta.json");
-  expect(packageJson.exports["./reforce"]).toEqual({
-    types: "./dist/reforce.d.ts",
-    default: "./dist/reforce.js",
-  });
 });
 
 test("writeBundle keeps an already-correct package.json byte-identical", async () => {
@@ -160,7 +153,6 @@ test("verify mode keeps a correct package.json byte-identical", async () => {
     packageJson: {
       exports: {
         ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-        "./reforce": { types: "./dist/reforce.d.ts", default: "./dist/reforce.js" },
         "./reforce-meta": "./dist/reforce-meta.json",
       },
     },
@@ -310,10 +302,9 @@ async function createRslibLibrary(): Promise<TemporaryProject> {
       name: "@acme/starter-widget",
       version: "1.0.0",
       type: "module",
-      files: ["dist", "reforce.js", "reforce.d.ts", "reforce-meta.json"],
+      files: ["dist", "reforce-meta.json"],
       exports: {
         ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-        "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
         "./reforce-meta": "./reforce-meta.json",
       },
     })}\n`,
@@ -414,10 +405,6 @@ test("the rsbuild surface finishes a real rslib build after tsgo declarations la
   expect(meta.beans.map((bean: { id: string }) => bean.id)).toEqual([
     "@acme/starter-widget#Widget",
   ]);
-  expect(await readFile(join(project.projectRoot, "reforce.js"), "utf8")).toContain(
-    "export default",
-  );
-  expect(await readFile(join(project.projectRoot, "reforce.d.ts"), "utf8")).toContain("export");
 }, 120_000);
 
 test("the esbuild adapter runs the finishing hook through esbuild's build API", async () => {

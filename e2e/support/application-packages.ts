@@ -89,11 +89,9 @@ export async function installApplicationPackages(
     cp(join(webRoot, "dist"), join(webTarget, "dist"), { recursive: true }),
     cp(join(webNodeRoot, "package.json"), join(webNodeTarget, "package.json")),
     cp(join(webNodeRoot, "dist"), join(webNodeTarget, "dist"), { recursive: true }),
-    // 真 starter 的分发面不止 dist：`reforce lib` 产出的 meta 三件套挂在包根 exports 上，
+    // 真 starter 的分发面不止 dist：`reforce lib` 产出的 meta 挂在包根 exports 上，
     // dist-only 分发必须一并携带（ADR 0004 决策 2）。
     cp(join(webNodeRoot, "reforce-meta.json"), join(webNodeTarget, "reforce-meta.json")),
-    cp(join(webNodeRoot, "reforce.js"), join(webNodeTarget, "reforce.js")),
-    cp(join(webNodeRoot, "reforce.d.ts"), join(webNodeTarget, "reforce.d.ts")),
     // dotenv 是 @reforce/config 唯一的运行时依赖；dist-only 拷贝没有包内 node_modules，
     // 把真实包（穿透 pnpm 的符号链接）落到应用 node_modules。
     cp(

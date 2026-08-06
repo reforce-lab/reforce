@@ -172,17 +172,10 @@ export async function startDevWatchBuild(
               },
             });
           }
-          // starter 包根的 reforce.js 是唯一以 realpath 形态进模块图的包根运行时模块（#180）：
-          // symlink workspace 包经 resolve 后它不含 node_modules / dist 段，逃过具名目录忽略。
-          // 它是约定的常量 no-op handle（`export default Object.freeze({})`），按名忽略即可；
-          // 不用 resolve.symlinks:false 压制——那会破坏 Windows junction 链上的依赖解析。
           config.watchOptions = {
             ...config.watchOptions,
             aggregateTimeout: 200,
-            ignored: [
-              ...unwatchedDirectoryNames.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
-              "**/reforce.js",
-            ],
+            ignored: unwatchedDirectoryNames.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
           };
         },
       },

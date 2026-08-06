@@ -1,5 +1,5 @@
 import type { Clock } from "@acme/starter-base";
-import { Injectable } from "@reforce/context";
+import { defineStarter, Injectable } from "@reforce/context";
 
 export interface CacheConfig {
   prefix(): string;
@@ -27,3 +27,5 @@ export class CacheMetrics {
     return 0;
   }
 }
+
+export const cache = defineStarter();

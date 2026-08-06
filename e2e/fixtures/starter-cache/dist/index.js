@@ -1,3 +1,5 @@
+import { defineStarter } from "@reforce/context";
+
 export class MemoryCache {
   constructor(config, clock) {
     this.config = config;
@@ -14,3 +16,5 @@ export class CacheMetrics {
     return 0;
   }
 }
+
+export const cache = defineStarter();
