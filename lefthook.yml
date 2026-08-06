@@ -2,7 +2,12 @@ pre-commit:
   parallel: true
   commands:
     biome:
-      run: pnpm exec biome check --write --no-errors-on-unmatched
+      # --staged 是 Biome 自己的暂存区筛选（其 --help 注明 intended for local use）；不传它
+      # 就是全仓扫描，每次提交都会混进与本次改动无关的告警，把「读 hook 输出」训练成「略过
+      # hook 输出」（Issue #259）。不用 --changed：它明确不含 staged 与 unstaged 变更，
+      # 恰好排除 pre-commit 要看的东西，用途是 CI。
+      # --no-errors-on-unmatched 因此更有必要：暂存区可能只有 .md / .yml 这类 Biome 不处理的文件。
+      run: pnpm exec biome check --write --staged --no-errors-on-unmatched
       stage_fixed: true
 
 
