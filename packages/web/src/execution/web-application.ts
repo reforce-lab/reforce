@@ -17,15 +17,35 @@ import { metaLookup } from "@/routing/route-marker";
 // await next() 对核心错误永不抛（观测中间件因此看得到错误响应）；外层兜底包住整链，
 // 中间件自身抛错也保证换成 Response——handle 永不 reject 是适配器契约的一部分。
 
-// 请求日志需要的最小 logger 形状，由**消费侧**定义（同 ADR 0009 的 ReportedDiagnostic 先例）。
-// @reforce/logging 的 Logger 结构性满足它，生成的 bootstrap 直接把那个实例传进来。
+// 框架输出需要的最小 logger 形状，由**消费侧**定义（同 ADR 0009 的 ReportedDiagnostic 先例）。
+// @reforce/logging 的 Logger 结构性满足它们，生成的 bootstrap 直接把那个实例传进来。
 //
 // 不写成 `import type { Logger } from "@reforce/logging"`：type-only import 在运行时被擦除，
 // 但**会留在生成的 d.ts 里**——那样每个消费 @reforce/web 的项目 typecheck 时都得解析得到
 // @reforce/logging，等于把一条硬依赖藏在类型层。不写日志的应用不该为它多装一个包。
-export interface RequestLogger {
-  isEnabled(level: "info"): boolean;
-  info(fields: Readonly<Record<string, unknown>> | undefined, message: string): void;
+type LogFields = Readonly<Record<string, unknown>> | undefined;
+
+/** 500 兜底要的最小形状（RFC 0011 C1，#250）：error-dispatch 只用得到这一个方法。 */
+export interface ErrorLogger {
+  error(fields: LogFields, message: string): void;
+}
+
+export interface RequestLogger extends ErrorLogger {
+  isEnabled(level: RequestLogLevel): boolean;
+  info(fields: LogFields, message: string): void;
+  warn(fields: LogFields, message: string): void;
+}
+
+/** 请求日志用得到的三档；按状态码选（B1），对位 pino-http 的 customLogLevel 缺省行为。 */
+type RequestLogLevel = "info" | "warn" | "error";
+
+// 5xx→error、4xx→warn、其余 info。此前一律 info——`status=500` 与 `status=200` 同级别，
+// 意味着按级别过滤的告警规则对服务端错误完全瞎。
+function levelForStatus(status: number): RequestLogLevel {
+  if (status >= 500) {
+    return "error";
+  }
+  return status >= 400 ? "warn" : "info";
 }
 
 export interface CreateWebApplicationOptions {
@@ -49,17 +69,24 @@ function logRequest(input: {
   readonly path: string;
   readonly response: Response;
   readonly startedAt: number;
+  /** handler 抛出的错误（B2，#250）；被 dispatchError 换成响应后它就是唯一的线索。 */
+  readonly error?: unknown;
 }): void {
+  const level = levelForStatus(input.response.status);
   // 不变量 8：字段对象在调用之前就构造好了，所以判定必须在这里做，不能指望 logger 内部短路。
-  if (input.logger?.isEnabled("info") !== true) {
+  // 级别判定同样必须在字段构造**之前**——它决定要不要构造。
+  if (input.logger?.isEnabled(level) !== true) {
     return;
   }
-  input.logger.info(
+  input.logger[level](
     {
       method: input.method,
       path: input.path,
       status: input.response.status,
       handlerMs: Math.round((performance.now() - input.startedAt) * 1000) / 1000,
+      // err 是保留字段名：pino/bunyan/OTel 都按它特判 Error 序列化。没有错误时不写这个键，
+      // 免得每条正常请求都多一个恒为 undefined 的字段。
+      ...(input.error === undefined ? {} : { err: input.error }),
     },
     "request",
   );
@@ -124,6 +151,7 @@ function prepareRoute(
       await validateInputs(requestContext);
       return await serialize(await route.invoke(controller, requestContext));
     } catch (error) {
+      requestContext.recordFailure(error);
       return await dispatchError(error, requestContext);
     }
   };
@@ -159,6 +187,7 @@ function prepareRoute(
           try {
             return await chain(requestContext);
           } catch (error) {
+            requestContext.recordFailure(error);
             return await dispatchError(error, requestContext);
           }
         })();
@@ -166,7 +195,14 @@ function prepareRoute(
         // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
         // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
         try {
-          logRequest({ logger, method: route.method, path: route.path, response, startedAt });
+          logRequest({
+            logger,
+            method: route.method,
+            path: route.path,
+            response,
+            startedAt,
+            error: requestContext.failure,
+          });
         } catch {
           // 记不上就记不上，不值得赔上一个已经成功的响应。
         }
@@ -189,6 +225,7 @@ export function createWebApplication(options: CreateWebApplicationOptions): Prep
     table.errorHandlers.map((entry) =>
       requireErrorHandlerInstance(options.context.get(entry.bean), entry.beanId),
     ),
+    options.logger,
   );
   return {
     routes: table.routes.map((route) =>

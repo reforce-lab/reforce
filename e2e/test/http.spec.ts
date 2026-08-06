@@ -205,7 +205,13 @@ describe.sequential("HTTP application over the built artifact", () => {
       const teapot = await fetch(`${base}/boom/teapot`);
       expect(teapot.status).toBe(418);
       expect(await teapot.text()).toBe("teapot");
-      expect((await fetch(`${base}/boom/unhandled`)).status).toBe(500);
+      // C1（#250）：兜底 500 带 errorId，栈绝不进响应体。
+      const unhandled = await fetch(`${base}/boom/unhandled`);
+      expect(unhandled.status).toBe(500);
+      expect(await unhandled.json()).toEqual({
+        error: "internal",
+        errorId: expect.any(String),
+      });
     });
   });
 

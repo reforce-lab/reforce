@@ -206,11 +206,17 @@ class FakeAdapter implements WebEngineAdapter {
   }
 }
 
-async function startedApplication(logger?: RequestLogger) {
+async function startedApplication(
+  logger?: RequestLogger,
+  // 去掉错误处理器就能走到框架默认兜底：/explode 平时被 TeapotErrorHandler 接成 418，
+  // 而 5xx 的分级与 errorId 要的是没人接管的那条路。
+  options: { readonly withoutErrorHandlers?: boolean } = {},
+) {
   const context = createApplicationContext(applicationDefinition());
   await context.start();
+  const table = routeTable();
   const application = createWebApplication({
-    table: routeTable(),
+    table: options.withoutErrorHandlers === true ? { ...table, errorHandlers: [] } : table,
     context,
     requestSeeds: (request) => [
       {
@@ -297,6 +303,7 @@ describe("web application over the real context runtime", () => {
 // 可比的一条。
 
 interface CapturedRequestLog {
+  readonly level: "info" | "warn" | "error";
   readonly fields: Readonly<Record<string, unknown>>;
   readonly message: string;
 }
@@ -304,12 +311,16 @@ interface CapturedRequestLog {
 function capturingLogger(options: { readonly enabled?: boolean } = {}): {
   readonly logger: RequestLogger;
   readonly captured: CapturedRequestLog[];
+  readonly requests: () => CapturedRequestLog[];
   readonly enabledChecks: () => number;
 } {
   const captured: CapturedRequestLog[] = [];
   let enabledChecks = 0;
   return {
     captured,
+    // 500 那条路上不止一条记录：error-dispatch 先发带 errorId 的现场，请求日志随后。
+    // 断言请求日志时按 message 挑，否则用例会悄悄验到另一条记录上。
+    requests: () => captured.filter((record) => record.message === "request"),
     enabledChecks: () => enabledChecks,
     logger: {
       isEnabled: () => {
@@ -317,7 +328,13 @@ function capturingLogger(options: { readonly enabled?: boolean } = {}): {
         return options.enabled ?? true;
       },
       info: (fields, message) => {
-        captured.push({ fields: fields ?? {}, message });
+        captured.push({ level: "info", fields: fields ?? {}, message });
+      },
+      warn: (fields, message) => {
+        captured.push({ level: "warn", fields: fields ?? {}, message });
+      },
+      error: (fields, message) => {
+        captured.push({ level: "error", fields: fields ?? {}, message });
       },
     },
   };
@@ -377,6 +394,57 @@ describe("request logging", () => {
 
     expect(capture.captured).toEqual([]);
     expect(capture.enabledChecks()).toBe(1);
+  });
+
+  // B1（#250）：此前 5xx 与 200 一律 info——按级别过滤的告警规则对服务端错误完全瞎。
+  // 对位 pino-http 的 customLogLevel 缺省行为。
+  test("logs a server error at error level", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger, { withoutErrorHandlers: true });
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    expect(capture.requests()[0]).toMatchObject({ level: "error", fields: { status: 500 } });
+  });
+
+  test("logs a client error at warn level", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    expect(capture.requests()[0]).toMatchObject({ level: "warn", fields: { status: 418 } });
+  });
+
+  test("logs a successful request at info level", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    expect(capture.requests()[0]).toMatchObject({ level: "info", fields: { status: 200 } });
+  });
+
+  // B2（#250）：handler 抛的错被 dispatchError 换成响应之后，请求日志此前只看得到 status，
+  // 错误对象就此丢失——「500 了」和「为什么 500」不在同一条记录上。
+  test("carries the handler's error into the request record", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger, { withoutErrorHandlers: true });
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    const err = capture.requests()[0]?.fields.err;
+    expect(err).toBeInstanceOf(Error);
+    expect(err instanceof Error ? err.message : undefined).toBe("handler exploded");
+  });
+
+  test("writes no err field for a request that did not fail", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    expect("err" in (capture.requests()[0]?.fields ?? {})).toBe(false);
   });
 
   test("stays silent when no logger is wired", async () => {

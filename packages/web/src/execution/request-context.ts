@@ -50,6 +50,7 @@ export class RequestContextState implements RequestContext {
   private queryValidated = false;
   private validatedQuery: unknown;
   private validatedBody: unknown;
+  private capturedFailure: unknown;
 
   constructor(inputs: RequestContextInputs) {
     this.request = inputs.request;
@@ -74,6 +75,19 @@ export class RequestContextState implements RequestContext {
 
   meta<T extends RouteMetaValue>(marker: RouteMarker<T>): T | undefined {
     return this.lookupMeta(marker);
+  }
+
+  // 框架内部状态，不在公开的 RequestContext 上（同 applyValidated）。B2（#250）：handler 抛
+  // 的错被 dispatchError 换成响应之后，请求日志只看得到 status，错误对象就此丢失。
+  //
+  // 先到先得：错误处理器可以 rethrow 换一个错（W4 的「换错即升级」），但值得记的是边界上
+  // 最初真的发生了什么，后面那些是处理过程。
+  recordFailure(error: unknown): void {
+    this.capturedFailure ??= error;
+  }
+
+  get failure(): unknown {
+    return this.capturedFailure;
   }
 
   applyValidated(source: "body" | "params" | "query", value: unknown): void {
