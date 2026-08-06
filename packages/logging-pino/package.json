@@ -10,6 +10,10 @@
     },
     "./reforce-meta": "./reforce-meta.json"
   },
+  "files": [
+    "dist",
+    "reforce-meta.json"
+  ],
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p it/tsconfig.json",
