@@ -116,7 +116,7 @@ function routeMarkerDeclarationOf(
   diagnostics: CompilerDiagnostic[],
 ): readonly [string, RouteMarkerDeclarationInfo] | undefined {
   const initializer = declaration.initializer;
-  if (initializer === undefined) {
+  if (initializer?.kind !== "call") {
     return undefined;
   }
   const callee = linker.resolveEntity(source, initializer.callee);
@@ -632,25 +632,59 @@ function routeSchemaSlotOf(
   return ref === undefined ? undefined : [property.key, ref];
 }
 
+interface RouteSchemaGroup {
+  // 属性里的 schema 标识符要在声明这组 schema 的模块里回查，不是在 controller 模块里。
+  readonly source: ParsedSource;
+  readonly properties: readonly ObjectLiteralProperty[];
+}
+
+// schema 组既可以内联，也可以是指向顶层 const 对象字面量的标识符。后者是 handler 侧类型
+// 标注的落点：`show(context: RequestContext<typeof showSchemas>)` 只提一次名字，内联形态
+// 则要把整组 schema 类型在标注里重打一遍——比原先的 `as unknown` 断言更糟。
+// 解析规则照 defineRouteMarker 办：顶层 const、静态可解析，且必须真的是对象字面量初始化。
+function routeSchemaGroupOf(
+  source: ParsedSource,
+  argument: DecoratorArgumentValue,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): RouteSchemaGroup | undefined {
+  if (argument.kind === "object-literal") {
+    return { source, properties: argument.properties };
+  }
+  const resolved =
+    argument.kind === "identifier-reference" && argument.entity.kind === "identifier"
+      ? linker.resolveValueDeclaration(source, argument.entity.name)
+      : undefined;
+  if (
+    resolved?.declaration.topLevel === true &&
+    resolved.declaration.declarationKind === "const" &&
+    resolved.declaration.initializer?.kind === "object-literal"
+  ) {
+    return { source: resolved.source, properties: resolved.declaration.initializer.properties };
+  }
+  report(
+    diagnostics,
+    "INVALID_ROUTE_SCHEMA",
+    "Route schemas must be one object literal, or an identifier referencing a top-level const object literal, with params/query/body/response keys.",
+    argument.span,
+    { help: schemaHelp },
+  );
+  return undefined;
+}
+
 function routeSchemasOf(
   source: ParsedSource,
   argument: DecoratorArgumentValue,
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): RouteSchemasModel | undefined {
-  if (argument.kind !== "object-literal") {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_SCHEMA",
-      "Route schemas must be one object literal with params/query/body/response keys.",
-      argument.span,
-      { help: schemaHelp },
-    );
+  const group = routeSchemaGroupOf(source, argument, linker, diagnostics);
+  if (group === undefined) {
     return undefined;
   }
   let schemas: RouteSchemasModel = {};
-  for (const property of argument.properties) {
-    const slot = routeSchemaSlotOf(source, property, linker, diagnostics);
+  for (const property of group.properties) {
+    const slot = routeSchemaSlotOf(group.source, property, linker, diagnostics);
     if (slot === undefined) {
       return undefined;
     }

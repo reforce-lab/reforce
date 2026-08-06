@@ -258,8 +258,14 @@ describe("route table generation", () => {
     expect(routesModule).toContain(
       'import type { GeneratedRouteTable, RequestContext } from "@reforce/web/generated-runtime";',
     );
+    // 带 schema 的路由，闭包参数钉住本路由的 schema 类型：handler 声明的是
+    // RequestContext<S>，基类型的 params/query/body 是 unknown，赋不进具体形状。
     expect(routesModule).toContain(
-      "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext) => instance.show(),",
+      "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext<{ params: typeof webSchema0; response: typeof webSchema1 }>) => instance.show(),",
+    );
+    // 无 schema 的路由退回裸 RequestContext。
+    expect(routesModule).toContain(
+      "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext) => instance.create(),",
     );
     expect(routesModule).toContain("} as const satisfies GeneratedRouteTable;");
     expect(routesModule).toContain(
@@ -566,6 +572,69 @@ describe("route schema references", () => {
         "export class UsersController {",
         '  @Get("/users", { response: ghostSchema })',
         "  list(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(failureCodes(result)).toEqual(["INVALID_ROUTE_SCHEMA"]);
+  });
+
+  test("a top-level const schema group can be named instead of inlined", async () => {
+    const result = await compileSourcesOrThrow({
+      "schemas.ts": passthroughSchemaSource,
+      "controller.ts": [
+        'import { Controller, Get } from "@reforce/web";',
+        'import { idParamsSchema, userResponseSchema } from "@/schemas";',
+        "const showSchemas = { params: idParamsSchema, response: userResponseSchema };",
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/users/:id", showSchemas)',
+        "  show(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(routeManifestOf(result).routes[0]?.schemas).toEqual({
+      params: { moduleSpecifier: "../../src/schemas.js", exportName: "idParamsSchema" },
+      response: { moduleSpecifier: "../../src/schemas.js", exportName: "userResponseSchema" },
+    });
+  });
+
+  test("a schema group declared in another module resolves its members there", async () => {
+    const result = await compileSourcesOrThrow({
+      "schemas.ts": [
+        passthroughSchemaSource,
+        "export const showSchemas = { params: idParamsSchema, response: userResponseSchema };",
+      ].join("\n"),
+      "controller.ts": [
+        'import { Controller, Get } from "@reforce/web";',
+        'import { showSchemas } from "@/schemas";',
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/users/:id", showSchemas)',
+        "  show(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(routeManifestOf(result).routes[0]?.schemas).toEqual({
+      params: { moduleSpecifier: "../../src/schemas.js", exportName: "idParamsSchema" },
+      response: { moduleSpecifier: "../../src/schemas.js", exportName: "userResponseSchema" },
+    });
+  });
+
+  test("a schema group identifier that is not a const object literal is rejected", async () => {
+    const result = await compileSources({
+      "schemas.ts": passthroughSchemaSource,
+      "controller.ts": [
+        'import { Controller, Get } from "@reforce/web";',
+        'import { idParamsSchema } from "@/schemas";',
+        "const showSchemas = buildSchemas(idParamsSchema);",
+        "declare function buildSchemas(schema: object): { params: object };",
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/users/:id", showSchemas)',
+        "  show(): void {}",
         "}",
       ].join("\n"),
     });

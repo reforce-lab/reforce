@@ -33,6 +33,7 @@ import {
   functionDescriptorOf,
   identifierTextOf,
   type LoweringContext,
+  objectLiteralPropertyOf,
   sourceKeywordSpan,
   spanOf,
   typeNodeOf,
@@ -70,6 +71,7 @@ import type {
   UnsupportedNamedDeclaration,
   UnsupportedNamedDeclarationKind,
   ValueDeclaration,
+  ValueInitializer,
 } from "@/parser/source-ir";
 import type { CanonicalFileId } from "@/parser/source-location";
 import { createSourceMapper } from "@/parser/source-location";
@@ -736,8 +738,54 @@ function variableDeclarationKind(node: VariableDeclaration): "const" | "let" | "
 }
 
 // 值声明名录（ADR 0006 W3/W5，#152）：marker 声明与 schema 引用目标都按"模块 × 名字"回查。
-// init 只在直接调用形态下保真（marker 识别需要 callee 尾名 + 字面量实参）；解构等无单一
-// 承载名的声明不进名录——它们无法被具名 import 引用为 schema/marker。
+// init 只在直接调用与对象字面量两种形态下保真（marker 识别需要 callee 尾名 + 字面量实参；
+// schema 组需要属性表）；解构等无单一承载名的声明不进名录——它们无法被具名 import 引用为
+// schema/marker。
+// 只在 schema 组这一条路径上看穿 as / satisfies / !：`{ params: p } as const` 与
+// `{ params: p }` 是同一个对象字面量，路由表提取读的是属性表本身。unparenthesized 的注释
+// 拒绝看穿类型层包装，针对的是 DI 的 provided-type 推断——那里包装确实改变"这个值是什么"，
+// 这里不改变。marker 的 call 形态照旧不放宽。
+function withoutTypeWrappers(node: Node): Node {
+  let current = node;
+  while (
+    current.type === "TSAsExpression" ||
+    current.type === "TSSatisfiesExpression" ||
+    current.type === "TSNonNullExpression" ||
+    current.type === "TSTypeAssertion" ||
+    current.type === "ParenthesizedExpression"
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function valueInitializerOf(
+  init: Node | undefined,
+  context: LoweringContext,
+): ValueInitializer | undefined {
+  if (init === undefined) {
+    return undefined;
+  }
+  const object = withoutTypeWrappers(init);
+  if (object.type === "ObjectExpression") {
+    return {
+      kind: "object-literal",
+      properties: object.properties.map((property) => objectLiteralPropertyOf(property, context)),
+      span: spanOf(object, context),
+    };
+  }
+  const callee = init.type === "CallExpression" ? entityNameOf(init.callee, context) : undefined;
+  if (init.type !== "CallExpression" || callee === undefined) {
+    return undefined;
+  }
+  return {
+    kind: "call",
+    callee,
+    arguments: init.arguments.map((argument) => decoratorArgumentValueOf(argument, context)),
+    span: spanOf(init, context),
+  };
+}
+
 function lowerValueDeclaration(
   declaration: VariableDeclaration,
   declarator: VariableDeclarator,
@@ -754,25 +802,14 @@ function lowerValueDeclaration(
     declarator.init === null || declarator.init === undefined
       ? undefined
       : unparenthesized(declarator.init);
-  const call = init?.type === "CallExpression" ? entityNameOf(init.callee, context) : undefined;
+  const initializer = valueInitializerOf(init, context);
   collector.valueDeclarations.push({
     kind: "value-declaration",
     topLevel,
     declarationKind: variableDeclarationKind(declaration),
     name,
     export: declarationExportOf(declarator.id, mode, context),
-    ...(init?.type === "CallExpression" && call !== undefined
-      ? {
-          initializer: {
-            kind: "call",
-            callee: call,
-            arguments: init.arguments.map((argument) =>
-              decoratorArgumentValueOf(argument, context),
-            ),
-            span: spanOf(init, context),
-          },
-        }
-      : {}),
+    ...(initializer === undefined ? {} : { initializer }),
     span: spanOf(declarator, context),
   });
 }

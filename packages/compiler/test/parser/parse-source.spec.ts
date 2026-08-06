@@ -795,7 +795,7 @@ test("collects top-level value declarations with direct-call initializers", () =
       declaration.topLevel,
       declaration.declarationKind,
       declaration.export.kind,
-      declaration.initializer?.callee,
+      declaration.initializer?.kind === "call" ? declaration.initializer.callee : undefined,
     ]),
   ).toMatchObject([
     ["Roles", true, "const", "named", { kind: "identifier", name: "defineRouteMarker" }],
@@ -804,8 +804,45 @@ test("collects top-level value declarations with direct-call initializers", () =
     ["mutable", true, "let", "none", { kind: "identifier", name: "compute" }],
     ["nested", false, "const", "none", { kind: "identifier", name: "defineRouteMarker" }],
   ]);
-  expect(unit.valueDeclarations[0]?.initializer?.arguments[0]).toMatchObject({
+  const markerInitializer = unit.valueDeclarations[0]?.initializer;
+  expect(
+    markerInitializer?.kind === "call" ? markerInitializer.arguments[0] : undefined,
+  ).toMatchObject({
     kind: "string-literal",
     value: "roles",
   });
+});
+
+test("records object literal initializers so a route can name its schema group", () => {
+  const unit = parseFile(
+    [
+      'import { paramsSchema } from "@/schemas";',
+      "export const showSchemas = { params: paramsSchema };",
+    ].join("\n"),
+  );
+
+  const initializer = unit.valueDeclarations[0]?.initializer;
+
+  expect(initializer?.kind === "object-literal" ? initializer.properties : undefined).toMatchObject(
+    [{ kind: "property", key: "params", value: { kind: "identifier-reference" } }],
+  );
+});
+
+// `{ ... } as const` 与 `{ ... }` 是同一个对象字面量，schema 组读的是属性表本身。DI 的
+// provided-type 推断照旧不看穿类型层包装（lower-values.ts 的 unparenthesized 注释）。
+test("sees an object literal through as / satisfies / parenthesis wrappers", () => {
+  const unit = parseFile(
+    [
+      'import { paramsSchema } from "@/schemas";',
+      "export const asConst = { params: paramsSchema } as const;",
+      "export const satisfied = { params: paramsSchema } satisfies object;",
+      "export const wrapped = ({ params: paramsSchema }) as const;",
+    ].join("\n"),
+  );
+
+  expect(unit.valueDeclarations.map((declaration) => declaration.initializer?.kind)).toEqual([
+    "object-literal",
+    "object-literal",
+    "object-literal",
+  ]);
 });
