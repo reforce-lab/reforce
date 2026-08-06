@@ -54,6 +54,14 @@ export async function installApplicationPackages(
       join(projectRoot, "node_modules", "@swc", "helpers"),
       { recursive: true },
     ),
+    // @standard-schema/spec 是 @reforce/web 声明的运行时依赖，且它的类型出现在 web 的
+    // 公开 d.ts 里（`import type { StandardSchemaV1 }`）。真实 npm install 必然带上它，
+    // 副本不带就会让消费者 typecheck 报 TS2307——那是 harness 缺口，不是发布缺陷。
+    cp(
+      realpathSync(join(webRoot, "node_modules", "@standard-schema", "spec")),
+      join(projectRoot, "node_modules", "@standard-schema", "spec"),
+      { recursive: true },
+    ),
   ]);
   const configTarget = join(scopeRoot, "config");
   const webTarget = join(scopeRoot, "web");

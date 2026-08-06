@@ -15,6 +15,11 @@ const baseConfig: RslibConfig = {
       dts: { tsgo: true },
       externalHelpers: true,
       format: "esm",
+      // Rslib 的 redirect 两侧默认值不对称：js.extension 默认 true、dts.extension 默认
+      // false，于是同一个 `@/...` 别名被 SWC 写成 `./x.js`、被 TSGo 写成 `./x`。ESM 包在
+      // node16/nodenext 下要求相对 import 带扩展名，少这一位会让消费者的类型静默退化
+      // （Issue #257）。本仓库全量 bundle: false，redirect 恰在该模式下生效。
+      redirect: { dts: { extension: true } },
       syntax: "esnext",
     },
   ],
