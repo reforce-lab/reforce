@@ -47,8 +47,32 @@ export interface WebApplication {
 //
 // 另：RFC 9110 规定 204/304 不得带该头，所以契约不是"所有完整体响应都必须带"。
 
+// 引擎实际监听到的地址（RFC 0011 L6/D2，#250）。端口 0（临时端口）时这是唯一的实际端口
+// 出口，所以它必须从引擎流出来，而不是由引擎自己打一行。
+//
+// 此前三个引擎各自 `process.stderr.write("[reforce.web-<name>] listening on …")`，三个不同
+// 前缀、绕过日志门面、也喂不进启动摘要。引擎只报事实，谁来说、说成什么样归框架统一决定
+// （同 L6 把请求日志收回核心的理由）。
+export interface WebEngineAddress {
+  readonly hostname: string;
+  readonly port: number;
+  /** 拼好的可点击 URL；三个引擎拼法一致，免得各写各的又漂移。 */
+  readonly url: string;
+}
+
 export interface WebApplicationHandle {
   close(): Promise<void>;
+  /** 监听地址；不监听网络的引擎（测试替身）缺席。 */
+  readonly address?: WebEngineAddress;
+}
+
+/** 三个引擎共用的 URL 拼法：缺省主机名是 localhost，与此前三条 stderr 行逐字一致。 */
+export function webEngineAddress(input: {
+  readonly hostname?: string;
+  readonly port: number;
+}): WebEngineAddress {
+  const hostname = input.hostname ?? "localhost";
+  return { hostname, port: input.port, url: `http://${hostname}:${input.port}/` };
 }
 
 // 引擎适配器要兑现的行为契约（#232）。这里只说结果，不规定用什么机制达成——各引擎的路由库能力

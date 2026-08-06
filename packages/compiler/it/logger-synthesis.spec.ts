@@ -66,6 +66,7 @@ async function compileTreeSuccessfully(tree: ProjectTree) {
   }
   return {
     beans: result.files.find((file) => file.path === "beans.ts")?.content ?? "",
+    bootstrap: result.files.find((file) => file.path === "bootstrap.ts")?.content ?? "",
     manifest: JSON.parse(
       result.files.find((file) => file.path === "manifest.json")?.content ?? "{}",
     ),
@@ -295,6 +296,29 @@ describe("synthesised logger beans", () => {
         source: expect.anything(),
       },
     ]);
+  }, 60_000);
+
+  // A2（RFC 0011 L7，#250）：引导期缓冲此前是零调用的——@reforce/config 的绑定警告只能以
+  // 进程退出时的裸 stderr 形态出现，进不了用户配置的日志格式与目标。
+  test("exports the LoggerFactory bean so the bootstrap can replay into it", async () => {
+    const { beans } = await compileApplication(twoConsumers);
+
+    expect(beans).toMatch(/export \{ [^}]*as loggerFactory \};/u);
+  }, 60_000);
+
+  test("replays the bootstrap buffer once the container is up", async () => {
+    const { bootstrap } = await compileApplication(twoConsumers);
+
+    expect(bootstrap).toContain("replayBootstrapLogs(application.get(loggerFactory));");
+  }, 60_000);
+
+  // 不变量 9：日志系统自身故障必须最吵。绑定构造失败时缓冲是唯一的现场，只靠 exit 兜底会让
+  // 它排在调用方自己的错误输出之后，把因果顺序颠倒过来。
+  test("drains the bootstrap buffer when the container fails to start", async () => {
+    const { bootstrap } = await compileApplication(twoConsumers);
+
+    expect(bootstrap).toContain("drainBootstrapLogs();");
+    expect(bootstrap).toContain("throw error;");
   }, 60_000);
 
   test("reports a missing LoggerFactory as an ordinary compile error", async () => {

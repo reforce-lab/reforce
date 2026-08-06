@@ -1,6 +1,6 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { WeavingModel, WovenBeanModel, WovenMethodModel } from "@/analysis/interception-model";
-import { webFrameworkLoggerBeanId } from "@/analysis/logger-synthesis";
+import { loggerBeanIdPrefix, webFrameworkLoggerBeanId } from "@/analysis/logger-synthesis";
 import {
   type BeanProviderModel,
   type ConfigProviderModel,
@@ -21,6 +21,7 @@ import { generatedDirectoryPath } from "@/project/generated-paths";
 const contextModuleSpecifier = "@reforce/context";
 const contextRuntimeModuleSpecifier = "@reforce/context/generated-runtime";
 const configRuntimeModuleSpecifier = "@reforce/config/generated-runtime";
+const loggingRuntimeModuleSpecifier = "@reforce/logging/generated-runtime";
 
 // 外部契约符号（starter/契约包）的 type-only import specifier 由链接层决定：meta 户口表的
 // subpath 优先，无表退化为包根探测。应用源集内的符号 emission 自己算相对路径。
@@ -302,9 +303,54 @@ function frameworkLoggerAlias(providers: readonly BeanProviderModel[]): string |
     .find((alias) => alias !== undefined);
 }
 
+// 引导期缓冲的重放要的是 LoggerFactory 实例，而不是 logger（RFC 0011 L7，#250）：
+// replayBootstrapLogs 按记录里的原始 logger 名逐条 factory.create(name)，一个 logger 实例
+// 换不来别的名字。
+//
+// 哪个 bean 是 LoggerFactory 由图自己回答，不再重新推导一遍：每条合成的 logger bean 恰好有
+// 一条依赖边，指的就是它。
+function loggerFactoryBeanId(providers: readonly BeanProviderModel[]): string | undefined {
+  const logger = providers.find((provider) => provider.id.startsWith(`${loggerBeanIdPrefix}(`));
+  const dependency = logger?.dependencies.find((edge) => !isCollectionDependency(edge));
+  return dependency === undefined || isCollectionDependency(dependency)
+    ? undefined
+    : dependency.targetId;
+}
+
+function loggerFactoryAlias(providers: readonly BeanProviderModel[]): string | undefined {
+  const id = loggerFactoryBeanId(providers);
+  if (id === undefined) {
+    return undefined;
+  }
+  const index = providers.findIndex((provider) => provider.id === id);
+  // 别名恒为 beanTarget<N> 而不是 $Literal 子类：registration.target 用的就是它，
+  // `context.get` 因此落在这条 registration 上。LoggerFactory 没有字面量实参，两者本就相同。
+  return index < 0 ? undefined : `beanTarget${index}`;
+}
+
+interface LoggingExports {
+  readonly frameworkLogger?: string;
+  readonly loggerFactory?: string;
+}
+
+function loggingExports(providers: readonly BeanProviderModel[]): LoggingExports {
+  const logger = frameworkLoggerAlias(providers);
+  const factory = loggerFactoryAlias(providers);
+  return {
+    ...(logger === undefined ? {} : { frameworkLogger: logger }),
+    ...(factory === undefined ? {} : { loggerFactory: factory }),
+  };
+}
+
 function frameworkLoggerExport(providers: readonly BeanProviderModel[]): readonly string[] {
-  const alias = frameworkLoggerAlias(providers);
-  return alias === undefined ? [] : [`export { ${alias} as frameworkLogger };`];
+  const exports = loggingExports(providers);
+  const names = [
+    ...(exports.frameworkLogger === undefined
+      ? []
+      : [`${exports.frameworkLogger} as frameworkLogger`]),
+    ...(exports.loggerFactory === undefined ? [] : [`${exports.loggerFactory} as loggerFactory`]),
+  ];
+  return names.length === 0 ? [] : [`export { ${names.join(", ")} };`];
 }
 
 // 只有带字面量实参的 provider 需要子类：其余的 target 仍然是用户类本身，bean 身份表与
@@ -610,18 +656,74 @@ function renderManifest(
 // web 接线（ADR 0006 W2 的 #153 修订）：路由表与容器只有生成代码同时拿得到，注册了 web 引擎
 // starter 时 bootstrap 负责把两者交给 connectWebApplication（组装 + 启动引擎 + 关闭编排）。
 // 无引擎的应用保持零 import 的哑 bootstrap，逐字节不变。
+// 容器 start 那一段对两种 bootstrap 是同一份（RFC 0011 L7，#250）：起点计时 → start →
+// 失败即把引导期缓冲吐到 stderr（不变量 9：日志系统自身故障必须最吵，绝不静默降级）→
+// 成功即重放缓冲进真绑定。没装日志绑定的应用退化成裸 start，逐字节与此前相同。
+function contextStartLines(logging: LoggingExports, beanCount: number): readonly string[] {
+  if (logging.loggerFactory === undefined) {
+    return [
+      "  const application = createApplicationContext(applicationDefinition);",
+      "  await application.start();",
+    ];
+  }
+  return [
+    "  const startedAt = Date.now();",
+    "  const application = createApplicationContext(applicationDefinition);",
+    "  try {",
+    "    await application.start();",
+    "  } catch (error) {",
+    // 绑定构造失败时缓冲是唯一的现场。显式排空而不是只靠 exit 兜底：调用方接着要打自己的
+    // 错误，那些输出会排在缓冲之前，把因果顺序颠倒过来。
+    "    drainBootstrapLogs();",
+    "    throw error;",
+    "  }",
+    `  const contextMs = Date.now() - startedAt;`,
+    // 重放要 LoggerFactory 而不是 logger：缓冲里的记录各带自己的 logger 名。
+    "  replayBootstrapLogs(application.get(loggerFactory));",
+    `  const beanCount = ${beanCount};`,
+  ];
+}
+
 function renderBootstrap(
   web: WebModel,
   generatedDirectory: string,
-  hasFrameworkLogger: boolean,
+  logging: LoggingExports,
+  beanCount: number,
 ): string {
+  const startLines = contextStartLines(logging, beanCount);
+  const loggingImportNames = [
+    ...(logging.loggerFactory === undefined
+      ? []
+      : ["drainBootstrapLogs", "emitStartupSummary", "replayBootstrapLogs"]),
+  ];
+  const beansImportNames = [
+    "applicationDefinition",
+    ...(logging.frameworkLogger === undefined ? [] : ["frameworkLogger"]),
+    ...(logging.loggerFactory === undefined ? [] : ["loggerFactory"]),
+  ];
+  const loggingImport =
+    loggingImportNames.length === 0
+      ? []
+      : [`import { ${loggingImportNames.join(", ")} } from "${loggingRuntimeModuleSpecifier}";`];
   if (web.engines.length === 0) {
-    return `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";\nimport { applicationDefinition } from "./beans.js";\n\nexport async function bootstrap() {\n  const application = createApplicationContext(applicationDefinition);\n  await application.start();\n  return application;\n}\n`;
+    return `${[
+      `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
+      ...loggingImport,
+      `import { ${beansImportNames.join(", ")} } from "./beans.js";`,
+      "",
+      "export async function bootstrap() {",
+      ...startLines,
+      "  return application;",
+      "}",
+    ].join("\n")}\n`;
   }
   const seeder = web.requestSeeder;
+  const summarised = logging.frameworkLogger !== undefined && logging.loggerFactory !== undefined;
+  const webImportNames = ["connectWebApplication", ...(summarised ? ["webStartupSections"] : [])];
   const imports = [
     `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
-    `import { connectWebApplication } from "${webRuntimeModuleSpecifier}";`,
+    `import { ${webImportNames.join(", ")} } from "${webRuntimeModuleSpecifier}";`,
+    ...loggingImport,
     ...web.engines.map(
       (engine, index) =>
         `import { ${engine.exportName} as webEngine${index} } from ${JSON.stringify(engine.moduleSpecifier)};`,
@@ -631,24 +733,40 @@ function renderBootstrap(
       : [
           `import { ${seeder.exportName} as webSeeder0 } from ${JSON.stringify(runtimeSpecifier(generatedDirectory, seeder.source.absolutePath))};`,
         ]),
-    `import { applicationDefinition${hasFrameworkLogger ? ", frameworkLogger" : ""} } from "./beans.js";`,
+    `import { ${beansImportNames.join(", ")} } from "./beans.js";`,
     `import { routeTable } from "./routes.js";`,
   ];
   const engineList = web.engines.map((_, index) => `webEngine${index}`).join(", ");
+  const hasLogger = logging.frameworkLogger !== undefined;
   return `${[
     ...imports,
     "",
     "export async function bootstrap() {",
-    "  const application = createApplicationContext(applicationDefinition);",
-    "  await application.start();",
+    ...startLines,
+    ...(hasLogger ? ["  const frameworkLog = application.get(frameworkLogger);"] : []),
     "  return await connectWebApplication({",
     "    context: application,",
     "    table: routeTable,",
     `    engines: [${engineList}],`,
     ...(seeder === undefined ? [] : ["    requestSeeds: webSeeder0,"]),
-    // 请求日志与监听行的 logger（RFC 0011 L6，#250）：容器 start 之后才取，取的是框架自己
-    // 那条 logger bean。没装任何日志绑定的应用这一行不存在，web 核心照旧不打。
-    ...(hasFrameworkLogger ? ["    logger: application.get(frameworkLogger),"] : []),
+    // 请求日志与 500 兜底的 logger（RFC 0011 L6，#250）：容器 start 之后才取，取的是框架
+    // 自己那条 logger bean。没装任何日志绑定的应用这一行不存在，web 核心照旧不打。
+    ...(hasLogger ? ["    logger: frameworkLog,"] : []),
+    // 启动摘要的生产者（RFC 0011 D2）：web 侧事实由 connectWebApplication 回调交出，
+    // bean 数与 context 耗时只有这里知道，两半在这一处合成。
+    ...(summarised
+      ? [
+          "    onReady: (facts) =>",
+          "      emitStartupSummary({",
+          "        logger: frameworkLog,",
+          "        summary: {",
+          "          sections: webStartupSections(facts, { beanCount, contextMs }),",
+          "          startedAt,",
+          "          readyAt: Date.now(),",
+          "        },",
+          "      }),",
+        ]
+      : []),
     "  });",
     "}",
   ].join("\n")}\n`;
@@ -682,7 +800,8 @@ export function generateFiles(
       content: renderBootstrap(
         web,
         generatedDirectory,
-        frameworkLoggerAlias(providers) !== undefined,
+        loggingExports(providers),
+        providers.length,
       ),
     },
     ...generateWebFiles(project, web),

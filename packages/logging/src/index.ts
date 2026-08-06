@@ -1,6 +1,7 @@
 export { type BootstrapLogBuffer, createBootstrapLogBuffer } from "@/bootstrap-buffer";
 export {
   bootstrapLogger,
+  drainBootstrapLogs,
   droppedBootstrapRecords,
   replayBootstrapLogs,
 } from "@/bootstrap-registry";
@@ -25,8 +26,11 @@ export {
 } from "@/levels";
 export { LoggerName } from "@/logger-name";
 export {
+  type EmitStartupSummaryOptions,
+  emitStartupSummary,
   renderStartupSummary,
   type StartupSummary,
+  type StartupSummaryLogger,
   type StartupSummaryRenderOptions,
   type StartupSummarySection,
 } from "@/startup-summary";

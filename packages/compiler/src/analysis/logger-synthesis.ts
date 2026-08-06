@@ -45,8 +45,11 @@ const loggerLevelsRuntimeExport = {
 /** 级别快照 bean：全图唯一一条，所以 id 是常量而不是按名字派生。 */
 export const loggerLevelsBeanId = `${loggingOriginId}#${loggerLevelsContractName}`;
 
+/** logger bean id 的定长前缀：emission 靠它认出合成的 logger（名字段是变的，前缀不是）。 */
+export const loggerBeanIdPrefix = `${loggingOriginId}#${loggerContractName}`;
+
 export function loggerBeanId(name: string): string {
-  return `${loggingOriginId}#Logger(${name})`;
+  return `${loggerBeanIdPrefix}(${name})`;
 }
 
 function isLoggingContract(symbol: LinkedSymbol, name: string): boolean {

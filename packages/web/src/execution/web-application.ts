@@ -176,7 +176,14 @@ function prepareRoute(
   };
 }
 
-export function createWebApplication(options: CreateWebApplicationOptions): WebApplication {
+// controller 数只有这里数得出：PreparedRoute 刻意不外露 controller bean（引擎不该拿到它），
+// 而启动摘要的折叠行要它（不变量 4：折叠必带计数）。所以它走这条非适配器的返回类型——
+// 引擎看到的仍是 WebApplication，多出来的字段只有 connectWebApplication 消费。
+export interface PreparedWebApplication extends WebApplication {
+  readonly controllerCount: number;
+}
+
+export function createWebApplication(options: CreateWebApplicationOptions): PreparedWebApplication {
   const table = validateGeneratedRouteTable(options.table);
   const dispatchError = createErrorDispatcher(
     table.errorHandlers.map((entry) =>
@@ -187,5 +194,6 @@ export function createWebApplication(options: CreateWebApplicationOptions): WebA
     routes: table.routes.map((route) =>
       prepareRoute(route, options.context, dispatchError, options.requestSeeds, options.logger),
     ),
+    controllerCount: new Set(table.routes.map((route) => route.controller)).size,
   };
 }

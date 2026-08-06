@@ -1281,6 +1281,104 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // A3（RFC 0011 D2，#250）：启动摘要此前只有渲染器没有生产者。非 TTY 下它走 Logger 发结构
+  // 化记录；折叠必带计数与展开命令（不变量 4），所以 routes 段要同时有计数和 explain 出口。
+  test(
+    "emits a folded startup summary with counts and an expand command",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "summary-start");
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const records = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          });
+        const routes = records.find((record) => record.message === "routes");
+        expect(routes).toMatchObject({ expandWith: "reforce explain routes" });
+        expect(String(routes.facts.join(" · "))).toMatch(/\d+ controllers? · \d+ routes?/u);
+        // 引擎段带实际监听地址：端口 0 时这是唯一的实际端口出口。
+        expect(records.find((record) => record.message === "node")?.facts?.[0]).toMatch(
+          /^listening on http:\/\//u,
+        );
+        // context 段带 bean 数与 start 耗时，末尾一条 ready 带总耗时。
+        expect(records.find((record) => record.message === "context")).toBeDefined();
+        expect(records.find((record) => record.message === "ready")).toMatchObject({
+          startupMs: expect.any(Number),
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // A2（RFC 0011 L7，#250）：引导期缓冲的重放此前是零调用的——@reforce/config 的绑定警告
+  // 只能以进程退出时的裸 stderr 形态出现，进不了用户配置的日志格式与目标。
+  //
+  // 判据是 `bootstrapTime` 字段：它只由 replayInto 补上（缓冲保留原始时间戳，重放时刻是另
+  // 一回事）。exit 兜底的 drainToStderr 不写这个字段，所以它在就证明走的是重放那条路。
+  test(
+    "replays a config binding warning through the real logger instead of the exit drain",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "replay-start", false, {
+          // 拼错一个键：绑定期 warn「environment key matches no bound property」，带 did-you-mean。
+          FIXTURE_SERVER_HOSTT: "typo",
+        });
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const replayed = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.name === "reforce.config");
+        expect(replayed.length).toBeGreaterThan(0);
+        expect(replayed[0]).toMatchObject({
+          level: "warn",
+          bootstrapTime: expect.any(Number),
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // 配置注入主路径（ADR 0005，#130 / #146）：五层合成经 REFORCE_PROFILE 选层、进程 env 压顶，
   // 绑定实例注入 bean 后经 start 与 production artifact 两条链路取值。
   test(

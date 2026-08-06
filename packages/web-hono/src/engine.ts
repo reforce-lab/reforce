@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { Injectable, type OnContextClose } from "@reforce/context";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
+import { webEngineAddress } from "@reforce/web/adapter";
 import { Hono } from "hono";
 import { TrieRouter } from "hono/router/trie-router";
 import type { HonoConfigurer, HonoRouteCustomizer } from "@/bridges";
@@ -68,12 +69,15 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     if (address === null || typeof address === "string") {
       throw new Error("The Hono web engine must listen on a TCP address.");
     }
-    // 监听地址走 stderr（同 web-node）：端口 0 时这是唯一的实际端口出口，而 stdout 属于应用
-    // 数据面，生成的 bootstrap 会被当作库嵌入 Worker/管道消费。
-    process.stderr.write(
-      `[reforce.web-hono] listening on http://${this.settings.hostname ?? "localhost"}:${address.port}/\n`,
-    );
-    return { close: () => this.close() };
+    // 地址经 handle 流出，不由引擎自己打（RFC 0011 L6/D2，#250）：三个引擎各写一行会得到
+    // 三个不同前缀、绕过日志门面、也喂不进启动摘要。谁来说、说成什么样归框架统一决定。
+    return {
+      close: () => this.close(),
+      address: webEngineAddress({
+        ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
+        port: address.port,
+      }),
+    };
   }
 
   onContextClose(): Promise<void> {

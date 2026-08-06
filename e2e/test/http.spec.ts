@@ -79,7 +79,10 @@ async function startServer(): Promise<StartedServer> {
   );
   const deadline = Date.now() + 30_000;
   for (;;) {
-    const match = stderr.match(/\[reforce\.web-node\] listening on (http:\/\/[^\s]+)\//);
+    // 监听行从三个引擎各自的裸 stderr 收回启动摘要（RFC 0011 L6/D2，#250），所以这里抓的是
+    // 摘要那条 JSON 记录里的 fact，不再是 `[reforce.web-node] …` 前缀。`[^"\s]` 而不是 `[^\s]`：
+    // 在 JSON 里 URL 后面紧跟的是引号，不是空白。
+    const match = stderr.match(/listening on (http:\/\/[^"\s]+)\//);
     if (match?.[1] !== undefined) {
       return { child, completion, baseUrl: match[1], output: () => `${stdout}\n${stderr}` };
     }

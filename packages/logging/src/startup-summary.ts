@@ -69,6 +69,59 @@ function renderLevel(level: LogLevel, options: StartupSummaryRenderOptions): str
   return style(levelStyles[level], level, options.stream);
 }
 
+// 摘要要的最小 logger 形状，由消费侧定义（同 web 的 RequestLogger）：这样 @reforce/web 的
+// bootstrap 把它的 logger 传进来时不必先认识本包的 Logger 类型。
+export interface StartupSummaryLogger {
+  info(fields: Readonly<Record<string, unknown>> | undefined, message: string): void;
+}
+
+export interface EmitStartupSummaryOptions {
+  readonly summary: StartupSummary;
+  /** 结构化去处（L6：运行期框架输出走 Logger）。缺席时只剩人读那条路。 */
+  readonly logger?: StartupSummaryLogger;
+  /** 人读去处，缺省 stderr；是 TTY 时摘要按对齐的 human 形态直接落在这里。 */
+  readonly stream?: Writable;
+  /** 覆盖 TTY 判定，仅测试用。 */
+  readonly interactive?: boolean;
+}
+
+// D2 的生产者（#242）。此前 renderStartupSummary 是零消费者的——渲染器有了，没人生产。
+//
+// 两条去处按「人正盯着这次启动吗」二选一，不是两条都发：
+//   - TTY：按对齐的 human 形态落 stream。这一刻读者要的是扫一眼就看懂，一行 JSON 不合格。
+//   - 非 TTY（管道、容器、CI）：走 Logger 发结构化记录，进用户配置的格式与目标。
+// 两边都发会让 `reforce start | tee` 里同一份摘要出现两次。
+export function emitStartupSummary(options: EmitStartupSummaryOptions): void {
+  const stream = options.stream ?? process.stderr;
+  const interactive = options.interactive ?? isInteractive(stream);
+  if (!interactive && options.logger !== undefined) {
+    for (const section of options.summary.sections) {
+      options.logger.info(
+        {
+          facts: section.facts,
+          ...(section.expandWith === undefined ? {} : { expandWith: section.expandWith }),
+        },
+        section.label,
+      );
+    }
+    options.logger.info(
+      { startupMs: Math.max(0, options.summary.readyAt - options.summary.startedAt) },
+      "ready",
+    );
+    return;
+  }
+  for (const line of renderStartupSummary(options.summary, {
+    stream,
+    mode: interactive ? "human" : "json",
+  })) {
+    stream.write(`${line}\n`);
+  }
+}
+
+function isInteractive(stream: Writable): boolean {
+  return Reflect.get(stream, "isTTY") === true;
+}
+
 export function renderStartupSummary(
   summary: StartupSummary,
   options: StartupSummaryRenderOptions,

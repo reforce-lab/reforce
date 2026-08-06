@@ -62,6 +62,17 @@ export function replayBootstrapLogs(factory: LoggerFactory): void {
   buffer.replayInto((name) => factory.create(name));
 }
 
+/**
+ * 绑定构造失败时的最后手段：把攒下的记录按 short 形态吐到 stderr（不变量 9，绝不静默丢弃）。
+ *
+ * exit 兜底已经覆盖「进程就此退出」这一种，但那条路要等到退出时刻，而且只在真的退出时才走。
+ * 启动失败的调用方通常还要往上抛、还要打自己的错误——那些输出会排在缓冲之前，把因果顺序
+ * 颠倒过来。所以失败路径显式调这一条，让现场先出来。重复调是安全的：缓冲已被排空。
+ */
+export function drainBootstrapLogs(): void {
+  buffer?.drainToStderr();
+}
+
 /** 已攒下、尚未重放的记录条数因缓冲溢出而丢弃的数量。 */
 export function droppedBootstrapRecords(): number {
   return buffer?.droppedCount() ?? 0;
