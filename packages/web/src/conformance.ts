@@ -132,11 +132,14 @@ function fixtures(): ConformanceFixtures {
   const application: WebApplication = {
     routes: [
       route("GET", "/health", () => Promise.resolve(new Response("ok"))),
-      // 静态段必须赢过参数段：hono 上这是静默错路由（按注册顺序匹配，无特异度概念）
-      route("GET", "/users/self", () => Promise.resolve(new Response("self"))),
+      // 顺序不能随手写：这里必须复刻编译器的发射顺序（web-routes.ts 按 compareUtf16CodeUnits
+      // 排序，`:` 是 0x3A、小写字母从 0x61 起，所以参数路由**先于**同前缀的静态路由）。
+      // 把静态段写在前面的话，按注册顺序匹配的引擎（hono）会假绿——实测：顺序反过来时，
+      // 去掉 hono 的特异度重排，套件依旧 18/18 全过。
       route("GET", "/users/:id", (_request, params) =>
         Promise.resolve(Response.json({ id: params.id })),
       ),
+      route("GET", "/users/self", () => Promise.resolve(new Response("self"))),
       route("POST", "/echo-body", async (request, params) =>
         Response.json(await describeBody(await validatedBody(request, params))),
       ),
