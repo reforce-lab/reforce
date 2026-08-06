@@ -155,6 +155,12 @@ export const webFrameworkLoggerName = "reforce.web";
 
 export const webFrameworkLoggerBeanId = loggerBeanId(webFrameworkLoggerName);
 
+// 引导期 logger 不是 bean（bootstrapLogger 在运行时直接造），但对它调级是合法的：级别名单
+// 与快照必须收它，否则编译期的 UNKNOWN_LOGGER_NAME 与运行期的未知名告警都会把
+// LOGGING_LEVEL_REFORCE_CONFIG 当成拼错——而那句「设了也没用」还是假的，运行期的
+// explicitLevelFor 照样从 process.env 读得到它（RFC 0011 C4，#250）。
+const bootstrapLoggerNames = ["reforce.config"] as const;
+
 // metaSource 与 SourceSpan 逐字段同构（差一个 file/fileId 的名字），所以这是改名不是伪造位置。
 // 框架 logger 没有用户源码位置，「它为什么在图里」的答案就是那条注册了 web 引擎的 starter meta
 // 条目——与引擎 bean 自己的 declarationSource 指向同一处。
@@ -427,13 +433,19 @@ export function synthesizeLoggerBeans(input: {
   if (factorySymbol === undefined || byName.size === 0) {
     return { drafts: [], redirects, names: [] };
   }
-  const names = [...byName.keys()].sort();
+  // 有 bean 撑腰的 logger 名：只有它们能合成 BoundLogger draft，也只有它们有 span。
+  const beanNames = [...byName.keys()].sort();
+  // 级别名单还要收引导期 logger——它们没有 bean，但调得了级。
+  const names = [...new Set([...beanNames, ...bootstrapLoggerNames])].sort();
   // 快照 bean 的「为什么在图里」跟第一条 logger 同源：有 logger 才有级别可调。名字升序取第一条
   // 而不是 demands 的原序，是为了让同一份源码每次编译落在同一个 span 上。
-  const levelsSpan = byName.get(names[0] ?? "")?.span;
+  //
+  // span 只能从 beanNames 里取，不能从 names：引导期名字没有 demand，byName.get 返回
+  // undefined，快照 bean 会连带整个不被合成，每条 LoggerLevels 边都变成 MISSING_BEAN。
+  const levelsSpan = byName.get(beanNames[0] ?? "")?.span;
   return {
     drafts: [
-      ...names.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
+      ...beanNames.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
       ...(levelsSpan === undefined
         ? []
         : [loggerLevelsDraft(names, input.compileTimeLevels, levelsSpan)]),

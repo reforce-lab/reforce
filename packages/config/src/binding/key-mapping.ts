@@ -18,6 +18,12 @@ export function prefixWordsOf(prefix: string): readonly string[] {
   return prefix.split(".").flatMap((segment) => splitWords(segment));
 }
 
+// 前缀 → 环境变量名前缀。第三个调用点了（buildBindingInput、warnUnmatchedKeys、来源输出），
+// 这是同一份知识而不是长得像的代码：改一处就得同步三处。
+export function environmentKeyPrefix(prefixWords: readonly string[]): string {
+  return `${prefixWords.join("_").toUpperCase()}_`;
+}
+
 export function environmentVariableName(
   prefix: string,
   path: readonly (string | number)[],
@@ -101,7 +107,7 @@ export function buildBindingInput(
   prefixWords: readonly string[],
   entries: ReadonlyMap<string, string>,
 ): object {
-  const keyPrefix = `${prefixWords.join("_").toUpperCase()}_`;
+  const keyPrefix = environmentKeyPrefix(prefixWords);
   const input: Record<string, unknown> = {};
   // UTF-16 排序保证合并结果与 Map 插入顺序无关
   const sortedKeys = [...entries.keys()].sort();

@@ -33,7 +33,14 @@ function installExitFallback(): void {
 }
 
 function ensureBuffer(): BootstrapLogBuffer {
-  buffer ??= createBootstrapLogBuffer();
+  // 缓冲收 trace 起（RFC 0011 C4，#250）：它是暂存处，不是级别闸门。真正的级别判两次——
+  // 调用方在构造昂贵字段之前自己判（不变量 8），重放时真 logger 按用户配置判。缓冲自己拿
+  // 一个「此刻还不知道」的猜测（默认 info）把记录永久删掉，等于让 debug 档在整个引导期
+  // 恒不存在，用户配了也没用。
+  //
+  // 代价说清楚：bootstrapLogger(name).isEnabled(level) 因此回答的是「这条会不会被留给真
+  // logger」，而不是「这条会不会被打出来」——引导期后者本来就不可知。
+  buffer ??= createBootstrapLogBuffer({ threshold: "trace" });
   installExitFallback();
   return buffer;
 }

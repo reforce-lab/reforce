@@ -210,7 +210,9 @@ describe("synthesised logger beans", () => {
       (bean: { readonly id: string }) => bean.id === "@reforce/logging#LoggerLevels",
     );
     expect(levels).toBeDefined();
-    expect(beans).toContain('"names":["OrderService","PaymentService"]');
+    // reforce.config 在名单里但不是 bean：引导期 logger 由 bootstrapLogger 直接造，收进
+    // 名单只是为了让 LOGGING_LEVEL_REFORCE_CONFIG 不被当成拼错（RFC 0011 C4，#250）。
+    expect(beans).toContain('"names":["OrderService","PaymentService","reforce.config"]');
   }, 60_000);
 
   test("inlines the level a .env layer sets for a named logger", async () => {

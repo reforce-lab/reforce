@@ -1330,6 +1330,59 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // C4（RFC 0011，#250）：配置来源。provenance 数据一直都有，只用于报错的 layer 字段，
+  // 启动期一个字不打——「这个值到底是哪一层给的」得靠人去比对四个文件。
+  //
+  // 脱敏铁律（ADR 0005 决策 6.2）：只出键名与层，永不出值。这条用例用一个哨兵值证明否定。
+  test(
+    "reports which layer each config key came from without ever printing a value",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      const secret = "s3cr3t-sentinel-value";
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "provenance-start", false, {
+          FIXTURE_SERVER_HOST: secret,
+          LOGGING_LEVEL_REFORCE_CONFIG: "debug",
+        });
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const stderr = started.output().stderr;
+        const records = stderr
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.name === "reforce.config");
+        expect(records.find((record) => record.message.startsWith("config keys"))).toMatchObject({
+          keyCount: expect.any(Number),
+          layers: expect.any(Array),
+        });
+        // debug 档展开出逐键来源，键名在、层在。
+        const detail = records.find((record) => record.message === "config key provenance");
+        expect(JSON.stringify(detail?.sources)).toContain("FIXTURE_SERVER_HOST");
+        // 而值一次都没出现——整条 stderr 里都没有。
+        expect(stderr).not.toContain(secret);
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // C3（RFC 0011，#250）：关停可观测。此前 ShutdownController 全程静默，只在失败时经
   // reporter 出声——「停了多久」「为什么停」这两个最常问的问题一个字都没有。
   test(
@@ -1499,7 +1552,9 @@ describe.sequential("built Reforce CLI", () => {
           })
           .filter((record) => record.name === "reforce.config");
         expect(replayed.length).toBeGreaterThan(0);
-        expect(replayed[0]).toMatchObject({
+        // 按级别找而不是按下标：C4 之后同一条 logger 上先有一条来源摘要的 info。这条用例的
+        // 判据本来就是 bootstrapTime（见上面的注释），不是记录在数组里的位置。
+        expect(replayed.find((record) => record.level === "warn")).toMatchObject({
           level: "warn",
           bootstrapTime: expect.any(Number),
         });
