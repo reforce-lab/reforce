@@ -10,10 +10,11 @@ dist/
 !/e2e/fixtures/*/dist/
 !/e2e/fixtures/*/dist/**
 
-# 真 starter 包的 meta 三件套由 `reforce lib` 随 build 产出（#153），与 dist 同为构建产物
-/packages/web-node/reforce-meta.json
-/packages/web-node/reforce.js
-/packages/web-node/reforce.d.ts
+# 真 starter 包的 meta 三件套由 `reforce lib` 随 build 产出（#153），与 dist 同为构建产物。
+# 用通配而不是逐包罗列：新增引擎包时漏写一行就会把构建产物提交进来（e2e 夹具在 /e2e 下，不受影响）。
+/packages/*/reforce-meta.json
+/packages/*/reforce.js
+/packages/*/reforce.d.ts
 
 # turbo
 .turbo/
