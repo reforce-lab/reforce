@@ -117,12 +117,39 @@ function renderRouteManifest(web: WebModel, generatedDirectory: string): string 
   return `${json({ schemaVersion: 1, routes, errorHandlers })}\n`;
 }
 
-function invokeExpression(route: RouteModel, controllerAlias: string): string {
+// handler 声明的是 RequestContext<S>，S 由本路由的 schema 决定；基类型的 params 是
+// unknown，赋不进 { id: bigint }。所以闭包参数要带上本路由的具体 schema 类型——生成物
+// 已经 import 了 schema 值，这里按 typeof 拼回类型。GeneratedRoute.invoke 是方法语法
+// 声明（双变参数，见 route-table.ts），带具体类型的闭包装进 GeneratedRoute<object>
+// 数组仍可赋值，与 controller 类型走同一个机制。
+function requestContextType(
+  route: RouteModel,
+  schemaImports: ReadonlyMap<string, WebValueImport>,
+): string {
+  const slots = schemaSlots.flatMap((slot) => {
+    const ref = route.schemas[slot];
+    if (ref === undefined) {
+      return [];
+    }
+    const alias = schemaImports.get(importKey(ref))?.alias;
+    if (alias === undefined) {
+      throw new Error(`Missing schema import for route ${route.method} ${route.path}`);
+    }
+    return [`${slot}: typeof ${alias}`];
+  });
+  return slots.length === 0 ? "RequestContext" : `RequestContext<{ ${slots.join("; ")} }>`;
+}
+
+function invokeExpression(
+  route: RouteModel,
+  controllerAlias: string,
+  schemaImports: ReadonlyMap<string, WebValueImport>,
+): string {
   const call =
     route.handlerArity === 0 ? `instance.${route.handler}()` : `instance.${route.handler}(context)`;
   // typed-edge（ADR 0004 决策 8 的 web 面）：闭包实参类型让 tsc 背书 handler 方法存在、
-  // 可用 RequestContext 调用；运行时只以本路由的 controller 实例调用。
-  return `(instance: InstanceType<typeof ${controllerAlias}>, context: RequestContext) => ${call}`;
+  // 可用本路由的 RequestContext 调用；运行时只以本路由的 controller 实例调用。
+  return `(instance: InstanceType<typeof ${controllerAlias}>, context: ${requestContextType(route, schemaImports)}) => ${call}`;
 }
 
 function renderRouteEntry(
@@ -160,7 +187,7 @@ function renderRouteEntry(
     `    controller: ${controllerAlias},`,
     `    beanId: ${JSON.stringify(route.controllerId)},`,
     `    handler: ${JSON.stringify(route.handler)},`,
-    `    invoke: ${invokeExpression(route, controllerAlias)},`,
+    `    invoke: ${invokeExpression(route, controllerAlias, schemaImports)},`,
     `    middleware: ${middlewareBlock},`,
     `    meta: ${inlineJson(metaRecord(route.meta), 4)},`,
     `    schemas: { ${schemas.join(", ")} },`,
