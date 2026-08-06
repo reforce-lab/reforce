@@ -1,5 +1,6 @@
 import type { LogFieldSource, LogFields, Logger, LoggerFactory, LogLevel } from "@reforce/logging";
-import { type LoggerOptions, type Logger as PinoLogger, pino } from "pino";
+// destination 挂在默认导出上，不在具名 pino 上（pino 10 的类型如此）。
+import pinoDefault, { type LoggerOptions, type Logger as PinoLogger, pino } from "pino";
 import type { PinoConfigurer, PinoDestinationProvider } from "@/bridges";
 import type { PinoSettings } from "@/settings";
 
@@ -91,8 +92,12 @@ export class PinoLoggerFactory implements LoggerFactory {
       (current, configurer) => configurer.configure(current),
       base,
     );
-    const destination = options.destinationProvider?.destination();
-    this.root = destination === undefined ? pino(configured) : pino(configured, destination);
+    // 缺省目标是 **fd 2**，不是裸 pino 的 stdout。理由与默认绑定同一条（default-logger.ts）：
+    // stdout 属于应用数据面。两个绑定的缺省流必须一致，否则换绑定会让框架输出在 stdout 与
+    // stderr 之间悄悄搬家。这不是当中间人——用户给了 destinationProvider 就原样用它，这里
+    // 只是挑了个缺省；pino 自己的缺省也正是 `pino.destination(1)`，同一个机制换了个 fd。
+    const destination = options.destinationProvider?.destination() ?? pinoDefault.destination(2);
+    this.root = pino(configured, destination);
   }
 
   create(name: string): Logger {

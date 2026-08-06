@@ -1,12 +1,17 @@
 import { markerUseValueOf } from "@/analysis/marker-value";
-import type { LiteralArgumentValue, PendingDependency, ProviderDraft } from "@/analysis/model";
+import type {
+  GeneratedSourceReferenceModel,
+  LiteralArgumentValue,
+  PendingDependency,
+  ProviderDraft,
+} from "@/analysis/model";
 import { sourceReference } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type { DecoratorUse } from "@/parser/source-ir";
-import type { SourceSpan } from "@/parser/source-location";
+import type { CanonicalFileId, SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
 // logger bean 合成（RFC 0011 L2，#242）。
@@ -43,15 +48,42 @@ export function isLoggerContract(symbol: LinkedSymbol): boolean {
   return isLoggingContract(symbol, loggerContractName);
 }
 
+export function isLoggerFactoryContract(symbol: LinkedSymbol): boolean {
+  return isLoggingContract(symbol, loggerFactoryContractName);
+}
+
+// 优先取图里真实存在的那个 LoggerFactory 契约符号——绑定 bean（starter 的 PinoLoggerFactory、
+// 或用户自己 implements 的类）的 provides 里就有。这比从 Logger 边推导可靠：多副本安装下
+// external 归属必须与提供方逐字一致，否则合成的依赖边指向另一份包实例，落成 MISSING_BEAN。
+function providedLoggerFactorySymbol(
+  drafts: readonly ProviderDraft[],
+  linker: ProjectLinker,
+): LinkedSymbol | undefined {
+  for (const draft of drafts) {
+    const local = draft.provider.provides.find(isLoggerFactoryContract);
+    if (local !== undefined) {
+      return local;
+    }
+  }
+  for (const bean of linker.starterLinkage.beans) {
+    const provided = bean.provides.find(isLoggerFactoryContract);
+    if (provided !== undefined) {
+      return provided;
+    }
+  }
+  return undefined;
+}
+
+// 图里没有任何绑定时的退路：借消费者那条 Logger 边的符号改名段。改的必须是**名字那一段**——
+// key 的形状是 `<fileId>#<kind>:<name>`，整串 replace("Logger") 会命中路径里先出现的同形
+// 片段（`.../MyLoggerApp/node_modules/...`），把 key 换成一个谁也解析不到的东西。
+// 走到这条路径的结果注定是 LoggerFactory 的 MISSING_BEAN，而这正是想要的：注入了 Logger
+// 却没装任何绑定，是编译期错误，不是运行时才发现没人写日志。
 function loggerFactorySymbolFrom(symbol: LinkedSymbol): LinkedSymbol {
-  // 借消费者那条 Logger 边的符号造 LoggerFactory 契约符号：external 归属、moduleSpecifier
-  // 都要与用户 import 到的那个包实例一致，手工拼一个会在多副本安装下指错包。
-  return {
-    ...symbol,
-    key: symbol.key.replace(loggerContractName, loggerFactoryContractName),
-    name: loggerFactoryContractName,
-    generic: false,
-  };
+  const key = symbol.key.endsWith(loggerContractName)
+    ? `${symbol.key.slice(0, -loggerContractName.length)}${loggerFactoryContractName}`
+    : `${symbol.key}:${loggerFactoryContractName}`;
+  return { ...symbol, key, name: loggerFactoryContractName, generic: false };
 }
 
 // @LoggerName 认的是 import 绑定，不是解析后的符号：它是个**函数**导出，而链接层只为
@@ -95,12 +127,27 @@ function decoratedLoggerName(
   return undefined;
 }
 
+/** 框架自己那条 logger：请求日志与引擎监听行都从它出（RFC 0011 L6/L8，#250）。 */
+export const webFrameworkLoggerName = "reforce.web";
+
+export const webFrameworkLoggerBeanId = loggerBeanId(webFrameworkLoggerName);
+
+// metaSource 与 SourceSpan 逐字段同构（差一个 file/fileId 的名字），所以这是改名不是伪造位置。
+// 框架 logger 没有用户源码位置，「它为什么在图里」的答案就是那条注册了 web 引擎的 starter meta
+// 条目——与引擎 bean 自己的 declarationSource 指向同一处。
+function spanOfMetaSource(source: GeneratedSourceReferenceModel): SourceSpan {
+  // file 出自 starter 链接阶段，已满足 canonical 相对路径文法 // justified: 品牌只记录该校验
+  const fileId = source.file as CanonicalFileId;
+  return { fileId, start: source.start, end: source.end };
+}
+
 interface LoggerDemand {
   readonly consumerId: string;
   readonly parameterIndex: number;
   readonly loggerName: string;
-  readonly contract: LinkedSymbol;
   readonly span: SourceSpan;
+  /** 用户注入点那条 Logger 边的契约符号；框架 logger 没有消费者，缺席。 */
+  readonly contract?: LinkedSymbol;
 }
 
 function loggerNameOf(draft: ProviderDraft): string {
@@ -165,6 +212,15 @@ function reportDuplicateName(
   );
 }
 
+/** 编译器自己点名要的一条 logger（不来自任何构造参数）。 */
+export interface FrameworkLoggerRequest {
+  readonly name: string;
+  /** 撞名诊断里指代请求方的文字，例如 `@reforce/web`。 */
+  readonly reason: string;
+  /** 把它拉进图里的那条 starter meta 条目。 */
+  readonly source: GeneratedSourceReferenceModel;
+}
+
 export interface LoggerSynthesis {
   readonly drafts: readonly ProviderDraft[];
   /** `${consumerId}#${parameterIndex}` → logger bean id。 */
@@ -173,15 +229,32 @@ export interface LoggerSynthesis {
   readonly names: readonly string[];
 }
 
+// 框架 logger 与用户 logger 的区别只在「谁把它拉进图里」：用户那条是构造参数，框架这条是
+// 「装了 web 引擎」。名字撞上时用户赢——`@LoggerName("reforce.web")` 是显式意图，框架不该覆盖它。
+function frameworkDemandsOf(
+  requested: readonly FrameworkLoggerRequest[],
+  taken: ReadonlyMap<string, LoggerDemand>,
+): readonly LoggerDemand[] {
+  return requested
+    .filter((request) => !taken.has(request.name))
+    .map((request) => ({
+      // 框架 logger 没有消费者：consumerId 只用于撞名诊断的定位文案，这里给出请求方身份。
+      consumerId: request.reason,
+      parameterIndex: -1,
+      loggerName: request.name,
+      span: spanOfMetaSource(request.source),
+    }));
+}
+
 export function synthesizeLoggerBeans(input: {
   readonly drafts: readonly ProviderDraft[];
   readonly linker: ProjectLinker;
   readonly diagnostics: CompilerDiagnostic[];
+  /** 编译器自己要的 logger（框架输出面）；只有图里真有绑定时才合成。 */
+  readonly frameworkLoggers?: readonly FrameworkLoggerRequest[];
 }): LoggerSynthesis {
   const demands = loggerDemandsOf(input.drafts);
-  if (demands.length === 0) {
-    return { drafts: [], redirects: new Map(), names: [] };
-  }
+  const provided = providedLoggerFactorySymbol(input.drafts, input.linker);
   const byName = new Map<string, LoggerDemand>();
   const redirects = new Map<string, string>();
   for (const demand of demands) {
@@ -196,15 +269,35 @@ export function synthesizeLoggerBeans(input: {
       loggerBeanId(demand.loggerName),
     );
   }
+  // 没有任何绑定时不合成框架 logger：那样等于替一个从没打算写日志的应用凭空造一条
+  // LoggerFactory 的 MISSING_BEAN。用户自己注入 Logger 是另一回事——那是他要求的，报错正确。
+  if (provided !== undefined) {
+    for (const demand of frameworkDemandsOf(input.frameworkLoggers ?? [], byName)) {
+      byName.set(demand.loggerName, demand);
+    }
+  }
+  // 全部 logger 共用同一个 LoggerFactory 契约符号：图里真有提供方就用提供方那个，否则从
+  // 用户的 Logger 边推导（结局是 MISSING_BEAN，正是想要的）。两者都没有就是「既没绑定也
+  // 没人注入」，无事可做。
+  const borrowed = demands.at(0)?.contract;
+  const factorySymbol =
+    provided ?? (borrowed === undefined ? undefined : loggerFactorySymbolFrom(borrowed));
+  if (factorySymbol === undefined || byName.size === 0) {
+    return { drafts: [], redirects, names: [] };
+  }
   const names = [...byName.keys()].sort();
   return {
-    drafts: names.map((name) => loggerDraft(name, byName.get(name))),
+    drafts: names.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
     redirects,
     names,
   };
 }
 
-function loggerDraft(name: string, demand: LoggerDemand | undefined): ProviderDraft {
+function loggerDraft(
+  name: string,
+  demand: LoggerDemand | undefined,
+  factorySymbol: LinkedSymbol,
+): ProviderDraft {
   if (demand === undefined) {
     throw new Error(`Logger name ${name} lost its demand between collection and synthesis.`);
   }
@@ -213,7 +306,7 @@ function loggerDraft(name: string, demand: LoggerDemand | undefined): ProviderDr
     linkedType: {
       // LoggerFactory 走正常解析：MISSING_BEAN / AMBIGUOUS_BEAN / 本地恒胜全部免费继承。
       // 没装任何绑定就是编译期 MISSING_BEAN，而不是运行时才发现没人写日志。
-      symbol: loggerFactorySymbolFrom(demand.contract),
+      symbol: factorySymbol,
       typeArguments: [],
       lazy: false,
       current: false,

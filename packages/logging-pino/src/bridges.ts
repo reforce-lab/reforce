@@ -34,7 +34,9 @@ export interface PinoConfigurer {
 export type PinoConfigure = (options: LoggerOptions) => LoggerOptions;
 
 /**
- * 目标流提供者：交出 pino 要写进去的流。缺省是 pino 自己的 stdout。
+ * 目标流提供者：交出 pino 要写进去的流。不给就是 `pino.destination(2)`——**stderr**，不是
+ * 裸 pino 的 stdout（理由见 factory.ts：stdout 属于应用数据面）。要 stdout 就在这里给
+ * `pino.destination(1)`。
  *
  * 高吞吐场景在这里给 `sonic-boom`，或给 `pino.transport({...})` 起 worker thread——
  * 两者都是 pino 的原生用法，本包不包装。

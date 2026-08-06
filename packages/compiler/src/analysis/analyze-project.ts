@@ -4,7 +4,7 @@ import { analyzeConfigProviders } from "@/analysis/config-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
-import { synthesizeLoggerBeans } from "@/analysis/logger-synthesis";
+import { synthesizeLoggerBeans, webFrameworkLoggerName } from "@/analysis/logger-synthesis";
 import { analyzeMethodInterception } from "@/analysis/method-interception";
 import type {
   BeanProviderModel,
@@ -136,7 +136,19 @@ export function analyzeProject(
   // logger bean 合成（RFC 0011 L2，#242）：与事务拦截器同一时机——collectProviderDrafts 之后、
   // resolveProviders 之前。它要看全部 draft 的 pendingDependencies 才知道有哪些 logger 名，
   // 又必须赶在解析开始前把自己的 draft 放进表里。
-  const loggers = synthesizeLoggerBeans({ drafts: applicationDrafts, linker, diagnostics });
+  // 框架自己那条 logger（RFC 0011 L6/L8，#250）：请求日志与引擎监听行都从它出，需求方是生成的
+  // bootstrap，同样不在任何依赖边上。它是本地 draft 而不是 starter bean，所以不走
+  // demandedBeanIds——本地 draft 一律入图。装了引擎但没装任何日志绑定时不合成，见 synthesize。
+  const loggers = synthesizeLoggerBeans({
+    drafts: applicationDrafts,
+    linker,
+    diagnostics,
+    frameworkLoggers: engineBeans.slice(0, 1).map((bean) => ({
+      name: webFrameworkLoggerName,
+      reason: webPackageName,
+      source: bean.metaSource,
+    })),
+  });
   const localDrafts = [...applicationDrafts, ...loggers.drafts];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
   // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。

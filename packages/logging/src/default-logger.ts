@@ -23,8 +23,13 @@ export interface DefaultLoggerFactoryOptions {
   readonly now?: () => number;
 }
 
+// 缺省写 **stderr** 而不是 stdout——这与裸 pino 的缺省相反，是本仓既有的不变量而不是口味：
+// 生成的 bootstrap 会被当作库嵌进 Worker/管道消费，stdout 属于应用数据面必须保持纯净，所以
+// 三个引擎的监听行、@reforce/config 的绑定警告、reporter 的诊断，现有运行期输出全在 stderr。
+// 框架自己的日志一旦改走这个门面（RFC 0011 L8），缺省写 stdout 就等于把那条不变量悄悄破掉。
+// 要 stdout 的应用显式传 write。
 function defaultWrite(line: string): void {
-  process.stdout.write(`${line}\n`);
+  process.stderr.write(`${line}\n`);
 }
 
 // 不变量 8 是实现约束，不是优化（L1）：级别关闭时不合并字段、不遍历 LogFieldSource、

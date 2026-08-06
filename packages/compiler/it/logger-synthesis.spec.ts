@@ -5,6 +5,8 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler } from "@/index";
+import { parseSource } from "@/parser/parse-source";
+import type { CanonicalFileId } from "@/parser/source-location";
 import {
   applicationTsconfig,
   linkApplicationPackages,
@@ -157,6 +159,28 @@ describe("synthesised logger beans", () => {
         .map((bean: { readonly id: string }) => bean.id)
         .filter((id: string) => id.startsWith("@reforce/logging#")),
     ).toEqual(["@reforce/logging#Logger(payments)"]);
+  }, 60_000);
+
+  // 这条用例的存在理由：本文件其余用例全是对 beans.ts **文本**做匹配，而文本匹配对
+  // 「产物根本不是合法 TypeScript」一无所知。首版生成的正是
+  // `import { Logger(OrderService) as beanTarget0 } from ...`——每条断言照样绿，产物却连
+  // 解析都过不去。bean 身份段与运行导出名在框架 logger 上分家，import 必须用后者。
+  test("emits a beans.ts that actually parses", async () => {
+    const { beans } = await compileApplication(twoConsumers);
+
+    const parsed = parseSource({
+      file: "generated/beans.ts" as CanonicalFileId,
+      sourceText: beans,
+      sourceKind: "ts",
+    });
+
+    expect(parsed.status).toBe("success");
+  }, 60_000);
+
+  test("imports the logger runtime export under the bean-identity alias", async () => {
+    const { beans } = await compileApplication(twoConsumers);
+
+    expect(beans).toContain('import { BoundLogger as beanTarget0 } from "@reforce/logging');
   }, 60_000);
 
   // logger bean 不提供任何契约，所以它绝不能参与按类型选择——否则每条 Logger 边都

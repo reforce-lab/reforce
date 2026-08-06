@@ -681,7 +681,10 @@ function redirectedLoggerDependency(
   return {
     parameterIndex: pending.index,
     targetId,
-    mode: "eager",
+    // 模式必须照抄 pending，不能恒 eager：`Lazy<Logger>` 写成 eager 时 tsc 也拦不住——
+    // `resolve<T>(i): T` 的 T 由构造参数的上下文类型推断成 Lazy<Logger>，编译期一片安静，
+    // 运行期字段拿到的却是 BoundLogger 实例，调 .get() 当场 TypeError。
+    mode: singleDependencyMode(pending),
     source: sourceReference(pending.sourceSpan),
     contract: pending.linkedType.symbol,
   };
