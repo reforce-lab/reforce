@@ -1,4 +1,4 @@
-import type { TransactionIsolation, TransactionManager } from "@reforce/context";
+import type { TransactionIsolation, TransactionManager } from "@reforce/transaction";
 
 // adapter 作者要填的 harness（ADR 0008 T5）：TCK 只依赖 TransactionManager 契约 + 一个
 // key-value 读写面，不要求 schema 知识、不要求语句日志。

@@ -97,7 +97,7 @@ function contractSpecifierOf(
   generatedDirectory: string,
   typeResolver: EmissionTypeResolver,
 ): string | undefined {
-  if (symbol.kind === "context") {
+  if (symbol.kind === "context" || symbol.kind === "transaction") {
     return symbol.moduleSpecifier;
   }
   return symbol.source === undefined

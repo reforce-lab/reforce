@@ -23,17 +23,11 @@ export {
   ConfigBindingError,
   type ConfigBindingIssue,
   EarlyBeanAccessError,
+  InterceptorReenteredError,
   InvalidGeneratedDefinitionError,
   ReforceRuntimeError,
   RequestContextMissingError,
   type RuntimeErrorCode,
-  TransactionIsolationOnJoinError,
-  TransactionIsolationUnsupportedError,
-  TransactionResourceReusedError,
-  TransactionSavepointUnsupportedError,
-  TransactionTimeoutError,
-  TransactionTimeoutOnJoinError,
-  TransactionTimeoutUnsupportedError,
   UnregisteredBeanTargetError,
 } from "@/errors";
 export {
@@ -63,21 +57,3 @@ export type {
   QualifiedBean,
   RequestScopeSeed,
 } from "@/public-types";
-export {
-  isNestedTransactionManager,
-  type NestedTransactionManager,
-  type TransactionIsolation,
-  type TransactionManager,
-  type TransactionOptions,
-  transactionIsolationLevels,
-} from "@/transaction/manager";
-export {
-  Transactional,
-  type TransactionalValue,
-  type TransactionPropagation,
-} from "@/transaction/marker";
-export {
-  activeResourceFor,
-  activeTransaction,
-  type TransactionInfo,
-} from "@/transaction/scope";

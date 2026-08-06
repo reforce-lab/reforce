@@ -14,6 +14,7 @@ test("the root entry exposes only the public programming model", () => {
     "EarlyBeanAccessError",
     "Injectable",
     "Interceptor",
+    "InterceptorReenteredError",
     "InvalidGeneratedDefinitionError",
     "Order",
     "Primary",
@@ -21,30 +22,17 @@ test("the root entry exposes only the public programming model", () => {
     "ReforceRuntimeError",
     "RequestContextMissingError",
     "RequestScoped",
-    "TransactionIsolationOnJoinError",
-    "TransactionIsolationUnsupportedError",
-    "TransactionResourceReusedError",
-    "TransactionSavepointUnsupportedError",
-    "TransactionTimeoutError",
-    "TransactionTimeoutOnJoinError",
-    "TransactionTimeoutUnsupportedError",
-    "Transactional",
     "UnregisteredBeanTargetError",
-    "activeResourceFor",
-    "activeTransaction",
     "defineApplication",
     "defineBean",
     "defineMethodMarker",
     "defineStarter",
     "interceptPhases",
-    "isNestedTransactionManager",
-    "transactionIsolationLevels",
   ]);
 });
 
 test("the generated entry exposes only registration and Context helpers", () => {
   expect(Object.keys(generatedRuntime).sort()).toEqual([
-    "TransactionInterceptor",
     "classBean",
     "configBean",
     "createApplicationContext",

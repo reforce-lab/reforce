@@ -48,6 +48,20 @@ export interface MethodInvocationContext<
 //
 // 已知能力收窄：透传型可以 catch 后 rethrow（异常转换仍在），但造不出 R，因此无法 catch 后
 // 返回兜底值。通用降级拦截器必须用替换型并绑定具体返回类型。
+//
+// next() 每层至多调一次，重入抛 InterceptorReenteredError。这是 v1 定案（#202 定案 2）而不是
+// 没做完：next() 返回时外层的后置相与事务边界都已经结束了，第二次进去等于在一个已提交或已
+// 回滚的边界里重跑——重试要在调用点做，那里每次调用开一条新链、一个新事务。
+//
+// 兜底型拦截器（catch 住一切、返回降级值的那种）必须放行框架护栏：
+//
+//   try { return await next() } catch (error) {
+//     if (error instanceof ReforceRuntimeError) { throw error }
+//     return fallback
+//   }
+//
+// 少这一行，框架告诉你"你的 manager 有问题"的四个事务护栏错误与上面的重入错误会被自己的
+// 兜底吞掉，现象是"没报错但数据不对"。业务异常照常降级，不受影响。
 export interface MethodInterceptor<
   T extends MethodMetaValue | undefined = MethodMetaValue | undefined,
 > {

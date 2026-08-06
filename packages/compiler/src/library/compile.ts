@@ -117,36 +117,40 @@ function rejectMethodWeavingDeclarations(
 }
 
 // 库模式拒绝的框架织入装饰器（#202 / #204）：@Interceptor 与 @Transactional 都表达不进
-// meta v1；@Transactional 在类位置本身也是误用，一并点名。
-const rejectedFrameworkWeavingDecorators = {
-  Interceptor: {
-    message:
-      "@Interceptor cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
-    help: "Keep interceptors application-side for now.",
-  },
-  Transactional: {
-    message:
-      "@Transactional cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
-    help: "Keep transactional Beans application-side for now.",
-  },
-} as const;
+// meta v1；@Transactional 在类位置本身也是误用，一并点名。键含符号 kind——两个装饰器现在来自
+// 两个框架包（@Transactional 随 #204 的事务契约迁去 @reforce/transaction），只比对名字会让
+// 任一包里的同名符号误中。
+const rejectedFrameworkWeavingDecorators = new Map([
+  [
+    "context\0Interceptor",
+    {
+      message:
+        "@Interceptor cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+      help: "Keep interceptors application-side for now.",
+    },
+  ],
+  [
+    "transaction\0Transactional",
+    {
+      message:
+        "@Transactional cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+      help: "Keep transactional Beans application-side for now.",
+    },
+  ],
+]);
 
 function rejectFrameworkWeavingDecorator(
   symbol: LinkedSymbol | undefined,
   span: SourceSpan,
   diagnostics: CompilerDiagnostic[],
 ): void {
-  if (
-    symbol?.kind !== "context" ||
-    !Object.hasOwn(rejectedFrameworkWeavingDecorators, symbol.name)
-  ) {
+  if (symbol === undefined) {
     return;
   }
-  // Object.hasOwn 已证明成员资格，索引签名推不回字面量联合 // justified: 见上一行
-  const entry =
-    rejectedFrameworkWeavingDecorators[
-      symbol.name as keyof typeof rejectedFrameworkWeavingDecorators
-    ];
+  const entry = rejectedFrameworkWeavingDecorators.get(`${symbol.kind}\0${symbol.name}`);
+  if (entry === undefined) {
+    return;
+  }
   diagnostics.push(unsupportedDeclaration(entry.message, span, entry.help));
 }
 
@@ -163,7 +167,7 @@ function rejectMethodMarkerUses(
       }
       const entity = linker.resolveEntity(source, decorator.callee);
       if (entity !== undefined) {
-        // 框架标记 @Transactional 解析成 context 合成符号（#204）：与用户标记同拒，不静默放行。
+        // 框架标记 @Transactional 解析成 transaction 合成符号（#204）：与用户标记同拒，不静默放行。
         rejectFrameworkWeavingDecorator(entity, decorator.span, diagnostics);
         continue;
       }

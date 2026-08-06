@@ -8,7 +8,7 @@ import type {
   ManifestSourceReference,
 } from "@/project/generated-manifest";
 import {
-  frameworkOriginId,
+  isFrameworkOrigin,
   manifestDependencyEdges,
   starterOriginPackageName,
 } from "@/project/generated-manifest";
@@ -26,7 +26,7 @@ function originDescription(origin: string): string {
     return "this application";
   }
   // 框架合成 bean（ADR 0008 AM2，#204 定案 6）：来源串无版本段，与 starter 措辞区分。
-  return origin === frameworkOriginId ? `${origin} · framework` : `${origin} · registered starter`;
+  return isFrameworkOrigin(origin) ? `${origin} · framework` : `${origin} · registered starter`;
 }
 
 function sourceDescription(bean: ManifestBean): string {
@@ -35,7 +35,7 @@ function sourceDescription(bean: ManifestBean): string {
     return location;
   }
   // 框架 bean 的 source 指向把它拉进图的第一处 @Transactional 使用（应用路径，#204 定案 6）。
-  if (bean.origin === frameworkOriginId) {
+  if (isFrameworkOrigin(bean.origin)) {
     return `${location} (first @Transactional use)`;
   }
   // starter bean 的 source 相对发布包根（ADR 0004 风险 3 的既定处理），标注基准避免误当应用路径。

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { InterceptorReenteredError, ReforceRuntimeError } from "@/errors";
 import type {
   MethodInterceptor,
   MethodInvocationContext,
@@ -209,6 +210,99 @@ describe("invokeIntercepted", () => {
       () => Promise.resolve(undefined),
     );
 
-    await expect(result).rejects.toThrow("Interceptor called next() more than once.");
+    await expect(result).rejects.toThrow(InterceptorReenteredError);
+    await expect(result).rejects.toMatchObject({
+      code: "INTERCEPTOR_REENTERED",
+      beanId: "app#Sample",
+      method: "save",
+    });
+  });
+
+  test("the re-entry failure names the woven method and the retry path that does work", async () => {
+    const doubleNext: MethodInterceptor = {
+      async intercept(_context, next) {
+        await next();
+        return await next();
+      },
+    };
+
+    const result = invokeIntercepted<Promise<undefined>>(
+      chainOf<undefined>([entryOf<undefined>(doubleNext)]),
+      [],
+      () => Promise.resolve(undefined),
+    );
+
+    await expect(result).rejects.toMatchObject({
+      message: expect.stringContaining("app#Sample.save"),
+    });
+    await expect(result).rejects.toThrow("call site");
+  });
+
+  // 兜底拦截器吞掉框架护栏是本仓最贵的静默失败（#202 定案 2 配套纪律）：错误归队成
+  // ReforceRuntimeError 之后，拦截器契约注释里那条 instanceof 放行才写得出来。裸 Error 时代
+  // 这条用例会得到 "fallback" 而不是 reject。
+  const fallbackOnBusinessFailure: ReplacingMethodInterceptor<MethodMetaValue | undefined, string> =
+    {
+      async intercept(_context, next) {
+        try {
+          return await next();
+        } catch (error) {
+          if (error instanceof ReforceRuntimeError) {
+            throw error;
+          }
+          return "fallback";
+        }
+      },
+    };
+
+  test("a fallback interceptor lets a re-entry failure through", async () => {
+    const buggyRetry: MethodInterceptor = {
+      async intercept(_context, next) {
+        let failure: unknown;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            return await next();
+          } catch (error) {
+            failure = error;
+          }
+        }
+        throw failure;
+      },
+    };
+
+    const result = invokeIntercepted<Promise<string>>(
+      chainOf<string>([entryOf<string>(fallbackOnBusinessFailure), entryOf<string>(buggyRetry)]),
+      [],
+      () => Promise.reject(new Error("boom")),
+    );
+
+    await expect(result).rejects.toThrow(InterceptorReenteredError);
+  });
+
+  test("the same fallback interceptor still recovers from a business failure", async () => {
+    const result = invokeIntercepted<Promise<string>>(
+      chainOf<string>([entryOf<string>(fallbackOnBusinessFailure)]),
+      [],
+      () => Promise.reject(new Error("boom")),
+    );
+
+    await expect(result).resolves.toBe("fallback");
+  });
+
+  test("racing two next() calls is rejected", async () => {
+    const parallelNext: MethodInterceptor = {
+      async intercept(_context, next) {
+        const [first] = await Promise.all([next(), next()]);
+        return first;
+      },
+    };
+
+    const result = invokeIntercepted<Promise<undefined>>(
+      chainOf<undefined>([entryOf<undefined>(parallelNext)]),
+      [],
+      () => Promise.resolve(undefined),
+    );
+
+    await expect(result).rejects.toThrow(InterceptorReenteredError);
   });
 });

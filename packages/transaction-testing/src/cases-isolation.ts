@@ -2,7 +2,7 @@ import {
   type TransactionIsolation,
   TransactionIsolationUnsupportedError,
   transactionIsolationLevels,
-} from "@reforce/context";
+} from "@reforce/transaction";
 import { expect } from "vitest";
 import { rejectionOf, type TckCase } from "@/case";
 import type { TransactionTckHarness } from "@/harness";

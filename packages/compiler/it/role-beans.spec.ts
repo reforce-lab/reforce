@@ -12,7 +12,7 @@ import { type CompileSuccess, linkApplicationPackages, linkWebPackage } from "./
 // 集合注入静默排除（空集合本就合法）。
 //
 // 合成的事务拦截器同样带 role（transaction-weaving.ts），但今天不可能写出触发它的用例：
-// 它的契约符号只从 @reforce/context/generated-runtime 导出，而框架符号短路只认
+// 它的契约符号只从 @reforce/transaction/generated-runtime 导出，而框架符号短路只认
 // "@reforce/context" 这个精确 specifier，用户源码里根本拿不到这个类型。那条 role 是为了让
 // 规则对合成 bean 与手写 @Interceptor 保持同一句话，不是当下可达的行为。
 

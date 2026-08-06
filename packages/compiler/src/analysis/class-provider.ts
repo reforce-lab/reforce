@@ -525,9 +525,13 @@ export function linkedClassContracts(
     if (linked.symbol.kind === "context") {
       startHook ||= linked.symbol.name === "OnContextStart";
       closeHook ||= linked.symbol.name === "OnContextClose";
+      // 其余 context 符号不是契约，保持沉默跳过。
+      continue;
+    }
+    if (linked.symbol.kind === "transaction") {
       // TransactionManager 是框架拥有的注入契约（ADR 0008 T4，#204 定案 3；WebEngineAdapter
       // 同族先例）：implements 的类型实参（TransactionManager<R>）在契约身份上擦除，
-      // 注入边按合成符号 key 解析。其余 context 符号不是契约，保持沉默跳过。
+      // 注入边按合成符号 key 解析。其余 transaction 符号不是契约，保持沉默跳过。
       provided.push(...transactionManagerContractsOf(linked.symbol));
       continue;
     }

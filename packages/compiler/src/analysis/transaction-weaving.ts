@@ -3,7 +3,7 @@ import { markerUseValueOf } from "@/analysis/marker-value";
 import { type ProviderDraft, sourceReference } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
-import { contextFrameworkSymbol } from "@/linking/export-binding";
+import { transactionFrameworkSymbol } from "@/linking/export-binding";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type { DecoratorUse } from "@/parser/source-ir";
@@ -12,49 +12,50 @@ import type { ParsedSource } from "@/project/source-files";
 
 // @Transactional 的编译期词汇（ADR 0008 AM2，#204 定案 2/6）：框架标记走 AM1 标记通道零特权，
 // 唯一的额外机器是这里——保留 key、参数 schema 校验、以及事务拦截器的合成注册。拦截器不让
-// 用户手声明（starter meta v1 也没有拦截器槽位），编译器在检测到标记使用时替 @reforce/context
+// 用户手声明（starter meta v1 也没有拦截器槽位），编译器在检测到标记使用时替 @reforce/transaction
 // 合成一条 registration，依赖边走正常契约解析：图中有使用但无 TransactionManager 实现
 // 即编译期 MISSING_BEAN，不是运行时才炸。
 
 export const transactionalMarkerKey = "transactional";
 
-export const transactionInterceptorBeanId = "@reforce/context#TransactionInterceptor";
+export const transactionInterceptorBeanId = "@reforce/transaction#TransactionInterceptor";
 
 // manifest 的框架来源串（#204 定案 6）：与 starter 的 "pkg@version" 相区分，explain 按它
 // 渲染 framework 词汇（cli/src/explain/render.ts 同一字面量）。
-export const frameworkOriginId = "@reforce/context";
+export const frameworkOriginId = "@reforce/transaction";
 
-// 拦截器类型只从生成入口导出（context generated-runtime.ts 同注释）：契约 type-only import
+// 拦截器类型只从生成入口导出（transaction generated-runtime.ts 同注释）：契约 type-only import
 // 与 registration 的值 import 都指向这里。
 const transactionInterceptorRuntimeExport = {
-  module: "@reforce/context/generated-runtime",
+  module: "@reforce/transaction/generated-runtime",
   export: "TransactionInterceptor",
 } as const;
 
 export const transactionInterceptorSymbol: LinkedSymbol = Object.freeze({
-  key: "context:TransactionInterceptor",
-  kind: "context",
+  key: "transaction:TransactionInterceptor",
+  kind: "transaction",
   name: "TransactionInterceptor",
   moduleSpecifier: transactionInterceptorRuntimeExport.module,
   generic: false,
 });
 
-export const transactionManagerSymbol: LinkedSymbol = contextFrameworkSymbol("TransactionManager");
+export const transactionManagerSymbol: LinkedSymbol =
+  transactionFrameworkSymbol("TransactionManager");
 
 // savepoint 能力表达在契约身份上（ADR 0008 T4 定案）：NESTED 使用处按这个符号解析依赖边，
 // manager 没实现就是 MISSING_BEAN——与"图里根本没有 manager"同一种编译期诊断。
-export const nestedTransactionManagerSymbol: LinkedSymbol = contextFrameworkSymbol(
+export const nestedTransactionManagerSymbol: LinkedSymbol = transactionFrameworkSymbol(
   "NestedTransactionManager",
 );
 
 // implements 一个框架契约时 push 出的契约符号集合。NestedTransactionManager 同时 push 两个
 // 符号，显式建模 interface 的 extends 关系：用户可以在自己的 bean 构造函数里注入裸
-// TransactionManager（落成 context:TransactionManager 的 pending dependency），只 push
+// TransactionManager（落成 transaction:TransactionManager 的 pending dependency），只 push
 // Nested 一个 key 的话这类注入点立刻 MISSING_BEAN——一个功能更全的 manager 反而装不上。
 // context 符号走不到 expandProvidedInterface（那里只处理应用接口），继承关系必须手写。
 //
 // 同类写 implements TransactionManager, NestedTransactionManager 时由 dedupeSymbols 按 key
-// 收敛；两个不同类分别实现两个接口时 context:TransactionManager 下 2 个候选 →
+// 收敛；两个不同类分别实现两个接口时 transaction:TransactionManager 下 2 个候选 →
 // AMBIGUOUS_BEAN，与现状一致、语义正确、@Primary 可解。
 export function transactionManagerContractsOf(symbol: LinkedSymbol): readonly LinkedSymbol[] {
   if (symbol.name === nestedTransactionManagerSymbol.name) {
@@ -75,7 +76,7 @@ export function isTransactionalDecorator(
     return false;
   }
   const symbol = linker.resolveEntity(source, decorator.callee);
-  return symbol?.kind === "context" && symbol.name === "Transactional";
+  return symbol?.kind === "transaction" && symbol.name === "Transactional";
 }
 
 interface TransactionalDemand {

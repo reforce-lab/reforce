@@ -1,3 +1,4 @@
+import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import {
@@ -6,18 +7,18 @@ import {
   TransactionSavepointUnsupportedError,
   TransactionTimeoutOnJoinError,
 } from "@/errors";
-import type { MethodInterceptor, MethodInvocationContext } from "@/interception/interceptor";
-import { TransactionInterceptor } from "@/transaction/interceptor";
-import type {
-  NestedTransactionManager,
-  TransactionManager,
-  TransactionOptions,
-} from "@/transaction/manager";
-import type { TransactionalValue } from "@/transaction/marker";
-import { activeResourceFor, activeTransaction } from "@/transaction/scope";
+import { TransactionInterceptor } from "@/interceptor";
+import type { NestedTransactionManager, TransactionManager, TransactionOptions } from "@/manager";
+import type { TransactionalValue } from "@/marker";
+import { activeRecordFor, activeResourceFor } from "@/scope";
+import { runTransactional } from "@/transactional";
 
 // 传播语义与回滚规则（ADR 0008 T3，#204 定案 5）。manager 是外部副作用边界，用记录调用序的
-// fake 替身；断言的是拦截器对契约的调用协议——begin/commit/rollback/savepoint 的次序与配对。
+// fake 替身；断言的是框架对契约的调用协议——begin/commit/rollback/savepoint 的次序与配对。
+//
+// 矩阵开在 @Transactional 一侧（TransactionInterceptor），因为它是主入口；命令式入口
+// runTransactional 走的是同一个 runWithPropagation，下面只钉"两条路确实是同一份实现"这一点，
+// 不把整张矩阵抄第二遍。
 
 interface ManagerEvent {
   readonly op: "begin" | "commit" | "rollback" | "savepoint" | "release" | "rollback-to-savepoint";
@@ -122,7 +123,7 @@ describe("TransactionInterceptor propagation", () => {
       { op: "begin", resource: "tx1", isolation: undefined, timeout: undefined },
       { op: "commit", resource: "tx1" },
     ]);
-    expect(activeTransaction()).toBeUndefined();
+    expect(activeResourceFor(manager)).toBeUndefined();
   });
 
   test("REQUIRED inside a transaction joins the same resource without a new boundary", async () => {
@@ -197,7 +198,7 @@ describe("TransactionInterceptor propagation", () => {
     const interceptor = new TransactionInterceptor(manager);
 
     await boundary(interceptor, { isolation: "SERIALIZABLE" }, async () => {
-      expect(activeTransaction()?.isolation).toBe("SERIALIZABLE");
+      expect(activeRecordFor(manager)?.isolation).toBe("SERIALIZABLE");
       return undefined;
     });
 
@@ -214,7 +215,7 @@ describe("TransactionInterceptor propagation", () => {
     const interceptor = new TransactionInterceptor(manager);
 
     await boundary(interceptor, { timeout: 5_000 }, async () => {
-      expect(activeTransaction()?.timeout).toBe(5_000);
+      expect(activeRecordFor(manager)?.timeout).toBe(5_000);
       return undefined;
     });
 
@@ -576,8 +577,97 @@ describe("TransactionInterceptor rollback rules", () => {
 
         expect(commits + rollbacks).toBe(begins);
         expect(releases + savepointRollbacks).toBe(savepoints);
-        expect(activeTransaction()).toBeUndefined();
+        expect(activeResourceFor(manager)).toBeUndefined();
       }),
     );
+  });
+});
+
+// 命令式入口（#204 定案 3 的补齐）：用户在 job/CLI 里开事务时，账本必须与 @Transactional
+// 写的是同一本——否则回调里的 service 用 current() 取到池连接，那笔写落在事务外面且无声。
+describe("runTransactional", () => {
+  test("the callback runs inside a boundary the manager opened", async () => {
+    const { manager, events } = flatManager();
+
+    const result = await runTransactional(manager, undefined, async () => {
+      expect(activeResourceFor(manager)).toBe("tx1");
+      return "imported";
+    });
+
+    expect(result).toBe("imported");
+    expect(events).toEqual([
+      { op: "begin", resource: "tx1", isolation: undefined, timeout: undefined },
+      { op: "commit", resource: "tx1" },
+    ]);
+  });
+
+  test("a declared timeout reaches the manager", async () => {
+    const { manager, events } = flatManager();
+
+    await runTransactional(manager, { timeout: 600_000 }, async () => undefined);
+
+    expect(events[0]).toEqual({
+      op: "begin",
+      resource: "tx1",
+      isolation: undefined,
+      timeout: 600_000,
+    });
+  });
+
+  test("a throwing callback rolls the boundary back and rethrows as is", async () => {
+    const { manager, events } = flatManager();
+    const failure = new Error("import failed");
+
+    await expect(
+      runTransactional(manager, undefined, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+    expect(ops(events)).toEqual(["begin", "rollback"]);
+  });
+
+  // 与 @Transactional 共用传播与记账：一个 @Transactional 方法在命令式边界里默认 REQUIRED，
+  // 加入的就是它，不再开第二个事务。
+  test("a REQUIRED woven method joins the imperative boundary instead of opening its own", async () => {
+    const { manager, events } = flatManager();
+    const interceptor = new TransactionInterceptor(manager);
+
+    await runTransactional(manager, undefined, async () =>
+      boundary(interceptor, undefined, async () => {
+        expect(activeResourceFor(manager)).toBe("tx1");
+        return undefined;
+      }),
+    );
+
+    expect(ops(events)).toEqual(["begin", "commit"]);
+  });
+
+  // 护栏同样覆盖命令式入口，只是点名的站点换成固定占位——读者据此知道这条边界不是某个
+  // @Transactional 方法开的。
+  test("joining with a conflicting isolation is rejected and names the imperative site", async () => {
+    const { manager } = flatManager();
+
+    const rejection = runTransactional(manager, undefined, async () =>
+      runTransactional(manager, { isolation: "SERIALIZABLE" }, async () => undefined),
+    );
+
+    await expect(rejection).rejects.toThrow(TransactionIsolationOnJoinError);
+    await expect(rejection).rejects.toMatchObject({
+      beanId: "runTransactional",
+      method: "callback",
+    });
+  });
+
+  test("an illegal option value is rejected before any transaction opens", async () => {
+    const { manager, events } = flatManager();
+
+    await expect(
+      Reflect.apply(runTransactional, undefined, [
+        manager,
+        { propagation: "MANDATORY" },
+        async () => undefined,
+      ]),
+    ).rejects.toThrow(TypeError);
+    expect(events).toEqual([]);
   });
 });
