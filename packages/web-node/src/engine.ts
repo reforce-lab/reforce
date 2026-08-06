@@ -35,6 +35,33 @@ function toRequest(request: IncomingMessage, method: string, url: URL): Request 
   return new Request(url, init);
 }
 
+// 请求 URL 的 authority 只能来自 Host 头（#226），路径与查询按"路径"赋值而不是按"URL 引用"解析：
+// 请求目标是请求方完全控制的字符串，`new URL("//evil.com/health", base)` 会走 WHATWG 的
+// protocol-relative 分支把 host 换成 evil.com，handler 拿 context.url.origin 拼跳转就此成为
+// 开放重定向；顺带还让 `//p` 解析成路径 `/`，路由的 ignoreDuplicateSlashes 根本没机会归一。
+// pathname 的 setter 不重新解析 authority，`//p` 保持为路径，归一仍归 @/router。
+//
+// 返回 undefined = Host 头畸形，调用方出 400。两种畸形都能被任意客户端远程触发，且都在
+// 被 void 调用的 serve() 里抛出 → unhandled rejection → Node 默认行为是进程退出：
+//   `Host: a b`            → new URL 抛 TypeError
+//   `Host: user@evil.com`  → new URL 通过，但 Fetch 规范要求带凭据的 URL 让 new Request 抛
+function requestUrl(request: IncomingMessage): URL | undefined {
+  let url: URL;
+  try {
+    url = new URL(`http://${request.headers.host ?? "localhost"}`);
+  } catch {
+    return undefined;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return undefined;
+  }
+  const target = request.url ?? "/";
+  const query = target.indexOf("?");
+  url.pathname = query === -1 ? target : target.slice(0, query);
+  url.search = query === -1 ? "" : target.slice(query);
+  return url;
+}
+
 async function writeResponse(response: ServerResponse, result: Response): Promise<void> {
   const headers: Record<string, string | string[]> = {};
   result.headers.forEach((value, name) => {
@@ -69,7 +96,11 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     }
     const dispatch = createRouter(application.routes, this.settings.maxParamLength);
     const server = createServer((request, response) => {
-      void this.serve(dispatch, request, response);
+      // 写出期故障不在 PreparedRoute.handle 的"永不 reject"契约内（#226）：客户端读到一半断开时
+      // pipeline 抛 ERR_STREAM_PREMATURE_CLOSE，没有这道 catch 它就是 unhandled rejection，
+      // Node 默认行为是进程退出——任何客户端都能远程打崩服务。此时响应已无处可写，只能
+      // 拆掉这条连接（destroy 对已销毁的响应是 no-op）。
+      void this.serve(dispatch, request, response).catch(() => response.destroy());
     });
     this.server = server;
     await new Promise<void>((resolve, reject) => {
@@ -105,7 +136,12 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     response: ServerResponse,
   ): Promise<void> {
     const method = request.method ?? "GET";
-    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    const url = requestUrl(request);
+    if (url === undefined) {
+      response.writeHead(400);
+      response.end();
+      return;
+    }
     const outcome = dispatch(method, url.pathname);
     if (outcome.kind === "miss") {
       response.writeHead(404);
