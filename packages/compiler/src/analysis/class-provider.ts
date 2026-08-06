@@ -14,6 +14,7 @@ import {
   reportUnsupportedType,
   sourceReference,
 } from "@/analysis/model";
+import { transactionManagerContractsOf } from "@/analysis/transaction-weaving";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol, LinkedType } from "@/linking/model";
@@ -527,9 +528,7 @@ export function linkedClassContracts(
       // TransactionManager 是框架拥有的注入契约（ADR 0008 T4，#204 定案 3；WebEngineAdapter
       // 同族先例）：implements 的类型实参（TransactionManager<R>）在契约身份上擦除，
       // 注入边按合成符号 key 解析。其余 context 符号不是契约，保持沉默跳过。
-      if (linked.symbol.name === "TransactionManager") {
-        provided.push(linked.symbol);
-      }
+      provided.push(...transactionManagerContractsOf(linked.symbol));
       continue;
     }
     if (linked.symbol.kind === "unsupported") {

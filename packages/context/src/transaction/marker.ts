@@ -14,6 +14,8 @@ export type TransactionPropagation = (typeof transactionPropagations)[number];
 export type TransactionalValue = {
   readonly propagation?: TransactionPropagation;
   readonly isolation?: TransactionIsolation;
+  // 整个事务边界的墙钟上限（毫秒，正整数）。语义与归属判据见 TransactionOptions.timeout。
+  readonly timeout?: number;
 };
 
 export const Transactional = defineMethodMarker<TransactionalValue | undefined>("transactional");
@@ -21,6 +23,33 @@ export const Transactional = defineMethodMarker<TransactionalValue | undefined>(
 function memberOf<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (values as readonly string[]).includes(value);
 }
+
+function readEnum<T extends string>(
+  value: object,
+  key: string,
+  values: readonly T[],
+): T | undefined {
+  const entry: unknown = Reflect.get(value, key);
+  if (entry === undefined || memberOf(values, entry)) {
+    return entry;
+  }
+  throw new TypeError(
+    `Transactional ${key} must be one of ${values.map((item) => JSON.stringify(item)).join(", ")}.`,
+  );
+}
+
+function readTimeout(value: object): number | undefined {
+  const timeout: unknown = Reflect.get(value, "timeout");
+  if (timeout === undefined) {
+    return undefined;
+  }
+  if (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout <= 0) {
+    throw new TypeError("Transactional timeout must be a positive integer number of milliseconds.");
+  }
+  return timeout;
+}
+
+const transactionalOptionKeys = new Set(["propagation", "isolation", "timeout"]);
 
 // 拦截器入口的运行时守卫（#204 测试 N6）：编译器已保证织入表里的值合法，这里兜住未经编译的
 // 调用方（Interceptor 参数守卫同族）。返回重建的窄化对象，不做断言。
@@ -32,28 +61,16 @@ export function readTransactionalValue(value: unknown): TransactionalValue | und
     throw new TypeError("Transactional value must be an object literal when provided.");
   }
   for (const key of Object.keys(value)) {
-    if (key !== "propagation" && key !== "isolation") {
+    if (!transactionalOptionKeys.has(key)) {
       throw new TypeError(`Transactional value does not include "${key}".`);
     }
   }
-  const propagation: unknown = Reflect.get(value, "propagation");
-  if (propagation !== undefined && !memberOf(transactionPropagations, propagation)) {
-    throw new TypeError(
-      `Transactional propagation must be one of ${transactionPropagations
-        .map((entry) => JSON.stringify(entry))
-        .join(", ")}.`,
-    );
-  }
-  const isolation: unknown = Reflect.get(value, "isolation");
-  if (isolation !== undefined && !memberOf(transactionIsolationLevels, isolation)) {
-    throw new TypeError(
-      `Transactional isolation must be one of ${transactionIsolationLevels
-        .map((entry) => JSON.stringify(entry))
-        .join(", ")}.`,
-    );
-  }
+  const propagation = readEnum(value, "propagation", transactionPropagations);
+  const isolation = readEnum(value, "isolation", transactionIsolationLevels);
+  const timeout = readTimeout(value);
   return {
     ...(propagation === undefined ? {} : { propagation }),
     ...(isolation === undefined ? {} : { isolation }),
+    ...(timeout === undefined ? {} : { timeout }),
   };
 }

@@ -33,15 +33,13 @@ describe("flattenChainEntries", () => {
     ]);
   });
 
-  test("deduplicates by beanId and keeps the first occurrence as provenance", () => {
-    const flattened = flattenChainEntries([
-      entry({ beanId: "src/x.ts#X", markerKey: "audited", value: { label: "first" } }),
-      entry({ beanId: "src/x.ts#X", markerKey: "traced", value: { label: "second" } }),
-    ]);
-
-    expect(flattened).toHaveLength(1);
-    expect(flattened[0]?.markerKey).toBe("audited");
-    expect(flattened[0]?.value).toEqual({ label: "first" });
+  test("the same interceptor twice on one chain is an unreachable-state assertion, not a silent dedupe", () => {
+    expect(() =>
+      flattenChainEntries([
+        entry({ beanId: "src/x.ts#X", markerKey: "audited", value: { label: "first" } }),
+        entry({ beanId: "src/x.ts#X", markerKey: "traced", value: { label: "second" } }),
+      ]),
+    ).toThrow("Duplicate interceptor src/x.ts#X");
   });
 
   test("an empty union flattens to an empty chain", () => {

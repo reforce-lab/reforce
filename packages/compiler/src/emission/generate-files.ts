@@ -192,14 +192,20 @@ function wovenEmissions(
   return emissions;
 }
 
-function wovenChainsType(woven: WovenEmission): string {
-  const keys = woven.methods.map((method) => JSON.stringify(method.method)).join(" | ");
-  return `Readonly<Record<${keys}, GeneratedMethodChain>>`;
+// 链类型按被织方法的返回类型参数化（#202 风险 1 的第二轮收紧）：替换型拦截器挂错方法时，
+// beans.ts 过 tsc 就红——链与它所服务的方法在类型层绑定，不再靠 Promise<unknown> 掩盖。
+// 每个方法一条 Record 项而非共用一个键并集，因为不同方法的返回类型不同。
+function wovenChainsType(alias: string, woven: WovenEmission): string {
+  const members = woven.methods.map((method) => {
+    const signature = `InstanceType<typeof ${alias}>[${JSON.stringify(method.method)}]`;
+    return `${JSON.stringify(method.method)}: GeneratedMethodChain<Awaited<ReturnType<${signature}>>>`;
+  });
+  return `Readonly<{ ${members.join("; ")} }>`;
 }
 
 // override 的实参/返回类型全部经 Parameters/ReturnType/InstanceType 从用户类索引回来
-// （typed-edge 纪律）：beans.ts 过 tsc 即证明被织方法存在、签名兼容，生成代码零断言——
-// 唯一的 unsound 收窄集中在 invokeIntercepted 内部。
+// （typed-edge 纪律）：beans.ts 过 tsc 即证明被织方法存在、签名兼容，生成代码零断言。
+// invokeIntercepted 内部同样零断言——返回类型由两个拦截器接口在类型层各自堵死。
 function wovenOverride(alias: string, field: string, method: WovenMethodModel): string {
   const signature = `InstanceType<typeof ${alias}>[${JSON.stringify(method.method)}]`;
   return [
@@ -219,7 +225,7 @@ function wovenClassDeclaration(index: number, woven: WovenEmission): string {
       (_, parameter) =>
         `    argument${parameter}: ConstructorParameters<typeof ${alias}>[${parameter}],`,
     ),
-    `    private readonly ${woven.model.chainFieldName}: ${wovenChainsType(woven)},`,
+    `    private readonly ${woven.model.chainFieldName}: ${wovenChainsType(alias, woven)},`,
   ];
   const superArguments = Array.from(
     { length: woven.userParameterCount },
