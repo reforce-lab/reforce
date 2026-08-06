@@ -1,26 +1,34 @@
 import { describe, expect, test } from "vitest";
-import type { MethodInterceptor, MethodInvocationContext } from "@/interception/interceptor";
+import type {
+  MethodInterceptor,
+  MethodInvocationContext,
+  ReplacingMethodInterceptor,
+} from "@/interception/interceptor";
 import type { GeneratedInterceptorEntry, GeneratedMethodChain } from "@/interception/invoke";
 import { invokeIntercepted } from "@/interception/invoke";
 import type { MethodMetaValue } from "@/interception/method-marker";
 
 // invokeIntercepted 是织入洋葱的唯一运行时入口（ADR 0008 AM1，#202 定案 2）：契约行为在
 // 这里钉死——短路/替换返回值/异常转换/next 单次/ctx 冻结，生成代码只负责把链塞进来。
+// 链按被织方法的返回类型参数化：改变返回值的拦截器必须是 ReplacingMethodInterceptor 并
+// 绑定具体类型，透传型造不出 R（返回类型的类型层强制）。
 
-function chainOf(entries: readonly GeneratedInterceptorEntry[]): GeneratedMethodChain {
+function chainOf<R>(entries: readonly GeneratedInterceptorEntry<R>[]): GeneratedMethodChain<R> {
   return { beanId: "app#Sample", method: "save", entries };
 }
 
-function entryOf(
-  interceptor: MethodInterceptor,
+function entryOf<R>(
+  interceptor:
+    | MethodInterceptor<MethodMetaValue | undefined>
+    | ReplacingMethodInterceptor<MethodMetaValue | undefined, R>,
   value?: MethodMetaValue,
-): GeneratedInterceptorEntry {
+): GeneratedInterceptorEntry<R> {
   return { interceptor, value };
 }
 
 describe("invokeIntercepted", () => {
   test("an empty chain passes straight through to the terminal", async () => {
-    const result = invokeIntercepted<Promise<string>>(chainOf([]), ["a"], () =>
+    const result = invokeIntercepted<Promise<string>>(chainOf<string>([]), ["a"], () =>
       Promise.resolve("saved"),
     );
 
@@ -38,8 +46,11 @@ describe("invokeIntercepted", () => {
       },
     });
 
-    await invokeIntercepted<Promise<unknown>>(
-      chainOf([entryOf(tracer("outer")), entryOf(tracer("inner"))]),
+    await invokeIntercepted<Promise<undefined>>(
+      chainOf<undefined>([
+        entryOf<undefined>(tracer("outer")),
+        entryOf<undefined>(tracer("inner")),
+      ]),
       [],
       async () => {
         trace.push("terminal");
@@ -65,8 +76,11 @@ describe("invokeIntercepted", () => {
       },
     };
 
-    await invokeIntercepted<Promise<unknown>>(
-      chainOf([entryOf(witness, { label: "x" }), entryOf(witness)]),
+    await invokeIntercepted<Promise<undefined>>(
+      chainOf<undefined>([
+        entryOf<undefined>(witness, { label: "x" }),
+        entryOf<undefined>(witness),
+      ]),
       ["a", 1],
       () => Promise.resolve(undefined),
     );
@@ -88,15 +102,17 @@ describe("invokeIntercepted", () => {
       },
     };
 
-    await invokeIntercepted<Promise<unknown>>(chainOf([entryOf(witness)]), ["a"], () =>
-      Promise.resolve(undefined),
+    await invokeIntercepted<Promise<undefined>>(
+      chainOf<undefined>([entryOf<undefined>(witness)]),
+      ["a"],
+      () => Promise.resolve(undefined),
     );
   });
 
   test("skipping next() short-circuits the terminal and inner interceptors", async () => {
     let innerCalled = false;
     let terminalCalled = false;
-    const shortCircuit: MethodInterceptor = {
+    const shortCircuit: ReplacingMethodInterceptor<MethodMetaValue | undefined, string> = {
       async intercept() {
         return "cached";
       },
@@ -109,7 +125,7 @@ describe("invokeIntercepted", () => {
     };
 
     const result = invokeIntercepted<Promise<string>>(
-      chainOf([entryOf(shortCircuit), entryOf(inner)]),
+      chainOf<string>([entryOf<string>(shortCircuit), entryOf<string>(inner)]),
       [],
       async () => {
         terminalCalled = true;
@@ -122,23 +138,25 @@ describe("invokeIntercepted", () => {
     expect(terminalCalled).toBe(false);
   });
 
-  test("an interceptor can replace the terminal return value", async () => {
-    const replacer: MethodInterceptor = {
+  test("a replacing interceptor can replace the terminal return value", async () => {
+    const replacer: ReplacingMethodInterceptor<MethodMetaValue | undefined, string> = {
       async intercept(_context, next) {
         await next();
         return "replaced";
       },
     };
 
-    const result = invokeIntercepted<Promise<string>>(chainOf([entryOf(replacer)]), [], () =>
-      Promise.resolve("original"),
+    const result = invokeIntercepted<Promise<string>>(
+      chainOf<string>([entryOf<string>(replacer)]),
+      [],
+      () => Promise.resolve("original"),
     );
 
     await expect(result).resolves.toBe("replaced");
   });
 
-  test("an interceptor can catch and transform a terminal failure", async () => {
-    const recover: MethodInterceptor = {
+  test("a replacing interceptor can catch and transform a terminal failure", async () => {
+    const recover: ReplacingMethodInterceptor<MethodMetaValue | undefined, string> = {
       async intercept(_context, next) {
         try {
           return await next();
@@ -148,11 +166,33 @@ describe("invokeIntercepted", () => {
       },
     };
 
-    const result = invokeIntercepted<Promise<string>>(chainOf([entryOf(recover)]), [], () =>
-      Promise.reject(new Error("boom")),
+    const result = invokeIntercepted<Promise<string>>(
+      chainOf<string>([entryOf<string>(recover)]),
+      [],
+      () => Promise.reject(new Error("boom")),
     );
 
     await expect(result).resolves.toBe("recovered:boom");
+  });
+
+  test("a pass-through interceptor can convert an exception without fabricating a value", async () => {
+    const translate: MethodInterceptor = {
+      async intercept(_context, next) {
+        try {
+          return await next();
+        } catch (error) {
+          throw new TypeError(`translated:${error instanceof Error ? error.message : ""}`);
+        }
+      },
+    };
+
+    const result = invokeIntercepted<Promise<string>>(
+      chainOf<string>([entryOf<string>(translate)]),
+      [],
+      () => Promise.reject(new Error("boom")),
+    );
+
+    await expect(result).rejects.toThrow("translated:boom");
   });
 
   test("calling next() more than once is rejected", async () => {
@@ -163,8 +203,10 @@ describe("invokeIntercepted", () => {
       },
     };
 
-    const result = invokeIntercepted<Promise<unknown>>(chainOf([entryOf(doubleNext)]), [], () =>
-      Promise.resolve(undefined),
+    const result = invokeIntercepted<Promise<undefined>>(
+      chainOf<undefined>([entryOf<undefined>(doubleNext)]),
+      [],
+      () => Promise.resolve(undefined),
     );
 
     await expect(result).rejects.toThrow("Interceptor called next() more than once.");

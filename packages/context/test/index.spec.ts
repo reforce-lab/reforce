@@ -23,14 +23,21 @@ test("the root entry exposes only the public programming model", () => {
     "RequestScoped",
     "TransactionIsolationOnJoinError",
     "TransactionIsolationUnsupportedError",
+    "TransactionResourceReusedError",
     "TransactionSavepointUnsupportedError",
+    "TransactionTimeoutError",
+    "TransactionTimeoutOnJoinError",
+    "TransactionTimeoutUnsupportedError",
     "Transactional",
     "UnregisteredBeanTargetError",
+    "activeResourceFor",
     "activeTransaction",
     "defineApplication",
     "defineBean",
     "defineMethodMarker",
     "interceptPhases",
+    "isNestedTransactionManager",
+    "transactionIsolationLevels",
   ]);
 });
 

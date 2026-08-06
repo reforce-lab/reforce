@@ -62,7 +62,11 @@ function wovenDefinition() {
   };
 
   class Repo$Woven extends Repo {
-    constructor(private readonly chains: Readonly<Record<"save", GeneratedMethodChain>>) {
+    constructor(
+      private readonly chains: Readonly<{
+        save: GeneratedMethodChain<Awaited<ReturnType<InstanceType<typeof Repo>["save"]>>>;
+      }>,
+    ) {
       super();
     }
 
