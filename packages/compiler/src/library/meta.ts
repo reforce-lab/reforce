@@ -33,6 +33,8 @@ interface LibraryMetaInputs {
 interface MetaDependencyDraft {
   readonly contract: string;
   open: boolean;
+  // 单边不写这个键：省略即 false，已发布的 meta 字节因此不变（schema 侧同为可选键）。
+  readonly collection?: true;
 }
 
 interface MetaBeanDraft {
@@ -54,9 +56,6 @@ const handleDtsContent = [
 ].join("\n");
 
 function unsupportedEdgeKind(pending: ProviderDraft["pendingDependencies"][number]): string {
-  if (pending.collection === true) {
-    return "a collection dependency";
-  }
   if (pending.linkedType.lazy) {
     return "a Lazy dependency";
   }
@@ -245,7 +244,6 @@ export async function buildLibraryMeta(
     const pendings = [...draft.pendingDependencies].sort((left, right) => left.index - right.index);
     for (const pending of pendings) {
       if (
-        pending.collection === true ||
         pending.linkedType.lazy ||
         pending.linkedType.current ||
         pending.linkedType.qualifierMember !== undefined
@@ -256,7 +254,7 @@ export async function buildLibraryMeta(
             code: "UNSUPPORTED_LIBRARY_DECLARATION",
             message: `Constructor parameter ${pending.index} on ${draft.provider.exportName} uses ${edgeKind}; starter meta v1 only records plain contract edges.`,
             sourceSpan: pending.sourceSpan,
-            help: "Inject the contract directly; qualifiers, Lazy, Current, and collections stay application-side features for now.",
+            help: "Inject the contract directly; qualifiers, Lazy, and Current stay application-side features for now.",
           }),
         );
         return undefined;
@@ -265,7 +263,13 @@ export async function buildLibraryMeta(
       if (coordinate === undefined) {
         return undefined;
       }
-      dependencies.push({ contract: coordinate, open: true });
+      // 集合边是 starter 声明"两座桥"契约（应用级 configurer / 路由级 customizer）的前提（#228）：
+      // 单边形态下用户不写实现就是 MISSING_BEAN，而集合的零成员本就合法。
+      dependencies.push({
+        contract: coordinate,
+        open: true,
+        ...(pending.collection === true ? { collection: true as const } : {}),
+      });
     }
     return dependencies;
   }

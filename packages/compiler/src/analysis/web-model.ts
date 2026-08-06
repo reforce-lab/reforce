@@ -67,10 +67,19 @@ export interface WebErrorHandlerModel {
   readonly order: number;
 }
 
+// 引擎身份的判据（#228）：starter meta 的 provides 里出现 @reforce/web 的 WebEngineAdapter 契约。
+// 判的是"实现了什么"而不是"叫什么名字"——曾经认 runtimeExport 导出名 "WebEngine"，命名不符
+// 的引擎包会静默失败：bean 无需求方 → 不物化 → 连 manifest 都进不去，生成的 bootstrap 完全
+// 不含 connectWebApplication，零诊断、routes.json 照常产出、应用能起、端口永不监听。
+//
+// 副作用要拿住：语义现在是"任何 provides WebEngineAdapter 的 starter bean 都是引擎"，
+// 名字约定此前意外地兼着"只有一个引擎"的作用。多个引擎包同时注册会一起监听，无仲裁。
+export const webPackageName = "@reforce/web";
+export const webEngineAdapterName = "WebEngineAdapter";
+
 // 注册的 web 引擎 starter bean（ADR 0006 W2 的 #153 接线修订，约定记录于 #142/#152 评论区）：
-// starter meta 中 runtimeExport 导出名为 "WebEngine" 的 bean 即引擎。生成的 bootstrap 按此
-// import 引擎类、经容器取实例并交给 connectWebApplication，因此引擎 bean 无需 role:"root"——
-// bootstrap 本身就是它的需求方（resolveProviders 据此物化）。
+// 生成的 bootstrap 按此 import 引擎类、经容器取实例并交给 connectWebApplication，因此引擎
+// bean 无需 role:"root"——bootstrap 本身就是它的需求方（resolveProviders 据此物化）。
 export interface WebEngineModel {
   readonly beanId: string;
   readonly moduleSpecifier: string;
