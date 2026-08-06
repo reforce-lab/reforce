@@ -239,6 +239,19 @@ const localConfigSource = [
   "",
 ].join("\n");
 
+// 同一条开放边的工厂写法。create-reforce 模板 README 的「配置的逃生舱」承诺 starter 的开放边
+// 不必由 ConfigProperties 或 @Injectable 类闭合，一个显式类型参数的 defineBean 就够——这里钉住
+// 那个承诺，免得日后收紧了闭合形态而没人发现文档已经说谎。
+const factoryConfigSource = [
+  'import { defineBean } from "@reforce/core";',
+  'import type { RedisConfig } from "@acme/starter-redis";',
+  "",
+  "export const redisConfig = defineBean<RedisConfig>({",
+  '  create: (): RedisConfig => ({ url: () => "redis://local" }),',
+  "});",
+  "",
+].join("\n");
+
 const redisClientId = "@acme/starter-redis#RedisClient";
 const redisOrigin = "@acme/starter-redis@1.2.0";
 
@@ -553,6 +566,28 @@ describe("starter linking semantics", () => {
     expect(order.indexOf("src/config.ts#LocalConfig")).toBeLessThan(order.indexOf(redisClientId));
   });
 
+  test("satisfies a starter open edge with a defineBean factory", async () => {
+    const result = await compileOrThrow(
+      applicationTree(
+        {
+          "application.ts": registrationSource,
+          "config.ts": factoryConfigSource,
+          "consumer.ts": cacheConsumerSource,
+        },
+        {
+          "@acme/starter-redis": redisStarterPackage(
+            redisMeta([redisClientBean({ dependencies: [redisConfigEdge] })]),
+          ),
+        },
+      ),
+    );
+
+    const manifest = manifestOf(result);
+    expect(manifestBean(manifest, redisClientId).dependencies.map((item) => item.targetId)).toEqual(
+      ["src/config.ts#redisConfig"],
+    );
+  });
+
   test("pulls transitive starters through starterDeps", async () => {
     const facadeStarter = starterPackage({
       name: "@acme/starter-cache",
@@ -672,6 +707,27 @@ describe("defineApplication reading", () => {
       "",
       "const starters = [redisStarter];",
       "export default defineApplication({ starters });",
+      "",
+    ].join("\n");
+    const { result } = await compile(
+      applicationTree(
+        { "application.ts": source },
+        { "@acme/starter-redis": redisStarterPackage() },
+      ),
+    );
+
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toEqual(["INVALID_DEFINE_APPLICATION"]);
+  });
+
+  // 回归（Issue #261）：这种写法过去在 parser 就被丢掉，build 照常成功、starter 一个都没注册、
+  // 应用起来不监听任何端口，全程零诊断。`export default` 是唯一约定的写法。
+  test("rejects defineApplication written as a bare expression statement", async () => {
+    const source = [
+      'import { defineApplication } from "@reforce/core";',
+      'import { redisStarter } from "@acme/starter-redis";',
+      "",
+      "defineApplication({ starters: [redisStarter] });",
       "",
     ].join("\n");
     const { result } = await compile(
