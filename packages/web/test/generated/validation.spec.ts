@@ -100,4 +100,48 @@ describe("validateGeneratedRouteTable", () => {
 
     expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
   });
+
+  // 同 method + 同路径形状只能注册一次（#213）：编译期 DUPLICATE_ROUTE 的运行时对位，检测放在
+  // 引擎无关层，各适配器因此不必各自依赖底层路由库碰巧有没有重复检测。
+  test("rejects two routes with the same method and path", () => {
+    const table = tableWith({ routes: [validRoute(), validRoute()] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  test("rejects a duplicate shape that differs only in parameter name", () => {
+    const table = tableWith({ routes: [validRoute(), { ...validRoute(), path: "/probe/:other" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  // 引擎把 /probe/:id、//probe/:id/ 视作同一条路由（web-node 的 ignoreTrailingSlash /
+  // ignoreDuplicateSlashes，#211），归一必须过滤空段才看得出这类等价重复。
+  test("rejects a duplicate shape that differs only in empty segments", () => {
+    const table = tableWith({ routes: [validRoute(), { ...validRoute(), path: "//probe/:id/" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  test("names both sides of a duplicate route", () => {
+    const table = tableWith({ routes: [validRoute(), { ...validRoute(), path: "/probe/:other" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(
+      /GET \/probe\/:other.*GET \/probe\/:id/,
+    );
+  });
+
+  test("accepts the same path under a different method", () => {
+    const table = tableWith({ routes: [validRoute(), { ...validRoute(), method: "POST" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
+
+  // 静态段优先于参数段是既有契约（web-node 的 router.spec 钉住）：两者不是同一形状，
+  // 归一如果把它们并到一起，重叠路由会被误判成重复。
+  test("accepts a static segment overlapping a parameter segment", () => {
+    const table = tableWith({ routes: [validRoute(), { ...validRoute(), path: "/probe/self" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
 });
