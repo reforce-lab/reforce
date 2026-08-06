@@ -81,7 +81,7 @@ function methodMarkerDeclarationOf(
   diagnostics: CompilerDiagnostic[],
 ): readonly [string, MethodMarkerDeclarationInfo] | undefined {
   const initializer = declaration.initializer;
-  if (initializer === undefined) {
+  if (initializer?.kind !== "call") {
     return undefined;
   }
   const callee = linker.resolveEntity(source, initializer.callee);

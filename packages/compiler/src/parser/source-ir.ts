@@ -485,20 +485,30 @@ export interface DefineApplicationDeclaration {
 
 // 顶层值声明的名录（ADR 0006 W3/W5，#152）：路由 marker 声明（const X = defineRouteMarker(...)）
 // 与 schema 引用目标（export const UserSchema = ...）都要按名字回查"这个模块导出的这个值
-// 是什么"。只登记形状，来源核实照旧留给链接/分析层。init 只在直接调用形态下保真——marker
-// 识别只需要 callee 尾名与字面量实参。
+// 是什么"。只登记形状，来源核实照旧留给链接/分析层。
+export type ValueInitializer =
+  // marker 识别只需要 callee 尾名与字面量实参。
+  | {
+      readonly kind: "call";
+      readonly callee: EntityName;
+      readonly arguments: readonly DecoratorArgumentValue[];
+      readonly span: SourceSpan;
+    }
+  // schema 组声明（ADR 0006 W5）：@Get(path, schemas) 允许传一个指向顶层 const 对象字面量
+  // 的标识符，handler 的 RequestContext<typeof X> 标注因此不必把整组 schema 类型重打一遍。
+  | {
+      readonly kind: "object-literal";
+      readonly properties: readonly ObjectLiteralProperty[];
+      readonly span: SourceSpan;
+    };
+
 export interface ValueDeclaration {
   readonly kind: "value-declaration";
   readonly topLevel: boolean;
   readonly declarationKind: "const" | "let" | "var";
   readonly name?: string;
   readonly export: DeclarationExport;
-  readonly initializer?: {
-    readonly kind: "call";
-    readonly callee: EntityName;
-    readonly arguments: readonly DecoratorArgumentValue[];
-    readonly span: SourceSpan;
-  };
+  readonly initializer?: ValueInitializer;
   readonly span: SourceSpan;
 }
 

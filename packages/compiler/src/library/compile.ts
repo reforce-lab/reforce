@@ -76,10 +76,11 @@ function isMethodMarkerDeclaration(
   declaration: ParsedSource["unit"]["valueDeclarations"][number],
   linker: ProjectLinker,
 ): boolean {
-  const callee = declaration.initializer?.callee;
-  if (callee === undefined) {
+  const initializer = declaration.initializer;
+  if (initializer?.kind !== "call") {
     return false;
   }
+  const callee = initializer.callee;
   const symbol = linker.resolveEntity(source, callee);
   return symbol?.kind === "context" && symbol.name === "defineMethodMarker";
 }

@@ -294,7 +294,7 @@ function numberLiteralOf(target: Node, context: LoweringContext): ExpressionValu
   return undefined;
 }
 
-function objectLiteralPropertyOf(
+export function objectLiteralPropertyOf(
   property: ObjectPropertyKind,
   context: LoweringContext,
 ): ObjectLiteralProperty {

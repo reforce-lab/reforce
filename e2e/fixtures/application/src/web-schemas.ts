@@ -6,7 +6,15 @@
 
 type SchemaIssue = { readonly message: string; readonly path?: readonly (string | number)[] };
 
-interface SnowflakeParams {
+// "~standard".types 是纯类型槽位：spec 里声明为 optional，运行时永远是 undefined。
+// StandardSchemaV1.InferOutput 只从它读输出类型（NonNullable<types>["output"]），
+// zod / valibot / arktype 自带这一槽，手写夹具不补就会让 handler 侧的 context.params
+// 推成 unknown。返回类型带 undefined，所以这里不需要任何类型断言。
+function schemaTypes<Output>(): { readonly input: unknown; readonly output: Output } | undefined {
+  return undefined;
+}
+
+export interface SnowflakeParams {
   readonly id: bigint;
 }
 
@@ -19,6 +27,10 @@ export const snowflakeParamsSchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
+    // types 是纯类型槽位（spec 里 optional、运行时永远 undefined）：
+    // StandardSchemaV1.InferOutput 只从这里读输出类型，zod / valibot / arktype 自带，
+    // 手写夹具必须自己补，否则 handler 侧的 context.params 推成 unknown。
+    types: schemaTypes<SnowflakeParams>(),
     validate: (value: unknown): SnowflakeResult => {
       const record = (value ?? {}) as Record<string, unknown>; // 夹具 schema 自行窄化未知输入
       if (typeof record.id !== "string" || !/^[0-9]+$/.test(record.id)) {
@@ -29,7 +41,7 @@ export const snowflakeParamsSchema = {
   },
 };
 
-interface UserView {
+export interface UserView {
   readonly id: bigint;
   readonly name: string;
 }
@@ -39,6 +51,7 @@ export const userResponseSchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
+    types: schemaTypes<UserView>(),
     validate: (value: unknown) => ({ value }),
   },
   encode: (value: unknown): unknown => {
@@ -47,11 +60,19 @@ export const userResponseSchema = {
   },
 };
 
+export interface ProfileView {
+  readonly id: string;
+  readonly name: string;
+  // secret 故意留在代码形状里：白名单要挡的就是它。
+  readonly secret: string;
+}
+
 // jsonSchema 导出驱动白名单：secret 字段即使被 handler 返回也不出线。
 export const profileResponseSchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
+    types: schemaTypes<ProfileView>(),
     validate: (value: unknown) => ({ value }),
     jsonSchema: {
       output: (_options: { readonly target: string }): Record<string, unknown> => ({
@@ -65,7 +86,7 @@ export const profileResponseSchema = {
   },
 };
 
-interface CreateUserBody {
+export interface CreateUserBody {
   readonly name: string;
 }
 
@@ -77,6 +98,7 @@ export const createUserBodySchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
+    types: schemaTypes<CreateUserBody>(),
     validate: (value: unknown): CreateUserResult => {
       const record = (value ?? {}) as Record<string, unknown>; // 夹具 schema 自行窄化未知输入
       if (typeof record.name !== "string" || record.name.length === 0) {
@@ -87,7 +109,7 @@ export const createUserBodySchema = {
   },
 };
 
-interface AuditQuery {
+export interface AuditQuery {
   readonly delay: number;
 }
 
@@ -100,6 +122,7 @@ export const auditQuerySchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
+    types: schemaTypes<AuditQuery>(),
     validate: (value: unknown): AuditQueryResult => {
       const record = (value ?? {}) as Record<string, unknown>; // 夹具 schema 自行窄化未知输入
       const raw = typeof record.delay === "string" ? record.delay : "0";
@@ -112,10 +135,16 @@ export const auditQuerySchema = {
   },
 };
 
+export interface AuditView {
+  readonly id: string;
+  readonly path: string;
+}
+
 export const auditResponseSchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
+    types: schemaTypes<AuditView>(),
     validate: (value: unknown) => ({ value }),
   },
 };
