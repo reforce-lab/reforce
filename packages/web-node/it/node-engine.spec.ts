@@ -188,10 +188,18 @@ describe("WebEngine over a real node:http server", () => {
     const gate = new Promise<void>((resolve) => {
       released = resolve;
     });
+    // "handler 已进入"的确定性屏障：close 必须在请求真的到达 handler 之后才调，否则它会
+    // 因为还没有在途请求而立刻 resolve。用 sleep 猜这个时刻在并发跑测试文件时会翻车
+    // （同 #177 / #225 的处理方式：把竞态移出测试路径，不要靠等）。
+    let reached: (() => void) | undefined;
+    const handlerReached = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
     const engine = new WebEngine({ port: 0 });
     const handle = await engine.start(
       application([
         route("GET", "/slow", async () => {
+          reached?.();
           await gate;
           return new Response("drained");
         }),
@@ -200,8 +208,7 @@ describe("WebEngine over a real node:http server", () => {
     const base = serverUrlOf(engine);
 
     const inflight = fetch(`${base}/slow`).then((response) => response.text());
-    // 确保请求已到达 handler（node:http 接受连接是异步的）
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await handlerReached;
     let closed = false;
     const closing = handle.close().then(() => {
       closed = true;

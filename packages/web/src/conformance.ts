@@ -115,10 +115,18 @@ interface ConformanceFixtures {
   readonly application: WebApplication;
   readonly flood: { produced: number };
   readonly gate: { release: () => void };
+  // "/trickle 的 handler 已被调用"的确定性屏障。排空用例必须在请求真的到达 handler 之后才
+  // 调 close，否则 close 会因为还没有在途请求而立刻 resolve——用 sleep 猜这个时刻在并发跑
+  // 测试文件时会翻车（同 #177 / #225 的处理方式：把竞态移出测试路径，不要靠等）。
+  readonly handlerReached: Promise<void>;
 }
 
 function fixtures(): ConformanceFixtures {
   const flood = { produced: 0 };
+  let reachHandler = (): void => undefined;
+  const handlerReached = new Promise<void>((resolve) => {
+    reachHandler = resolve;
+  });
   let releaseGate = (): void => undefined;
   const gate = {
     release: () => {
@@ -159,8 +167,9 @@ function fixtures(): ConformanceFixtures {
         );
       }),
       // 首块立刻可读、其余卡在 gate 上：缓冲式引擎会让客户端等到 gate 释放才收到任何字节
-      route("GET", "/trickle", () =>
-        Promise.resolve(
+      route("GET", "/trickle", () => {
+        reachHandler();
+        return Promise.resolve(
           new Response(
             new ReadableStream({
               start(controller) {
@@ -173,12 +182,12 @@ function fixtures(): ConformanceFixtures {
               },
             }),
           ),
-        ),
-      ),
+        );
+      }),
       route("GET", "/flood", () => Promise.resolve(new Response(countingStream(flood, 10_000)))),
     ],
   };
-  return { application, flood, gate };
+  return { application, flood, gate, handlerReached };
 }
 
 export function adapterConformanceCases(
@@ -421,8 +430,8 @@ export function adapterConformanceCases(
       const server = await options.start(context.application);
 
       const inflight = fetch(`${server.baseUrl}/trickle`).then((response) => response.text());
-      // 请求已到达 handler（接受连接是异步的）
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // 确定性屏障：等 handler 真的被调用，而不是猜一个时长
+      await context.handlerReached;
       let closed = false;
       const closing = server.close().then(() => {
         closed = true;
