@@ -81,6 +81,12 @@ importers:
       '@reforce/cli':
         specifier: workspace:*
         version: link:../packages/cli
+      '@reforce/logging':
+        specifier: workspace:*
+        version: link:../packages/logging
+      '@reforce/logging-pino':
+        specifier: workspace:*
+        version: link:../packages/logging-pino
       '@reforce/testing':
         specifier: workspace:*
         version: link:../packages/testing
@@ -96,6 +102,9 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
       radashi:
         specifier: ^12.9.1
         version: 12.9.1
