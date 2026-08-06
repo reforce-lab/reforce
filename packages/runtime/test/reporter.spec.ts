@@ -1,6 +1,14 @@
 import { Writable } from "node:stream";
+import { UnregisteredBeanTargetError } from "@reforce/context";
+import { normalizeTerminalOutput } from "@reforce/tooling-testing";
 import { describe, expect, test } from "vitest";
-import { PlainTextReporter, type Reporter } from "@/reporter";
+import {
+  createFailureEvent,
+  PlainTextReporter,
+  type PlainTextReporterOptions,
+  type ReportedDiagnostic,
+  type Reporter,
+} from "@/reporter";
 
 class RecordingWritable extends Writable {
   readonly chunks: string[] = [];
@@ -122,5 +130,127 @@ describe("plain text reporter", () => {
     reporter.report({ kind: "success", command: "build", message: "after the failure" });
 
     await expect(reporter.flush()).rejects.toBe(output.failure);
+  });
+});
+
+async function collect(
+  options: PlainTextReporterOptions,
+  report: (reporter: Reporter) => void,
+): Promise<string> {
+  const output = new RecordingWritable();
+  const reporter = new PlainTextReporter({ ...options, output });
+  report(reporter);
+  await reporter.flush();
+  return normalizeTerminalOutput(output.chunks.join(""));
+}
+
+const diagnostic: ReportedDiagnostic = {
+  code: "MISSING_BEAN",
+  severity: "error",
+  message: 'No Bean provides "PaymentGateway".',
+  related: [],
+};
+
+describe("reporter render mode selection", () => {
+  test("falls back to the greppable single line for a piped tool", async () => {
+    const line = await collect({}, (reporter) =>
+      reporter.report({ kind: "diagnostic", command: "build", phase: "compiler", diagnostic }),
+    );
+
+    expect(line).toBe('[MISSING_BEAN] No Bean provides "PaymentGateway".\n');
+  });
+
+  // 跨进程只能靠 env：父子各自构造 reporter，IPC 上没有 reporter 事件。
+  test("honours the render mode handed down through the environment", async () => {
+    const line = await collect({ env: { REFORCE_ERROR_FORMAT: "json" } }, (reporter) =>
+      reporter.report({ kind: "diagnostic", command: "build", phase: "compiler", diagnostic }),
+    );
+
+    expect(JSON.parse(line)).toEqual({ kind: "diagnostic", ...diagnostic });
+  });
+
+  test("an explicit mode wins over the environment", async () => {
+    const line = await collect(
+      { mode: "short", env: { REFORCE_ERROR_FORMAT: "json" } },
+      (reporter) =>
+        reporter.report({ kind: "diagnostic", command: "build", phase: "compiler", diagnostic }),
+    );
+
+    expect(line).toBe('[MISSING_BEAN] No Bean provides "PaymentGateway".\n');
+  });
+
+  test("a piped application emits structured records for every event kind", async () => {
+    const line = await collect({ audience: "application", env: {} }, (reporter) =>
+      reporter.report({ kind: "success", command: "start", message: "Application started." }),
+    );
+
+    expect(JSON.parse(line)).toEqual({
+      kind: "success",
+      command: "start",
+      message: "Application started.",
+    });
+  });
+});
+
+describe("failure rendering across modes", () => {
+  // 竖排的理由：JS 的根因在链条最深处，横排时它被挤到行尾最容易被忽略。
+  test("stacks the cause chain for humans with the root cause last", async () => {
+    const output = await collect({ mode: "human" }, (reporter) =>
+      reporter.report({
+        kind: "failure",
+        command: "dev",
+        phase: "shutdown",
+        code: "SHUTDOWN_FAILED",
+        message: "Development child shutdown failed.",
+        cause: new Error("Development child shutdown handshake failed.", {
+          cause: new Error("Development child did not acknowledge shutdown."),
+        }),
+      }),
+    );
+
+    expect(output.split("\n").slice(0, 3)).toEqual([
+      "error[SHUTDOWN_FAILED]: Development child shutdown failed.",
+      "  caused by: Development child shutdown handshake failed.",
+      "  caused by: Development child did not acknowledge shutdown.",
+    ]);
+  });
+
+  // D5：运行期错误与编译期诊断同框——help 从 cause 链上取，抛出点常被包装若干层。
+  test("surfaces a runtime error's help from inside the cause chain", async () => {
+    const output = await collect({ mode: "human" }, (reporter) =>
+      reporter.report(
+        createFailureEvent({
+          command: "start",
+          phase: "bootstrap",
+          fallbackCode: "BOOTSTRAP_FAILED",
+          message: "Production bootstrap failed.",
+          cause: new Error("wrapped", { cause: new UnregisteredBeanTargetError(class Absent {}) }),
+        }),
+      ),
+    );
+
+    expect(output).toContain("= help: Only classes the compiler saw as providers");
+  });
+
+  test("keeps the cause chain out of the JSON payload but not out of the record", async () => {
+    const line = await collect({ mode: "json" }, (reporter) =>
+      reporter.report({
+        kind: "failure",
+        command: "build",
+        phase: "build",
+        code: "BUILD_FAILED",
+        message: "Compilation failed.",
+        cause: new Error("broken"),
+      }),
+    );
+
+    expect(JSON.parse(line)).toEqual({
+      kind: "failure",
+      command: "build",
+      phase: "build",
+      code: "BUILD_FAILED",
+      message: "Compilation failed.",
+      causes: ["broken"],
+    });
   });
 });

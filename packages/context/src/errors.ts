@@ -20,6 +20,7 @@ export type RuntimeErrorCode =
 interface RuntimeErrorOptions {
   readonly cause?: unknown;
   readonly errors?: readonly unknown[];
+  readonly help?: string;
 }
 
 // Code 的上界是 string 而不是 RuntimeErrorCode：框架包（@reforce/transaction 起）在自己的包里
@@ -31,11 +32,15 @@ export abstract class ReforceRuntimeError<Code extends string = string> extends 
   // field type-only, so super(message, { cause }) is not clobbered by a field init.
   declare readonly cause?: unknown;
   readonly errors?: readonly unknown[];
+  // 运行期错误与编译期诊断同框（RFC 0011 D5，#242）：help 说「下一步怎么办」，与 message 说
+  // 「发生了什么」分开。reporter 在 human 模式下沿 cause 链取第一条 help 渲染成 `= help:`。
+  readonly help?: string;
 
   protected constructor(message: string, options: RuntimeErrorOptions = {}) {
     super(message, { cause: options.cause });
     this.name = new.target.name;
     this.errors = options.errors;
+    this.help = options.help;
   }
 }
 
@@ -48,7 +53,9 @@ export class EarlyBeanAccessError extends ReforceRuntimeError<"EARLY_BEAN_ACCESS
     readonly beanId: string;
     readonly constructionPath: readonly string[];
   }) {
-    super(`Bean "${input.beanId}" was accessed before construction completed.`);
+    super(`Bean "${input.beanId}" was accessed before construction completed.`, {
+      help: "Move the access out of the constructor: read the dependency inside a method, or declare an @OnStart hook that runs after every Bean is constructed.",
+    });
     this.beanId = input.beanId;
     this.constructionPath = Object.freeze([...input.constructionPath]);
   }
@@ -156,6 +163,9 @@ export class ConfigBindingError extends ReforceRuntimeError<"CONFIG_BINDING_FAIL
         `Configuration binding failed with ${issues.length} issue(s):`,
         ...issues.map(renderConfigBindingIssue),
       ].join("\n"),
+      {
+        help: "Each issue names the environment key it expected. Set the missing keys, or fix the value so it parses into the declared property type.",
+      },
     );
     this.issues = issues;
   }
@@ -173,6 +183,9 @@ export class RequestContextMissingError extends ReforceRuntimeError<"REQUEST_CON
       input.consumerBeanId === undefined
         ? `Request-scoped Bean "${input.targetBeanId}" was accessed outside an active request scope.`
         : `Current dependency of "${input.consumerBeanId}" onto "${input.targetBeanId}" was read outside an active request scope.`,
+      {
+        help: "Request-scoped Beans only exist while a request is being handled. Read them from a route handler or from a Bean that a route handler calls, not from startup code or a background task.",
+      },
     );
     this.targetBeanId = input.targetBeanId;
     this.consumerBeanId = input.consumerBeanId;
@@ -194,7 +207,9 @@ export class UnregisteredBeanTargetError extends ReforceRuntimeError<"UNREGISTER
   readonly target: unknown;
 
   constructor(target: unknown) {
-    super(`No Bean is registered for ${describeTarget(target)}.`);
+    super(`No Bean is registered for ${describeTarget(target)}.`, {
+      help: "Only classes the compiler saw as providers can be resolved by target. Check that the class carries @Injectable and is reachable from the application entry, and rebuild.",
+    });
     this.target = target;
   }
 }

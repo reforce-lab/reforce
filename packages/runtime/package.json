@@ -17,6 +17,18 @@
       "types": "./dist/reporter.d.ts",
       "default": "./dist/reporter.js"
     },
+    "./render-mode": {
+      "types": "./dist/render-mode.d.ts",
+      "default": "./dist/render-mode.js"
+    },
+    "./terminal": {
+      "types": "./dist/terminal.d.ts",
+      "default": "./dist/terminal.js"
+    },
+    "./diagnostic-render": {
+      "types": "./dist/diagnostic-render.d.ts",
+      "default": "./dist/diagnostic-render.js"
+    },
     "./node-runtime": {
       "types": "./dist/node-runtime.d.ts",
       "default": "./dist/node-runtime.js"

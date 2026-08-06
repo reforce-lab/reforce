@@ -23,6 +23,30 @@ function optionalArray(value: unknown, message: string): readonly unknown[] {
   return value;
 }
 
+// source map 落在 asset.info.related.sourceMap，不是顶层的 related 数组——后者在这套 stats
+// preset 下恒为空（filteredRelated 计数说明它被过滤掉了）。这里读的是构建自己声明的伴生
+// 产物名，不是按 `${name}.map` 猜出来的（RFC 0011 D6，#242）。
+function collectDeclaredRelatedAssets(asset: object, files: Set<string>): void {
+  const info = Reflect.get(asset, "info");
+  if (!isObject(info)) {
+    return;
+  }
+  const related = Reflect.get(info, "related");
+  if (!isObject(related)) {
+    return;
+  }
+  for (const key of Reflect.ownKeys(related)) {
+    const value = Reflect.get(related, key);
+    for (const name of Array.isArray(value) ? value : [value]) {
+      if (typeof name !== "string") {
+        throw new Error("Production build returned an invalid related asset name.");
+      }
+      assertAssetPath(name);
+      files.add(name);
+    }
+  }
+}
+
 function collectStatsAsset(asset: unknown, files: Set<string>): void {
   if (!isObject(asset)) {
     throw new Error("Production build returned an invalid stats asset.");
@@ -33,6 +57,7 @@ function collectStatsAsset(asset: unknown, files: Set<string>): void {
   }
   assertAssetPath(name);
   files.add(name);
+  collectDeclaredRelatedAssets(asset, files);
   for (const related of optionalArray(
     Reflect.get(asset, "related"),
     "Production build returned invalid related assets.",
@@ -61,7 +86,12 @@ function collectStatsAssets(value: unknown, files: Set<string>): void {
 
 function statsAssetFiles(stats: NonNullable<BuildResult["stats"]>): readonly string[] {
   const files = new Set<string>();
-  collectStatsAssets(stats.toJson({ all: false, assets: true, children: true }), files);
+  // relatedAssets 必须显式开：source map 是主产物的 related asset，不开时 stats 里根本没有
+  // 这一层，落盘校验会把磁盘上真实存在的 .map 判成「多出来的文件」（RFC 0011 D6，#242）。
+  collectStatsAssets(
+    stats.toJson({ all: false, assets: true, children: true, relatedAssets: true }),
+    files,
+  );
   return [...files].sort(compareUtf16CodeUnits);
 }
 
@@ -153,7 +183,11 @@ export async function buildProductionDist(input: {
         distPath: { root: input.stagingDirectory, js: "", jsAsync: "chunks" },
         filename: { js: "[name].mjs" },
         filenameHash: false,
-        sourceMap: false,
+        // nosources 而不是完整 source-map（RFC 0011 D6，#242）：栈帧要重定位回用户源文件，
+        // 但产物里不能出现源码正文——it/integration/production-build.spec.ts 会读遍全部产物
+        // 断言不含构建期依赖的名字，`sourcesContent` 会把它们整片带进来。代价写进文档：生产
+        // 的失败输出只有「文件:行」，没有源码框。
+        sourceMap: { js: "nosources-source-map" },
         legalComments: "none",
         cleanDistPath: false,
         minify: false,
@@ -165,6 +199,10 @@ export async function buildProductionDist(input: {
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
+          // sources[] 的基准（D6 C4）：target "node" 下 rsbuild 固定用 [relative-resource-path]，
+          // 而 Node 的 --enable-source-maps 按「生成文件所在目录」解析相对 source，于是每条
+          // 帧都指向 dist/src/… 这种不存在的路径。写成绝对路径后重定位才落到真实源文件。
+          config.output.devtoolModuleFilenameTemplate = "[absolute-resource-path]";
           config.plugins.push(
             new rspack.experiments.VirtualModulesPlugin({
               [virtualEntryPath]: renderProductionEntry(),

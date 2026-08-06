@@ -12,6 +12,7 @@ import {
   reportShutdownFailure,
 } from "@reforce/runtime/reporter";
 import { isObject } from "radashi";
+import { reportDiagnostics } from "@/diagnostic-reporting";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
 
 // reforce lib（ADR 0004 决策 1/4，#120/#147）：库模式编译的 CLI 面。产物写在包根——与 M1 起
@@ -38,9 +39,7 @@ function reportCompilerDiagnostics(
   phase: "project" | "compiler",
   diagnostics: readonly CompilerDiagnostic[],
 ): void {
-  for (const diagnostic of diagnostics) {
-    reporter.report({ kind: "diagnostic", command: "lib", phase, diagnostic });
-  }
+  reportDiagnostics({ reporter, command: "lib", phase, diagnostics });
 }
 
 // 接受 exports 的两种直写形态：字符串目标，或 default 条件指向目标的条件对象。其余形态

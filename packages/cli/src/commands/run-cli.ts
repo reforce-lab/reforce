@@ -1,10 +1,16 @@
+import { resolve } from "node:path";
+import {
+  parseRenderMode,
+  renderModeEnvironmentVariable,
+  renderModeNames,
+} from "@reforce/runtime/render-mode";
 import {
   type CliCommandName,
   createFailureEvent,
   PlainTextReporter,
   type Reporter,
 } from "@reforce/runtime/reporter";
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 
 export interface RunCliOptions {
   readonly argv?: readonly string[];
@@ -23,11 +29,21 @@ interface CompileProjectOptions extends ProjectOptions {
 type SelectedCommand = Exclude<CliCommandName, "cli">;
 
 function configureProjectOption(command: Command): Command {
-  return command.option(
-    "--project <directory>",
-    "application selection boundary, resolved from the invocation directory",
-    ".",
-  );
+  return command
+    .option(
+      "--project <directory>",
+      "application selection boundary, resolved from the invocation directory",
+      ".",
+    )
+    .addOption(
+      // 逐命令而不是全局：commander 的全局选项要写在子命令名之前（`reforce --error-format=json
+      // build`），而人手打出来的顺序总是 `reforce build --error-format=json`。choices 让非法值
+      // 变成一条正常的 argv 用法错误，而不是被静默当成「没指定」。
+      new Option(
+        "--error-format <mode>",
+        "how diagnostics and failures are rendered; defaults to human on a terminal, short when piped",
+      ).choices([...renderModeNames]),
+    );
 }
 
 function configureCompileOptions(command: Command): Command {
@@ -75,7 +91,10 @@ async function reportCliFailure(
 export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
   const argv = [...(options.argv ?? process.argv)];
   const cwd = options.cwd ?? process.cwd();
-  const reporter = options.reporter ?? new PlainTextReporter();
+  // reporter 惰性构造：--error-format 和 --project 要到 parseAsync 进入 action 之后才可知，
+  // 而 reporter 的渲染模式与源码根在构造时就定死。注入的 reporter（测试）恒优先。
+  let reporter = options.reporter;
+  const currentReporter = (): Reporter => (reporter ??= new PlainTextReporter());
   let result: 0 | 1 = 0;
   let selectedCommand: SelectedCommand | undefined;
   const program = new Command()
@@ -83,6 +102,31 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     .description("Compile and run a Reforce application")
     .showHelpAfterError()
     .exitOverride();
+
+  program.hook("preAction", (_program, actionCommand) => {
+    // commander 的 opts() 是 Record<string, any>，窄成 unknown 再逐个判型，避免 any 顺着
+    // 构造参数扩散出去。
+    const values: Readonly<Record<string, unknown>> = actionCommand.opts();
+    const explicit = parseRenderMode(
+      typeof values.errorFormat === "string" ? values.errorFormat : undefined,
+    );
+    if (explicit !== undefined) {
+      // 子进程的 stdio 是 inherit fd2，父子各自构造 reporter，IPC 上没有 reporter 事件——
+      // 显式模式只能靠 env 传下去。未显式指定时不必传：子进程的 fd2 就是父进程那一个，
+      // 它自己判 TTY 会得到同样的结论。
+      process.env[renderModeEnvironmentVariable] = explicit;
+    }
+    if (options.reporter !== undefined) {
+      return;
+    }
+    reporter = new PlainTextReporter({
+      ...(explicit === undefined ? {} : { mode: explicit }),
+      // human 模式取源码切片的基准。--project 是选择边界，编译器解析出的 projectRoot 在
+      // 单应用与 monorepo 子目录两种布局下都与它一致；万一不一致，读文件失败会降级成
+      // 只打位置行，不会渲染出错误的代码。
+      sourceRoot: resolve(cwd, typeof values.project === "string" ? values.project : "."),
+    });
+  });
 
   configureCompileOptions(
     program.command("build").description("build a production application"),
@@ -93,7 +137,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       cwd,
       projectDirectory: commandOptions.project,
       tsconfigPath: commandOptions.tsconfig,
-      reporter,
+      reporter: currentReporter(),
     });
   });
 
@@ -106,7 +150,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       cwd,
       projectDirectory: commandOptions.project,
       tsconfigPath: commandOptions.tsconfig,
-      reporter,
+      reporter: currentReporter(),
     });
   });
 
@@ -119,7 +163,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       cwd,
       projectDirectory: commandOptions.project,
       ...(commandOptions.tsconfig === undefined ? {} : { tsconfigPath: commandOptions.tsconfig }),
-      reporter,
+      reporter: currentReporter(),
     });
   });
 
@@ -127,11 +171,11 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     program
       .command("explain")
       .description(
-        "explain a bean's selection chain from the generated manifest, or a route's handling chain from the generated route table; starters with no bean in the manifest are not visible",
+        "explain a diagnostic code, a bean's selection chain from the generated manifest, or a route's handling chain from the generated route table; starters with no bean in the manifest are not visible",
       )
       .argument(
         "<query>",
-        'bean id, export name, contract display name, or a route query ("/path" or "GET /path")',
+        'diagnostic code, bean id, export name, contract display name, or a route query ("/path" or "GET /path")',
       ),
   ).action(async (beanName: string, commandOptions: ProjectOptions) => {
     selectedCommand = "explain";
@@ -140,7 +184,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       cwd,
       projectDirectory: commandOptions.project,
       beanName,
-      reporter,
+      reporter: currentReporter(),
     });
   });
 
@@ -152,7 +196,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     result = await runStartCommand({
       cwd,
       projectDirectory: commandOptions.project,
-      reporter,
+      reporter: currentReporter(),
     });
   });
 
@@ -160,6 +204,6 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     await program.parseAsync(argv);
     return result;
   } catch (error) {
-    return await reportCliFailure(error, selectedCommand, reporter);
+    return await reportCliFailure(error, selectedCommand, currentReporter());
   }
 }

@@ -8,6 +8,7 @@ import {
 } from "@reforce/runtime/reporter";
 import { buildProductionDist } from "@/bundling/production-dist";
 import type { Compiler, ResolvedProject } from "@/compiler-types";
+import { reportDiagnostics } from "@/diagnostic-reporting";
 import { DirectoryTransactionError, DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
 
@@ -31,9 +32,7 @@ function reportCompilerDiagnostics(
   phase: "project" | "compiler",
   diagnostics: readonly CompilerDiagnostic[],
 ): void {
-  for (const diagnostic of diagnostics) {
-    reporter.report({ kind: "diagnostic", command: "build", phase, diagnostic });
-  }
+  reportDiagnostics({ reporter, command: "build", phase, diagnostics });
 }
 
 async function buildResolvedProject(input: {

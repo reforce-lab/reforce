@@ -146,6 +146,9 @@ export async function startDevWatchBuild(
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
+          // 与 production-dist 同一条理由（RFC 0011 D6 C4，#242）：Node 按生成文件所在目录解析
+          // 相对 source，[relative-resource-path] 会指向 .reforce/dev/src/… 这种不存在的路径。
+          config.output.devtoolModuleFilenameTemplate = "[absolute-resource-path]";
           config.output.publicPath = "./";
           config.output.hotUpdateChunkFilename = hotUpdateChunkFilename;
           config.output.hotUpdateMainFilename = hotUpdateManifestFilename;

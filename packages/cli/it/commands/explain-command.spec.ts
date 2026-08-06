@@ -381,3 +381,41 @@ test("explains the synthesized framework interceptor bean itself", async () => {
     ),
   ).toBe(true);
 });
+
+// —— 诊断码长文（RFC 0011 D8，#242）——
+
+test("explains a diagnostic code without reading any generated artifact", async () => {
+  const project = await createExplainProject({
+    sources: starterApplicationSources,
+    compile: false,
+  });
+
+  const { exitCode, lines, events } = await explain(project, "MISSING_BEAN");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("MISSING_BEAN · ");
+  expect(events.filter((event) => event.kind === "failure")).toEqual([]);
+});
+
+test("answers that a code has no long-form article yet", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, events } = await explain(project, "TYPE_LINK_FAILED");
+
+  expect(exitCode).toBe(1);
+  expect(events[0]).toMatchObject({ kind: "failure", code: "CLI_USAGE_ERROR" });
+  expect(events[0]).toHaveProperty(
+    "message",
+    expect.stringContaining('No long-form article for "TYPE_LINK_FAILED" yet'),
+  );
+});
+
+// 歧义消解靠「命中长文表」而不是正则猜形状：全大写的契约 displayName 不能被 CODE 分支抢走。
+test("keeps an all-caps bean name on the bean branch", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "RedisClient");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toBe("bean @acme/starter-redis#RedisClient");
+});

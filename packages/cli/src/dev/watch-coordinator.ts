@@ -1,6 +1,7 @@
 import type { CompilerDiagnostic } from "@reforce/compiler";
 import { createFailureEvent, type Reporter } from "@reforce/runtime/reporter";
 import type { DevChildSupervisor } from "@/dev/child-supervisor";
+import { reportDiagnostics } from "@/diagnostic-reporting";
 
 interface FailedDevCompilation {
   readonly status: "failure";
@@ -35,14 +36,12 @@ export class DevWatchCoordinator {
 
   async acceptCompilation(compilation: DevCompilation): Promise<void> {
     if (compilation.status === "failure") {
-      for (const diagnostic of compilation.diagnostics) {
-        this.reporter.report({
-          kind: "diagnostic",
-          command: "dev",
-          phase: "compiler",
-          diagnostic,
-        });
-      }
+      reportDiagnostics({
+        reporter: this.reporter,
+        command: "dev",
+        phase: "compiler",
+        diagnostics: compilation.diagnostics,
+      });
       if (compilation.error !== undefined) {
         this.reporter.report(
           createFailureEvent({

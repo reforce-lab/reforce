@@ -15,6 +15,7 @@ import { DevChildSupervisor } from "@/dev/child-supervisor";
 import { DevCompilerGate } from "@/dev/compiler-gate";
 import { collectInstallSignalInputs } from "@/dev/install-signals";
 import { type DevCompilation, DevWatchCoordinator } from "@/dev/watch-coordinator";
+import { reportDiagnostics } from "@/diagnostic-reporting";
 import { DirectoryTransactions } from "@/project/directory-transaction";
 import { ProjectBusyError, ProjectLease } from "@/project/lease";
 
@@ -153,14 +154,7 @@ async function reportProjectResolutionFailure(
   reporter: Reporter,
   diagnostics: readonly CompilerDiagnostic[],
 ): Promise<1> {
-  for (const diagnostic of diagnostics) {
-    reporter.report({
-      kind: "diagnostic",
-      command: "dev",
-      phase: "project",
-      diagnostic,
-    });
-  }
+  reportDiagnostics({ reporter, command: "dev", phase: "project", diagnostics });
   const shutdownFailures: unknown[] = [];
   await captureFailure(() => reporter.flush(), shutdownFailures);
   if (shutdownFailures.length > 0) {
@@ -233,7 +227,15 @@ export async function runDevCommand(
           entryPath: resolve(resolution.project.projectRoot, ".reforce", "dev", "main.mjs"),
           cwd: resolution.project.projectRoot,
           nodeExecutable: requireNodeExecutable(),
-          env: { [writerLeaseTokenEnvironmentVariable]: writerLease.leaseToken },
+          env: {
+            [writerLeaseTokenEnvironmentVariable]: writerLease.leaseToken,
+            // dev 子进程的 argv 由 spawnDevChild 拼，没有注入 flag 的口子，只能走 NODE_OPTIONS
+            // （RFC 0011 D6 C3，#242）。dev 侧的 sourceMap: true 落 cheap-module-source-map，
+            // 只有行映射没有列映射——栈帧能回到正确的源文件与行，列不精确，这一点如实写进文档。
+            NODE_OPTIONS: [process.env.NODE_OPTIONS, "--enable-source-maps"]
+              .filter((part) => part !== undefined && part.length > 0)
+              .join(" "),
+          },
           waitForReady: true,
           leaseParticipant: {
             add: (participant) => writerLease.addParticipant(participant),

@@ -6,6 +6,12 @@ import {
   type Reporter,
   reportShutdownFailure,
 } from "@reforce/runtime/reporter";
+import {
+  diagnosticArticle,
+  looksLikeDiagnosticCode,
+  renderDiagnosticArticle,
+  unwrittenArticleIssueUrl,
+} from "@/explain/codes";
 import { renderExplanation } from "@/explain/render";
 import {
   isRouteQuery,
@@ -136,6 +142,16 @@ function beanLookupProblem(
   beanName: string,
   matches: readonly ManifestBean[],
 ): ExplainOutcome {
+  // 走到这里说明既没命中长文表也没命中 bean。此时（且仅此时）才判断形状：用户多半是在问一个
+  // 还没写长文的诊断码，回答「暂无长文」比列出全部 bean 有用得多。
+  if (matches.length === 0 && looksLikeDiagnosticCode(beanName)) {
+    return {
+      kind: "problem",
+      phase: "argv",
+      code: "CLI_USAGE_ERROR",
+      message: `No long-form article for "${beanName}" yet, and no bean matches that name either. Long-form articles are tracked at ${unwrittenArticleIssueUrl}`,
+    };
+  }
   const candidates = (matches.length === 0 ? manifest.beans : matches)
     .map((bean) => bean.id)
     .join(", ");
@@ -200,6 +216,12 @@ async function resolveExplanation(options: ExplainCommandOptions): Promise<Expla
   const projectRoot = resolve(options.cwd, options.projectDirectory);
   if (isRouteQuery(options.beanName)) {
     return await resolveRouteExplanation(projectRoot, options.beanName);
+  }
+  // 诊断码长文（D8）：只有「命中长文表」才走这条分支，未命中的一律原样落到 bean 面。
+  // 用正则猜「看起来像个码」会把全大写的契约 displayName（URL 之类）从 bean 面抢走。
+  const article = diagnosticArticle(options.beanName);
+  if (article !== undefined) {
+    return { kind: "lines", lines: renderDiagnosticArticle(options.beanName, article) };
   }
   const manifestPath = join(projectRoot, ".reforce", "generated", "manifest.json");
   const { manifest, problem } = await readManifest(manifestPath);
