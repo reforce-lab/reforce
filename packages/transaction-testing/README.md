@@ -1,10 +1,10 @@
-# @reforce/transaction-tck
+# @reforce/transaction-testing
 
 `TransactionManager` 契约的一致性测试套件（ADR 0008 T5）。adapter 作者写一个 harness，就得到
 全套行为断言——契约从纸面条款变成可执行定义。
 
 ```ts
-import { runTransactionTck } from "@reforce/transaction-tck";
+import { runTransactionTck } from "@reforce/transaction-testing";
 
 runTransactionTck({
   name: "@reforce/data-prisma",
@@ -22,6 +22,16 @@ runTransactionTck({
 });
 ```
 
+## 为什么 vitest 在 dependencies 里
+
+因为本包**就是**测试套件：`runTransactionTck` 直接产出 `describe`/`test`，runner 是它的消费
+对象而不是宿主环境的选择（形态参照 `@keyv/test-suite`，见 `src/run.ts` 顶部注释）。装了它就
+必须能跑它，不能要求每个 adapter 自己配一遍 runner。
+
+这与 `@reforce/web/conformance` 的相反答案并存，两边各有理由，别把其中一个当成全仓惯例：那边
+是契约包顺带提供的一个测试面，主体是给生产代码用的，为一个测试面把 runner 提成 peer 会让所有
+只用契约的消费者一起付账。判据是"这个包的产物是不是测试本身"。
+
 ## harness 的三条硬要求
 
 1. **`readOutside` 必须是与任何事务无关的旁路连接。** 用事务内连接实现它，提交与回滚的差别
@@ -38,13 +48,13 @@ schema 知识，违反"只依赖契约"）。缺席时 `F2`/`F3` 登记为 skip�
 里看得见。
 
 savepoint 没有对应的 capability 开关：`isNestedTransactionManager(manager)`（来自
-`@reforce/context`）是唯一真相，声明只可能与它一致（冗余）或矛盾（噪声）。C 组按它自动登记。
+`@reforce/transaction`）是唯一真相，声明只可能与它一致（冗余）或矛盾（噪声）。C 组按它自动登记。
 
 ## TCK 管不到什么
 
 诚实地写在这里，避免"全绿 = 契约被遵守"的误读。
 
-- **意图性条款只能验后果。**「禁止读取 `activeTransaction()`」「必须显式绕过 ORM 的传播或
+- **意图性条款只能验后果。**「`withTransaction()` 里禁止调 `activeResourceFor(this)`」「必须显式绕过 ORM 的传播或
   ambient context」——adapter 读了 ALS 但行为仍等价时抓不到，只有真的复用了才被 B1/B2/B3
   抓住。`B3`（两次 `withTransaction` 拿到的 resource 不同一）是最强的代理指标，但代理不是
   证明，代码评审仍要看。
@@ -54,7 +64,7 @@ savepoint 没有对应的 capability 开关：`isNestedTransactionManager(manage
   自己包内用驱动日志覆盖。
 - **层级不对的不在范围内。** `TransactionIsolationOnJoinError` / `TransactionTimeoutOnJoinError`
   / `TransactionSavepointUnsupportedError` 是事务拦截器的传播语义，manager 从不抛它们；由
-  `@reforce/context` 的 `test/transaction/interceptor.spec.ts` 覆盖。
+  `@reforce/transaction` 的 `test/interceptor.spec.ts` 覆盖。
 - **语义近似只能证伪不能证真。** `F5`（多条快语句组成的慢事务）与 `F6`（事务内长时间不发语句）
   各挡掉一种冒充形态，但 `statement_timeout + idle_in_transaction_session_timeout` 的组合
   可能同时通过而语义仍不完全等价。TCK 给的是**下界**。
@@ -62,6 +72,9 @@ savepoint 没有对应的 capability 开关：`isNestedTransactionManager(manage
   `SERIALIZABLE` 的写偏斜需要特定表结构，超出 key-value harness 的表达力。
 - **单写者数据库验不了 REQUIRES_NEW 的写-写场景。** SQLite 上 `B2` 只能降级成 `B2L`（外层只读），
   完整验证等容器化 PG（ADR 0008 T5 的已知代价）。
+- **跨 manager 不在验证范围内。** harness 只登记一个 manager，套件从不问"A 的边界里 B 看到
+  什么"。ALS 按 manager 身份分槽这条性质由 `@reforce/transaction` 的 `test/scope.spec.ts`
+  覆盖，与 adapter 实现无关；多数据源本身是 #204 的不做项。
 
 ## 本包自身的正确性
 

@@ -1,6 +1,6 @@
-import { defineMethodMarker } from "@/interception/method-marker";
-import type { TransactionIsolation } from "@/transaction/manager";
-import { transactionIsolationLevels } from "@/transaction/manager";
+import { defineMethodMarker } from "@reforce/context";
+import type { TransactionIsolation } from "@/manager";
+import { transactionIsolationLevels } from "@/manager";
 
 // @Transactional（ADR 0008 T3，#204 定案 2）：走 AM1 defineMethodMarker 通道零特权——字面量
 // 参数编译期提取进织入表、经 ctx.value 读回；"transactional" 是保留 key，用户声明同名标记

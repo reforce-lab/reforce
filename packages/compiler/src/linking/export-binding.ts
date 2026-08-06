@@ -18,6 +18,7 @@ import type {
 export const contextModuleSpecifier = "@reforce/context";
 export const configModuleSpecifier = "@reforce/config";
 export const webModuleSpecifier = "@reforce/web";
+export const transactionModuleSpecifier = "@reforce/transaction";
 
 // 框架自有包的 import 一律短路合成符号、不读真实文件（与 contextSymbol 同一策略）；表驱动
 // 保持"specifier → 符号 kind/key 前缀"三处一致（Issue #114 的名单纪律）。
@@ -25,7 +26,8 @@ const frameworkSpecifierKinds = {
   [contextModuleSpecifier]: "context",
   [configModuleSpecifier]: "config",
   [webModuleSpecifier]: "web",
-} as const satisfies Record<string, "config" | "context" | "web">;
+  [transactionModuleSpecifier]: "transaction",
+} as const satisfies Record<string, "config" | "context" | "transaction" | "web">;
 
 export function isFrameworkSpecifier(specifier: string): boolean {
   return Object.hasOwn(frameworkSpecifierKinds, specifier);
@@ -74,8 +76,8 @@ function directlyExportedLocal(
 // 分析层合成注册需要与 import 短路完全同一的符号身份（ADR 0008 AM2，#204 定案 6）：
 // TransactionManager 契约边的 key 必须和用户 `implements TransactionManager` 落进 provides
 // 的 key 逐字符一致，才能走同一张候选表。
-export function contextFrameworkSymbol(name: string): LinkedSymbol {
-  return frameworkSymbol(contextModuleSpecifier, name);
+export function transactionFrameworkSymbol(name: string): LinkedSymbol {
+  return frameworkSymbol(transactionModuleSpecifier, name);
 }
 
 function frameworkSymbol(

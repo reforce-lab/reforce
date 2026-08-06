@@ -12,6 +12,7 @@ type LinkedSymbolKind =
   | "context"
   | "config"
   | "web"
+  | "transaction"
   | "namespace"
   | "unsupported";
 

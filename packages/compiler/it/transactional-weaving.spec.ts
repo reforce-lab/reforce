@@ -57,8 +57,9 @@ function generatedContent(result: CompileSuccess, filePath: GeneratedFile["path"
 }
 
 const managerSource = [
-  'import { activeResourceFor, Injectable } from "@reforce/context";',
-  'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+  'import { Injectable } from "@reforce/context";',
+  'import { activeResourceFor } from "@reforce/transaction";',
+  'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
   "",
   "@Injectable()",
   "export class SqlManager implements TransactionManager<string> {",
@@ -74,8 +75,9 @@ const managerSource = [
 // savepoint 能力表达在契约身份上（ADR 0008 T4 定案）：实现 NestedTransactionManager 的类
 // 同时提供两个契约 key，注入裸 TransactionManager 的地方照旧装得上。
 const nestedManagerSource = [
-  'import { activeResourceFor, Injectable } from "@reforce/context";',
-  'import type { NestedTransactionManager, TransactionOptions } from "@reforce/context";',
+  'import { Injectable } from "@reforce/context";',
+  'import { activeResourceFor } from "@reforce/transaction";',
+  'import type { NestedTransactionManager, TransactionOptions } from "@reforce/transaction";',
   "",
   "@Injectable()",
   "export class SqlManager implements NestedTransactionManager<string> {",
@@ -92,7 +94,8 @@ const nestedManagerSource = [
 ].join("\n");
 
 const nestedServiceSource = [
-  'import { Injectable, Transactional } from "@reforce/context";',
+  'import { Injectable } from "@reforce/context";',
+  'import { Transactional } from "@reforce/transaction";',
   "",
   "@Injectable()",
   "export class OrderService {",
@@ -102,7 +105,8 @@ const nestedServiceSource = [
 ].join("\n");
 
 const serviceSource = [
-  'import { Injectable, Transactional } from "@reforce/context";',
+  'import { Injectable } from "@reforce/context";',
+  'import { Transactional } from "@reforce/transaction";',
   "",
   "@Injectable()",
   "export class OrderService {",
@@ -133,7 +137,7 @@ describe("transaction interceptor synthesis", () => {
             },
             chain: [
               {
-                beanId: "@reforce/context#TransactionInterceptor",
+                beanId: "@reforce/transaction#TransactionInterceptor",
                 phase: "transaction",
                 order: 0,
                 marker: "transactional",
@@ -145,7 +149,7 @@ describe("transaction interceptor synthesis", () => {
             markers: { transactional: null },
             chain: [
               {
-                beanId: "@reforce/context#TransactionInterceptor",
+                beanId: "@reforce/transaction#TransactionInterceptor",
                 phase: "transaction",
                 order: 0,
                 marker: "transactional",
@@ -158,11 +162,11 @@ describe("transaction interceptor synthesis", () => {
 
     const manifest = JSON.parse(generatedContent(result, "manifest.json"));
     const interceptor = manifest.beans.find(
-      (bean: { id: string }) => bean.id === "@reforce/context#TransactionInterceptor",
+      (bean: { id: string }) => bean.id === "@reforce/transaction#TransactionInterceptor",
     );
-    expect(interceptor.origin).toBe("@reforce/context");
+    expect(interceptor.origin).toBe("@reforce/transaction");
     expect(interceptor.runtimeExport).toEqual({
-      moduleSpecifier: "@reforce/context/generated-runtime",
+      moduleSpecifier: "@reforce/transaction/generated-runtime",
       exportName: "TransactionInterceptor",
     });
     expect(interceptor.dependencies).toEqual([
@@ -174,7 +178,7 @@ describe("transaction interceptor synthesis", () => {
     ]);
 
     const beans = generatedContent(result, "beans.ts");
-    expect(beans).toContain('from "@reforce/context/generated-runtime"');
+    expect(beans).toContain('from "@reforce/transaction/generated-runtime"');
     expect(beans).toContain("TransactionInterceptor as beanTarget");
     expect(beans).toContain("import type { TransactionManager as beanContract");
   });
@@ -184,7 +188,7 @@ describe("transaction interceptor synthesis", () => {
 
     const manifest = JSON.parse(generatedContent(result, "manifest.json"));
     const ids = manifest.beans.map((bean: { id: string }) => bean.id);
-    expect(ids).not.toContain("@reforce/context#TransactionInterceptor");
+    expect(ids).not.toContain("@reforce/transaction#TransactionInterceptor");
   });
 
   test("a user interceptor bound to Transactional joins the chain in its own phase", async () => {
@@ -192,7 +196,8 @@ describe("transaction interceptor synthesis", () => {
       "manager.ts": managerSource,
       "service.ts": serviceSource,
       "trace.ts": [
-        'import { Injectable, Interceptor, Transactional } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
         "",
         '@Interceptor({ marker: Transactional, phase: "observability" })',
@@ -210,7 +215,7 @@ describe("transaction interceptor synthesis", () => {
       .chain.map((entry: { beanId: string; phase: string }) => `${entry.phase}:${entry.beanId}`);
     expect(chain).toEqual([
       "observability:src/trace.ts#TransactionTraceInterceptor",
-      "transaction:@reforce/context#TransactionInterceptor",
+      "transaction:@reforce/transaction#TransactionInterceptor",
     ]);
   });
 });
@@ -258,7 +263,7 @@ describe("transaction manager contract resolution", () => {
       "manager.ts": nestedManagerSource,
       "consumer.ts": [
         'import { Injectable } from "@reforce/context";',
-        'import type { TransactionManager } from "@reforce/context";',
+        'import type { TransactionManager } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class Reporting {",
@@ -276,8 +281,8 @@ describe("transaction manager contract resolution", () => {
   test("a Primary implementation resolves the ambiguity", async () => {
     const primaryManager = managerSource
       .replace(
-        'import { activeResourceFor, Injectable } from "@reforce/context";',
-        'import { activeResourceFor, Injectable, Primary } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Injectable, Primary } from "@reforce/context";',
       )
       .replace("@Injectable()", "@Injectable()\n@Primary()")
       .replace(/SqlManager/g, "PrimaryManager");
@@ -289,7 +294,7 @@ describe("transaction manager contract resolution", () => {
 
     const manifest = JSON.parse(generatedContent(result, "manifest.json"));
     const interceptor = manifest.beans.find(
-      (bean: { id: string }) => bean.id === "@reforce/context#TransactionInterceptor",
+      (bean: { id: string }) => bean.id === "@reforce/transaction#TransactionInterceptor",
     );
     expect(interceptor.dependencies[0].targetId).toBe("src/primary-manager.ts#PrimaryManager");
   });
@@ -300,7 +305,8 @@ describe("transactional value schema (compile-time hard errors)", () => {
     compileSources({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class OrderService {",
@@ -332,7 +338,8 @@ describe("transactional value schema (compile-time hard errors)", () => {
     const result = await compileSourcesOrThrow({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class OrderService {",
@@ -383,7 +390,8 @@ describe("reserved marker key and misuse", () => {
     const result = await compileSources({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "@Transactional()",
@@ -400,7 +408,8 @@ describe("reserved marker key and misuse", () => {
     const result = await compileSources({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class OrderService {",

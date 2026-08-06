@@ -1,10 +1,10 @@
-import { isNestedTransactionManager, type NestedTransactionManager } from "@reforce/context";
+import { isNestedTransactionManager, type NestedTransactionManager } from "@reforce/transaction";
 import { expect } from "vitest";
 import { rejectionOf, type TckCase } from "@/case";
 import type { TransactionTckHarness } from "@/harness";
 
 // C 组只在 manager 实现 NestedTransactionManager 时登记：能力判定的唯一真相是
-// isNestedTransactionManager（@reforce/context 导出），harness 因此没有 savepoint 布尔——
+// isNestedTransactionManager（@reforce/transaction 导出），harness 因此没有 savepoint 布尔——
 // 声明只可能与守卫一致（冗余）或矛盾（噪声）。
 
 function nestedOf<R>(harness: TransactionTckHarness<R>): NestedTransactionManager<R> {

@@ -299,7 +299,7 @@ test("explains a transactional bean with its woven chain and effective semantics
     sources: {
       "manager.ts": [
         'import { Injectable } from "@reforce/context";',
-        'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+        'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class SqlManager implements TransactionManager<string> {",
@@ -310,7 +310,8 @@ test("explains a transactional bean with its woven chain and effective semantics
         "",
       ].join("\n"),
       "orders.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class Orders {",
@@ -330,7 +331,7 @@ test("explains a transactional bean with its woven chain and effective semantics
     "  marker transactional · effective propagation REQUIRES_NEW · effective isolation database default",
   );
   expect(lines).toContain(
-    "  chain [1] @reforce/context#TransactionInterceptor · @reforce/context · framework · phase transaction · order 0 · via transactional",
+    "  chain [1] @reforce/transaction#TransactionInterceptor · @reforce/transaction · framework · phase transaction · order 0 · via transactional",
   );
 });
 
@@ -339,7 +340,7 @@ test("explains the synthesized framework interceptor bean itself", async () => {
     sources: {
       "manager.ts": [
         'import { Injectable } from "@reforce/context";',
-        'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
+        'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class SqlManager implements TransactionManager<string> {",
@@ -350,7 +351,8 @@ test("explains the synthesized framework interceptor bean itself", async () => {
         "",
       ].join("\n"),
       "orders.ts": [
-        'import { Injectable, Transactional } from "@reforce/context";',
+        'import { Injectable } from "@reforce/context";',
+        'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
         "export class Orders {",
@@ -365,10 +367,10 @@ test("explains the synthesized framework interceptor bean itself", async () => {
   const { exitCode, lines } = await explain(project, "TransactionInterceptor");
 
   expect(exitCode).toBe(0);
-  expect(lines[0]).toBe("bean @reforce/context#TransactionInterceptor");
+  expect(lines[0]).toBe("bean @reforce/transaction#TransactionInterceptor");
   expect(
     lines.some((line) =>
-      line.startsWith("origin @reforce/context · framework · declared at src/orders.ts:"),
+      line.startsWith("origin @reforce/transaction · framework · declared at src/orders.ts:"),
     ),
   ).toBe(true);
   expect(

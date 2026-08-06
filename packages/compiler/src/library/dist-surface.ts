@@ -4,7 +4,11 @@ import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LibraryPackageManifest } from "@/library/package-exports";
-import { contextModuleSpecifier, createExportBinder } from "@/linking/export-binding";
+import {
+  contextModuleSpecifier,
+  createExportBinder,
+  transactionModuleSpecifier,
+} from "@/linking/export-binding";
 import { createExternalModuleStore } from "@/linking/external-modules";
 import type { LinkedSymbol } from "@/linking/model";
 import { createModuleResolver, type ModuleRecord, moduleKey } from "@/linking/module-resolver";
@@ -93,7 +97,10 @@ export async function createLibrarySurface(inputs: LibrarySurfaceInputs): Promis
     resolveModule,
     locatePackage,
     symbolTable: { anchorEntry: () => undefined },
-    skipSpecifier: (specifier) => specifier === contextModuleSpecifier || isBuiltin(specifier),
+    skipSpecifier: (specifier) =>
+      specifier === contextModuleSpecifier ||
+      specifier === transactionModuleSpecifier ||
+      isBuiltin(specifier),
   });
   await store.load(manifest.subpaths.map((entry) => moduleKey(entry.typesFile)));
   const binder = createExportBinder({ diagnostics: scratchDiagnostics, resolveModule });

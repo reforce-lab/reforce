@@ -739,7 +739,8 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "client.ts": [
-              'import { Injectable, Transactional } from "@reforce/context";',
+              'import { Injectable } from "@reforce/context";',
+              'import { Transactional } from "@reforce/transaction";',
               "",
               "@Injectable()",
               "export class RedisClient {",

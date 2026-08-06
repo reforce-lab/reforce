@@ -254,7 +254,7 @@ describe("validateGeneratedManifestBytes starter origin", () => {
   });
 });
 
-// 框架合成 bean（ADR 0008 AM2，#204 定案 6）：origin 无版本段、runtimeExport 指向 context
+// 框架合成 bean（ADR 0008 AM2，#204 定案 6）：origin 无版本段、runtimeExport 指向该框架包的
 // 生成入口、source 指向应用侧首处 @Transactional 使用——与 starter/应用两套不变量都不同。
 describe("validateGeneratedManifestBytes framework origin", () => {
   function frameworkInterceptorBean(
@@ -265,22 +265,22 @@ describe("validateGeneratedManifestBytes framework origin", () => {
       readonly primary?: boolean;
     } = {},
   ) {
-    const specifier = overrides.moduleSpecifier ?? "@reforce/context/generated-runtime";
+    const specifier = overrides.moduleSpecifier ?? "@reforce/transaction/generated-runtime";
     return {
-      id: overrides.id ?? "@reforce/context#TransactionInterceptor",
-      origin: "@reforce/context",
+      id: overrides.id ?? "@reforce/transaction#TransactionInterceptor",
+      origin: "@reforce/transaction",
       kind: "class",
       scope: overrides.scope ?? "singleton",
       source: sourceReference("src/service.ts"),
       runtimeExport: {
         moduleSpecifier: specifier,
-        exportName: (overrides.id ?? "@reforce/context#TransactionInterceptor").split("#")[1],
+        exportName: (overrides.id ?? "@reforce/transaction#TransactionInterceptor").split("#")[1],
       },
       provides: [
         {
           displayName: "TransactionInterceptor",
           moduleSpecifier: specifier,
-          exportName: (overrides.id ?? "@reforce/context#TransactionInterceptor").split("#")[1],
+          exportName: (overrides.id ?? "@reforce/transaction#TransactionInterceptor").split("#")[1],
         },
       ],
       dependencies: [dependency("src/manager.ts#SqlManager", "eager", "src/service.ts")],
@@ -295,7 +295,7 @@ describe("validateGeneratedManifestBytes framework origin", () => {
     const id =
       typeof interceptor.id === "string"
         ? interceptor.id
-        : "@reforce/context#TransactionInterceptor";
+        : "@reforce/transaction#TransactionInterceptor";
     return manifestBytes([manager, interceptor], {
       constructionOrder: [manager.id, id],
       startActionOrder: [],
@@ -329,7 +329,7 @@ describe("validateGeneratedManifestBytes framework origin", () => {
 
   test("rejects a framework origin claiming an unknown export", () => {
     const accepted = validateGeneratedManifestBytes(
-      frameworkManifestBytes(frameworkInterceptorBean({ id: "@reforce/context#Backdoor" })),
+      frameworkManifestBytes(frameworkInterceptorBean({ id: "@reforce/transaction#Backdoor" })),
     );
 
     expect(accepted).toBe(false);

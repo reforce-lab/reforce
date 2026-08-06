@@ -239,14 +239,28 @@ export function starterOriginPackageName(origin: string): string | undefined {
 
 // 框架合成 bean 的来源串（ADR 0008 AM2，#204 定案 6）：与 starter 的 "包名@版本" 相区分——
 // 无版本段，starterOriginPackageName 对它返回 undefined，starter meta 发现与多拷贝呈现自动
-// 跳过。目前唯一实例是事务拦截器；生产方是 compiler/src/analysis/transaction-weaving.ts。
-export const frameworkOriginId = "@reforce/context";
+// 跳过。生产方是 compiler/src/analysis/transaction-weaving.ts。
+//
+// 一张表而不是一个字面量：合成 bean 归哪个框架包由它实现的契约决定（事务契约随 #204 的拆包
+// 迁到 @reforce/transaction），CLI 这道信任边界要比对的是"这个来源允许合成哪个 bean、从哪个
+// 生成入口 import"这一整组事实，认死一个包名会在下一个框架包出现时静默放行。
+const frameworkBeanSpecs = new Map([
+  [
+    "@reforce/transaction",
+    {
+      exportName: "TransactionInterceptor",
+      runtimeModule: "@reforce/transaction/generated-runtime",
+    },
+  ],
+]);
 
-const frameworkRuntimeModule = "@reforce/context/generated-runtime";
+export function isFrameworkOrigin(origin: string): boolean {
+  return frameworkBeanSpecs.has(origin);
+}
 
-// 框架 bean 的专属不变量：id 恒为 `@reforce/context#TransactionInterceptor`，runtimeExport
-// 指向 context 的生成入口，declarationSource 指向把它拉进图的第一处 @Transactional 使用
-//（应用侧路径），无生命周期、无 qualifier、非 primary。
+// 框架 bean 的专属不变量：id 恒为 `<框架包>#<合成导出名>`，runtimeExport 指向该包的生成入口，
+// declarationSource 指向把它拉进图的第一处使用处（应用侧路径），无生命周期、无 qualifier、
+// 非 primary。
 function isFrameworkBean(
   bean: {
     readonly idParts: { readonly file: string; readonly exportName: string };
@@ -255,23 +269,28 @@ function isFrameworkBean(
     readonly provides: readonly ManifestSymbolReference[];
     readonly lifecycle: ManifestLifecycle;
   },
+  origin: string,
   primary: boolean,
   qualifiers: readonly ManifestQualifier[],
 ): boolean {
+  const spec = frameworkBeanSpecs.get(origin);
+  if (spec === undefined) {
+    return false;
+  }
   return (
-    bean.idParts.file === frameworkOriginId &&
-    bean.idParts.exportName === "TransactionInterceptor" &&
+    bean.idParts.file === origin &&
+    bean.idParts.exportName === spec.exportName &&
     bean.kind === "class" &&
     !primary &&
     qualifiers.length === 0 &&
     !bean.lifecycle.start &&
     !bean.lifecycle.close &&
     !bean.lifecycle.dispose &&
-    bean.runtimeExport.moduleSpecifier === frameworkRuntimeModule &&
+    bean.runtimeExport.moduleSpecifier === spec.runtimeModule &&
     bean.provides.some(
       (provided) =>
         provided.exportName === bean.runtimeExport.exportName &&
-        provided.moduleSpecifier === frameworkRuntimeModule,
+        provided.moduleSpecifier === spec.runtimeModule,
     )
   );
 }
@@ -293,8 +312,8 @@ function isNonApplicationBean(
   if (scope !== "singleton") {
     return false;
   }
-  if (origin === frameworkOriginId) {
-    return isFrameworkBean(bean, primary, qualifiers);
+  if (isFrameworkOrigin(origin)) {
+    return isFrameworkBean(bean, origin, primary, qualifiers);
   }
   return isStarterBean(bean, origin);
 }

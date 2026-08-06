@@ -1,5 +1,5 @@
 {
-  "name": "@reforce/compiler",
+  "name": "@reforce/transaction",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./generated-runtime": {
+      "types": "./dist/generated-runtime.d.ts",
+      "default": "./dist/generated-runtime.js"
     }
   },
   "scripts": {
@@ -17,29 +21,14 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@dagrejs/graphlib": "^4.0.1",
-    "@reforce/primitives": "workspace:*",
-    "@swc/helpers": "catalog:",
-    "enhanced-resolve": "^5.24.5",
-    "estree-util-is-identifier-name": "^3.0.0",
-    "get-tsconfig": "^4.14.1",
-    "json-stable-stringify": "^1.3.0",
-    "lru-cache": "^11.5.2",
-    "strip-json-comments": "^5.0.3",
-    "tinyglobby": "^0.2.17",
-    "yuku-ast": "0.8.3",
-    "yuku-parser": "0.8.3"
+    "@reforce/context": "workspace:*",
+    "@swc/helpers": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@reforce/config": "workspace:*",
-    "@reforce/context": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
-    "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@reforce/tooling-vitest": "workspace:*",
-    "@reforce/transaction": "workspace:*",
-    "@reforce/web": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/node": "catalog:",
     "fast-check": "^4.9.0",

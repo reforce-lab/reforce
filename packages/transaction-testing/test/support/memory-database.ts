@@ -1,4 +1,4 @@
-import type { TransactionIsolation } from "@reforce/context";
+import type { TransactionIsolation } from "@reforce/transaction";
 import type { MemoryMutations } from "./mutations";
 
 // 内存 key-value 库的 MVCC 内核：committed 快照 + 每事务写缓冲 + savepoint 栈 + aborted 标志。

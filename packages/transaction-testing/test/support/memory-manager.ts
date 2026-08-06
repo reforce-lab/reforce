@@ -7,7 +7,7 @@ import {
   type TransactionOptions,
   TransactionTimeoutError,
   TransactionTimeoutUnsupportedError,
-} from "@reforce/context";
+} from "@reforce/transaction";
 import type { TransactionTckCapabilities, TransactionTckHarness } from "@/index";
 import { MemoryDatabase, type MemoryTransaction } from "./memory-database";
 import { MemoryPool } from "./memory-pool";

@@ -57,6 +57,13 @@ export async function linkWebPackage(projectRoot: string): Promise<void> {
   await linkPackage(projectRoot, "@reforce/web", path.join(repositoryRoot, "packages", "web"));
 }
 
+export async function linkTransactionPackage(projectRoot: string): Promise<void> {
+  await linkPackage(
+    projectRoot,
+    "@reforce/transaction",
+    path.join(repositoryRoot, "packages", "transaction"),
+  );
+}
 export async function writePositiveApplication(projectRoot: string): Promise<void> {
   await writeProjectTree(projectRoot, positiveApplicationTree);
   await linkApplicationPackages(projectRoot);
