@@ -15,6 +15,11 @@ const webRoot = join(workspaceRoot, "packages", "web");
 const webNodeRoot = join(workspaceRoot, "packages", "web-node");
 const webHonoRoot = join(workspaceRoot, "packages", "web-hono");
 const webFastifyRoot = join(workspaceRoot, "packages", "web-fastify");
+// @reforce/logging 是 @reforce/config 的运行时依赖（RFC 0011 L8，#250：绑定期的警告走引导
+// 缓冲），@reforce/runtime 又是 logging 的——两者都必须随 config 一起落进 fixture，否则
+// config 的 dist 在用户项目里 import 不到。
+const loggingRoot = join(workspaceRoot, "packages", "logging");
+const runtimeRoot = join(workspaceRoot, "packages", "runtime");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -66,12 +71,16 @@ export async function installApplicationPackages(
   const configTarget = join(scopeRoot, "config");
   const webTarget = join(scopeRoot, "web");
   const webNodeTarget = join(scopeRoot, "web-node");
+  const loggingTarget = join(scopeRoot, "logging");
+  const runtimeTarget = join(scopeRoot, "runtime");
   if (contextDistribution === "workspace") {
     await Promise.all([
       link(contextRoot, contextTarget),
       link(configRoot, configTarget),
       link(webRoot, webTarget),
       link(webNodeRoot, webNodeTarget),
+      link(loggingRoot, loggingTarget),
+      link(runtimeRoot, runtimeTarget),
       ...extraEngines.map((name) => {
         const root = extraEngineRoots[name];
         if (root === undefined) {
@@ -87,6 +96,8 @@ export async function installApplicationPackages(
     mkdir(configTarget),
     mkdir(webTarget),
     mkdir(webNodeTarget),
+    mkdir(loggingTarget),
+    mkdir(runtimeTarget),
   ]);
   await Promise.all([
     cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
@@ -95,6 +106,10 @@ export async function installApplicationPackages(
     cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
     cp(join(webRoot, "package.json"), join(webTarget, "package.json")),
     cp(join(webRoot, "dist"), join(webTarget, "dist"), { recursive: true }),
+    cp(join(loggingRoot, "package.json"), join(loggingTarget, "package.json")),
+    cp(join(loggingRoot, "dist"), join(loggingTarget, "dist"), { recursive: true }),
+    cp(join(runtimeRoot, "package.json"), join(runtimeTarget, "package.json")),
+    cp(join(runtimeRoot, "dist"), join(runtimeTarget, "dist"), { recursive: true }),
     cp(join(webNodeRoot, "package.json"), join(webNodeTarget, "package.json")),
     cp(join(webNodeRoot, "dist"), join(webNodeTarget, "dist"), { recursive: true }),
     // 真 starter 的分发面不止 dist：`reforce lib` 产出的 meta 挂在包根 exports 上，
