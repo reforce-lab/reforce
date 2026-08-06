@@ -484,6 +484,55 @@ describe("library compile", () => {
     ]);
   });
 
+  // 集合边是 starter 声明"用户可以提供 0..N 个实现"的唯一形态：单边下不写实现就是
+  // MISSING_BEAN，starter 因此表达不了 configurer/customizer 这类可选扩展点。
+  test("records a readonly T[] constructor parameter as a collection dependency edge", async () => {
+    const result = expectLibrarySuccess(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "metrics.ts": [
+              'import { Injectable } from "@reforce/context";',
+              'import type { RedisConfig } from "./contracts";',
+              "",
+              "@Injectable()",
+              "export class MetricsPusher {",
+              "  constructor(readonly configs: readonly RedisConfig[]) {}",
+              "}",
+              "",
+            ].join("\n"),
+          },
+          dist: {
+            ...defaultDist,
+            "metrics.d.ts": [
+              'import type { RedisConfig } from "./contracts.js";',
+              "export declare class MetricsPusher {",
+              "  constructor(configs: readonly RedisConfig[]);",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+
+    // 包内无人 provides RedisConfig，因此 open: true——正是扩展点的形状：契约由 starter 声明，
+    // 实现全部来自应用侧，数量 0..N 都合法。
+    expect(beanOf(parseMeta(result), "@acme/starter-redis#MetricsPusher").dependencies).toEqual([
+      { contract: "@acme/starter-redis#RedisConfig", open: true, collection: true },
+    ]);
+  });
+
+  // collection 是可选键：单边不写它，已发布的 meta 字节因此一字不变
+  test("omits the collection key on a plain contract edge", async () => {
+    const result = expectLibrarySuccess(await compileLibrary(authorTree()));
+
+    expect(beanOf(parseMeta(result), "@acme/starter-redis#MetricsPusher").dependencies).toEqual([
+      { contract: "@acme/starter-redis#RedisClient", open: false },
+    ]);
+  });
+
   test("reports UNSUPPORTED_LIBRARY_DECLARATION for defineBean factories", async () => {
     const failure = expectLibraryFailure(
       await compileLibrary(

@@ -15,7 +15,7 @@ import type {
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
 import { transactionInterceptorDraft } from "@/analysis/transaction-weaving";
-import type { WebModel } from "@/analysis/web-model";
+import { type WebModel, webEngineAdapterName, webPackageName } from "@/analysis/web-model";
 import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
@@ -111,11 +111,14 @@ export function analyzeProject(
   const configAnalysis = analyzeConfigProviders(sources, linker, diagnostics);
   const drafts = collectProviderDrafts(sources, linker, diagnostics, configAnalysis.claimed);
 
-  // web 引擎约定（ADR 0006 W2 的 #153 接线，见 web-model.ts）：runtimeExport 导出名为
-  // "WebEngine" 的 starter bean 由生成的 bootstrap 消费，先于 resolveProviders 识别出来，
-  // 作为显式需求物化——它的需求方是生成代码，不在任何依赖边上。
-  const engineBeans = linker.starterLinkage.beans.filter(
-    (bean) => bean.runtimeExport.export === "WebEngine",
+  // web 引擎约定（ADR 0006 W2 的 #153 接线，见 web-model.ts）：提供 @reforce/web 的
+  // WebEngineAdapter 契约的 starter bean 由生成的 bootstrap 消费，先于 resolveProviders
+  // 识别出来，作为显式需求物化——它的需求方是生成代码，不在任何依赖边上。
+  const engineBeans = linker.starterLinkage.beans.filter((bean) =>
+    bean.provides.some(
+      (contract) =>
+        contract.external?.packageName === webPackageName && contract.name === webEngineAdapterName,
+    ),
   );
   // 事务拦截器合成注册（ADR 0008 AM2，#204 定案 6）：检测到 @Transactional 方法使用即入表，
   // 它对 TransactionManager 契约的依赖走下面的正常解析——有使用无实现在编译期就是 MISSING_BEAN。
