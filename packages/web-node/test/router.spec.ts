@@ -82,4 +82,44 @@ describe("createRouter", () => {
 
     expect(outcome).toEqual({ kind: "method-mismatch", allowed: ["GET", "PUT"] });
   });
+
+  // 坏转义（#211）：`new URL()` 把 `%ZZ` 原样留在 pathname 里，分派必须把它当未命中，
+  // 而不是让 decodeURIComponent 的 URIError 逃出去——它会在引擎里变成 unhandled
+  // rejection，响应永不写出。
+  test("a malformed percent-escape in the path is a miss, not a throw", () => {
+    expect(dispatch([route("GET", "/users/:id")], "GET", "/users/%ZZ")).toEqual({ kind: "miss" });
+  });
+
+  test.each([
+    ["a trailing slash", "/users/42/"],
+    ["a leading duplicate slash", "//users/42"],
+    ["an inner duplicate slash", "/users//42"],
+  ])("%s is equivalent to the canonical path", (_case, path) => {
+    const outcome = dispatch([route("GET", "/users/:id")], "GET", path);
+
+    expect(outcome.kind).toBe("match");
+    if (outcome.kind !== "match") {
+      return;
+    }
+    expect(outcome.params).toEqual({ id: "42" });
+  });
+
+  // find-my-way 自带 maxParamLength: 100，缺省不显式关掉就会把长参数请求静默变成 404（#211）
+  test("a path param longer than the upstream default cap still matches", () => {
+    const id = "x".repeat(150);
+
+    const outcome = dispatch([route("GET", "/users/:id")], "GET", `/users/${id}`);
+
+    expect(outcome.kind).toBe("match");
+    if (outcome.kind !== "match") {
+      return;
+    }
+    expect(outcome.params).toEqual({ id });
+  });
+
+  test("an over-length path param is a miss once maxParamLength is set", () => {
+    const outcome = createRouter([route("GET", "/users/:id")], 8)("GET", "/users/123456789");
+
+    expect(outcome).toEqual({ kind: "miss" });
+  });
 });

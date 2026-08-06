@@ -83,5 +83,13 @@ export async function installApplicationPackages(
       join(projectRoot, "node_modules", "dotenv"),
       { recursive: true },
     ),
+    // find-my-way 是 @reforce/web-node dist 的运行时依赖（#211）。这里用符号链接而不是像
+    // dotenv 那样拷贝：它自己还有传递依赖（fast-querystring / safe-regex2 …），而 pnpm 把
+    // 这些依赖放在 store 里 find-my-way 真实路径的同级；Node 从真实路径解析依赖，链过去就
+    // 全都能找到，拷贝则只会搬来孤立的一层。
+    link(
+      realpathSync(join(webNodeRoot, "node_modules", "find-my-way")),
+      join(projectRoot, "node_modules", "find-my-way"),
+    ),
   ]);
 }

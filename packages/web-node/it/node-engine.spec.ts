@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { PreparedRoute, WebApplication } from "@reforce/web/adapter";
 import { describe, expect, test } from "vitest";
-import { WebEngine } from "@/index";
+import { WebEngine, type WebNodeServeSettings } from "@/index";
 
 // 真实 node:http 服务器上的引擎契约（#207，镜像 web-bun 时代的 Bun.serve 契约 #153）：
 // 路由分发、参数路由、404/405、优雅关闭排空。路由的 handle 用最小闭包替身——引擎的职责
@@ -15,8 +15,9 @@ function application(routes: readonly PreparedRoute[]): WebApplication {
 async function withEngine(
   routes: readonly PreparedRoute[],
   run: (base: string, engine: WebEngine) => Promise<void>,
+  settings: Omit<WebNodeServeSettings, "port"> = {},
 ): Promise<void> {
-  const engine = new WebEngine({ port: 0 });
+  const engine = new WebEngine({ port: 0, ...settings });
   const handle = await engine.start(application(routes));
   const url = serverUrlOf(engine);
   try {
@@ -106,6 +107,38 @@ describe("WebEngine over a real node:http server", () => {
         expect(response.status).toBe(405);
         expect(response.headers.get("allow")).toBe("GET, PUT");
       },
+    );
+  });
+
+  // 坏转义的用户可见后果（#211）：分派一旦抛异常，serve() 是被 `void` 调用的 async 函数，
+  // 异常变成 unhandled rejection，响应永不写出，客户端只能挂到超时。超时断言就是那道护栏。
+  test("a malformed percent-escape in the path yields 404 instead of hanging", async () => {
+    await withEngine(
+      [
+        {
+          method: "GET",
+          path: "/users/:id",
+          handle: (_request, params) => Promise.resolve(Response.json({ id: params.id })),
+        },
+      ],
+      async (base) => {
+        const response = await fetch(`${base}/users/%ZZ`, { signal: AbortSignal.timeout(1_000) });
+
+        expect(response.status).toBe(404);
+      },
+    );
+  });
+
+  // 唯一覆盖 settings → createRouter 这段接线的用例（#211）
+  test("a configured maxParamLength turns an over-length param into 404", async () => {
+    await withEngine(
+      [{ method: "GET", path: "/users/:id", handle: () => Promise.resolve(new Response("get")) }],
+      async (base) => {
+        const response = await fetch(`${base}/users/123456789`);
+
+        expect(response.status).toBe(404);
+      },
+      { maxParamLength: 8 },
     );
   });
 

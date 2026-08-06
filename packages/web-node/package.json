@@ -24,7 +24,8 @@
   "dependencies": {
     "@reforce/context": "workspace:*",
     "@reforce/web": "workspace:*",
-    "@swc/helpers": "catalog:"
+    "@swc/helpers": "catalog:",
+    "find-my-way": "^9.7.0"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

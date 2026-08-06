@@ -4,4 +4,7 @@
 export interface WebNodeServeSettings {
   readonly port: number;
   readonly hostname?: string;
+  // 路径参数长度上限（find-my-way 的 maxParamLength，#211）：缺省不限制，与手写路由时代一致。
+  // 设成有限值即启用上游的超长参数保护，超限的请求按未命中处理（404）。
+  readonly maxParamLength?: number;
 }

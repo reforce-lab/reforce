@@ -67,7 +67,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     if (this.server !== undefined) {
       throw new Error("The Node.js web engine is already running.");
     }
-    const dispatch = createRouter(application.routes);
+    const dispatch = createRouter(application.routes, this.settings.maxParamLength);
     const server = createServer((request, response) => {
       void this.serve(dispatch, request, response);
     });
