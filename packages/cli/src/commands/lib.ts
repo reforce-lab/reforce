@@ -31,10 +31,7 @@ export interface LibCommandOptions {
 const expectedSubpathTargets: readonly {
   readonly subpath: string;
   readonly target: string;
-}[] = [
-  { subpath: "./reforce-meta", target: "./reforce-meta.json" },
-  { subpath: "./reforce", target: "./reforce.js" },
-];
+}[] = [{ subpath: "./reforce-meta", target: "./reforce-meta.json" }];
 
 function reportCompilerDiagnostics(
   reporter: Reporter,

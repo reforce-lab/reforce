@@ -1,7 +1,8 @@
 import type { ProjectTree } from "@reforce/tooling-testing";
 
-// ADR 0004（#120）决策 2/5：meta 经 exports subpath `./reforce-meta` 暴露，注册 handle 经
-// `./reforce` 提供。M1 的 IT 以手写 meta JSON 为唯一 starter 输入（#145），本构造器手写这两个契约面。
+// ADR 0004（#120）决策 2/5：meta 经 exports subpath `./reforce-meta` 暴露；注册 handle 是包作者
+// 手写在主入口的具名导出，不占 subpath。M1 的 IT 以手写 meta JSON 为唯一 starter 输入（#145），
+// 本构造器手写 meta 那一面；handle 由各用例按需写进自己的 dist 声明。
 
 interface MetaSourceSpan {
   readonly file: string;
@@ -23,7 +24,7 @@ export interface StarterPackageOptions {
   /** 原样序列化进 reforce-meta.json；负向用例可传坏形状。 */
   readonly meta: unknown;
   readonly dist: ProjectTree;
-  /** 覆盖 package.json 的 exports；缺省提供 "." / "./reforce" / "./reforce-meta" 三个 subpath。 */
+  /** 覆盖 package.json 的 exports；缺省提供 "." / "./reforce-meta" 两个 subpath。 */
   readonly exports?: Record<string, unknown>;
 }
 
@@ -35,20 +36,24 @@ export function starterPackage(options: StarterPackageOptions): ProjectTree {
       type: "module",
       exports: options.exports ?? {
         ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-        "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
         "./reforce-meta": "./reforce-meta.json",
       },
     })}\n`,
     "reforce-meta.json": `${JSON.stringify(options.meta, undefined, 2)}\n`,
-    "reforce.d.ts": [
-      'import type { StarterDefinition } from "@reforce/context";',
-      "declare const starter: StarterDefinition;",
-      "export default starter;",
-      "",
-    ].join("\n"),
-    "reforce.js": "export default Object.freeze({});\n",
     dist: options.dist,
   };
+}
+
+/** 注册 handle 的 dist 声明行；starter 包作者手写在主入口，链接期只当普通具名导入解析。 */
+export function starterHandleDeclaration(name: string): string {
+  return `export declare const ${name}: import("@reforce/context").StarterDefinition;`;
+}
+
+// 运行时那一半必须同步存在：应用源码里的 `import { <handle> } from "<pkg>"` 会被打进产物，
+// dist 只有声明没有导出时，执行到 ESM 具名绑定就是 SyntaxError。值等价于 defineStarter()
+// 的返回物（冻结空对象），fixture 不为此依赖 @reforce/context。
+export function starterHandleRuntime(name: string): string {
+  return `export const ${name} = Object.freeze({});`;
 }
 
 export function contractPackage(options: {

@@ -17,7 +17,6 @@ afterEach(async () => {
 
 const libraryExports = {
   ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-  "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
   "./reforce-meta": "./reforce-meta.json",
 };
 
@@ -61,7 +60,7 @@ async function createLibrary(
   return project;
 }
 
-test("lib writes meta and registration handles into the package root", async () => {
+test("lib writes meta into the package root", async () => {
   const project = await createLibrary();
   const output = recordingReporter();
 
@@ -83,20 +82,11 @@ test("lib writes meta and registration handles into the package root", async () 
   expect(meta.beans.map((bean: { id: string }) => bean.id)).toEqual([
     "@acme/starter-widget#Widget",
   ]);
-  expect(await readFile(join(project.projectRoot, "reforce.js"), "utf8")).toContain(
-    "export default",
-  );
-  expect(await readFile(join(project.projectRoot, "reforce.d.ts"), "utf8")).toContain(
-    "StarterDefinition",
-  );
 });
 
 test("lib fails with PACKAGE_EXPORTS_INVALID when the meta subpath is missing", async () => {
   const project = await createLibrary({
-    exports: {
-      ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-      "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
-    },
+    exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
   });
   const output = recordingReporter();
 

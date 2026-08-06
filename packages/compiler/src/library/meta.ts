@@ -46,15 +46,6 @@ interface MetaBeanDraft {
   readonly source: GeneratedSourceReferenceModel;
 }
 
-const handleJsContent = "export default Object.freeze({});\n";
-
-const handleDtsContent = [
-  'import type { StarterDefinition } from "@reforce/context";',
-  "declare const starter: StarterDefinition;",
-  "export default starter;",
-  "",
-].join("\n");
-
 function unsupportedEdgeKind(pending: ProviderDraft["pendingDependencies"][number]): string {
   if (pending.linkedType.lazy) {
     return "a Lazy dependency";
@@ -353,9 +344,5 @@ export async function buildLibraryMeta(
     const reason = roundTrip.status === "invalid" ? roundTrip.reason : "unsupported schemaVersion";
     throw new Error(`reforce lib produced meta that fails the consumer schema gate: ${reason}`);
   }
-  return [
-    { path: "reforce-meta.json", content: `${metaJson}\n` },
-    { path: "reforce.d.ts", content: handleDtsContent },
-    { path: "reforce.js", content: handleJsContent },
-  ];
+  return [{ path: "reforce-meta.json", content: `${metaJson}\n` }];
 }

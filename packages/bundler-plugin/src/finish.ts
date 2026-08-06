@@ -9,16 +9,16 @@ import { toPortablePath } from "@reforce/primitives";
 import { publint } from "publint";
 import { formatMessage } from "publint/utils";
 
-// 作者侧收尾（ADR 0004 决策 4，#120/#147）：打包器写完产物后跑库模式编译，meta 与注册 handle
-// 写进作者配置的输出目录，随后补/校正 exports 的 subpath——物理位置由输出目录决定，subpath
-// 是唯一契约。发布产物校验直接用 publint（error 级即失败），不自造校验器。
+// 作者侧收尾（ADR 0004 决策 4，#120/#147）：打包器写完产物后跑库模式编译，meta 写进作者配置的
+// 输出目录，随后补/校正 exports 的 subpath——物理位置由输出目录决定，subpath 是唯一契约。
+// 发布产物校验直接用 publint（error 级即失败），不自造校验器。
 
 export interface ReforceStarterOptions {
   /** 库项目根（含 package.json 与 leaf tsconfig）；默认取进程工作目录。 */
   readonly projectDirectory?: string;
   /** 显式选择 leaf tsconfig，相对 projectDirectory 解析。 */
   readonly tsconfigPath?: string;
-  /** meta 与注册 handle 的写入目录，相对项目根；默认 "dist"。 */
+  /** meta 的写入目录，相对项目根；默认 "dist"。 */
   readonly outputDirectory?: string;
   /**
    * exports subpath 处理："patch"（默认）补/校正 package.json；"verify" 只校验不改写，
@@ -32,7 +32,6 @@ export interface ReforceStarterOptions {
 // subpath 字面量由 ADR 0004 决策 2 与 compiler 的 starter-meta schema 闸门（#145）钉死；
 // compiler 根入口刻意只在运行时暴露 createCompiler，这里不经 import 复用常量。
 const starterMetaSubpath = "./reforce-meta";
-const starterHandleSubpath = "./reforce";
 
 function renderDiagnostic(diagnostic: CompilerDiagnostic): string {
   const location = diagnostic.sourceSpan
@@ -85,14 +84,13 @@ function patchExportsContent(
     throw new Error("package.json lost its exports map between compilation and patching.");
   }
   const exports: Record<string, unknown> = { ...parsed.exports };
-  const target = (file: LibraryGeneratedFile["path"]): string =>
-    resolveGeneratedTarget(projectRoot, outputDirectory, files, file);
   const desired: Record<string, unknown> = {
-    [starterHandleSubpath]: {
-      types: target("reforce.d.ts"),
-      default: target("reforce.js"),
-    },
-    [starterMetaSubpath]: target("reforce-meta.json"),
+    [starterMetaSubpath]: resolveGeneratedTarget(
+      projectRoot,
+      outputDirectory,
+      files,
+      "reforce-meta.json",
+    ),
   };
   let changed = false;
   for (const [subpath, value] of Object.entries(desired)) {
@@ -138,10 +136,6 @@ function findExportsProblem(
     {
       subpath: starterMetaSubpath,
       target: resolveGeneratedTarget(projectRoot, outputDirectory, files, "reforce-meta.json"),
-    },
-    {
-      subpath: starterHandleSubpath,
-      target: resolveGeneratedTarget(projectRoot, outputDirectory, files, "reforce.js"),
     },
   ];
   for (const { subpath, target } of expectations) {

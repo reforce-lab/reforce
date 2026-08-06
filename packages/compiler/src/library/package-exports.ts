@@ -4,9 +4,9 @@ import { compareUtf16CodeUnits } from "@reforce/primitives";
 
 // 库模式的包面输入（ADR 0004 决策 2/7，#120/#147）：meta 户口表按 exports 的字面 subpath 枚举
 // 类型入口。pattern subpath（含 "*"）与无类型目标的 subpath 不参与户口表——它们贡献不了可锚定的
-// 契约符号；`./reforce` 与 `./reforce-meta` 是本机制自己的契约面，不进公开符号枚举。
+// 契约符号；`./reforce-meta` 是本机制自己的契约面，不进公开符号枚举。
 
-const reservedSubpaths = new Set(["./reforce", "./reforce-meta", "./package.json"]);
+const reservedSubpaths = new Set(["./reforce-meta", "./package.json"]);
 
 // 与应用侧 module-resolver 的 conditionNames（types 优先，再 import/default）同口径。
 const typeConditionNames = ["types", "import", "default"];

@@ -18,3 +18,5 @@ export declare class MemoryCache implements Cache {
 export declare class CacheMetrics {
   hits(): number;
 }
+
+export declare const cache: import("@reforce/context").StarterDefinition;
