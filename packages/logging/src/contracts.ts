@@ -47,6 +47,13 @@ export interface Logger {
 
 export interface LoggerFactory {
   create(name: string): Logger;
+  /**
+   * 排空异步 sink（RFC 0011 C2/L7，#250）。可选：同步写的绑定没有可排空的东西，硬声明一个
+   * 恒 resolve 的方法只会让「这个绑定到底会不会丢日志」变得看不出来。
+   *
+   * 挂在 factory 上而不是 Logger 上——排空的是 sink，不是某一条 logger。
+   */
+  flush?(): Promise<void>;
 }
 
 // 集合注入（ADR 0006 W6）：每个实现贡献一组随每条记录合并的字段，典型是 trace id。返回

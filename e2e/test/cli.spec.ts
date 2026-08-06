@@ -1330,6 +1330,47 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // C2（RFC 0011，#250）：崩溃接管。此前未捕获异常走 Node 默认路径，日志缓冲与 pino
+  // worker thread 的尾部日志全丢。只能在真子进程上验：记录是否完整落地、退出码是否仍是 1。
+  test(
+    "takes over an uncaught exception with a fatal record and still exits nonzero",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "crash-start", false, {
+          REFORCE_E2E_CRASH: "1",
+        });
+        const outcome = await started.completion;
+
+        expect(outcome.exitCode).toBe(1);
+        const fatal = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .find((record) => record.message === "uncaught exception");
+        expect(fatal).toMatchObject({ level: "fatal", origin: "uncaughtException" });
+        // 栈必须完整落进记录里：崩溃现场的全部价值就在这里。
+        expect(String(fatal.err?.stack ?? "")).toContain("deliberate e2e crash");
+      } finally {
+        if (started !== undefined) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // C6（RFC 0011，#250）：逐 bean 台账。断言的是 debug 明细而不是摘要里那条折叠的
   // slow beans——触发折叠要一条真的跑满 5ms 的 bean，而单例构造被强制同步返回，那意味着
   // 忙等，正是要避开的时序 flake。折叠规则由 @reforce/logging 的单测确定性覆盖。

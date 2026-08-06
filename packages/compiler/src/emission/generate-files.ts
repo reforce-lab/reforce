@@ -689,53 +689,95 @@ function contextStartLines(logging: LoggingExports, beanCount: number): readonly
   ];
 }
 
-function renderBootstrap(
-  web: WebModel,
-  generatedDirectory: string,
-  logging: LoggingExports,
-  beanCount: number,
-): string {
-  const startLines = contextStartLines(logging, beanCount);
-  // 一个条件而不是两个：框架 logger bean 只在有 LoggerFactory 绑定时才被合成
-  // （logger-synthesis 的 `provided !== undefined` 分支），所以「有框架 logger」与
-  // 「摘要可发」是同一件事，两个名字只会让改这三十行的人以为它们能分开。
-  const summarised =
+// 框架侧观测的接线（RFC 0011 C2/C3/C6，#250），三段都只在装了日志绑定时存在：
+// 崩溃接管与关停日志要一个「容器起来之后才有值」的取值函数；台账进 debug 流；请求日志与
+// 500 兜底拿同一条框架 logger。
+function frameworkLoggingLines(): readonly string[] {
+  return [
+    "let frameworkLoggingValue;",
+    "",
+    // 生成的 bootstrap 是唯一同时拿得到框架 logger 与 LoggerFactory 的地方，而它不认识
+    // @reforce/runtime。导出取值函数而不是常量——模块求值时容器还不存在。
+    "export function frameworkLogging() {",
+    "  return frameworkLoggingValue;",
+    "}",
+    "",
+  ];
+}
+
+function frameworkLogWiringLines(): readonly string[] {
+  return [
+    "  const frameworkLog = application.get(frameworkLogger);",
+    "  frameworkLoggingValue = { logger: frameworkLog, factory: application.get(loggerFactory) };",
+    // 逐 bean 台账走 debug，与摘要里那条折叠的 slow beans 分开：一个是「哪几条慢」的结论，
+    // 一个是要它时才付钱的全量明细。
+    "  emitBeanTimings({ logger: frameworkLog, timings: startReport.beanTimings });",
+  ];
+}
+
+function startupSummaryLines(): readonly string[] {
+  return [
+    // 启动摘要的生产者（RFC 0011 D2）：web 侧事实由 connectWebApplication 回调交出，
+    // bean 数与 context 耗时只有这里知道，两半在这一处合成。
+    "    onReady: (facts) =>",
+    "      emitStartupSummary({",
+    "        logger: frameworkLog,",
+    "        summary: {",
+    "          sections: [",
+    "            ...webStartupSections(facts, { beanCount, contextMs }),",
+    `            ...beanTimingSections(startReport.beanTimings, ${JSON.stringify(webFrameworkLoggerName)}),`,
+    "          ],",
+    "          startedAt,",
+    "          readyAt: Date.now(),",
+    "        },",
+    "      }),",
+  ];
+}
+
+// 摘要可发 = 有框架 logger。一个条件而不是两个：框架 logger bean 只在有 LoggerFactory 绑定
+// 时才被合成（logger-synthesis 的 `provided !== undefined` 分支），两个名字只会让改这几十行
+// 的人以为它们能分开。
+function isSummarised(web: WebModel, logging: LoggingExports): boolean {
+  return (
     web.engines.length > 0 &&
     logging.frameworkLogger !== undefined &&
-    logging.loggerFactory !== undefined;
-  const loggingImportNames = [
+    logging.loggerFactory !== undefined
+  );
+}
+
+function loggingImportLines(logging: LoggingExports, summarised: boolean): readonly string[] {
+  const names = [
     ...(summarised ? ["beanTimingSections"] : []),
     ...(logging.loggerFactory === undefined ? [] : ["drainBootstrapLogs"]),
     ...(summarised ? ["emitBeanTimings"] : []),
     ...(logging.loggerFactory === undefined ? [] : ["emitStartupSummary", "replayBootstrapLogs"]),
   ];
-  const beansImportNames = [
+  return names.length === 0
+    ? []
+    : [`import { ${names.join(", ")} } from "${loggingRuntimeModuleSpecifier}";`];
+}
+
+function beansImportLine(logging: LoggingExports): string {
+  const names = [
     "applicationDefinition",
     ...(logging.frameworkLogger === undefined ? [] : ["frameworkLogger"]),
     ...(logging.loggerFactory === undefined ? [] : ["loggerFactory"]),
   ];
-  const loggingImport =
-    loggingImportNames.length === 0
-      ? []
-      : [`import { ${loggingImportNames.join(", ")} } from "${loggingRuntimeModuleSpecifier}";`];
-  if (web.engines.length === 0) {
-    return `${[
-      `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
-      ...loggingImport,
-      `import { ${beansImportNames.join(", ")} } from "./beans.js";`,
-      "",
-      "export async function bootstrap() {",
-      ...startLines,
-      "  return application;",
-      "}",
-    ].join("\n")}\n`;
-  }
+  return `import { ${names.join(", ")} } from "./beans.js";`;
+}
+
+function webBootstrapImports(
+  web: WebModel,
+  generatedDirectory: string,
+  logging: LoggingExports,
+  summarised: boolean,
+): readonly string[] {
   const seeder = web.requestSeeder;
   const webImportNames = ["connectWebApplication", ...(summarised ? ["webStartupSections"] : [])];
-  const imports = [
+  return [
     `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
     `import { ${webImportNames.join(", ")} } from "${webRuntimeModuleSpecifier}";`,
-    ...loggingImport,
+    ...loggingImportLines(logging, summarised),
     ...web.engines.map(
       (engine, index) =>
         `import { ${engine.exportName} as webEngine${index} } from ${JSON.stringify(engine.moduleSpecifier)};`,
@@ -745,23 +787,45 @@ function renderBootstrap(
       : [
           `import { ${seeder.exportName} as webSeeder0 } from ${JSON.stringify(runtimeSpecifier(generatedDirectory, seeder.source.absolutePath))};`,
         ]),
-    `import { ${beansImportNames.join(", ")} } from "./beans.js";`,
+    beansImportLine(logging),
     `import { routeTable } from "./routes.js";`,
   ];
-  const engineList = web.engines.map((_, index) => `webEngine${index}`).join(", ");
+}
+
+// 无引擎的应用保持零 web import 的哑 bootstrap，逐字节不变。
+function renderPlainBootstrap(logging: LoggingExports, startLines: readonly string[]): string {
   return `${[
-    ...imports,
+    `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
+    ...loggingImportLines(logging, false),
+    beansImportLine(logging),
     "",
     "export async function bootstrap() {",
     ...startLines,
-    ...(summarised
-      ? [
-          "  const frameworkLog = application.get(frameworkLogger);",
-          // 逐 bean 台账走 debug（RFC 0011 C6，#250），与摘要里那条折叠的 slow beans 分开：
-          // 一个是「哪几条慢」的结论，一个是要它时才付钱的全量明细。
-          "  emitBeanTimings({ logger: frameworkLog, timings: startReport.beanTimings });",
-        ]
-      : []),
+    "  return application;",
+    "}",
+  ].join("\n")}\n`;
+}
+
+function renderBootstrap(
+  web: WebModel,
+  generatedDirectory: string,
+  logging: LoggingExports,
+  beanCount: number,
+): string {
+  const startLines = contextStartLines(logging, beanCount);
+  if (web.engines.length === 0) {
+    return renderPlainBootstrap(logging, startLines);
+  }
+  const summarised = isSummarised(web, logging);
+  const seeder = web.requestSeeder;
+  const engineList = web.engines.map((_, index) => `webEngine${index}`).join(", ");
+  return `${[
+    ...webBootstrapImports(web, generatedDirectory, logging, summarised),
+    "",
+    ...(summarised ? frameworkLoggingLines() : []),
+    "export async function bootstrap() {",
+    ...startLines,
+    ...(summarised ? frameworkLogWiringLines() : []),
     "  return await connectWebApplication({",
     "    context: application,",
     "    table: routeTable,",
@@ -770,24 +834,7 @@ function renderBootstrap(
     // 请求日志与 500 兜底的 logger（RFC 0011 L6，#250）：容器 start 之后才取，取的是框架
     // 自己那条 logger bean。没装任何日志绑定的应用这一行不存在，web 核心照旧不打。
     ...(summarised ? ["    logger: frameworkLog,"] : []),
-    // 启动摘要的生产者（RFC 0011 D2）：web 侧事实由 connectWebApplication 回调交出，
-    // bean 数与 context 耗时只有这里知道，两半在这一处合成。
-    ...(summarised
-      ? [
-          "    onReady: (facts) =>",
-          "      emitStartupSummary({",
-          "        logger: frameworkLog,",
-          "        summary: {",
-          "          sections: [",
-          "            ...webStartupSections(facts, { beanCount, contextMs }),",
-          `            ...beanTimingSections(startReport.beanTimings, ${JSON.stringify(webFrameworkLoggerName)}),`,
-          "          ],",
-          "          startedAt,",
-          "          readyAt: Date.now(),",
-          "        },",
-          "      }),",
-        ]
-      : []),
+    ...(summarised ? startupSummaryLines() : []),
     "  });",
     "}",
   ].join("\n")}\n`;

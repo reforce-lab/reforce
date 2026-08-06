@@ -1,5 +1,6 @@
 import type { ApplicationContext } from "@reforce/context";
 import { isObject } from "radashi";
+import { type FrameworkLogging, installCrashTakeover } from "@/crash-takeover";
 import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { requireNodeExecutable } from "@/node-runtime";
 import { PlainTextReporter, type Reporter, reportShutdownFailure } from "@/reporter";
@@ -47,12 +48,12 @@ async function waitForParticipantAck(participantToken: string): Promise<void> {
 type ChildLeaseParticipant = Awaited<ReturnType<typeof createChildLeaseParticipant>>;
 
 export interface ProductionApplicationDependencies {
-  readonly reporter: Reporter;
+  readonly reporter?: Reporter;
+  // 生成的 bootstrap 的可选导出（RFC 0011 C2，#250）：那个模块是唯一同时拿得到框架 logger
+  // 与 LoggerFactory 的地方，而它不认识 @reforce/runtime。取值函数而不是常量——进程级
+  // handler 在 bootstrap 之前就装好，那一刻容器还不存在。没装日志绑定的应用它就是 undefined。
+  readonly frameworkLogging?: () => FrameworkLogging | undefined;
 }
-
-const defaultDependencies: ProductionApplicationDependencies = {
-  reporter: new PlainTextReporter(),
-};
 
 async function joinParentLease(): Promise<ChildLeaseParticipant | undefined> {
   const leaseToken = process.env.REFORCE_LEASE_TOKEN;
@@ -83,26 +84,29 @@ async function joinParentLease(): Promise<ChildLeaseParticipant | undefined> {
 
 export async function runProductionApplication(
   bootstrap: () => Promise<ApplicationContext>,
-  dependencies: ProductionApplicationDependencies = defaultDependencies,
+  dependencies: ProductionApplicationDependencies = {},
 ): Promise<void> {
   requireNodeExecutable();
-  const controller = new ShutdownController({
-    command: "start",
-    reporter: dependencies.reporter,
-  });
+  const reporter = dependencies.reporter ?? new PlainTextReporter();
+  const controller = new ShutdownController({ command: "start", reporter });
   installProcessShutdownHandlers(controller);
+  // 崩溃接管先于 bootstrap 安装：引导期崩溃是最没人看得见的一种。logger 只有容器起来之后
+  // 才存在，所以「安装」与「接线」必然分两步（RFC 0011 C2，#250）。
+  const crash = installCrashTakeover({ command: "start", reporter });
   let participant: ChildLeaseParticipant | undefined;
   await controller.start(async () => {
     participant = await joinParentLease();
     const application = await bootstrap();
+    crash.attach(dependencies.frameworkLogging?.());
     return { close: () => application.close() };
   });
   const result = await controller.finished;
+  // 成功路径不 uninstall：participant.close() 期间崩了同样要被接管，反正进程正在退出。
   try {
     await participant?.close();
   } catch (error) {
     await reportShutdownFailure({
-      reporter: dependencies.reporter,
+      reporter,
       command: "start",
       errors: [...result.errors, error],
     });

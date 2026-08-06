@@ -4,6 +4,7 @@ import { web } from "@reforce/web-node";
 import { HttpExchange, httpExchange } from "@/http-exchange";
 
 export * from "@/config-probe";
+export * from "@/crash-probe";
 export * from "@/greeting";
 export * from "@/http-exchange";
 export * from "@/lifecycle";

@@ -144,15 +144,23 @@ export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
   }
 
   /**
-   * 关停期 flush（RFC 0011 L7）：sonic-boom 的写是异步的，不排空就会把最后几条日志跟进程
-   * 一起丢掉——而关停前的最后几条恰恰是「为什么关的」。
+   * 排空异步 sink（RFC 0011 L7/C2，#250）：sonic-boom 的写是异步的，不排空就会把最后几条
+   * 日志跟进程一起丢掉。pino 的 flush 转交给具体 destination，所以 `pino.transport()` 起的
+   * worker thread 也在覆盖范围内（走 thread-stream 自己的 flush(cb)）。
    *
-   * 挂在 onContextClose 上而不是只留一个公开的 flush()：方法存在不等于有人调它，首版就是
-   * 这样——flush() 是纯死代码，一次都没被执行过。
+   * 首版刻意不出这个公开方法，理由是「方法存在不等于有人调它」——当时它确实是死代码。现在
+   * 有了第二个、且不走生命周期的调用方（崩溃接管在 process.exit 之前排空），那个条件已经
+   * 满足。它不是唯一防线：pino 自己也注册了退出期的 flushSync，但用户自带的
+   * PinoDestinationProvider 没有这个保证，而不变量 9 不允许把最吵的那条记录押在第三方的
+   * 退出钩子上。
    */
-  async onContextClose(): Promise<void> {
+  async flush(): Promise<void> {
     await new Promise<void>((resolve) => {
       this.root.flush(() => resolve());
     });
+  }
+
+  async onContextClose(): Promise<void> {
+    await this.flush();
   }
 }
