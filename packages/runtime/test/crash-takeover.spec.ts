@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
+  type CrashLogTarget,
   type CrashTakeoverOptions,
-  type FrameworkLogging,
   installCrashTakeover,
 } from "@/crash-takeover";
 import type { CliReporterEvent, Reporter } from "@/reporter";
@@ -63,10 +63,10 @@ function takeoverOf(overrides: Partial<CrashTakeoverOptions> = {}) {
   return { host, events, takeover };
 }
 
-function loggingDouble(overrides: Partial<FrameworkLogging> = {}) {
+function loggingDouble(overrides: Partial<CrashLogTarget> = {}) {
   const records: { fields: unknown; message: string }[] = [];
   const flushes: number[] = [];
-  const logging: FrameworkLogging = {
+  const logging: CrashLogTarget = {
     logger: {
       fatal: (fields, message) => records.push({ fields, message }),
     },

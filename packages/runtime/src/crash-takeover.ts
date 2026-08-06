@@ -24,7 +24,9 @@ export interface FlushableLoggerFactory {
   flush?(): Promise<void>;
 }
 
-export interface FrameworkLogging {
+// 崩溃接管用得到的两半。production-runtime 交进来的 FrameworkLogging 结构性满足它，且比它
+// 宽（关停日志还要 info）——每个消费者只声明自己用得到的部分，这是本仓既定做法。
+export interface CrashLogTarget {
   readonly logger: FatalLogger;
   readonly factory: FlushableLoggerFactory;
 }
@@ -56,7 +58,7 @@ export interface CrashTakeoverOptions {
 }
 
 export interface CrashTakeover {
-  attach(logging: FrameworkLogging | undefined): void;
+  attach(logging: CrashLogTarget | undefined): void;
   uninstall(): void;
 }
 
@@ -92,7 +94,7 @@ class ProcessCrashTakeover implements CrashTakeover {
   private readonly reporter: Reporter;
   private readonly host: CrashProcess;
   private readonly handler: CrashHandler;
-  private logging: FrameworkLogging | undefined;
+  private logging: CrashLogTarget | undefined;
   private crashing = false;
 
   constructor(options: CrashTakeoverOptions) {
@@ -105,7 +107,7 @@ class ProcessCrashTakeover implements CrashTakeover {
     this.host.on("uncaughtException", this.handler);
   }
 
-  attach(logging: FrameworkLogging | undefined): void {
+  attach(logging: CrashLogTarget | undefined): void {
     // 崩溃已经开始就不再改去处：bootstrap 可能比第一次崩溃晚完成，中途换目标会让排空写到
     // 半个 sink 上。
     if (this.crashing) {

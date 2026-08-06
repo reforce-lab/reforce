@@ -151,3 +151,84 @@ describe("shutdown controller", () => {
     ]);
   });
 });
+
+// C3（RFC 0011，#250）：关停此前全程静默，只在失败时经 reporter 出声——「停了多久」「为什么
+// 停」这两个最常问的问题一个字都没有。
+describe("shutdown observability", () => {
+  function capturingLogger() {
+    const records: { fields: Readonly<Record<string, unknown>> | undefined; message: string }[] =
+      [];
+    return {
+      records,
+      logger: {
+        info: (fields: Readonly<Record<string, unknown>> | undefined, message: string) => {
+          records.push({ fields, message });
+        },
+      },
+    };
+  }
+
+  async function stoppedController(logger?: { info: (...args: never[]) => void }) {
+    const controller = new ShutdownController({
+      command: "start",
+      reporter: new RecordingReporter(),
+    });
+    await controller.start(async () => ({ close: async () => undefined }));
+    if (logger !== undefined) {
+      controller.setLogger(logger);
+    }
+    return controller;
+  }
+
+  test("announces the drain start once shutdown begins", async () => {
+    const { records, logger } = capturingLogger();
+    const controller = await stoppedController(logger);
+
+    await controller.requestShutdown();
+
+    expect(records.map((record) => record.message)).toContain("shutting down");
+  });
+
+  test("names what triggered the shutdown", async () => {
+    const { records, logger } = capturingLogger();
+    const controller = await stoppedController(logger);
+
+    await controller.requestShutdown(undefined, "SIGTERM");
+
+    expect(records[0]?.fields).toEqual({ trigger: "SIGTERM" });
+  });
+
+  test("reports how long draining took and how it ended", async () => {
+    const { records, logger } = capturingLogger();
+    const controller = await stoppedController(logger);
+
+    await controller.requestShutdown();
+
+    expect(records.find((record) => record.message === "stopped")?.fields).toEqual({
+      stopMs: expect.any(Number),
+      exitCode: 0,
+    });
+  });
+
+  // 缺席即不打：不写日志的应用不该被迫装 @reforce/logging。
+  test("stays silent when no logger was ever handed over", async () => {
+    const controller = await stoppedController();
+
+    const result = await controller.requestShutdown();
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  // 不变量 9：日志故障最吵，但关停已经没有回头路，它不该改变 exitCode。
+  test("keeps the exit code when the shutdown logger itself throws", async () => {
+    const controller = await stoppedController({
+      info: () => {
+        throw new Error("logger exploded");
+      },
+    });
+
+    const result = await controller.requestShutdown();
+
+    expect(result.exitCode).toBe(0);
+  });
+});

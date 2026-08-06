@@ -1330,6 +1330,52 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // C3（RFC 0011，#250）：关停可观测。此前 ShutdownController 全程静默，只在失败时经
+  // reporter 出声——「停了多久」「为什么停」这两个最常问的问题一个字都没有。
+  test(
+    "logs the drain start with its trigger and the stop with its duration",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "shutdown-start");
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const records = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          });
+        // 子进程看到的是信号：CLI 父进程收到 IPC 关停请求后是发信号给子进程的。信号名此前
+        // 在 installProcessShutdownHandlers 里被整个丢掉，这条断言钉的就是它现在到得了字段。
+        expect(records.find((record) => record.message === "shutting down")).toMatchObject({
+          trigger: "SIGTERM",
+        });
+        expect(records.find((record) => record.message === "stopped")).toMatchObject({
+          stopMs: expect.any(Number),
+          exitCode: 0,
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // C2（RFC 0011，#250）：崩溃接管。此前未捕获异常走 Node 默认路径，日志缓冲与 pino
   // worker thread 的尾部日志全丢。只能在真子进程上验：记录是否完整落地、退出码是否仍是 1。
   test(

@@ -27,6 +27,21 @@ export interface ShutdownResult {
   readonly errors: readonly unknown[];
 }
 
+// 关停输出要的最小 logger 形状，由**消费侧**定义（同 web 的 RequestLogger、logging 的
+// StartupSummaryLogger）。@reforce/logging 的 Logger 结构性满足它，生成的 bootstrap 把那个
+// 实例交进来。
+//
+// 这里不写 `import type { Logger } from "@reforce/logging"` 的理由比 web 那边更硬：
+// @reforce/logging 自己依赖 @reforce/runtime（startup-summary 用 runtime/terminal），反向
+// import 直接成环——哪怕只是 type-only，它也会留在生成的 d.ts 里。
+export interface ShutdownLogger {
+  info(fields: Readonly<Record<string, unknown>> | undefined, message: string): void;
+}
+
+// 关停的起因（RFC 0011 C3，#250）。只列**能被日志看见**的那几种：bootstrap 失败与 dev 的
+// HMR fatal 发生时 logger 还不存在（容器没起来 / dev 不接 logger），给它们编名字是造死代码。
+export type ShutdownTrigger = NodeJS.Signals | "ipc" | "parent-disconnect";
+
 interface ShutdownControllerOptions {
   readonly command: CliCommandName;
   readonly reporter: Reporter;
@@ -41,10 +56,12 @@ export class ShutdownController {
   private application?: CloseableApplication;
   private detachHandlers: () => void = () => undefined;
   private failure?: ShutdownFailure;
+  private logger?: ShutdownLogger;
   private requested = false;
   private shutdownPromise?: Promise<ShutdownResult>;
   private started = false;
   private stateValue: ShutdownState = "bootstrapping";
+  private trigger?: ShutdownTrigger;
 
   constructor(options: ShutdownControllerOptions) {
     this.command = options.command;
@@ -64,6 +81,12 @@ export class ShutdownController {
 
   setHandlerCleanup(detachHandlers: () => void): void {
     this.detachHandlers = detachHandlers;
+  }
+
+  // 关停 logger 只能在 bootstrap 之后交进来：它是容器里的一条 bean，而 controller 必须先于
+  // bootstrap 存在（信号处理器要先装）。缺席即不打——不写日志的应用不该被迫装 @reforce/logging。
+  setLogger(logger: ShutdownLogger): void {
+    this.logger = logger;
   }
 
   async start(bootstrap: () => Promise<CloseableApplication>): Promise<void> {
@@ -93,9 +116,11 @@ export class ShutdownController {
     }
   }
 
-  requestShutdown(failure?: ShutdownFailure): Promise<ShutdownResult> {
+  // trigger 排在 failure 之后：dev-entry 是按位置传 failure 的，换序会静默传错参数。
+  requestShutdown(failure?: ShutdownFailure, trigger?: ShutdownTrigger): Promise<ShutdownResult> {
     this.requested = true;
     this.failure ??= failure;
+    this.trigger ??= trigger;
     if (this.stateValue === "running") {
       this.stateValue = "shutting-down";
       void this.beginShutdown();
@@ -116,7 +141,7 @@ export class ShutdownController {
         code: ok ? undefined : "SHUTDOWN_FAILED",
       });
     });
-    void this.requestShutdown();
+    void this.requestShutdown(undefined, "ipc");
     return true;
   }
 
@@ -127,6 +152,11 @@ export class ShutdownController {
 
   private async performShutdown(): Promise<ShutdownResult> {
     this.detachHandlers();
+    const startedAt = Date.now();
+    // 「收到信号」与「开始排空」在有 logger 的每条路径上都是同一刻：requestShutdown 在
+    // running 态里同步排上 beginShutdown。唯一分开的是引导期请求的关停，而那时 setLogger
+    // 还没跑过，为它单写一行等于写一行永远打不出来的日志。
+    this.log(this.trigger === undefined ? undefined : { trigger: this.trigger }, "shutting down");
     const errors: unknown[] = [];
     let primaryError = this.failure?.error;
 
@@ -173,12 +203,33 @@ export class ShutdownController {
       primaryError,
       errors: Object.freeze(errors),
     };
+    // stopMs 是**排空耗时**（摘 handler 到 flush 完成），不是进程运行时长——名字取准，免得
+    // 将来发现数字对不上还得改字段名（同请求日志的 handlerMs）。flush 算在窗口内是故意的：
+    // 排空也是停的一部分。
+    this.log({ stopMs: Date.now() - startedAt, exitCode: result.exitCode }, "stopped");
     this.stateValue = "finished";
     for (const acknowledge of this.acknowledgements.splice(0)) {
       acknowledge(result);
     }
     this.resolveCompletion(result);
     return result;
+  }
+
+  // logger 是用户的：绑定实现与 LogFieldSource.fields() 都可能抛。此刻关停已经没有回头路，
+  // 一条日志故障不该改变 exitCode；但也不许静默（不变量 9），所以落回裸 stderr——那是日志
+  // 系统自身故障的既定去处。
+  //
+  // 不做 isEnabled 前置判定：字段就是一个持有的字符串与一次减法，而且整个进程最多打两条；
+  // 级别短路由 logger 自己在合并字段之前完成（不变量 8 的结构性保证）。
+  private log(fields: Readonly<Record<string, unknown>> | undefined, message: string): void {
+    if (this.logger === undefined) {
+      return;
+    }
+    try {
+      this.logger.info(fields, message);
+    } catch (error) {
+      process.stderr.write(`[reforce.shutdown] logger failed for "${message}": ${String(error)}\n`);
+    }
   }
 }
 
@@ -189,12 +240,13 @@ export function installProcessShutdownHandlers(controller: ShutdownController): 
     });
   };
   const onDisconnect = () => {
-    void controller.requestShutdown();
+    void controller.requestShutdown(undefined, "parent-disconnect");
   };
 
-  // 这里刻意忽略回调传回的信号名：controller 的关停路径对 SIGINT / SIGTERM / SIGBREAK 一视同仁。
-  const detachSignalHandlers = installTerminationSignalHandlers(() => {
-    void controller.requestShutdown();
+  // 信号名此前被整个丢掉；现在只喂给关停日志的 trigger 字段。关停**路径**仍对
+  // SIGINT / SIGTERM / SIGBREAK 一视同仁——分支判断没有因此多出来一个。
+  const detachSignalHandlers = installTerminationSignalHandlers((signal) => {
+    void controller.requestShutdown(undefined, signal);
   });
   process.on("message", onMessage);
   process.on("disconnect", onDisconnect);
