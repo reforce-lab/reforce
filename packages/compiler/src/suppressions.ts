@@ -53,38 +53,43 @@ function notApplicableDiagnostic(entry: Entry): CompilerDiagnostic {
   });
 }
 
-// 一轮求值：先按当前的 used/notApplicable 展开候选集（含本轮该生成的抑制自身诊断），再让全部
-// 抑制去匹配这个候选集，顺带把 used/notApplicable 补齐。
-function evaluate(
-  input: readonly CompilerDiagnostic[],
-  entries: readonly Entry[],
-  used: Set<Entry>,
-  notApplicable: Set<Entry>,
+// 抑制阶段自产的两条诊断**不可被抑制注释压住**。这是设计边界，不是没做完：
+//
+// 允许压它们，就等于允许「E1 是否 used」取决于「E2 是否 used」，而 E2 的 UNUSED_SUPPRESSION
+// 只在 E2 不 used 时才存在——一条带否定的依赖。两条互相指着对方的抑制因此有两个同样自洽的
+// 解（都 used、都 unused），选哪个只取决于求值顺序。首版写成不动点迭代，代价是：本轮才被标
+// used 的条目，它那条「不该存在」的 UNUSED_SUPPRESSION 已经进了候选集，能把另一条抑制喂成
+// used——于是一条彻头彻尾的僵尸抑制永远不报，而这正是 UNUSED_SUPPRESSION 存在的唯一理由。
+//
+// 要关掉它们用 `--diagnostic-level UNUSED_SUPPRESSION=off`：那是个全局开关，不参与匹配，
+// 不构成环。Biome 的 suppression/unused 同样只能按规则开关，不能用抑制注释压。
+const unsuppressableCodes: ReadonlySet<string> = new Set([
+  "UNUSED_SUPPRESSION",
+  "SUPPRESSION_NOT_APPLICABLE",
+]);
+
+function selfReferentialDiagnostic(entry: Entry): CompilerDiagnostic {
+  return diagnostic({
+    code: "SUPPRESSION_NOT_APPLICABLE",
+    severity: "warning",
+    message: `"${entry.suppression.code}" cannot be suppressed by a comment.`,
+    sourceSpan: entry.suppression.span,
+    help: `A suppression that could hide its own "unused" report would make staleness undetectable. Turn it off globally with --diagnostic-level ${entry.suppression.code}=off.`,
+  });
+}
+
+function entryReport(
+  entry: Entry,
+  used: ReadonlySet<Entry>,
+  notApplicable: ReadonlySet<Entry>,
 ): readonly CompilerDiagnostic[] {
-  const generated = entries
-    .filter((entry) => !used.has(entry))
-    .map((entry) =>
-      notApplicable.has(entry) ? notApplicableDiagnostic(entry) : unusedDiagnostic(entry),
-    );
-  const kept: CompilerDiagnostic[] = [];
-  for (const item of [...input, ...generated]) {
-    let suppressed = false;
-    for (const entry of entries) {
-      if (!matches(item, entry)) {
-        continue;
-      }
-      if (item.severity === "error") {
-        notApplicable.add(entry);
-        continue;
-      }
-      used.add(entry);
-      suppressed = true;
-    }
-    if (!suppressed) {
-      kept.push(item);
-    }
+  if (unsuppressableCodes.has(entry.suppression.code)) {
+    return [selfReferentialDiagnostic(entry)];
   }
-  return kept;
+  if (notApplicable.has(entry)) {
+    return [notApplicableDiagnostic(entry)];
+  }
+  return used.has(entry) ? [] : [unusedDiagnostic(entry)];
 }
 
 export function applySuppressions(
@@ -97,20 +102,30 @@ export function applySuppressions(
   if (entries.length === 0) {
     return { diagnostics };
   }
-  // 迭代到不动点，而不是一遍过：UNUSED_SUPPRESSION 与 SUPPRESSION_NOT_APPLICABLE 是本阶段
-  // 自己生成的，一遍过意味着它们永远压不掉——而「上面那条抑制暂时留着」正是最常见的写法。
-  //
-  // used/notApplicable 只增不减，这是收敛的全部理由。换成「每轮重新判定」会在互相指向的两条
-  // 抑制上来回震荡：都不 used 时互相压住、都 used 时都不生成，两个状态无限交替。
+  // 一遍过，因为候选集只有真实诊断：自产的两条不参与匹配（见上），所以不存在「压住之后候选集
+  // 变了要重算」的情况。
   const used = new Set<Entry>();
   const notApplicable = new Set<Entry>();
-  let output = evaluate(diagnostics, entries, used, notApplicable);
-  for (let round = 0; round < entries.length; round += 1) {
-    const settled = used.size + notApplicable.size;
-    output = evaluate(diagnostics, entries, used, notApplicable);
-    if (used.size + notApplicable.size === settled) {
-      break;
+  const kept: CompilerDiagnostic[] = [];
+  for (const item of diagnostics) {
+    let suppressed = false;
+    for (const entry of entries) {
+      if (unsuppressableCodes.has(entry.suppression.code) || !matches(item, entry)) {
+        continue;
+      }
+      // error 不可抑制：分析没能产出完整的图，往后发射的是实参缺失的构造调用。
+      if (item.severity === "error") {
+        notApplicable.add(entry);
+        continue;
+      }
+      used.add(entry);
+      suppressed = true;
+    }
+    if (!suppressed) {
+      kept.push(item);
     }
   }
-  return { diagnostics: output };
+  return {
+    diagnostics: [...kept, ...entries.flatMap((entry) => entryReport(entry, used, notApplicable))],
+  };
 }

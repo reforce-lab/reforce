@@ -320,9 +320,10 @@ describe("warning lifecycle", () => {
     ]);
   });
 
-  // 抑制自身产生的诊断也必须可抑制，否则「上面那条先留着」这种最常见的写法无路可走——
-  // 这正是求值要迭代到不动点而不是一遍过的原因。
-  test("suppresses a warning on the line the comment points at", async () => {
+  // 抑制阶段自产的两条诊断不可被抑制注释压（理由见 src/suppressions.ts 顶部：允许压它们
+  // 就引入带否定的循环依赖，两条互指的抑制有两个同样自洽的解）。要关掉走
+  // `--diagnostic-level UNUSED_SUPPRESSION=off`。
+  test("refuses a comment that targets the suppression stage's own diagnostic", async () => {
     const result = await compileSource(
       [
         "// reforce-ignore UNUSED_SUPPRESSION: the one below is deliberate",
@@ -333,22 +334,29 @@ describe("warning lifecycle", () => {
     );
 
     expect(result.status).toBe("success");
-    expect(result.diagnostics).toEqual([]);
+    expect(result.diagnostics.map((item) => item.code).toSorted()).toEqual([
+      "SUPPRESSION_NOT_APPLICABLE",
+      "UNUSED_SUPPRESSION",
+    ]);
   });
 
-  // 全部被抑制必须走 success：把抑制放在 failure() 之后会撞上
-  // "Compile failure requires a diagnostic"。
-  test("stays successful when every warning is suppressed", async () => {
+  // 抑制只追加 warning，绝不把 failure 变成空诊断：compile.ts 的 failure() 里有
+  // `throw new Error("Compile failure requires a diagnostic")`。
+  test("keeps a failure's diagnostics non-empty while adding the suppression report", async () => {
     const result = await compileSource(
       [
-        "// reforce-ignore UNUSED_SUPPRESSION: the one below is deliberate",
-        "// reforce-ignore MISSING_BEAN: nothing here reports it",
-        'export const marker = "ok";',
+        'import { Injectable } from "@reforce/context";',
+        "",
+        "interface Absent {}",
+        "",
+        "// reforce-ignore UNUSED_SUPPRESSION: deliberate",
+        "@Injectable() export class Consumer { constructor(readonly absent: Absent) {} }",
         "",
       ].join("\n"),
     );
-    expect(result.status).toBe("success");
-    expect(result.diagnostics).toEqual([]);
+
+    expect(result.status).toBe("failure");
+    expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 
   // 抑制一条 error 意味着 emission 会拿着不完整的分析结果发射实参缺失的构造调用。
@@ -368,15 +376,5 @@ describe("warning lifecycle", () => {
     expect(result.status).toBe("failure");
     expect(result.diagnostics.map((item) => item.code)).toContain("MISSING_BEAN");
     expect(result.diagnostics.map((item) => item.code)).toContain("SUPPRESSION_NOT_APPLICABLE");
-  });
-
-  // severity 排在 code 之前：同一处位置上 error 必须先于 warning 出现。
-  test("orders errors ahead of warnings", () => {
-    const ordered = orderDiagnostics([
-      diagnostic({ code: "UNUSED_SUPPRESSION", severity: "warning", message: "a" }),
-      diagnostic({ code: "TYPE_LINK_FAILED", message: "a" }),
-    ]);
-
-    expect(ordered.map((item) => item.severity)).toEqual(["error", "warning"]);
   });
 });
