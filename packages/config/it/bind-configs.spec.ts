@@ -5,7 +5,8 @@ import type {
   GeneratedConfigRegistration,
   GeneratedSourceReference,
 } from "@reforce/context/generated-runtime";
-import { replayBootstrapLogs, resetBootstrapRegistryForTest } from "@reforce/logging";
+import { replayBootstrapLogs } from "@reforce/logging";
+import { resetBootstrapRegistryForTest } from "@reforce/logging/testing";
 import {
   createTemporaryProject,
   resolveNodeExecutable,

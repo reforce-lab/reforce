@@ -64,11 +64,12 @@ function bound(input: {
   readonly fieldSources: readonly LogFieldSource[];
 }) {
   const captured = capturingStream();
-  const factory = new PinoLoggerFactory({
-    settings: { level: input.defaultLevel },
-    fieldSources: input.fieldSources,
-    destinationProvider: { destination: () => captured.stream },
-  });
+  const factory = new PinoLoggerFactory(
+    { level: input.defaultLevel },
+    input.fieldSources,
+    [],
+    [{ destination: () => captured.stream }],
+  );
   return { factory, records: () => captured.lines.map(parseRecord) };
 }
 
@@ -84,10 +85,12 @@ describe("pino binding specifics", () => {
   // 级别刻度一致是「没有翻译层」的前提，值一旦漂移，逐 logger 调级会静默错档。
   test("writes the same numeric level scale the facade declares", () => {
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({
-      settings: { level: "trace" },
-      destinationProvider: { destination: () => captured.stream },
-    });
+    const factory = new PinoLoggerFactory(
+      { level: "trace" },
+      [],
+      [],
+      [{ destination: () => captured.stream }],
+    );
 
     factory.create("orders").warn(undefined, "probe");
 
@@ -96,9 +99,7 @@ describe("pino binding specifics", () => {
 
   test("carries the logger name into every record", () => {
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({
-      destinationProvider: { destination: () => captured.stream },
-    });
+    const factory = new PinoLoggerFactory({}, [], [], [{ destination: () => captured.stream }]);
 
     factory.create("payments").info(undefined, "probe");
 
@@ -108,8 +109,10 @@ describe("pino binding specifics", () => {
   // configurer 依次改写、后一个拿到前一个的产物，顺序敏感度因此可见。
   test("threads each configurer's output into the next", () => {
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({
-      configurers: [
+    const factory = new PinoLoggerFactory(
+      {},
+      [],
+      [
         { configure: (options) => ({ ...options, base: { stage: "first" } }) },
         {
           configure: (options) => ({
@@ -118,8 +121,8 @@ describe("pino binding specifics", () => {
           }),
         },
       ],
-      destinationProvider: { destination: () => captured.stream },
-    });
+      [{ destination: () => captured.stream }],
+    );
 
     factory.create("orders").info(undefined, "probe");
 
@@ -130,10 +133,12 @@ describe("pino binding specifics", () => {
   // 不当中间人：redact 是 pino 的原生选项，原样递出就该原样生效。
   test("passes a native pino option straight through", () => {
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({
-      settings: { options: { redact: ["secret"] } },
-      destinationProvider: { destination: () => captured.stream },
-    });
+    const factory = new PinoLoggerFactory(
+      { options: { redact: ["secret"] } },
+      [],
+      [],
+      [{ destination: () => captured.stream }],
+    );
 
     factory.create("orders").info({ secret: "hunter2" }, "probe");
 
@@ -142,15 +147,18 @@ describe("pino binding specifics", () => {
 
   test("resolves a per-logger level ahead of the default", () => {
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({
-      settings: { level: "error" },
-      levelFor: (name) => (name === "orders" ? "debug" : "error"),
-      destinationProvider: { destination: () => captured.stream },
-    });
+    process.env.LOGGING_LEVEL_ORDERS = "debug";
+    const factory = new PinoLoggerFactory(
+      { level: "error" },
+      [],
+      [],
+      [{ destination: () => captured.stream }],
+    );
 
     factory.create("orders").debug(undefined, "kept");
     factory.create("payments").debug(undefined, "dropped");
 
+    delete process.env.LOGGING_LEVEL_ORDERS;
     expect(captured.lines.map((line) => JSON.parse(line).name)).toEqual(["orders"]);
   });
 
@@ -159,9 +167,9 @@ describe("pino binding specifics", () => {
   test("never consults a field source below the threshold", () => {
     let calls = 0;
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({
-      settings: { level: "error" },
-      fieldSources: [
+    const factory = new PinoLoggerFactory(
+      { level: "error" },
+      [
         {
           fields() {
             calls += 1;
@@ -169,8 +177,9 @@ describe("pino binding specifics", () => {
           },
         },
       ],
-      destinationProvider: { destination: () => captured.stream },
-    });
+      [],
+      [{ destination: () => captured.stream }],
+    );
 
     factory.create("orders").debug(undefined, "dropped");
 

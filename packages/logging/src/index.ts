@@ -3,7 +3,6 @@ export {
   bootstrapLogger,
   droppedBootstrapRecords,
   replayBootstrapLogs,
-  resetBootstrapRegistryForTest,
 } from "@/bootstrap-registry";
 export {
   isLevelEnabled,

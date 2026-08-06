@@ -8,13 +8,17 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "default": "./dist/conformance.js"
+    },
     "./generated-runtime": {
       "types": "./dist/generated-runtime.d.ts",
       "default": "./dist/generated-runtime.js"
     },
-    "./conformance": {
-      "types": "./dist/conformance.d.ts",
-      "default": "./dist/conformance.js"
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "scripts": {
@@ -25,7 +29,6 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
     "@reforce/runtime": "workspace:*",
     "@swc/helpers": "catalog:"
   },

@@ -76,11 +76,13 @@ function best(run: () => void): number {
 
 // —— 三档参照系 ——
 
-const barePino = pino({ level: "info" }, countingStream());
-const facadeOverPino = new PinoLoggerFactory({
-  settings: { level: "info" },
-  destinationProvider: { destination: () => countingStream() },
-}).create("bench");
+const barePino = pino({ level: "info" }, countingStream()).child({ name: "bench" });
+const facadeOverPino = new PinoLoggerFactory(
+  { level: "info" },
+  [],
+  [],
+  [{ destination: () => countingStream() }],
+).create("bench");
 const facadeOverDefault = new DefaultLoggerFactory({
   defaultLevel: "info",
   write: streamWriter(countingStream()),
@@ -97,11 +99,15 @@ const results = new Map<string, number>([
 // —— sonic-boom 真文件写：内存 sink 会系统性低估 pino ——
 
 const fileRoot = mkdtempSync(join(tmpdir(), "reforce-logging-bench-"));
-const filePino = pino({ level: "info" }, pinoDefault.destination(join(fileRoot, "bare.log")));
-const fileFacade = new PinoLoggerFactory({
-  settings: { level: "info" },
-  destinationProvider: { destination: () => pinoDefault.destination(join(fileRoot, "facade.log")) },
-}).create("bench");
+const filePino = pino({ level: "info" }, pinoDefault.destination(join(fileRoot, "bare.log"))).child(
+  { name: "bench" },
+);
+const fileFacade = new PinoLoggerFactory(
+  { level: "info" },
+  [],
+  [],
+  [{ destination: () => pinoDefault.destination(join(fileRoot, "facade.log")) }],
+).create("bench");
 results.set(
   "① 裸 pino → sonic-boom 文件",
   best(() => filePino.info(twoFields, "request")),

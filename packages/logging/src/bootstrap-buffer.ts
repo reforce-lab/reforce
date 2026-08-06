@@ -104,9 +104,12 @@ export function createBootstrapLogBuffer(
         );
       }
       for (const record of pending) {
-        // 原始时间戳：重放时刻会把引导期的时序压平。
+        // 字段名不是 `time`：重放走的是普通 Logger 调用，字段被绑定平铺进记录顶层，而 `time`
+        // 正是 pino 自己写的顶层键——实测同一行 JSON 里出现两个 time，取前者的解析器拿到的是
+        // 重放时刻，恰好把「保留原始时间戳」这个目的破掉。叫 bootstrapTime 也更准确：它与这
+        // 条记录的 time 是两个不同的时刻，重放时刻并不因此消失。
         resolve(record.loggerName)[record.level](
-          { ...record.fields, time: record.time },
+          { ...record.fields, bootstrapTime: record.time },
           record.message,
         );
       }

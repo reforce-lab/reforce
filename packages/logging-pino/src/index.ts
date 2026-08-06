@@ -6,7 +6,7 @@ export type {
   PinoDestination,
   PinoDestinationProvider,
 } from "@/bridges";
-export { PinoLoggerFactory, type PinoLoggerFactoryOptions } from "@/factory";
+export { PinoLoggerFactory } from "@/factory";
 export type { PinoSettings } from "@/settings";
 
 // 注册 handle（ADR 0004，#120；形状随 #244 改为主入口具名导出）：

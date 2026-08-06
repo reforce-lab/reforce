@@ -162,7 +162,14 @@ function prepareRoute(
             return await dispatchError(error, requestContext);
           }
         })();
-        logRequest({ logger, method: route.method, path: route.path, response, startedAt });
+        // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
+        // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
+        // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
+        try {
+          logRequest({ logger, method: route.method, path: route.path, response, startedAt });
+        } catch {
+          // 记不上就记不上，不值得赔上一个已经成功的响应。
+        }
         return response;
       });
     },

@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  bootstrapLogger,
-  replayBootstrapLogs,
-  resetBootstrapRegistryForTest,
-} from "@/bootstrap-registry";
+import { bootstrapLogger, replayBootstrapLogs } from "@/bootstrap-registry";
 import type { LogFields, Logger, LoggerFactory, LogLevel, LogRecord } from "@/contracts";
+import { resetBootstrapRegistryForTest } from "@/testing";
 
 // 进程级单例会跨用例串味，每条用例前重置。
 beforeEach(() => {

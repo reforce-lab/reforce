@@ -54,7 +54,7 @@ describe("bootstrap log buffer", () => {
 
     buffer.replayInto(sink.resolve);
 
-    expect(sink.captured.map((item) => item.fields.time)).toEqual([1_010, 1_020]);
+    expect(sink.captured.map((item) => item.fields.bootstrapTime)).toEqual([1_010, 1_020]);
   });
 
   // 丢最旧的：引导期最后几条恰恰是失败现场。
