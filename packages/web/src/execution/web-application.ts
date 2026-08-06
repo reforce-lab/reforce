@@ -17,12 +17,52 @@ import { metaLookup } from "@/routing/route-marker";
 // await next() 对核心错误永不抛（观测中间件因此看得到错误响应）；外层兜底包住整链，
 // 中间件自身抛错也保证换成 Response——handle 永不 reject 是适配器契约的一部分。
 
+// 请求日志需要的最小 logger 形状，由**消费侧**定义（同 ADR 0009 的 ReportedDiagnostic 先例）。
+// @reforce/logging 的 Logger 结构性满足它，生成的 bootstrap 直接把那个实例传进来。
+//
+// 不写成 `import type { Logger } from "@reforce/logging"`：type-only import 在运行时被擦除，
+// 但**会留在生成的 d.ts 里**——那样每个消费 @reforce/web 的项目 typecheck 时都得解析得到
+// @reforce/logging，等于把一条硬依赖藏在类型层。不写日志的应用不该为它多装一个包。
+export interface RequestLogger {
+  isEnabled(level: "info"): boolean;
+  info(fields: Readonly<Record<string, unknown>> | undefined, message: string): void;
+}
+
 export interface CreateWebApplicationOptions {
   readonly table: unknown;
   readonly context: ApplicationContext;
   // 每请求开启作用域时的根请求 bean 播种（ADR 0006 W7 / #151 接线面）；缺省不播种，
   // 请求计划照常执行。
   readonly requestSeeds?: RequestSeeder;
+  // 请求日志由核心统一发（RFC 0011 L6，#250），不由各引擎各写一遍——三个引擎写出来的字段
+  // 必然漂移，而请求日志是最需要跨引擎可比的一条。缺席即不打。
+  readonly logger?: RequestLogger;
+}
+
+// 记的是 handler 的耗时，字段名如实叫 handlerMs 而不是 durationMs（L6 的诚实边界）：
+// 这一刻拿到的是「Response 对象已产生」，**不是「字节已送出」**。流式响应（无 content-length）
+// 此刻 body 还没写完。真实的 duration 与 bytes 只能在引擎侧的 finish 监听上拿，那是后续的事，
+// 现在把名字取准，免得将来发现数字对不上还得改字段名。
+function logRequest(input: {
+  readonly logger: RequestLogger | undefined;
+  readonly method: string;
+  readonly path: string;
+  readonly response: Response;
+  readonly startedAt: number;
+}): void {
+  // 不变量 8：字段对象在调用之前就构造好了，所以判定必须在这里做，不能指望 logger 内部短路。
+  if (input.logger?.isEnabled("info") !== true) {
+    return;
+  }
+  input.logger.info(
+    {
+      method: input.method,
+      path: input.path,
+      status: input.response.status,
+      handlerMs: Math.round((performance.now() - input.startedAt) * 1000) / 1000,
+    },
+    "request",
+  );
 }
 
 type RouteRunner = (context: RequestContextState) => Promise<Response>;
@@ -70,6 +110,7 @@ function prepareRoute(
   context: ApplicationContext,
   dispatchError: ErrorDispatcher,
   requestSeeds: RequestSeeder | undefined,
+  logger: RequestLogger | undefined,
 ): PreparedRoute {
   const controller = context.get(route.controller);
   const middleware = route.middleware.map((entry) =>
@@ -108,12 +149,21 @@ function prepareRoute(
           params,
           meta: route.meta,
         }) ?? [];
+      // 落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
+      // 请求态字段。挪到外面就只剩静态字段了。
       return await context.runInRequestScope(seeds, async () => {
-        try {
-          return await chain(requestContext);
-        } catch (error) {
-          return await dispatchError(error, requestContext);
-        }
+        const startedAt = performance.now();
+        // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
+        // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
+        const response = await (async () => {
+          try {
+            return await chain(requestContext);
+          } catch (error) {
+            return await dispatchError(error, requestContext);
+          }
+        })();
+        logRequest({ logger, method: route.method, path: route.path, response, startedAt });
+        return response;
       });
     },
   };
@@ -128,7 +178,7 @@ export function createWebApplication(options: CreateWebApplicationOptions): WebA
   );
   return {
     routes: table.routes.map((route) =>
-      prepareRoute(route, options.context, dispatchError, options.requestSeeds),
+      prepareRoute(route, options.context, dispatchError, options.requestSeeds, options.logger),
     ),
   };
 }

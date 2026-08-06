@@ -1,6 +1,6 @@
 import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
 import type { RequestSeeder, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
-import { createWebApplication } from "@/execution/web-application";
+import { createWebApplication, type RequestLogger } from "@/execution/web-application";
 
 // 生成的 bootstrap 的 web 接线入口（ADR 0006 W1/W2 的 #153 修订，记录于 #142/#152 评论区）：
 // 路由表与 ApplicationContext 只有生成代码同时拿得到，因此"把表交给引擎"发生在 bootstrap——
@@ -15,6 +15,8 @@ export interface ConnectWebApplicationOptions {
   // 引擎的配置照常走构造注入）。数组顺序即启动顺序，关闭时逆序。
   readonly engines: readonly BeanClass<WebEngineAdapter>[];
   readonly requestSeeds?: RequestSeeder;
+  /** 请求日志的 logger（RFC 0011 L6，#250）；由生成的 bootstrap 传入，缺席即不打。 */
+  readonly logger?: RequestLogger;
 }
 
 async function closeStartedHandles(handles: readonly WebApplicationHandle[]): Promise<unknown[]> {
@@ -64,6 +66,7 @@ export async function connectWebApplication(
     table: options.table,
     context,
     ...(options.requestSeeds === undefined ? {} : { requestSeeds: options.requestSeeds }),
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
   });
   const handles: WebApplicationHandle[] = [];
   try {

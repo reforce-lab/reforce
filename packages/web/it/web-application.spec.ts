@@ -8,6 +8,7 @@ import {
 } from "@reforce/context/generated-runtime";
 import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
+import type { RequestLogger } from "@/execution/web-application";
 import type { GeneratedRouteTable } from "@/generated-runtime";
 import { createWebApplication, defineRouteMarker, type RequestContext } from "@/index";
 
@@ -205,7 +206,7 @@ class FakeAdapter implements WebEngineAdapter {
   }
 }
 
-async function startedApplication() {
+async function startedApplication(logger?: RequestLogger) {
   const context = createApplicationContext(applicationDefinition());
   await context.start();
   const application = createWebApplication({
@@ -217,6 +218,7 @@ async function startedApplication() {
         instance: new RequestHolder(request.headers.get("x-request-id") ?? "anonymous"),
       },
     ],
+    ...(logger === undefined ? {} : { logger }),
   });
   const adapter = new FakeAdapter();
   await adapter.start(application);
@@ -287,5 +289,106 @@ describe("web application over the real context runtime", () => {
     expect(response.status).toBe(418);
     expect(await response.text()).toBe("teapot");
     await context.close();
+  });
+});
+
+// —— 请求日志由核心统一发（RFC 0011 L6，#250）——
+// 由核心发而不是各引擎各写一遍：三个引擎写出来的字段必然漂移，而请求日志恰恰是最需要跨引擎
+// 可比的一条。
+
+interface CapturedRequestLog {
+  readonly fields: Readonly<Record<string, unknown>>;
+  readonly message: string;
+}
+
+function capturingLogger(options: { readonly enabled?: boolean } = {}): {
+  readonly logger: RequestLogger;
+  readonly captured: CapturedRequestLog[];
+  readonly enabledChecks: () => number;
+} {
+  const captured: CapturedRequestLog[] = [];
+  let enabledChecks = 0;
+  return {
+    captured,
+    enabledChecks: () => enabledChecks,
+    logger: {
+      isEnabled: () => {
+        enabledChecks += 1;
+        return options.enabled ?? true;
+      },
+      info: (fields, message) => {
+        captured.push({ fields: fields ?? {}, message });
+      },
+    },
+  };
+}
+
+describe("request logging", () => {
+  test("writes one record per request carrying method, path and status", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch(
+      "GET",
+      "/greet",
+      new Request("https://reforce.test/greet", { headers: { "x-request-id": "r-1" } }),
+      {},
+    );
+
+    expect(capture.captured).toHaveLength(1);
+    expect(capture.captured[0]?.fields).toMatchObject({
+      method: "GET",
+      path: "/greet",
+      status: 200,
+    });
+  });
+
+  // 诚实边界：这一刻拿到的是「Response 对象已产生」，不是「字节已送出」。字段名如实叫
+  // handlerMs，将来在引擎 finish 上量到真实 duration 时不必改名。
+  test("names the timing field after what it actually measures", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    const fields = capture.captured[0]?.fields ?? {};
+    expect("handlerMs" in fields).toBe(true);
+    expect("durationMs" in fields).toBe(false);
+    expect(typeof fields.handlerMs).toBe("number");
+  });
+
+  // 两条出口都要量到：错误经 dispatchError 变成 Response 之后，那个请求同样结束了。
+  test("logs a request that ended through the error dispatcher", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    expect(capture.captured).toHaveLength(1);
+    expect(capture.captured[0]?.fields).toMatchObject({ path: "/explode", status: 418 });
+  });
+
+  // 不变量 8：字段对象在调用之前就构造好了，判定必须由核心做，不能指望 logger 内部短路。
+  test("builds no fields at all when the level is disabled", async () => {
+    const capture = capturingLogger({ enabled: false });
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    expect(capture.captured).toEqual([]);
+    expect(capture.enabledChecks()).toBe(1);
+  });
+
+  test("stays silent when no logger is wired", async () => {
+    const { adapter } = await startedApplication();
+
+    const response = await adapter.dispatch(
+      "GET",
+      "/greet",
+      new Request("https://reforce.test/greet"),
+      {},
+    );
+
+    expect(response.status).toBe(200);
   });
 });
