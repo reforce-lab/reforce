@@ -18,3 +18,9 @@ export {
   parseLogLevel,
 } from "@/levels";
 export { LoggerName } from "@/logger-name";
+export {
+  renderStartupSummary,
+  type StartupSummary,
+  type StartupSummaryRenderOptions,
+  type StartupSummarySection,
+} from "@/startup-summary";
