@@ -11,6 +11,7 @@ import {
   type WovenBeanModel,
   type WovenMethodModel,
 } from "@/analysis/interception-model";
+import { markerUseValueOf } from "@/analysis/marker-value";
 import { type ProviderModel, providerId, sourceReference } from "@/analysis/model";
 import {
   transactionalMarkerKey,
@@ -40,8 +41,6 @@ import type { ParsedSource } from "@/project/source-files";
 
 const markerDeclarationHelp =
   'Declare method markers as export const X = defineMethodMarker<T>("key") with a non-empty string literal key.';
-const markerValueHelp =
-  "Method marker values must be static JSON literals: string, number, boolean, null, array, or object literals.";
 const interceptorHelp =
   "Declare interceptors as @Interceptor({ marker, phase?, order? }) singleton classes.";
 
@@ -158,94 +157,6 @@ function collectMethodMarkers(
   return registry;
 }
 
-// marker 值 = JSON 字面量树（#202 硬错 #7，metaValueOf 同口径）：静态可提取是硬边界。
-function markerMetaValueOf(
-  value: DecoratorArgumentValue,
-  diagnostics: CompilerDiagnostic[],
-): MethodMetaValueModel | undefined {
-  if (value.kind === "string-literal" || value.kind === "boolean-literal") {
-    return value.value;
-  }
-  if (value.kind === "number-literal") {
-    return markerMetaNumberOf(value.value, value.span, diagnostics);
-  }
-  if (value.kind === "null-literal") {
-    return null;
-  }
-  if (value.kind === "array-literal") {
-    return markerMetaArrayOf(value.elements, diagnostics);
-  }
-  if (value.kind === "object-literal") {
-    return markerMetaObjectOf(value.properties, diagnostics);
-  }
-  report(
-    diagnostics,
-    "INVALID_METHOD_MARKER_VALUE",
-    "Method marker values must be statically extractable literals.",
-    value.span,
-    { help: markerValueHelp },
-  );
-  return undefined;
-}
-
-function markerMetaNumberOf(
-  value: number,
-  span: SourceSpan,
-  diagnostics: CompilerDiagnostic[],
-): number | undefined {
-  if (Number.isFinite(value)) {
-    return value;
-  }
-  report(
-    diagnostics,
-    "INVALID_METHOD_MARKER_VALUE",
-    "Method marker numbers must be finite to serialize into the weaving table.",
-    span,
-    { help: markerValueHelp },
-  );
-  return undefined;
-}
-
-function markerMetaArrayOf(
-  elements: readonly DecoratorArgumentValue[],
-  diagnostics: CompilerDiagnostic[],
-): MethodMetaValueModel | undefined {
-  const lowered: MethodMetaValueModel[] = [];
-  for (const element of elements) {
-    const value = markerMetaValueOf(element, diagnostics);
-    if (value === undefined) {
-      return undefined;
-    }
-    lowered.push(value);
-  }
-  return lowered;
-}
-
-function markerMetaObjectOf(
-  properties: readonly ObjectLiteralProperty[],
-  diagnostics: CompilerDiagnostic[],
-): MethodMetaValueModel | undefined {
-  const lowered: Record<string, MethodMetaValueModel> = {};
-  for (const property of properties) {
-    if (property.kind === "unsupported-property") {
-      report(
-        diagnostics,
-        "INVALID_METHOD_MARKER_VALUE",
-        `Method marker objects cannot use ${property.propertyKind} properties.`,
-        property.span,
-        { help: markerValueHelp },
-      );
-      return undefined;
-    }
-    const value = markerMetaValueOf(property.value, diagnostics);
-    if (value === undefined) {
-      return undefined;
-    }
-    lowered[property.key] = value;
-  }
-  return lowered;
-}
-
 // marker 使用识别（markerUseOf 同款）：callee 解析不到已链接符号、却能落到
 // defineMethodMarker 声明的装饰器才算标记；其余解析不到的装饰器不属于 Reforce，保持沉默。
 // 框架标记 @Transactional 是唯一例外（#204 定案 2）：它解析成 context 合成符号、没有源内
@@ -274,26 +185,6 @@ function markerUseOf(
     return undefined;
   }
   return markers.get(markerRegistryKey(resolved.source.fileId, resolved.declaration.name));
-}
-
-// 0/1 参门控（#202 对 W3 口径的唯一偏差）：裸调用是合法形态（@Transactional() 人体工学），
-// 0 参记 null；未调用或多参硬错。
-function markerUseValueOf(
-  decorator: DecoratorUse,
-  diagnostics: CompilerDiagnostic[],
-): MethodMetaValueModel | null | undefined {
-  if (!decorator.called || decorator.arguments.length > 1) {
-    report(
-      diagnostics,
-      "INVALID_METHOD_MARKER_VALUE",
-      "A method marker must be applied as a call with at most one literal value.",
-      decorator.span,
-      { help: markerValueHelp },
-    );
-    return undefined;
-  }
-  const argument = decorator.arguments.at(0);
-  return argument === undefined ? null : markerMetaValueOf(argument, diagnostics);
 }
 
 interface MarkerUse {
@@ -898,19 +789,26 @@ export interface ChainEntryDraft {
   readonly value: MethodMetaValueModel | null;
 }
 
-// 链压平（#202 定案 3）：并集按 beanId 去重（首现记 provenance：markerKey/value 取第一次
-// 把该拦截器带进链的标记），再按 (阶段, order, beanId) 排序写死。v1 单标记绑定实际不产生
-// 重复，规则先写死供前向兼容。
+// 链压平（#202 定案 3）：按 (阶段, order, beanId) 排序写死。同一 beanId 出现两次在 v1 是
+// 结构上不可达的——一个拦截器类只能有一个 @Interceptor、只绑一个 marker；同方法同 marker
+// 重复已在 markedMethodOf 硬错；beanId 全局唯一。因此这里是不变量断言而不是去重：原先的
+// "首现取值"顺手定死了叠加语义，将来真放开一个拦截器绑多个 marker 时会静默丢弃第二个
+// value——那条规则必须在放开的那一刻正面定案，不得继承此处的默认值。
+//
+// 类级标记落地不会让它变可达：类级 + 方法级叠加同一 marker 时，冲突发生在 markedMethodOf
+// 的 Map<markerKey, MarkerUse> 层，产出仍是每 markerKey 一个合并后的 value。未来要定的
+// 合并规则在那个位置，不在这里。
 export function flattenChainEntries(
   entries: readonly ChainEntryDraft[],
 ): readonly ChainEntryDraft[] {
-  const byBeanId = new Map<string, ChainEntryDraft>();
+  const seen = new Set<string>();
   for (const entry of entries) {
-    if (!byBeanId.has(entry.beanId)) {
-      byBeanId.set(entry.beanId, entry);
+    if (seen.has(entry.beanId)) {
+      throw new Error(`Duplicate interceptor ${entry.beanId} on one method chain`);
     }
+    seen.add(entry.beanId);
   }
-  return [...byBeanId.values()].toSorted(compareChainEntries);
+  return entries.toSorted(compareChainEntries);
 }
 
 function nextParameterIndex(provider: ProviderModel): number {

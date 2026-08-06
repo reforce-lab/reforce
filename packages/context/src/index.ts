@@ -28,16 +28,23 @@ export {
   type RuntimeErrorCode,
   TransactionIsolationOnJoinError,
   TransactionIsolationUnsupportedError,
+  TransactionResourceReusedError,
   TransactionSavepointUnsupportedError,
+  TransactionTimeoutError,
+  TransactionTimeoutOnJoinError,
+  TransactionTimeoutUnsupportedError,
   UnregisteredBeanTargetError,
 } from "@/errors";
 export {
+  type InterceptHandle,
   Interceptor,
   type InterceptorOptions,
   type InterceptPhase,
   interceptPhases,
   type MethodInterceptor,
   type MethodInvocationContext,
+  type ReplacingInterceptHandle,
+  type ReplacingMethodInterceptor,
 } from "@/interception/interceptor";
 export {
   defineMethodMarker,
@@ -55,14 +62,21 @@ export type {
   QualifiedBean,
   RequestScopeSeed,
 } from "@/public-types";
-export type {
-  TransactionIsolation,
-  TransactionManager,
-  TransactionOptions,
+export {
+  isNestedTransactionManager,
+  type NestedTransactionManager,
+  type TransactionIsolation,
+  type TransactionManager,
+  type TransactionOptions,
+  transactionIsolationLevels,
 } from "@/transaction/manager";
 export {
   Transactional,
   type TransactionalValue,
   type TransactionPropagation,
 } from "@/transaction/marker";
-export { type ActiveTransaction, activeTransaction } from "@/transaction/scope";
+export {
+  activeResourceFor,
+  activeTransaction,
+  type TransactionInfo,
+} from "@/transaction/scope";

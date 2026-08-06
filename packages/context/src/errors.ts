@@ -15,7 +15,11 @@ export type RuntimeErrorCode =
   | "INVALID_GENERATED_DEFINITION"
   | "TRANSACTION_SAVEPOINT_UNSUPPORTED"
   | "TRANSACTION_ISOLATION_ON_JOIN"
-  | "TRANSACTION_ISOLATION_UNSUPPORTED";
+  | "TRANSACTION_ISOLATION_UNSUPPORTED"
+  | "TRANSACTION_TIMEOUT_ON_JOIN"
+  | "TRANSACTION_TIMEOUT_UNSUPPORTED"
+  | "TRANSACTION_TIMEOUT"
+  | "TRANSACTION_RESOURCE_REUSED";
 
 interface RuntimeErrorOptions {
   readonly cause?: unknown;
@@ -278,5 +282,78 @@ export class TransactionIsolationUnsupportedError extends ReforceRuntimeError<"T
       { cause: input.cause },
     );
     this.isolation = input.isolation;
+  }
+}
+
+// timeout 族与 isolation 族并列而不抽成 TransactionOptionOnJoinError：Rule of Three 只有
+// 两次重复，各自的诊断字段与文案也不同，保持重复。
+export class TransactionTimeoutOnJoinError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT_ON_JOIN"> {
+  readonly code = "TRANSACTION_TIMEOUT_ON_JOIN" as const;
+  readonly beanId: string;
+  readonly method: string;
+  readonly declared: number;
+  readonly active: number | undefined;
+
+  constructor(input: {
+    readonly beanId: string;
+    readonly method: string;
+    readonly declared: number;
+    readonly active: number | undefined;
+  }) {
+    super(
+      `"${input.beanId}.${input.method}" declares timeout ${input.declared}ms but participates in an active transaction ${
+        input.active === undefined ? "that declared no timeout" : `declared as ${input.active}ms`
+      }; an already open transaction cannot change its time budget.`,
+    );
+    this.beanId = input.beanId;
+    this.method = input.method;
+    this.declared = input.declared;
+    this.active = input.active;
+  }
+}
+
+// 核心不抛这个错：它是给 adapter 的统一词汇——底层不能精确实现"整个事务边界的墙钟上限"时
+// 必须抛错，不得用 statement_timeout 一类语义不等价的近似冒充。
+export class TransactionTimeoutUnsupportedError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT_UNSUPPORTED"> {
+  readonly code = "TRANSACTION_TIMEOUT_UNSUPPORTED" as const;
+  readonly timeout: number;
+
+  constructor(input: { readonly timeout: number; readonly cause?: unknown }) {
+    super(
+      `The underlying database driver cannot enforce a per-transaction timeout of ${input.timeout}ms.`,
+      { cause: input.cause },
+    );
+    this.timeout = input.timeout;
+  }
+}
+
+// 核心不抛这个错：adapter 把驱动私有的超时错误（Prisma P2028 等）映射成框架词汇，原错误
+// 留在 cause 里——调用方 catch 一个类型即可，不必认得每家驱动的错误码。
+export class TransactionTimeoutError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT"> {
+  readonly code = "TRANSACTION_TIMEOUT" as const;
+  readonly timeout: number;
+
+  constructor(input: { readonly timeout: number; readonly cause?: unknown }) {
+    super(`Transaction exceeded its declared timeout of ${input.timeout}ms and was rolled back.`, {
+      cause: input.cause,
+    });
+    this.timeout = input.timeout;
+  }
+}
+
+// 运行时护栏（ADR 0008 T4）：REQUIRES_NEW 拿回了同一 manager 上某个被挂起边界的资源，说明
+// withTransaction 没有开新事务。能力边界写在拦截器的护栏处——它只抓"直接把外层 resource
+// 原样返回"这类粗糙实现。
+export class TransactionResourceReusedError extends ReforceRuntimeError<"TRANSACTION_RESOURCE_REUSED"> {
+  readonly code = "TRANSACTION_RESOURCE_REUSED" as const;
+  readonly beanId: string;
+  readonly method: string;
+
+  constructor(input: { readonly beanId: string; readonly method: string }) {
+    super(
+      `REQUIRES_NEW on "${input.beanId}.${input.method}" received a resource that belongs to a suspended outer transaction; withTransaction() must begin a transaction unrelated to any outer one.`,
+    );
+    this.beanId = input.beanId;
+    this.method = input.method;
   }
 }

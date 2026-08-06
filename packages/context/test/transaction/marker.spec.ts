@@ -35,7 +35,26 @@ describe("readTransactionalValue", () => {
   });
 
   test("rejects unknown option keys", () => {
-    expect(() => readTransactionalValue({ timeout: 5 })).toThrow('does not include "timeout"');
+    expect(() => readTransactionalValue({ maxWait: 5 })).toThrow('does not include "maxWait"');
+  });
+
+  test("keeps a declared timeout", () => {
+    expect(readTransactionalValue({ timeout: 5_000 })).toEqual({ timeout: 5_000 });
+  });
+
+  test("rejects a non-positive or fractional timeout", () => {
+    expect(() => readTransactionalValue({ timeout: 0 })).toThrow(
+      "Transactional timeout must be a positive integer",
+    );
+    expect(() => readTransactionalValue({ timeout: -1 })).toThrow(
+      "Transactional timeout must be a positive integer",
+    );
+    expect(() => readTransactionalValue({ timeout: 1.5 })).toThrow(
+      "Transactional timeout must be a positive integer",
+    );
+    expect(() => readTransactionalValue({ timeout: "5s" })).toThrow(
+      "Transactional timeout must be a positive integer",
+    );
   });
 
   test("rejects an unknown propagation literal", () => {

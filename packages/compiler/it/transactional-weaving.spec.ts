@@ -57,14 +57,47 @@ function generatedContent(result: CompileSuccess, filePath: GeneratedFile["path"
 }
 
 const managerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { activeResourceFor, Injectable } from "@reforce/context";',
   'import type { TransactionManager, TransactionOptions } from "@reforce/context";',
   "",
   "@Injectable()",
   "export class SqlManager implements TransactionManager<string> {",
+  "  current(): string {",
+  '    return activeResourceFor(this) ?? "pool";',
+  "  }",
   "  async withTransaction<T>(options: TransactionOptions, fn: (resource: string) => Promise<T>): Promise<T> {",
   '    return await fn("tx");',
   "  }",
+  "}",
+].join("\n");
+
+// savepoint 能力表达在契约身份上（ADR 0008 T4 定案）：实现 NestedTransactionManager 的类
+// 同时提供两个契约 key，注入裸 TransactionManager 的地方照旧装得上。
+const nestedManagerSource = [
+  'import { activeResourceFor, Injectable } from "@reforce/context";',
+  'import type { NestedTransactionManager, TransactionOptions } from "@reforce/context";',
+  "",
+  "@Injectable()",
+  "export class SqlManager implements NestedTransactionManager<string> {",
+  "  current(): string {",
+  '    return activeResourceFor(this) ?? "pool";',
+  "  }",
+  "  async withTransaction<T>(options: TransactionOptions, fn: (resource: string) => Promise<T>): Promise<T> {",
+  '    return await fn("tx");',
+  "  }",
+  "  async withSavepoint<T>(resource: string, fn: (resource: string) => Promise<T>): Promise<T> {",
+  "    return await fn(resource);",
+  "  }",
+  "}",
+].join("\n");
+
+const nestedServiceSource = [
+  'import { Injectable, Transactional } from "@reforce/context";',
+  "",
+  "@Injectable()",
+  "export class OrderService {",
+  '  @Transactional({ propagation: "NESTED" })',
+  "  async save(): Promise<void> {}",
   "}",
 ].join("\n");
 
@@ -200,11 +233,51 @@ describe("transaction manager contract resolution", () => {
     expect(failureCodes(result)).toContain("AMBIGUOUS_BEAN");
   });
 
+  // NESTED 让合成拦截器改按 NestedTransactionManager 契约解析：能力缺失从运行时抛
+  // TransactionSavepointUnsupportedError 提前成编译期 MISSING_BEAN。
+  test("a NESTED use against a manager without savepoints fails at compile time", async () => {
+    const result = await compileSources({
+      "manager.ts": managerSource,
+      "service.ts": nestedServiceSource,
+    });
+
+    expect(failureCodes(result)).toContain("MISSING_BEAN");
+  });
+
+  test("a NestedTransactionManager satisfies a NESTED use", async () => {
+    const result = await compileSources({
+      "manager.ts": nestedManagerSource,
+      "service.ts": nestedServiceSource,
+    });
+
+    expect(result.status).toBe("success");
+  });
+
+  test("a NestedTransactionManager also satisfies a plain TransactionManager injection point", async () => {
+    const result = await compileSourcesOrThrow({
+      "manager.ts": nestedManagerSource,
+      "consumer.ts": [
+        'import { Injectable } from "@reforce/context";',
+        'import type { TransactionManager } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        "export class Reporting {",
+        "  constructor(private readonly manager: TransactionManager) {}",
+        "}",
+      ].join("\n"),
+      "service.ts": serviceSource,
+    });
+
+    const manifest = JSON.parse(generatedContent(result, "manifest.json"));
+    const reporting = manifest.beans.find((bean: { id: string }) => bean.id.endsWith("#Reporting"));
+    expect(reporting.dependencies[0].targetId).toBe("src/manager.ts#SqlManager");
+  });
+
   test("a Primary implementation resolves the ambiguity", async () => {
     const primaryManager = managerSource
       .replace(
-        'import { Injectable } from "@reforce/context";',
-        'import { Injectable, Primary } from "@reforce/context";',
+        'import { activeResourceFor, Injectable } from "@reforce/context";',
+        'import { activeResourceFor, Injectable, Primary } from "@reforce/context";',
       )
       .replace("@Injectable()", "@Injectable()\n@Primary()")
       .replace(/SqlManager/g, "PrimaryManager");
@@ -250,7 +323,39 @@ describe("transactional value schema (compile-time hard errors)", () => {
   });
 
   test("rejects unknown option keys", async () => {
-    expect(failureCodes(await compileWithValue("{ timeout: 5 }"))).toContain(
+    expect(failureCodes(await compileWithValue("{ maxWait: 5 }"))).toContain(
+      "INVALID_TRANSACTIONAL_VALUE",
+    );
+  });
+
+  test("a declared timeout flows into the weaving table with no dedicated machinery", async () => {
+    const result = await compileSourcesOrThrow({
+      "manager.ts": managerSource,
+      "service.ts": [
+        'import { Injectable, Transactional } from "@reforce/context";',
+        "",
+        "@Injectable()",
+        "export class OrderService {",
+        "  @Transactional({ timeout: 5000 })",
+        "  async save(): Promise<void> {}",
+        "}",
+      ].join("\n"),
+    });
+
+    // 定格 AM1「框架标记走标记通道零特权」的设计价值：timeout 只是 marker value 的一个字段，
+    // 织入表与 explain 两侧都是泛型 MethodMetaValue，加这个选项没有改动它们任何一行。
+    const weaving = JSON.parse(generatedContent(result, "weaving.json"));
+    expect(weaving.beans[0].methods[0].markers.transactional).toEqual({ timeout: 5000 });
+  });
+
+  test("rejects a non-positive or fractional timeout", async () => {
+    expect(failureCodes(await compileWithValue("{ timeout: 0 }"))).toContain(
+      "INVALID_TRANSACTIONAL_VALUE",
+    );
+    expect(failureCodes(await compileWithValue("{ timeout: 1.5 }"))).toContain(
+      "INVALID_TRANSACTIONAL_VALUE",
+    );
+    expect(failureCodes(await compileWithValue('{ timeout: "5s" }'))).toContain(
       "INVALID_TRANSACTIONAL_VALUE",
     );
   });
