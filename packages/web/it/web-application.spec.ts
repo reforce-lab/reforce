@@ -9,11 +9,13 @@ import {
 import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
 import type { GeneratedRouteTable } from "@/generated-runtime";
-import { createWebApplication, type RequestContext } from "@/index";
+import { createWebApplication, defineRouteMarker, type RequestContext } from "@/index";
 
 // 跨包全链路（ADR 0006 W1/W4/W7，#152）：真实 @reforce/context 运行时 + 引擎无关执行层 +
 // 契约的最小假适配器，走通"启动时一次性消费路由表 → 每请求开作用域并播种根请求 bean →
 // 洋葱链 → Current 句柄取请求态 → 错误处理器兜底"的完整闭环。真实引擎适配是 #153。
+
+const RateLimit = defineRouteMarker<{ readonly max: number }>("rateLimit");
 
 function sourceOf(name: string): GeneratedSourceReference {
   return {
@@ -135,7 +137,7 @@ function routeTable(): GeneratedRouteTable {
             mount: "global",
           },
         ],
-        meta: {},
+        meta: { rateLimit: { max: 5 } },
         schemas: {
           response: {
             "~standard": {
@@ -179,6 +181,14 @@ class FakeAdapter implements WebEngineAdapter {
       this.byKey.set(`${route.method} ${route.path}`, route);
     }
     return { close: () => Promise.resolve() };
+  }
+
+  routeOf(method: string, path: string): WebApplication["routes"][number] {
+    const route = this.byKey.get(`${method} ${path}`);
+    if (route === undefined) {
+      throw new Error(`No route registered for ${method} ${path}`);
+    }
+    return route;
   }
 
   dispatch(
@@ -249,6 +259,18 @@ describe("web application over the real context runtime", () => {
 
     expect(await first.json()).toEqual({ greeting: "hello r-1" });
     expect(await second.json()).toEqual({ greeting: "hello r-2" });
+    await context.close();
+  });
+
+  // PreparedRoute.meta 是启动期入口（引擎的 route customizer 用），与每请求的
+  // RequestContext.meta 同形：都按 marker 读，都拿得回 RouteMarker<T> 的 T。
+  test("a prepared route reads its compile-time meta back by marker", async () => {
+    const { context, adapter } = await startedApplication();
+
+    const route = adapter.routeOf("GET", "/greet");
+
+    expect(route.meta(RateLimit)).toEqual({ max: 5 });
+    expect(adapter.routeOf("GET", "/explode").meta(RateLimit)).toBeUndefined();
     await context.close();
   });
 

@@ -45,6 +45,40 @@ describe("createResponseSerializer with a validate-only schema", () => {
     expect(await response.text()).toBe('{"id":"512887731683791700033"}');
   });
 
+  // content-length 是适配器的缓冲/流式判据（adapter.ts 的契约块）；new Response(str) 不自动
+  // 带这个头，所以显式设是有意义的。
+  test("declares content-length so adapters can take the buffered path", async () => {
+    const serialize = createResponseSerializer(passthroughSchema());
+
+    const response = await serialize({ id: 7 });
+
+    // {"id":7} = 8 字节
+    expect(response.headers.get("content-length")).toBe("8");
+  });
+
+  // 必须是字节数而不是字符数：JSON.stringify 不转义非 ASCII，"汉字" 是 2 char / 6 byte。
+  test("counts content-length in bytes, not characters", async () => {
+    const serialize = createResponseSerializer(passthroughSchema());
+
+    const response = await serialize({ n: "汉字" });
+
+    const body = await response.clone().text();
+    expect(body).toBe('{"n":"汉字"}');
+    expect(response.headers.get("content-length")).toBe(
+      String(new TextEncoder().encode(body).length),
+    );
+  });
+
+  // 契约不得写成"带 content-length = 由 reforce 序列化产生"：raw Response 走透传通道，
+  // 它自己带不带这个头都是合法的，这里钉住透传不会被加工。
+  test("leaves a passed-through Response without adding content-length", async () => {
+    const serialize = createResponseSerializer(passthroughSchema());
+
+    const response = await serialize(new Response("ok"));
+
+    expect(response.headers.get("content-length")).toBeNull();
+  });
+
   test("rejects a value that fails the response schema", () => {
     const serialize = createResponseSerializer(failingSchema("name is required"));
 

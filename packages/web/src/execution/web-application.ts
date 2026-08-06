@@ -8,6 +8,7 @@ import { createResponseSerializer } from "@/execution/serialization";
 import type { GeneratedRoute } from "@/generated/route-table";
 import { validateGeneratedRouteTable } from "@/generated/validation";
 import type { RouteErrorHandler, RouteMiddleware } from "@/routing/middleware";
+import { metaLookup } from "@/routing/route-marker";
 
 // 引擎无关的路由表消费（ADR 0006 W1/W4/W5）：启动时一次性完成 bean 解析、校验器与序列化器
 // 特化、洋葱链组装；每条 PreparedRoute 的 handle 是适配器可直接挂进引擎的闭包，热路径零查表。
@@ -90,6 +91,7 @@ function prepareRoute(
   return {
     method: route.method,
     path: route.path,
+    meta: metaLookup(route.meta),
     async handle(request, params) {
       const requestContext = new RequestContextState({
         request,

@@ -5,11 +5,21 @@ import { describe, expect, test } from "vitest";
 import { WebEngine, type WebNodeServeSettings } from "@/index";
 
 // 真实 node:http 服务器上的引擎契约（#207，镜像 web-bun 时代的 Bun.serve 契约 #153）：
-// 路由分发、参数路由、404/405、优雅关闭排空。路由的 handle 用最小闭包替身——引擎的职责
+// 路由分发、参数路由、404（未命中与方法不符同待遇）、优雅关闭排空。handle 用最小闭包替身——引擎的职责
 // 边界就是"把请求交给 handle"，作用域/洋葱链属于 @reforce/web 的测试面。
 
 function application(routes: readonly PreparedRoute[]): WebApplication {
   return { routes };
+}
+
+// 引擎的职责边界是"把请求交给 handle"，PreparedRoute 的其余字段在这一层没有被测语义，
+// 集中给缺省值，避免每条用例重复写。
+function route(
+  method: PreparedRoute["method"],
+  path: string,
+  handle: PreparedRoute["handle"],
+): PreparedRoute {
+  return { method, path, handle, meta: () => undefined };
 }
 
 async function withEngine(
@@ -78,11 +88,9 @@ describe("WebEngine over a real node:http server", () => {
   test("a parameterized route receives the extracted path params", async () => {
     await withEngine(
       [
-        {
-          method: "GET",
-          path: "/users/:id",
-          handle: (_request, params) => Promise.resolve(Response.json({ id: params.id })),
-        },
+        route("GET", "/users/:id", (_request, params) =>
+          Promise.resolve(Response.json({ id: params.id })),
+        ),
       ],
       async (base) => {
         const response = await fetch(`${base}/users/42`);
@@ -96,8 +104,8 @@ describe("WebEngine over a real node:http server", () => {
   test("two methods on one path dispatch to their own handlers", async () => {
     await withEngine(
       [
-        { method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) },
-        { method: "POST", path: "/items", handle: () => Promise.resolve(new Response("post")) },
+        route("GET", "/items", () => Promise.resolve(new Response("get"))),
+        route("POST", "/items", () => Promise.resolve(new Response("post"))),
       ],
       async (base) => {
         expect(await (await fetch(`${base}/items`)).text()).toBe("get");
@@ -108,13 +116,7 @@ describe("WebEngine over a real node:http server", () => {
 
   test("a request body streams through to the route handler", async () => {
     await withEngine(
-      [
-        {
-          method: "POST",
-          path: "/echo",
-          handle: async (request) => new Response(await request.text()),
-        },
-      ],
+      [route("POST", "/echo", async (request) => new Response(await request.text()))],
       async (base) => {
         const response = await fetch(`${base}/echo`, { method: "POST", body: "payload" });
 
@@ -125,7 +127,7 @@ describe("WebEngine over a real node:http server", () => {
 
   test("an unknown path yields 404", async () => {
     await withEngine(
-      [{ method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) }],
+      [route("GET", "/items", () => Promise.resolve(new Response("get")))],
       async (base) => {
         const response = await fetch(`${base}/nope`);
 
@@ -134,17 +136,19 @@ describe("WebEngine over a real node:http server", () => {
     );
   });
 
-  test("a method mismatch yields 405 with the Allow header", async () => {
+  // 方法不符返回裸 404 且不带 Allow（WebEngineAdapter 契约）。代价是 OPTIONS /health 也是
+  // 404，预检交给引擎生态的 cors 中间件——它跑在路由匹配之前。
+  test("a method mismatch yields 404 without an Allow header", async () => {
     await withEngine(
       [
-        { method: "GET", path: "/items/:id", handle: () => Promise.resolve(new Response("get")) },
-        { method: "PUT", path: "/items/:id", handle: () => Promise.resolve(new Response("put")) },
+        route("GET", "/items/:id", () => Promise.resolve(new Response("get"))),
+        route("PUT", "/items/:id", () => Promise.resolve(new Response("put"))),
       ],
       async (base) => {
         const response = await fetch(`${base}/items/9`, { method: "DELETE" });
 
-        expect(response.status).toBe(405);
-        expect(response.headers.get("allow")).toBe("GET, PUT");
+        expect(response.status).toBe(404);
+        expect(response.headers.get("allow")).toBeNull();
       },
     );
   });
@@ -154,11 +158,9 @@ describe("WebEngine over a real node:http server", () => {
   test("a malformed percent-escape in the path yields 404 instead of hanging", async () => {
     await withEngine(
       [
-        {
-          method: "GET",
-          path: "/users/:id",
-          handle: (_request, params) => Promise.resolve(Response.json({ id: params.id })),
-        },
+        route("GET", "/users/:id", (_request, params) =>
+          Promise.resolve(Response.json({ id: params.id })),
+        ),
       ],
       async (base) => {
         const response = await fetch(`${base}/users/%ZZ`, { signal: AbortSignal.timeout(1_000) });
@@ -171,7 +173,7 @@ describe("WebEngine over a real node:http server", () => {
   // 唯一覆盖 settings → createRouter 这段接线的用例（#211）
   test("a configured maxParamLength turns an over-length param into 404", async () => {
     await withEngine(
-      [{ method: "GET", path: "/users/:id", handle: () => Promise.resolve(new Response("get")) }],
+      [route("GET", "/users/:id", () => Promise.resolve(new Response("get")))],
       async (base) => {
         const response = await fetch(`${base}/users/123456789`);
 
@@ -189,14 +191,10 @@ describe("WebEngine over a real node:http server", () => {
     const engine = new WebEngine({ port: 0 });
     const handle = await engine.start(
       application([
-        {
-          method: "GET",
-          path: "/slow",
-          handle: async () => {
-            await gate;
-            return new Response("drained");
-          },
-        },
+        route("GET", "/slow", async () => {
+          await gate;
+          return new Response("drained");
+        }),
       ]),
     );
     const base = serverUrlOf(engine);
@@ -219,9 +217,7 @@ describe("WebEngine over a real node:http server", () => {
   test("close resolves promptly with only idle keep-alive connections", async () => {
     const engine = new WebEngine({ port: 0 });
     const handle = await engine.start(
-      application([
-        { method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) },
-      ]),
+      application([route("GET", "/items", () => Promise.resolve(new Response("get")))]),
     );
     const base = serverUrlOf(engine);
     // undici 默认 keep-alive：请求结束后连接空闲驻留，close 不得被它拖住
@@ -259,22 +255,19 @@ describe("WebEngine over a real node:http server", () => {
     await withoutUnhandledRejections(async () => {
       await withEngine(
         [
-          {
-            method: "GET",
-            path: "/stream",
-            handle: () =>
-              Promise.resolve(
-                new Response(
-                  new ReadableStream({
-                    async pull(controller) {
-                      controller.enqueue(new TextEncoder().encode("x".repeat(1024)));
-                      await new Promise((resolve) => setTimeout(resolve, 20));
-                    },
-                  }),
-                ),
+          route("GET", "/stream", () =>
+            Promise.resolve(
+              new Response(
+                new ReadableStream({
+                  async pull(controller) {
+                    controller.enqueue(new TextEncoder().encode("x".repeat(1024)));
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                  },
+                }),
               ),
-          },
-          { method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) },
+            ),
+          ),
+          route("GET", "/items", () => Promise.resolve(new Response("get"))),
         ],
         async (base) => {
           const controller = new AbortController();
@@ -292,7 +285,7 @@ describe("WebEngine over a real node:http server", () => {
   test("a malformed Host header yields 400 instead of crashing the process", async () => {
     await withoutUnhandledRejections(async () => {
       await withEngine(
-        [{ method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) }],
+        [route("GET", "/items", () => Promise.resolve(new Response("get")))],
         async (base) => {
           const status = await rawRequest(base, "GET /items HTTP/1.1", ["Host: a b"]);
 
@@ -307,7 +300,7 @@ describe("WebEngine over a real node:http server", () => {
   test("a Host header carrying userinfo yields 400 instead of crashing the process", async () => {
     await withoutUnhandledRejections(async () => {
       await withEngine(
-        [{ method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) }],
+        [route("GET", "/items", () => Promise.resolve(new Response("get")))],
         async (base) => {
           const status = await rawRequest(base, "GET /items HTTP/1.1", ["Host: user@evil.com"]);
 
@@ -324,14 +317,10 @@ describe("WebEngine over a real node:http server", () => {
     let seen: string | undefined;
     await withEngine(
       [
-        {
-          method: "GET",
-          path: "/evil.com/health",
-          handle: (request) => {
-            seen = new URL(request.url).host;
-            return Promise.resolve(new Response("ok"));
-          },
-        },
+        route("GET", "/evil.com/health", (request) => {
+          seen = new URL(request.url).host;
+          return Promise.resolve(new Response("ok"));
+        }),
       ],
       async (base) => {
         await fetch(`${base}//evil.com/health`);
@@ -344,7 +333,7 @@ describe("WebEngine over a real node:http server", () => {
   // 上一条改的是 URL 构造方式，这条钉住它没有顺手破坏 `//p` ≡ `/p` 的路径归一
   test("a duplicated leading slash still matches the registered route", async () => {
     await withEngine(
-      [{ method: "GET", path: "/items", handle: () => Promise.resolve(new Response("get")) }],
+      [route("GET", "/items", () => Promise.resolve(new Response("get")))],
       async (base) => {
         const response = await fetch(`${base}//items`);
 

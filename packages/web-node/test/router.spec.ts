@@ -7,6 +7,7 @@ function route(method: PreparedRoute["method"], path: string): PreparedRoute {
     method,
     path,
     handle: () => Promise.resolve(new Response("unreachable")),
+    meta: () => undefined,
   };
 }
 
@@ -55,32 +56,19 @@ describe("createRouter", () => {
     expect(dispatch([route("GET", "/users")], "GET", "/nope")).toEqual({ kind: "miss" });
   });
 
-  test("a method mismatch on a known static path aggregates the sorted Allow set", () => {
-    const outcome = dispatch([route("POST", "/users"), route("GET", "/users")], "DELETE", "/users");
-
-    expect(outcome).toEqual({ kind: "method-mismatch", allowed: ["GET", "POST"] });
-  });
-
-  test("a method mismatch on a parameterized path matches by segment shape", () => {
-    const outcome = dispatch([route("GET", "/users/:id")], "POST", "/users/42");
-
-    expect(outcome).toEqual({ kind: "method-mismatch", allowed: ["GET"] });
+  // 方法不符也是 miss（WebEngineAdapter 契约取消了 405 与 Allow）：RFC 9110 §9.1 对 405 是
+  // SHOULD 不是 MUST，Express / Fastify / Hono 默认也都不发。原来的三条 Allow 聚合用例合并
+  // 成这一条——形状命中、方法不符，就是未命中。
+  test("a known path under an unregistered method is a miss", () => {
+    expect(dispatch([route("POST", "/users"), route("GET", "/users")], "DELETE", "/users")).toEqual(
+      { kind: "miss" },
+    );
   });
 
   test("a parameterized pattern does not match a path with extra segments", () => {
     expect(dispatch([route("GET", "/users/:id")], "GET", "/users/42/posts")).toEqual({
       kind: "miss",
     });
-  });
-
-  test("overlapping patterns aggregate every allowed method", () => {
-    const outcome = dispatch(
-      [route("GET", "/users/:id"), route("PUT", "/users/self")],
-      "DELETE",
-      "/users/self",
-    );
-
-    expect(outcome).toEqual({ kind: "method-mismatch", allowed: ["GET", "PUT"] });
   });
 
   // 坏转义（#211）：`new URL()` 把 `%ZZ` 原样留在 pathname 里，分派必须把它当未命中，
