@@ -12,6 +12,10 @@
       "types": "./dist/adapter.d.ts",
       "default": "./dist/adapter.js"
     },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "default": "./dist/conformance.js"
+    },
     "./generated-runtime": {
       "types": "./dist/generated-runtime.d.ts",
       "default": "./dist/generated-runtime.js"
