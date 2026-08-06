@@ -54,17 +54,35 @@ function loggerFactorySymbolFrom(symbol: LinkedSymbol): LinkedSymbol {
   };
 }
 
+// @LoggerName 认的是 import 绑定，不是解析后的符号：它是个**函数**导出，而链接层只为
+// class/interface 做外部归属（external），函数一律落成 kind "unsupported" 加一个不透明的
+// external/<hash>.ts specifier——按符号根本认不出它来自哪个包。按 import 绑定认既精确又天然
+// 支持改名导入（`import { LoggerName as Named }`）。
+function loggerNameDecoratorLocals(source: ParsedSource): ReadonlySet<string> {
+  const locals = new Set<string>();
+  for (const declaration of source.unit.imports) {
+    if (declaration.kind !== "import" || declaration.moduleSpecifier !== loggingPackageName) {
+      continue;
+    }
+    for (const binding of declaration.bindings) {
+      if (binding.kind === "named" && binding.imported === loggerNameDecoratorName) {
+        locals.add(binding.local);
+      }
+    }
+  }
+  return locals;
+}
+
 function decoratedLoggerName(
   source: ParsedSource,
   decorators: readonly DecoratorUse[],
-  linker: ProjectLinker,
 ): string | undefined {
+  const locals = loggerNameDecoratorLocals(source);
+  if (locals.size === 0) {
+    return undefined;
+  }
   for (const use of decorators) {
-    if (use.callee.kind === "unsupported-expression") {
-      continue;
-    }
-    const symbol = linker.resolveEntity(source, use.callee);
-    if (symbol === undefined || !isLoggingContract(symbol, loggerNameDecoratorName)) {
+    if (use.callee.kind !== "identifier" || !locals.has(use.callee.name)) {
       continue;
     }
     // 诊断丢弃：@LoggerName 只接一个字符串字面量，取不到就当没写、落回推导名。
@@ -85,7 +103,7 @@ interface LoggerDemand {
   readonly span: SourceSpan;
 }
 
-function loggerNameOf(draft: ProviderDraft, linker: ProjectLinker): string {
+function loggerNameOf(draft: ProviderDraft): string {
   const origin = draft.provider.origin;
   if (origin.kind === "application") {
     const declaration = origin.source.unit.classes.find(
@@ -94,7 +112,7 @@ function loggerNameOf(draft: ProviderDraft, linker: ProjectLinker): string {
     const overridden =
       declaration === undefined
         ? undefined
-        : decoratedLoggerName(origin.source, declaration.decorators, linker);
+        : decoratedLoggerName(origin.source, declaration.decorators);
     if (overridden !== undefined) {
       return overridden;
     }
@@ -104,10 +122,7 @@ function loggerNameOf(draft: ProviderDraft, linker: ProjectLinker): string {
   return draft.provider.exportName;
 }
 
-function loggerDemandsOf(
-  drafts: readonly ProviderDraft[],
-  linker: ProjectLinker,
-): readonly LoggerDemand[] {
+function loggerDemandsOf(drafts: readonly ProviderDraft[]): readonly LoggerDemand[] {
   const demands: LoggerDemand[] = [];
   for (const draft of drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -117,7 +132,7 @@ function loggerDemandsOf(
       demands.push({
         consumerId: draft.provider.id,
         parameterIndex: pending.index,
-        loggerName: loggerNameOf(draft, linker),
+        loggerName: loggerNameOf(draft),
         contract: pending.linkedType.symbol,
         span: pending.sourceSpan,
       });
@@ -163,7 +178,7 @@ export function synthesizeLoggerBeans(input: {
   readonly linker: ProjectLinker;
   readonly diagnostics: CompilerDiagnostic[];
 }): LoggerSynthesis {
-  const demands = loggerDemandsOf(input.drafts, input.linker);
+  const demands = loggerDemandsOf(input.drafts);
   if (demands.length === 0) {
     return { drafts: [], redirects: new Map(), names: [] };
   }
