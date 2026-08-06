@@ -51,12 +51,18 @@ export class LoggerLevels {
   }
 
   levelFor(name: string, environment: Readonly<Record<string, string | undefined>>): LogLevel {
+    return this.explicitLevelFor(name, environment) ?? this.snapshot.defaultLevel;
+  }
+
+  // 与 levelFor 的区别是「没配就说没配」：绑定自己的缺省（pino 的 PinoSettings.level、默认
+  // 绑定的 defaultLevel）是用户显式写下的，快照没有逐个指定这条 logger 时不该把它顶掉。
+  // levelFor 保留兜底形态，供不带绑定缺省的调用方直接取一个确定级别。
+  explicitLevelFor(
+    name: string,
+    environment: Readonly<Record<string, string | undefined>>,
+  ): LogLevel | undefined {
     // 运行期注入的键压过编译期快照：容器编排常在启动时才给出级别，编译期看不到它。
-    return (
-      parseLogLevel(environment[environmentKeyForLogger(name)]) ??
-      this.snapshot.levels[name] ??
-      this.snapshot.defaultLevel
-    );
+    return parseLogLevel(environment[environmentKeyForLogger(name)]) ?? this.snapshot.levels[name];
   }
 
   // 运行期兜底（L5.5）：同一份封闭名单、同一个 did-you-mean，warn 但不阻止启动。

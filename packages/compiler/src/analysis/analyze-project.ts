@@ -4,7 +4,11 @@ import { analyzeConfigProviders } from "@/analysis/config-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
-import { synthesizeLoggerBeans, webFrameworkLoggerName } from "@/analysis/logger-synthesis";
+import {
+  type CompileTimeLoggerLevels,
+  synthesizeLoggerBeans,
+  webFrameworkLoggerName,
+} from "@/analysis/logger-synthesis";
 import { analyzeMethodInterception } from "@/analysis/method-interception";
 import type {
   BeanProviderModel,
@@ -110,6 +114,9 @@ function isBeanProvider(provider: ProviderModel): provider is BeanProviderModel 
 export function analyzeProject(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
+  // 编译期可见的级别配置（RFC 0011 L5，#249）：进 LoggerLevels 快照的字面量实参。分析要它，
+  // 所以 .env 的读取排在 analyzeProject 之前——快照是分析产物的一部分，不能等到 emission。
+  compileTimeLevels: CompileTimeLoggerLevels = { values: new Map(), layers: [] },
 ): AnalysisResult {
   const diagnostics: CompilerDiagnostic[] = [];
   validateModuleSyntax(sources, diagnostics);
@@ -148,6 +155,7 @@ export function analyzeProject(
       reason: webPackageName,
       source: bean.metaSource,
     })),
+    compileTimeLevels,
   });
   const localDrafts = [...applicationDrafts, ...loggers.drafts];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
@@ -158,6 +166,7 @@ export function analyzeProject(
     diagnostics,
     new Set(engineBeans.map((bean) => bean.id)),
     loggers.redirects,
+    loggers.levelsBeanId,
   );
   // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
   // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。config 不进执行计划——它由

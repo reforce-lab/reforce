@@ -26,6 +26,7 @@ import type { ParsedSource } from "@/project/source-files";
 export const loggingPackageName = "@reforce/logging";
 export const loggerContractName = "Logger";
 export const loggerFactoryContractName = "LoggerFactory";
+export const loggerLevelsContractName = "LoggerLevels";
 export const loggerNameDecoratorName = "LoggerName";
 
 // 与 starter 的 "pkg@version" 相区分：框架来源串无版本段（#204 定案 6 的同一约定）。
@@ -35,6 +36,14 @@ const boundLoggerRuntimeExport = {
   module: "@reforce/logging/generated-runtime",
   export: "BoundLogger",
 } as const;
+
+const loggerLevelsRuntimeExport = {
+  module: "@reforce/logging/generated-runtime",
+  export: loggerLevelsContractName,
+} as const;
+
+/** 级别快照 bean：全图唯一一条，所以 id 是常量而不是按名字派生。 */
+export const loggerLevelsBeanId = `${loggingOriginId}#${loggerLevelsContractName}`;
 
 export function loggerBeanId(name: string): string {
   return `${loggingOriginId}#Logger(${name})`;
@@ -50,6 +59,17 @@ export function isLoggerContract(symbol: LinkedSymbol): boolean {
 
 export function isLoggerFactoryContract(symbol: LinkedSymbol): boolean {
   return isLoggingContract(symbol, loggerFactoryContractName);
+}
+
+// LoggerLevels 与 Logger 同属那条解析特例：合成的 bean 刻意 provides 为空，边由**符号身份**
+// 点名而不是走候选池。两者的区别只在多重性——每个消费者一条自己的 Logger，而 LoggerLevels
+// 全图共用一条，所以它不需要逐消费者的重定向表，认出符号就够了。
+//
+// 按包名 + 名字认而不是按 key 认，是因为绑定可能来自 starter（pino 的 meta 边从 starter 包根
+// 解析）也可能来自应用源集（用户自写的 LoggerFactory），两条路径给出的 key 属于不同锚点，
+// 而它们指的是同一个契约。
+export function isLoggerLevelsContract(symbol: LinkedSymbol): boolean {
+  return isLoggingContract(symbol, loggerLevelsContractName);
 }
 
 // 优先取图里真实存在的那个 LoggerFactory 契约符号——绑定 bean（starter 的 PinoLoggerFactory、
@@ -227,6 +247,91 @@ export interface LoggerSynthesis {
   readonly redirects: ReadonlyMap<string, string>;
   /** 编译期见到的全部 logger 名，升序；LoggerLevels 的封闭名单。 */
   readonly names: readonly string[];
+  /** 合成了级别快照 bean 时给出它的 id；图里没有日志时缺席，LoggerLevels 边照旧 MISSING_BEAN。 */
+  readonly levelsBeanId?: string;
+}
+
+/** 编译期可见的级别配置（`.env` 那几层，RFC 0011 L5 表前两行）。 */
+export interface CompileTimeLoggerLevels {
+  /** `LOGGING_LEVEL_*` 的原始值，键是环境变量名。 */
+  readonly values: ReadonlyMap<string, string>;
+  /** 编译期实际读过的层，按读取顺序；启动时比对 REFORCE_PROFILE 偏斜用。 */
+  readonly layers: readonly string[];
+}
+
+const logLevelNames = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
+
+// 与 @reforce/logging 的 parseLogLevel 同一套判据。不 import 过来：编译器不依赖它分析的包，
+// 而级别名是六个字面量的封闭集合，重复的是常量不是知识（DRY 认的是「改一处要同步多处」，
+// 这份名单真要变，@reforce/logging 的公开类型本身就是破坏性变更）。
+function parseLogLevel(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return logLevelNames.find((level) => level === normalized);
+}
+
+// 与运行期的 environmentKeyForLogger 逐字一致（analysis/logger-levels.ts 有同一份实现，那边
+// 服务拼写校验、这边服务快照构造）。
+function environmentKeyForLogger(name: string): string {
+  return `LOGGING_LEVEL_${name.replaceAll(/[^A-Za-z0-9]/gu, "_").toUpperCase()}`;
+}
+
+// 快照只收**认得出**的级别：`.env` 里写了 `LOGGING_LEVEL_ORDERS=verbose` 时，把 "verbose"
+// 原样内联进生成物等于让运行期拿到一个非 LogLevel 的字符串，落进 pino 会直接抛。丢掉它并
+// 落回绑定缺省，与运行期 parseLogLevel 遇到坏值时的行为一致。
+function levelsSnapshotFor(
+  names: readonly string[],
+  compileTime: CompileTimeLoggerLevels,
+): Record<string, string> {
+  const levels: Record<string, string> = {};
+  for (const name of names) {
+    const level = parseLogLevel(compileTime.values.get(environmentKeyForLogger(name)));
+    if (level !== undefined) {
+      levels[name] = level;
+    }
+  }
+  return levels;
+}
+
+// 级别快照 bean（RFC 0011 L5，#249 的「未做」第一条）。它没有依赖边，全部内容是编译期算好的
+// 字面量——封闭名单、逐 logger 级别、编译期读过的层。运行期的 process.env 那一层由
+// LoggerLevels 自己在 levelFor 里叠加，不进快照：它是启动时才存在的事实。
+function loggerLevelsDraft(
+  names: readonly string[],
+  compileTime: CompileTimeLoggerLevels,
+  span: SourceSpan,
+): ProviderDraft {
+  const snapshot = {
+    names,
+    levels: levelsSnapshotFor(names, compileTime),
+    // 兜底级别不从 .env 猜：绑定自己的缺省（PinoSettings.level / defaultLevel）是用户显式
+    // 写下的，快照给一个"info"会把它顶掉。这里的 info 只在绑定也没有缺省时才轮得到。
+    defaultLevel: "info",
+    layers: compileTime.layers,
+  } satisfies LiteralArgumentValue;
+  return {
+    provider: {
+      kind: "class",
+      id: loggerLevelsBeanId,
+      origin: {
+        kind: "framework",
+        origin: loggingOriginId,
+        runtimeExport: loggerLevelsRuntimeExport,
+        sourceText: `${loggerLevelsRuntimeExport.module}#${loggerLevelsRuntimeExport.export}`,
+      },
+      exportName: loggerLevelsContractName,
+      declarationSource: sourceReference(span),
+      // 与 logger bean 同理刻意为空：消费者由 isLoggerLevelsContract 点名，不经 selectProvider。
+      provides: [],
+      scope: "singleton",
+      primary: false,
+      qualifiers: [],
+      dependencies: [],
+      literalArguments: [{ index: 0, value: snapshot }],
+      startHook: false,
+      closeHook: false,
+    },
+    pendingDependencies: [],
+  };
 }
 
 // 框架 logger 与用户 logger 的区别只在「谁把它拉进图里」：用户那条是构造参数，框架这条是
@@ -246,21 +351,21 @@ function frameworkDemandsOf(
     }));
 }
 
-export function synthesizeLoggerBeans(input: {
-  readonly drafts: readonly ProviderDraft[];
-  readonly linker: ProjectLinker;
-  readonly diagnostics: CompilerDiagnostic[];
-  /** 编译器自己要的 logger（框架输出面）；只有图里真有绑定时才合成。 */
-  readonly frameworkLoggers?: readonly FrameworkLoggerRequest[];
-}): LoggerSynthesis {
-  const demands = loggerDemandsOf(input.drafts);
-  const provided = providedLoggerFactorySymbol(input.drafts, input.linker);
+// 名字 → 第一个要它的消费者，外加消费者那条边的重定向表。同一个消费者重复注入 Logger 不是
+// 撞名（它本来就只有一条 logger），所以判据是 consumerId 而不是「名字已存在」。
+function collectLoggerDemands(
+  demands: readonly LoggerDemand[],
+  diagnostics: CompilerDiagnostic[],
+): {
+  readonly byName: Map<string, LoggerDemand>;
+  readonly redirects: Map<string, string>;
+} {
   const byName = new Map<string, LoggerDemand>();
   const redirects = new Map<string, string>();
   for (const demand of demands) {
     const existing = byName.get(demand.loggerName);
     if (existing !== undefined && existing.consumerId !== demand.consumerId) {
-      reportDuplicateName(input.diagnostics, demand.loggerName, existing, demand);
+      reportDuplicateName(diagnostics, demand.loggerName, existing, demand);
       continue;
     }
     byName.set(demand.loggerName, existing ?? demand);
@@ -269,6 +374,21 @@ export function synthesizeLoggerBeans(input: {
       loggerBeanId(demand.loggerName),
     );
   }
+  return { byName, redirects };
+}
+
+export function synthesizeLoggerBeans(input: {
+  readonly drafts: readonly ProviderDraft[];
+  readonly linker: ProjectLinker;
+  readonly diagnostics: CompilerDiagnostic[];
+  /** 编译器自己要的 logger（框架输出面）；只有图里真有绑定时才合成。 */
+  readonly frameworkLoggers?: readonly FrameworkLoggerRequest[];
+  /** 编译期可见的级别配置，进 LoggerLevels 快照的字面量实参。 */
+  readonly compileTimeLevels: CompileTimeLoggerLevels;
+}): LoggerSynthesis {
+  const demands = loggerDemandsOf(input.drafts);
+  const provided = providedLoggerFactorySymbol(input.drafts, input.linker);
+  const { byName, redirects } = collectLoggerDemands(demands, input.diagnostics);
   // 没有任何绑定时不合成框架 logger：那样等于替一个从没打算写日志的应用凭空造一条
   // LoggerFactory 的 MISSING_BEAN。用户自己注入 Logger 是另一回事——那是他要求的，报错正确。
   if (provided !== undefined) {
@@ -286,10 +406,19 @@ export function synthesizeLoggerBeans(input: {
     return { drafts: [], redirects, names: [] };
   }
   const names = [...byName.keys()].sort();
+  // 快照 bean 的「为什么在图里」跟第一条 logger 同源：有 logger 才有级别可调。名字升序取第一条
+  // 而不是 demands 的原序，是为了让同一份源码每次编译落在同一个 span 上。
+  const levelsSpan = byName.get(names[0] ?? "")?.span;
   return {
-    drafts: names.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
+    drafts: [
+      ...names.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
+      ...(levelsSpan === undefined
+        ? []
+        : [loggerLevelsDraft(names, input.compileTimeLevels, levelsSpan)]),
+    ],
     redirects,
     names,
+    ...(levelsSpan === undefined ? {} : { levelsBeanId: loggerLevelsBeanId }),
   };
 }
 

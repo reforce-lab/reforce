@@ -15,9 +15,22 @@ import { parse } from "dotenv";
 // buildBindingInput 的 toLowerCase 带进来，而那一步会让 `payments.Gateway` 与
 // `payments.gateway` 变成同一个键，反解不回原名。
 
+// 与 @reforce/logging 的 environmentKeyForLogger、analysis/logger-levels.ts 的同名常量必须
+// 逐字一致：三处算出不同的前缀，编译期读到的键与运行期查的键就对不上。
+const loggingLevelPrefix = "LOGGING_LEVEL_";
+
 export interface EnvironmentKeyLayers {
   /** 编译期见到的全部键名，按层合并后去重。 */
   readonly keys: ReadonlySet<string>;
+  /**
+   * `LOGGING_LEVEL_*` 的原始值，后一层压过前一层。
+   *
+   * 这是本模块「只读键名」的唯一例外，范围窄到只有这一个前缀：级别快照要能内联进生成物，
+   * 而级别的**值**正是那个快照的内容（RFC 0011 L5）。它不是配置值意义上的秘密——取值域是
+   * 六个级别名的封闭集合，反解不出任何应用数据。其余键的值照旧在 parse() 之后立刻丢掉，
+   * ADR 0005 决策 6.2 因此不破。
+   */
+  readonly loggingLevelValues: ReadonlyMap<string, string>;
   /** 实际读到的层，按读取顺序；写进 LoggerLevels 快照供启动期比对。 */
   readonly layers: readonly string[];
   /** 存在的层文件绝对路径，进 fileDependencies。 */
@@ -43,6 +56,7 @@ export function readEnvironmentKeyLayers(input: {
   readonly env: Readonly<Record<string, string | undefined>>;
 }): EnvironmentKeyLayers {
   const keys = new Set<string>();
+  const loggingLevelValues = new Map<string, string>();
   const layers: string[] = [];
   const presentFiles: string[] = [];
   const missingFiles: string[] = [];
@@ -58,9 +72,12 @@ export function readEnvironmentKeyLayers(input: {
     }
     presentFiles.push(path);
     layers.push(name);
-    for (const key of Object.keys(parse(content))) {
+    for (const [key, value] of Object.entries(parse(content))) {
       keys.add(key);
+      if (key.startsWith(loggingLevelPrefix)) {
+        loggingLevelValues.set(key, value);
+      }
     }
   }
-  return { keys, layers, presentFiles, missingFiles };
+  return { keys, loggingLevelValues, layers, presentFiles, missingFiles };
 }

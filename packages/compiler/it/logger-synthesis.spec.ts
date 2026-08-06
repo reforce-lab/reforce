@@ -59,11 +59,8 @@ async function compileTree(tree: ProjectTree): Promise<CompileResult> {
   return await compiler.compile({ project: resolution.project });
 }
 
-async function compileApplication(sources: Readonly<Record<string, string>>) {
-  const result = await compileTree({
-    "tsconfig.json": applicationTsconfig(),
-    src: { "logger-factory.ts": loggerFactorySource, ...sources },
-  });
+async function compileTreeSuccessfully(tree: ProjectTree) {
+  const result = await compileTree(tree);
   if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics, undefined, 2));
   }
@@ -74,6 +71,13 @@ async function compileApplication(sources: Readonly<Record<string, string>>) {
     ),
     diagnostics: result.diagnostics,
   };
+}
+
+function compileApplication(sources: Readonly<Record<string, string>>) {
+  return compileTreeSuccessfully({
+    "tsconfig.json": applicationTsconfig(),
+    src: { "logger-factory.ts": loggerFactorySource, ...sources },
+  });
 }
 
 const twoConsumers = {
@@ -101,7 +105,7 @@ describe("synthesised logger beans", () => {
 
     const loggerIds = manifest.beans
       .map((bean: { readonly id: string }) => bean.id)
-      .filter((id: string) => id.startsWith("@reforce/logging#"));
+      .filter((id: string) => id.startsWith("@reforce/logging#Logger("));
     expect(loggerIds).toEqual([
       "@reforce/logging#Logger(OrderService)",
       "@reforce/logging#Logger(PaymentService)",
@@ -113,11 +117,12 @@ describe("synthesised logger beans", () => {
   test("emits a distinct subclass per logger so the class targets stay unique", async () => {
     const { beans } = await compileApplication(twoConsumers);
 
+    // 三条：两个 logger 各一条，加上级别快照 bean——它同样靠字面量实参构造。
     const subclasses = [...beans.matchAll(/class (beanTarget\d+\$Literal) extends/gu)].map(
       (match) => match[1],
     );
-    expect(subclasses).toHaveLength(2);
-    expect(new Set(subclasses).size).toBe(2);
+    expect(subclasses).toHaveLength(3);
+    expect(new Set(subclasses).size).toBe(3);
   }, 60_000);
 
   test("inlines the logger name as a literal constructor argument", async () => {
@@ -157,7 +162,7 @@ describe("synthesised logger beans", () => {
     expect(
       manifest.beans
         .map((bean: { readonly id: string }) => bean.id)
-        .filter((id: string) => id.startsWith("@reforce/logging#")),
+        .filter((id: string) => id.startsWith("@reforce/logging#Logger(")),
     ).toEqual(["@reforce/logging#Logger(payments)"]);
   }, 60_000);
 
@@ -192,6 +197,104 @@ describe("synthesised logger beans", () => {
       (bean: { readonly id: string }) => bean.id === "@reforce/logging#Logger(OrderService)",
     );
     expect(logger.provides).toEqual([]);
+  }, 60_000);
+
+  // A1（RFC 0011 L5，#249）：这一组是「快照真的被人读」那条线的编译期一半。在它们之前，
+  // LoggerLevels 是运行期零消费者的——编译期校验拼写、给 did-you-mean，但没有任何代码读
+  // 那份名单，用户改了级别不生效。
+  test("synthesises one LoggerLevels bean holding the closed name list", async () => {
+    const { manifest, beans } = await compileApplication(twoConsumers);
+
+    const levels = manifest.beans.find(
+      (bean: { readonly id: string }) => bean.id === "@reforce/logging#LoggerLevels",
+    );
+    expect(levels).toBeDefined();
+    expect(beans).toContain('"names":["OrderService","PaymentService"]');
+  }, 60_000);
+
+  test("inlines the level a .env layer sets for a named logger", async () => {
+    const { beans } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      ".env": "LOGGING_LEVEL_ORDERSERVICE=debug\n",
+      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
+    });
+
+    expect(beans).toContain('"levels":{"OrderService":"debug"}');
+  }, 60_000);
+
+  // `.env` 里写了不是级别的值时，把它原样内联等于让运行期拿到一个非 LogLevel 的字符串——
+  // 落进 pino 会当场抛。丢掉它、落回绑定缺省，与运行期 parseLogLevel 遇到坏值时一致。
+  test("drops a .env value that does not name a level", async () => {
+    const { beans } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      ".env": "LOGGING_LEVEL_ORDERSERVICE=verbose\n",
+      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
+    });
+
+    expect(beans).toContain('"levels":{}');
+  }, 60_000);
+
+  // 快照带上编译期实际读过的层，启动时才比得出 REFORCE_PROFILE 偏斜（L5 表第三行）。
+  test("records the env layers it actually read", async () => {
+    const { beans } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      ".env": "LOGGING_LEVEL_ORDERSERVICE=debug\n",
+      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
+    });
+
+    expect(beans).toContain('"layers":[".env"]');
+  }, 60_000);
+
+  // 快照 bean 与 logger bean 同属那条解析特例：provides 为空，不进候选池。进了的话，注入
+  // LoggerLevels 的绑定会和它自己撞成 AMBIGUOUS_BEAN。
+  test("keeps the LoggerLevels bean out of the contract candidate pool", async () => {
+    const { manifest } = await compileApplication(twoConsumers);
+
+    const levels = manifest.beans.find(
+      (bean: { readonly id: string }) => bean.id === "@reforce/logging#LoggerLevels",
+    );
+    expect(levels.provides).toEqual([]);
+    expect(levels.dependencies).toEqual([]);
+  }, 60_000);
+
+  // 用户自写的绑定注入 LoggerLevels 时，那条边必须指到合成的快照 bean 上——这是「改级别
+  // 生效」在编译期的最后一环。
+  test("points a binding's LoggerLevels parameter at the synthesised bean", async () => {
+    const { manifest } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        "logger-factory.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import { DefaultLoggerFactory, LoggerLevels } from "@reforce/logging";',
+          'import type { Logger, LoggerFactory } from "@reforce/logging";',
+          "",
+          "@Injectable()",
+          "export class TestLoggerFactory implements LoggerFactory {",
+          "  private readonly delegate: DefaultLoggerFactory;",
+          "  constructor(levels: LoggerLevels) {",
+          "    this.delegate = new DefaultLoggerFactory({ levels });",
+          "  }",
+          "  create(name: string): Logger {",
+          "    return this.delegate.create(name);",
+          "  }",
+          "}",
+          "",
+        ].join("\n"),
+        ...twoConsumers,
+      },
+    });
+
+    const factory = manifest.beans.find((bean: { readonly id: string }) =>
+      bean.id.endsWith("#TestLoggerFactory"),
+    );
+    expect(factory.dependencies).toEqual([
+      {
+        parameterIndex: 0,
+        targetId: "@reforce/logging#LoggerLevels",
+        mode: "eager",
+        source: expect.anything(),
+      },
+    ]);
   }, 60_000);
 
   test("reports a missing LoggerFactory as an ordinary compile error", async () => {

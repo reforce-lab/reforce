@@ -1,7 +1,7 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
 import { beanRoleSpecOf } from "@/analysis/bean-roles";
-import { redirectKey } from "@/analysis/logger-synthesis";
+import { isLoggerLevelsContract, redirectKey } from "@/analysis/logger-synthesis";
 import {
   type CollectionDependencyModel,
   type PendingDependency,
@@ -306,6 +306,8 @@ interface ResolutionState {
   readonly candidates: CandidateIndex;
   // logger 依赖重定向表（RFC 0011 L2，#242）：`${consumerId}#${parameterIndex}` → logger bean id。
   readonly loggerRedirects: ReadonlyMap<string, string>;
+  // 级别快照 bean 的 id（RFC 0011 L5，#249）；图里没有日志时缺席。
+  readonly loggerLevelsBeanId?: string;
   readonly qualifierIndex: ReadonlyMap<string, ProviderModel>;
   readonly drafts: readonly ProviderDraft[];
   readonly linkage: StarterLinkage;
@@ -690,6 +692,14 @@ function redirectedLoggerDependency(
   };
 }
 
+// 同一条解析特例的第二个成员（RFC 0011 L5，#249）：级别快照 bean 同样 provides 为空，边由
+// 符号身份点名。与 Logger 的区别是它全图唯一，所以不需要逐消费者的重定向表——两侧（应用里
+// 用户自写的 LoggerFactory、starter meta 里 pino 的那条边）认的是同一个契约，而它们解析出的
+// key 锚点不同，按 key 匹配会漏掉其中一侧。
+function loggerLevelsTargetFor(state: ResolutionState, symbol: LinkedSymbol): string | undefined {
+  return isLoggerLevelsContract(symbol) ? state.loggerLevelsBeanId : undefined;
+}
+
 function resolveLocalDraftDependencies(state: ResolutionState): void {
   for (const draft of state.drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -704,6 +714,17 @@ function resolveLocalDraftDependencies(state: ResolutionState): void {
       const redirected = redirectedLoggerDependency(state, draft.provider.id, pending);
       if (redirected !== undefined) {
         draft.provider.dependencies.push(redirected);
+        continue;
+      }
+      const levelsTarget = loggerLevelsTargetFor(state, pending.linkedType.symbol);
+      if (levelsTarget !== undefined) {
+        draft.provider.dependencies.push({
+          parameterIndex: pending.index,
+          targetId: levelsTarget,
+          mode: singleDependencyMode(pending),
+          source: sourceReference(pending.sourceSpan),
+          contract: pending.linkedType.symbol,
+        });
         continue;
       }
       const dependency = singleDependencyFor(state, pending, demand);
@@ -756,13 +777,14 @@ function resolveStarterQueue(state: ResolutionState): void {
         });
         continue;
       }
-      const selected = selectProvider(state, symbol, demand);
-      if (selected === undefined) {
+      const targetId =
+        loggerLevelsTargetFor(state, symbol) ?? selectProvider(state, symbol, demand)?.id;
+      if (targetId === undefined) {
         continue;
       }
       entry.draft.provider.dependencies.push({
         parameterIndex: edge.index,
-        targetId: selected.id,
+        targetId,
         mode: "eager",
         source: entry.bean.metaSource,
         contract: symbol,
@@ -779,6 +801,7 @@ export function resolveProviders(
   // 容器解析，需求方不在 DI 图内，因此在这里显式入根，与 role:"root" 同一物化通道。
   demandedBeanIds: ReadonlySet<string> = new Set(),
   loggerRedirects: ReadonlyMap<string, string> = new Map(),
+  loggerLevelsBeanId?: string,
 ): readonly ProviderDraft[] {
   const candidates = indexCandidates(drafts, linkage.beans);
   const qualifierIndex = indexQualifiers(drafts, diagnostics);
@@ -786,6 +809,7 @@ export function resolveProviders(
   const state: ResolutionState = {
     candidates,
     loggerRedirects,
+    ...(loggerLevelsBeanId === undefined ? {} : { loggerLevelsBeanId }),
     qualifierIndex,
     drafts,
     linkage,

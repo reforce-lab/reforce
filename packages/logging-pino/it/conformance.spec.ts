@@ -1,5 +1,5 @@
 import { Writable } from "node:stream";
-import type { LogFieldSource, LogLevel, LogRecord } from "@reforce/logging";
+import { type LogFieldSource, LoggerLevels, type LogLevel, type LogRecord } from "@reforce/logging";
 import { loggerConformanceCases } from "@reforce/logging/conformance";
 import { describe, expect, test } from "vitest";
 import { PinoLoggerFactory } from "@/factory";
@@ -59,6 +59,12 @@ function parseRecord(line: string): LogRecord {
   return { level: pinoLevelName(level), name, time, message: msg, fields };
 }
 
+// 级别快照（RFC 0011 L5）：这些用例验的是门面契约与 pino 的原生选项，逐 logger 调级另有专门
+// 用例，所以缺省给一份空名单——每条 logger 都落回 settings.level，正是它们要的基线。
+function levelsOf(names: readonly string[] = []): LoggerLevels {
+  return new LoggerLevels({ names, levels: {}, defaultLevel: "info", layers: [] });
+}
+
 function bound(input: {
   readonly defaultLevel: LogLevel;
   readonly fieldSources: readonly LogFieldSource[];
@@ -69,6 +75,7 @@ function bound(input: {
     input.fieldSources,
     [],
     [{ destination: () => captured.stream }],
+    levelsOf(),
   );
   return { factory, records: () => captured.lines.map(parseRecord) };
 }
@@ -90,6 +97,7 @@ describe("pino binding specifics", () => {
       [],
       [],
       [{ destination: () => captured.stream }],
+      levelsOf(),
     );
 
     factory.create("orders").warn(undefined, "probe");
@@ -99,7 +107,13 @@ describe("pino binding specifics", () => {
 
   test("carries the logger name into every record", () => {
     const captured = capturingStream();
-    const factory = new PinoLoggerFactory({}, [], [], [{ destination: () => captured.stream }]);
+    const factory = new PinoLoggerFactory(
+      {},
+      [],
+      [],
+      [{ destination: () => captured.stream }],
+      levelsOf(),
+    );
 
     factory.create("payments").info(undefined, "probe");
 
@@ -122,6 +136,7 @@ describe("pino binding specifics", () => {
         },
       ],
       [{ destination: () => captured.stream }],
+      levelsOf(),
     );
 
     factory.create("orders").info(undefined, "probe");
@@ -138,6 +153,7 @@ describe("pino binding specifics", () => {
       [],
       [],
       [{ destination: () => captured.stream }],
+      levelsOf(),
     );
 
     factory.create("orders").info({ secret: "hunter2" }, "probe");
@@ -153,6 +169,7 @@ describe("pino binding specifics", () => {
       [],
       [],
       [{ destination: () => captured.stream }],
+      levelsOf(["orders", "payments"]),
     );
 
     factory.create("orders").debug(undefined, "kept");
@@ -179,6 +196,7 @@ describe("pino binding specifics", () => {
       ],
       [],
       [{ destination: () => captured.stream }],
+      levelsOf(),
     );
 
     factory.create("orders").debug(undefined, "dropped");

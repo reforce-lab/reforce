@@ -5,7 +5,7 @@ import {
   type LogLevel,
   type LogRecord,
 } from "@/contracts";
-import { renderRecord } from "@/default-logger";
+import { renderRecord } from "@/render-record";
 
 // 引导期缓冲（RFC 0011 L7，#242）。
 //

@@ -1,12 +1,12 @@
 import { Injectable, type OnContextClose } from "@reforce/context";
 import {
-  environmentKeyForLogger,
+  bindLoggerLevels,
   type LogFieldSource,
   type LogFields,
   type Logger,
   type LoggerFactory,
+  type LoggerLevels,
   type LogLevel,
-  parseLogLevel,
 } from "@reforce/logging";
 // destination 挂在默认导出上，不在具名 pino 上（pino 10 的类型如此）。
 import pinoDefault, { type LoggerOptions, type Logger as PinoLogger, pino } from "pino";
@@ -96,6 +96,7 @@ function soleDestination(
 export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
   private readonly root: PinoLogger;
   private readonly fieldSources: readonly LogFieldSource[];
+  private readonly levelFor: (name: string) => LogLevel | undefined;
 
   constructor(
     settings: PinoSettings,
@@ -104,8 +105,13 @@ export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
     fieldSources: readonly LogFieldSource[],
     configurers: readonly PinoConfigurer[],
     destinations: readonly PinoDestinationProvider[],
+    // 编译器合成的级别快照（RFC 0011 L5，#249）：兑现 settings.ts 上那句「逐 logger 的级别由
+    // 编译期的 LoggerLevels 快照与 LOGGING_LEVEL_<NAME> 决定」。排在最后一位是因为 starter
+    // meta 的依赖边按数组位定 parameterIndex，追加不会挪动既有四条边。
+    levels: LoggerLevels,
   ) {
     this.fieldSources = fieldSources;
+    this.levelFor = bindLoggerLevels({ levels });
     const base: LoggerOptions = {
       ...settings.options,
       ...(settings.level === undefined ? {} : { level: settings.level }),
@@ -125,13 +131,12 @@ export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
   }
 
   create(name: string): Logger {
-    // 逐 logger 调级（RFC 0011 L5 的分层表，#242）：运行期这一层读的是 **process.env**——
-    // CI 与生产注入的那部分，编译期看不见，所以它的拼写错误只能在启动时 warn。`.env` 那几层
-    // 是另一半，仓库里静态可见，归编译期诊断查（analysis/logger-levels.ts）。两层职责不同、
-    // 覆盖面不同，不是同一份数据的两个副本。
+    // 逐 logger 调级（RFC 0011 L5 的分层表，#242）：两层合在 bindLoggerLevels 里——`.env`
+    // 那几层由编译期读进快照（仓库里静态可见，拼写错误归编译期诊断查），process.env 那层
+    // 由运行期读并压过快照（CI 与生产注入的部分，编译期看不见，拼写错误只能启动时 warn）。
     //
     // 这里不再开一个 dotenv 加载器：.env 不回写 process.env 是 ADR 0005 决策 4.3 定过的。
-    const level = parseLogLevel(process.env[environmentKeyForLogger(name)]);
+    const level = this.levelFor(name);
     // pino 的 child 在这里是实现细节而不是门面特性：它给的是「同一个 sink、带 name 字段」，
     // 正是 logger 名需要的。门面首版不出 child(bindings) 是另一回事（Rule of Three）。
     const child = this.root.child({ name }, level === undefined ? {} : { level });

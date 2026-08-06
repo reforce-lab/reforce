@@ -7,6 +7,7 @@ export * from "@/config-probe";
 export * from "@/greeting";
 export * from "@/http-exchange";
 export * from "@/lifecycle";
+export * from "@/logging-probe";
 export * from "@/providers";
 export * from "@/server-config";
 export * from "@/web-config";

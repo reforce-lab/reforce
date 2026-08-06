@@ -1234,6 +1234,53 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // 逐 logger 调级的完整链路（RFC 0011 L5，#249）。这条用例存在的理由是它先红过：编译器
+  // 一直在校验 `logging.level.*` 的拼写、给 did-you-mean、把封闭名单写进快照，但运行期没有
+  // 任何代码读那份快照——用户改级别不生效，而编译期的安静让人以为生效了。
+  //
+  // 断言必须同时看两条 logger：只看被调开的那条，「全局降到 debug」也会绿。
+  test(
+    "lets LOGGING_LEVEL_<NAME> open one logger without touching the others",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "logging-start", false, {
+          LOGGING_LEVEL_LOGGINGPROBE: "debug",
+        });
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const { stderr } = started.output();
+        const messages = stderr
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [String(JSON.parse(line).message)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((message) => message.endsWith("probe debug") || message.endsWith("probe info"));
+        // 调开的那条 logger 两级都在；没调的那条只剩 info——它的 debug 仍被门槛挡住。
+        expect(new Set(messages)).toEqual(
+          new Set(["logging probe debug", "logging probe info", "quiet probe info"]),
+        );
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // 配置注入主路径（ADR 0005，#130 / #146）：五层合成经 REFORCE_PROFILE 选层、进程 env 压顶，
   // 绑定实例注入 bean 后经 start 与 production artifact 两条链路取值。
   test(

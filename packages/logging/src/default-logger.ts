@@ -7,6 +7,9 @@ import {
   type LogLevel,
   type LogRecord,
 } from "@/contracts";
+import { bindLoggerLevels } from "@/level-binding";
+import type { LoggerLevels } from "@/levels";
+import { renderRecord } from "@/render-record";
 
 // 默认绑定（RFC 0011 L3，#242）：JSON.stringify 加一次同步写，零依赖。
 //
@@ -14,8 +17,13 @@ import {
 // worker thread transport——高吞吐场景换 @reforce/logging-pino，不要指望这里追平。
 
 export interface DefaultLoggerFactoryOptions {
-  /** 逐 logger 名的级别；未列出的走 defaultLevel。 */
-  readonly levelFor?: (name: string) => LogLevel;
+  /**
+   * 编译器合成的级别快照 bean（RFC 0011 L5，#249）。给了它，`logging.level.*` 与
+   * `LOGGING_LEVEL_<NAME>` 才真正生效——这是把编译期校验过的名单接到运行期的那根线。
+   */
+  readonly levels?: LoggerLevels;
+  /** 逐 logger 名的级别；返回 undefined 表示「这条没配」，交给 defaultLevel。 */
+  readonly levelFor?: (name: string) => LogLevel | undefined;
   readonly defaultLevel?: LogLevel;
   /** 集合注入的字段贡献者（ADR 0006 W6）。 */
   readonly fieldSources?: readonly LogFieldSource[];
@@ -101,40 +109,27 @@ class DefaultLogger implements Logger {
   }
 }
 
-// err 是保留字段名：Error 不是 JSON 可序列化的（message/stack 都是不可枚举的），不特判就
-// 会被 stringify 成 {}。
-function renderRecord(record: LogRecord): Readonly<Record<string, unknown>> {
-  const { err, ...rest } = record.fields;
-  return {
-    level: record.level,
-    time: record.time,
-    name: record.name,
-    message: record.message,
-    ...rest,
-    ...(err instanceof Error
-      ? { err: { name: err.name, message: err.message, stack: err.stack } }
-      : err === undefined
-        ? {}
-        : { err }),
-  };
-}
-
 export class DefaultLoggerFactory implements LoggerFactory {
   private readonly options: DefaultLoggerFactoryOptions;
+  private readonly levelFor: (name: string) => LogLevel | undefined;
 
   constructor(options: DefaultLoggerFactoryOptions = {}) {
     this.options = options;
+    // 快照优先于手写的 levelFor：给了 levels 就是要 logging.level.* 说了算。两个都给的场合
+    // 只出现在测试里，那里手写的那个反而是被验证的对象，所以它排在快照缺席时。
+    this.levelFor =
+      options.levels === undefined
+        ? (options.levelFor ?? (() => undefined))
+        : bindLoggerLevels({ levels: options.levels });
   }
 
   create(name: string): Logger {
     return new DefaultLogger({
       name,
-      threshold: this.options.levelFor?.(name) ?? this.options.defaultLevel ?? "info",
+      threshold: this.levelFor(name) ?? this.options.defaultLevel ?? "info",
       fieldSources: this.options.fieldSources ?? [],
       write: this.options.write ?? defaultWrite,
       now: this.options.now ?? (() => Date.now()),
     });
   }
 }
-
-export { renderRecord };

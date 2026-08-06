@@ -20,6 +20,8 @@ const contextRoot = join(workspaceRoot, "packages", "context");
 const configRoot = join(workspaceRoot, "packages", "config");
 const webRoot = join(workspaceRoot, "packages", "web");
 const webNodeRoot = join(workspaceRoot, "packages", "web-node");
+const loggingRoot = join(workspaceRoot, "packages", "logging");
+const runtimeRoot = join(workspaceRoot, "packages", "runtime");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -102,6 +104,18 @@ beforeAll(async () => {
     symlink(
       nodeTypesRoot,
       join(typesScopeRoot, "node"),
+      process.platform === "win32" ? "junction" : "dir",
+    ),
+    // fixture 应用装了默认日志绑定（RFC 0011 L3）：@reforce/logging 与它的运行时依赖
+    // @reforce/runtime 同样以符号链接落地，否则 logging-probe.ts 解析不到包。
+    symlink(
+      loggingRoot,
+      join(scopeRoot, "logging"),
+      process.platform === "win32" ? "junction" : "dir",
+    ),
+    symlink(
+      runtimeRoot,
+      join(scopeRoot, "runtime"),
       process.platform === "win32" ? "junction" : "dir",
     ),
   ]);

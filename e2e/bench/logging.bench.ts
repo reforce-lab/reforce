@@ -19,7 +19,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import { DefaultLoggerFactory, type LogFieldSource, type Logger } from "@reforce/logging";
+import {
+  DefaultLoggerFactory,
+  type LogFieldSource,
+  type Logger,
+  LoggerLevels,
+} from "@reforce/logging";
 import { PinoLoggerFactory } from "@reforce/logging-pino";
 // destination 挂在默认导出上，不在具名 pino 上（pino 10 的类型如此）。
 import pinoDefault, { pino } from "pino";
@@ -76,12 +81,17 @@ function best(run: () => void): number {
 
 // —— 三档参照系 ——
 
+// 空名单的级别快照：基准比的是每条记录的写出开销，逐 logger 调级不在被测面内，名单为空
+// 意味着每条 logger 都落回 settings.level，三档的门槛因此一致。
+const benchLevels = new LoggerLevels({ names: [], levels: {}, defaultLevel: "info", layers: [] });
+
 const barePino = pino({ level: "info" }, countingStream()).child({ name: "bench" });
 const facadeOverPino = new PinoLoggerFactory(
   { level: "info" },
   [],
   [],
   [{ destination: () => countingStream() }],
+  benchLevels,
 ).create("bench");
 const facadeOverDefault = new DefaultLoggerFactory({
   defaultLevel: "info",
@@ -107,6 +117,7 @@ const fileFacade = new PinoLoggerFactory(
   [],
   [],
   [{ destination: () => pinoDefault.destination(join(fileRoot, "facade.log")) }],
+  benchLevels,
 ).create("bench");
 results.set(
   "① 裸 pino → sonic-boom 文件",

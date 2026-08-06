@@ -254,26 +254,40 @@ interface FrameworkBeanSpec {
   readonly providesNothing?: true;
 }
 
-const frameworkBeanSpecs = new Map<string, FrameworkBeanSpec>([
+// 一个来源可以合成不止一种 bean：@reforce/logging 出两种（逐 logger 的 BoundLogger，与全图
+// 唯一的级别快照），形状互不相同，所以值是一组 spec 而不是一条——认死一条会在第二种出现时
+// 把合法产物判成非法。
+const frameworkBeanSpecs = new Map<string, readonly FrameworkBeanSpec[]>([
   [
     "@reforce/transaction",
-    {
-      exportName: "TransactionInterceptor",
-      runtimeModule: "@reforce/transaction/generated-runtime",
-    },
+    [
+      {
+        exportName: "TransactionInterceptor",
+        runtimeModule: "@reforce/transaction/generated-runtime",
+      },
+    ],
   ],
   [
-    // 框架 logger（RFC 0011 L2，#242）：唯一「一个运行导出承载 N 个 bean 身份」的形态。
-    // id 的 exportName 是 `Logger(<名字>)` 这个模式而不是一个定名，运行导出恒为 BoundLogger
-    // ——两者天然不等，而其余框架 bean 靠「相等」把关。它也刻意不提供任何契约（消费者由编译器
-    // 的重定向表点名），所以 provides 恒为空。
     "@reforce/logging",
-    {
-      exportNamePattern: /^Logger\(.+\)$/u,
-      exportName: "BoundLogger",
-      runtimeModule: "@reforce/logging/generated-runtime",
-      providesNothing: true,
-    },
+    [
+      // 框架 logger（RFC 0011 L2，#242）：唯一「一个运行导出承载 N 个 bean 身份」的形态。
+      // id 的 exportName 是 `Logger(<名字>)` 这个模式而不是一个定名，运行导出恒为 BoundLogger
+      // ——两者天然不等，而其余框架 bean 靠「相等」把关。它也刻意不提供任何契约（消费者由编译器
+      // 的重定向表点名），所以 provides 恒为空。
+      {
+        exportNamePattern: /^Logger\(.+\)$/u,
+        exportName: "BoundLogger",
+        runtimeModule: "@reforce/logging/generated-runtime",
+        providesNothing: true,
+      },
+      // 级别快照（RFC 0011 L5，#249）：全图唯一一条，构造实参是编译期算好的字面量快照。
+      // 与 logger bean 同理不进候选池——注入它的绑定由 isLoggerLevelsContract 点名。
+      {
+        exportName: "LoggerLevels",
+        runtimeModule: "@reforce/logging/generated-runtime",
+        providesNothing: true,
+      },
+    ],
   ],
 ]);
 
@@ -298,10 +312,31 @@ function isFrameworkBean(
   primary: boolean,
   qualifiers: readonly ManifestQualifier[],
 ): boolean {
-  const spec = frameworkBeanSpecs.get(origin);
-  if (spec === undefined) {
+  const specs = frameworkBeanSpecs.get(origin);
+  if (specs === undefined) {
     return false;
   }
+  // 与来源共通的那部分先判一次：它们对该来源的每一种合成 bean 都成立，逐 spec 重复判等于
+  // 把「框架 bean 一律无生命周期、无 qualifier」这条不变量藏进循环里。
+  const commonHolds =
+    bean.idParts.file === origin &&
+    bean.kind === "class" &&
+    !primary &&
+    qualifiers.length === 0 &&
+    !bean.lifecycle.start &&
+    !bean.lifecycle.close &&
+    !bean.lifecycle.dispose;
+  return commonHolds && specs.some((spec) => matchesFrameworkSpec(bean, spec));
+}
+
+function matchesFrameworkSpec(
+  bean: {
+    readonly idParts: { readonly exportName: string };
+    readonly runtimeExport: ManifestExportReference;
+    readonly provides: readonly ManifestSymbolReference[];
+  },
+  spec: FrameworkBeanSpec,
+): boolean {
   const identityHolds =
     spec.exportNamePattern === undefined
       ? bean.idParts.exportName === spec.exportName
@@ -314,18 +349,7 @@ function isFrameworkBean(
           provided.exportName === bean.runtimeExport.exportName &&
           provided.moduleSpecifier === spec.runtimeModule,
       );
-  return (
-    bean.idParts.file === origin &&
-    identityHolds &&
-    bean.kind === "class" &&
-    !primary &&
-    qualifiers.length === 0 &&
-    !bean.lifecycle.start &&
-    !bean.lifecycle.close &&
-    !bean.lifecycle.dispose &&
-    bean.runtimeExport.moduleSpecifier === spec.runtimeModule &&
-    providesHold
-  );
+  return identityHolds && bean.runtimeExport.moduleSpecifier === spec.runtimeModule && providesHold;
 }
 
 // starter meta v1 没有 scope 面、框架 bean 由编译器合成：两者恒为 singleton。

@@ -16,6 +16,7 @@ export {
   logLevelValues,
 } from "@/contracts";
 export { DefaultLoggerFactory, type DefaultLoggerFactoryOptions } from "@/default-logger";
+export { bindLoggerLevels, type LevelBindingInput } from "@/level-binding";
 export {
   environmentKeyForLogger,
   LoggerLevels,

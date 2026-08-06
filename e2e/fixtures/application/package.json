@@ -14,6 +14,7 @@
   "dependencies": {
     "@reforce/config": "workspace:*",
     "@reforce/context": "workspace:*",
+    "@reforce/logging": "workspace:*",
     "@reforce/web": "workspace:*",
     "@reforce/web-fastify": "workspace:*",
     "@reforce/web-hono": "workspace:*",
