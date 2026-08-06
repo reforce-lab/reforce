@@ -303,6 +303,9 @@ importers:
       '@reforce/context':
         specifier: workspace:*
         version: link:../context
+      '@reforce/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0

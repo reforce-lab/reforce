@@ -1,5 +1,11 @@
 export { type BootstrapLogBuffer, createBootstrapLogBuffer } from "@/bootstrap-buffer";
 export {
+  bootstrapLogger,
+  droppedBootstrapRecords,
+  replayBootstrapLogs,
+  resetBootstrapRegistryForTest,
+} from "@/bootstrap-registry";
+export {
   isLevelEnabled,
   type LogFieldSource,
   type LogFields,

@@ -4,6 +4,7 @@ import type {
   GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
 } from "@reforce/context/generated-runtime";
+import { bootstrapLogger } from "@reforce/logging";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { type EnvironmentSnapshot, loadEnvironmentSnapshot } from "@/binding/env-layers";
 import {
@@ -14,6 +15,14 @@ import {
   suggestEnvironmentName,
 } from "@/binding/key-mapping";
 import { readConfigPropertiesMetadata } from "@/config-properties";
+
+// 绑定 phase 跑在**一切 bean 构造之前**（ADR 0005 决策 6.1），所以这里拿不到容器里的
+// LoggerFactory——只能走引导缓冲，等绑定就位后由启动代码重放（RFC 0011 L7/L8，#249/#250）。
+// 惰性取而不是模块作用域取：模块求值时机由打包器决定，惰性取保证第一条记录进缓冲的时刻
+// 就是真正写日志的时刻，时间戳才是准的。
+function configLogger() {
+  return bootstrapLogger("reforce.config");
+}
 
 export interface CreateConfigBindingOptions {
   readonly root?: string;
@@ -99,8 +108,10 @@ function warnUnmatchedKeys(
       continue;
     }
     const suggestion = suggestEnvironmentName(key, knownNames);
-    const hint = suggestion === undefined ? "" : `; did you mean ${suggestion}?`;
-    console.warn(`[reforce.config] ${key} does not match any bound property of ${configId}${hint}`);
+    configLogger().warn(
+      { key, configId, ...(suggestion === undefined ? {} : { suggestion }) },
+      "environment key matches no bound property",
+    );
   }
 }
 
@@ -169,7 +180,7 @@ export function createConfigBinding(
         env: process.env,
       });
       for (const warning of snapshot.warnings) {
-        console.warn(`[reforce.config] ${warning}`);
+        configLogger().warn(undefined, warning);
       }
 
       // 不在第一个失败的 config 停下：跨 config 聚合全部 issue（ADR 0005 决策 6.1）
