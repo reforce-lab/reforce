@@ -18,7 +18,7 @@ const distDeclaration = [
   "  get(key: string): string;",
   "}",
   "export declare class MetricsPusher {}",
-  'export declare const redisStarter: import("@reforce/context").StarterDefinition;',
+  'export declare const redisStarter: import("@reforce/core").StarterDefinition;',
   "",
 ].join("\n");
 
@@ -105,14 +105,14 @@ export async function writeStarterPackage(
 
 export const starterApplicationSources = {
   "application.ts": [
-    'import { defineApplication } from "@reforce/context";',
+    'import { defineApplication } from "@reforce/core";',
     'import { redisStarter } from "@acme/starter-redis";',
     "",
     "export default defineApplication({ starters: [redisStarter] });",
     "",
   ].join("\n"),
   "consumer.ts": [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import type { Cache } from "@acme/starter-redis";',
     "",
     "@Injectable()",

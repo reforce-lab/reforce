@@ -1,4 +1,4 @@
-import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
+import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/core";
 import type { RequestSeeder, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
 import { createWebApplication } from "@/execution/web-application";
 

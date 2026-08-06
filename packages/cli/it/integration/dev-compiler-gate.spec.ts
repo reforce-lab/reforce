@@ -36,7 +36,7 @@ beforeAll(async () => {
       include: ["src", ".reforce/generated/**/*.d.ts"],
     })}\n`,
     src: {
-      "application.ts": `import { Injectable } from "@reforce/context";
+      "application.ts": `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {}
@@ -44,7 +44,7 @@ export class ApplicationService {}
     },
   });
   standaloneProject = application.projectRoot;
-  await linkWorkspacePackage("@reforce/context", join(repositoryRoot, "packages", "context"));
+  await linkWorkspacePackage("@reforce/core", join(repositoryRoot, "packages", "core"));
 });
 
 afterAll(async () => {

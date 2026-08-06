@@ -117,7 +117,7 @@ describe("request scope declarations", () => {
   test("@RequestScoped and defineBean scope request mark Beans as request scope in the manifest", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { defineBean, Injectable, RequestScoped } from "@reforce/context";',
+        'import { defineBean, Injectable, RequestScoped } from "@reforce/core";',
         "export class Trace { constructor(readonly label: string) {} }",
         "@Injectable() @RequestScoped() export class Session {}",
         "@Injectable() export class Clock {}",
@@ -134,7 +134,7 @@ describe("request scope declarations", () => {
   test("request Beans construct through the second plan, never the singleton plan", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, RequestScoped } from "@reforce/context";',
+        'import { Injectable, RequestScoped } from "@reforce/core";',
         "@Injectable() export class Clock {}",
         "@Injectable() @RequestScoped() export class Session {}",
       ].join("\n"),
@@ -149,7 +149,7 @@ describe("request scope declarations", () => {
   test("the request plan orders request Beans dependency-first", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, RequestScoped } from "@reforce/context";',
+        'import { Injectable, RequestScoped } from "@reforce/core";',
         // beanId 序 Derived < Root；依赖序必须推翻它。
         "@Injectable() @RequestScoped() export class Root {}",
         "@Injectable() @RequestScoped() export class Derived {",
@@ -167,7 +167,7 @@ describe("request scope declarations", () => {
   test("the emitted definition carries scope fields under schemaVersion 4", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, RequestScoped } from "@reforce/context";',
+        'import { Injectable, RequestScoped } from "@reforce/core";',
         "@Injectable() @RequestScoped() export class Session {}",
       ].join("\n"),
     );
@@ -181,7 +181,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { RequestScoped } from "@reforce/context";',
+          'import { RequestScoped } from "@reforce/core";',
           "@RequestScoped() export class Plain {}",
         ].join("\n"),
       ),
@@ -194,7 +194,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, RequestScoped } from "@reforce/context";',
+          'import { Injectable, RequestScoped } from "@reforce/core";',
           '@Injectable() @RequestScoped("web") export class WithArgument {}',
           "@Injectable() @RequestScoped() @RequestScoped() export class Twice {}",
         ].join("\n"),
@@ -211,7 +211,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, Order, RequestScoped } from "@reforce/context";',
+          'import { Injectable, Order, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() @Order(1) export class Session {}",
         ].join("\n"),
       ),
@@ -224,7 +224,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, type OnContextStart, RequestScoped } from "@reforce/context";',
+          'import { Injectable, type OnContextStart, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session implements OnContextStart {",
           "  onContextStart(): void {}",
           "}",
@@ -239,7 +239,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { defineBean } from "@reforce/context";',
+          'import { defineBean } from "@reforce/core";',
           "export class Trace {}",
           'export const trace = defineBean<Trace>({ scope: "singleton", create: () => new Trace() });',
         ].join("\n"),
@@ -253,7 +253,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { defineBean } from "@reforce/context";',
+          'import { defineBean } from "@reforce/core";',
           "export class Trace {}",
           "export const trace = defineBean<Trace>({ create: async () => new Trace() });",
         ].join("\n"),
@@ -267,7 +267,7 @@ describe("request scope declarations", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { defineBean } from "@reforce/context";',
+          'import { defineBean } from "@reforce/core";',
           "export class Trace {}",
           "export const trace = defineBean<Trace>({",
           '  scope: "request",',
@@ -285,7 +285,7 @@ describe("request scope declarations", () => {
 describe("cross-scope edges", () => {
   const sessionAndHolder = (holderParameter: string): string =>
     [
-      'import { type Current, Injectable, type Lazy, RequestScoped } from "@reforce/context";',
+      'import { type Current, Injectable, type Lazy, RequestScoped } from "@reforce/core";',
       "@Injectable() @RequestScoped() export class Session {}",
       "@Injectable() export class Holder {",
       `  constructor(readonly session: ${holderParameter}) {}`,
@@ -332,7 +332,7 @@ describe("cross-scope edges", () => {
   test("a request Bean may depend on a singleton directly", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, RequestScoped } from "@reforce/context";',
+        'import { Injectable, RequestScoped } from "@reforce/core";',
         "@Injectable() export class Clock {}",
         "@Injectable() @RequestScoped() export class Session {",
         "  constructor(readonly clock: Clock) {}",
@@ -353,7 +353,7 @@ describe("cross-scope edges", () => {
   test("a request Bean may depend on a singleton lazily", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, type Lazy, RequestScoped } from "@reforce/context";',
+        'import { Injectable, type Lazy, RequestScoped } from "@reforce/core";',
         "@Injectable() export class Clock {}",
         "@Injectable() @RequestScoped() export class Session {",
         "  constructor(readonly clock: Lazy<Clock>) {}",
@@ -375,7 +375,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, type Lazy, RequestScoped } from "@reforce/context";',
+          'import { Injectable, type Lazy, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session {}",
           "@Injectable() @RequestScoped() export class Peer {",
           "  constructor(readonly session: Lazy<Session>) {}",
@@ -393,7 +393,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { type Current, Injectable } from "@reforce/context";',
+          'import { type Current, Injectable } from "@reforce/core";',
           "@Injectable() export class Clock {}",
           "@Injectable() export class Holder {",
           "  constructor(readonly clock: Current<Clock>) {}",
@@ -409,7 +409,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { type Current, Injectable, RequestScoped } from "@reforce/context";',
+          'import { type Current, Injectable, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session {}",
           "@Injectable() @RequestScoped() export class Peer {",
           "  constructor(readonly session: Current<Session>) {}",
@@ -425,7 +425,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, RequestScoped } from "@reforce/context";',
+          'import { Injectable, RequestScoped } from "@reforce/core";',
           "export interface Handler { handle(): void; }",
           "@Injectable() @RequestScoped() export class RequestHandler implements Handler {",
           "  handle(): void {}",
@@ -446,7 +446,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { type Current, Injectable, RequestScoped } from "@reforce/context";',
+          'import { type Current, Injectable, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session {}",
           "@Injectable() export class Registry {",
           "  constructor(readonly sessions: readonly Current<Session>[]) {}",
@@ -462,7 +462,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { type Current, Injectable, RequestScoped } from "@reforce/context";',
+          'import { type Current, Injectable, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session {}",
           "@Injectable() export class Registry {",
           "  constructor(readonly sessions: Current<readonly Session[]>) {}",
@@ -478,7 +478,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { type Current, Injectable, type Lazy, RequestScoped } from "@reforce/context";',
+          'import { type Current, Injectable, type Lazy, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session {}",
           "@Injectable() export class Holder {",
           "  constructor(readonly session: Lazy<Current<Session>>) {}",
@@ -494,7 +494,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { type Current, Injectable, type Lazy, RequestScoped } from "@reforce/context";',
+          'import { type Current, Injectable, type Lazy, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Session {}",
           "@Injectable() export class Holder {",
           "  constructor(readonly session: Current<Lazy<Session>>) {}",
@@ -510,7 +510,7 @@ describe("cross-scope edges", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, RequestScoped } from "@reforce/context";',
+          'import { Injectable, RequestScoped } from "@reforce/core";',
           "@Injectable() @RequestScoped() export class Alpha {",
           "  constructor(readonly beta: Beta) {}",
           "}",
@@ -532,7 +532,7 @@ describe("cross-scope edges", () => {
 describe("determinism", () => {
   test("two compilations of the same request-scope project are byte-identical", async () => {
     const source = [
-      'import { type Current, defineBean, Injectable, RequestScoped } from "@reforce/context";',
+      'import { type Current, defineBean, Injectable, RequestScoped } from "@reforce/core";',
       "export class Trace { constructor(readonly label: string) {} }",
       "@Injectable() export class Clock {}",
       "@Injectable() @RequestScoped() export class Session {",
@@ -568,7 +568,7 @@ describe("generated request execution", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "application.ts": [
-          'import { type Current, defineBean, Injectable, RequestScoped } from "@reforce/context";',
+          'import { type Current, defineBean, Injectable, RequestScoped } from "@reforce/core";',
           "",
           "@Injectable()",
           "export class Clock {",
@@ -629,7 +629,7 @@ describe("generated request execution", () => {
     await writeFile(
       path.join(project.projectRoot, "integration.ts"),
       [
-        'import { RequestContextMissingError } from "@reforce/context";',
+        'import { RequestContextMissingError } from "@reforce/core";',
         'import { bootstrap } from "./.reforce/generated/bootstrap.js";',
         'import { RequestContext, SessionReader } from "./src/application.js";',
         "",

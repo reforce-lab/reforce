@@ -47,7 +47,7 @@ async function createLibrary(overrides: LibraryOverrides = {}): Promise<Temporar
     })}\n`,
     src: overrides.sources ?? {
       "index.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         "export class Widget {}",
@@ -125,7 +125,7 @@ test("writeBundle surfaces compiler diagnostics as a build error", async () => {
   const project = await createLibrary({
     sources: {
       "index.ts": [
-        'import { defineBean } from "@reforce/context";',
+        'import { defineBean } from "@reforce/core";',
         "",
         "export const clock = defineBean({",
         "  create: () => ({ now: () => 0 }),",
@@ -185,8 +185,8 @@ test("verify mode reports missing starter subpaths without rewriting package.jso
 });
 
 // 真实 rslib 构建（dts 走 tsgo）的两个用例：rsbuild-plugin-dts 从项目根 resolve typescript
-// 可执行文件，tsgo 又要解析 @reforce/context 的类型，所以两个包都要在临时项目内可解析。
-// @reforce/context 按安装形态以 junction 链接（Windows 无需符号链接权限）。
+// 可执行文件，tsgo 又要解析 @reforce/core 的类型，所以两个包都要在临时项目内可解析。
+// @reforce/core 按安装形态以 junction 链接（Windows 无需符号链接权限）。
 function installedPackageRoot(specifier: string): string {
   return dirname(dirname(fileURLToPath(import.meta.resolve(specifier))));
 }
@@ -326,7 +326,7 @@ async function createRslibLibrary(): Promise<TemporaryProject> {
     })}\n`,
     src: {
       "index.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         "export class Widget {}",
@@ -336,7 +336,7 @@ async function createRslibLibrary(): Promise<TemporaryProject> {
   });
   projects.push(project);
   await installDelayedTypescript(project.projectRoot);
-  await linkIntoProject(project.projectRoot, "@reforce/context");
+  await linkIntoProject(project.projectRoot, "@reforce/core");
   return project;
 }
 
@@ -415,7 +415,7 @@ test("the esbuild adapter runs the finishing hook through esbuild's build API", 
     outdir: join(project.projectRoot, "bundle"),
     bundle: true,
     platform: "node",
-    external: ["@reforce/context"],
+    external: ["@reforce/core"],
     plugins: [reforceStarter.esbuild({ projectDirectory: project.projectRoot, publint: false })],
   });
 

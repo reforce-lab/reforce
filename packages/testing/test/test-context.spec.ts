@@ -1,9 +1,9 @@
-import { defineBean, type MethodInterceptor, UnregisteredBeanTargetError } from "@reforce/context";
+import { defineBean, type MethodInterceptor, UnregisteredBeanTargetError } from "@reforce/core";
 import {
   classBean,
   type GeneratedMethodChain,
   invokeIntercepted,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 import { describe, expect, test } from "vitest";
 import { createTestContext, type TestContextOverrides } from "@/test-context";
 import { testDefinition, testSource } from "./support/test-definition";

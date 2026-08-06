@@ -128,7 +128,7 @@ describe("provider selection", () => {
   test("a Primary factory participates in interface default selection", async () => {
     const result = await compileSource(
       [
-        'import { defineBean, Injectable } from "@reforce/context";',
+        'import { defineBean, Injectable } from "@reforce/core";',
         "export interface Port { value(): string }",
         '@Injectable() export class Other implements Port { value(): string { return "other"; } }',
         'class FactoryValue implements Port { value(): string { return "factory"; } }',
@@ -151,7 +151,7 @@ describe("provider selection", () => {
   test("multiple unqualified candidates without Primary are ambiguous", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "export interface Port {}",
         "@Injectable() export class First implements Port {}",
         "@Injectable() export class Second implements Port {}",
@@ -173,7 +173,7 @@ describe("provider selection", () => {
   test("multiple Primary candidates are rejected", async () => {
     const result = await compileSource(
       [
-        'import { Injectable, Primary } from "@reforce/context";',
+        'import { Injectable, Primary } from "@reforce/core";',
         "export interface Port {}",
         "@Injectable() @Primary() export class First implements Port {}",
         "@Injectable() @Primary() export class Second implements Port {}",
@@ -195,7 +195,7 @@ describe("provider selection", () => {
   test("an unknown qualifier reports every currently available member", async () => {
     const result = await compileSource(
       [
-        'import { Injectable, Primary, Qualifier } from "@reforce/context";',
+        'import { Injectable, Primary, Qualifier } from "@reforce/core";',
         "export interface Port {}",
         '@Injectable() @Qualifier("Fallback") export class First implements Port {}',
         '@Injectable() @Primary() @Qualifier("Preferred") export class Second implements Port {}',
@@ -217,7 +217,7 @@ describe("provider selection", () => {
   test("two providers cannot publish the same qualifier member", async () => {
     const result = await compileSource(
       [
-        'import { Injectable, Qualifier } from "@reforce/context";',
+        'import { Injectable, Qualifier } from "@reforce/core";',
         "export interface Port {}",
         '@Injectable() @Qualifier("Same") export class First implements Port {}',
         '@Injectable() @Qualifier("Same") export class Second implements Port {}',
@@ -238,7 +238,7 @@ describe("provider selection", () => {
   test("an Injectable class wins over a Primary factory for its concrete type", async () => {
     const result = await compileSource(
       [
-        'import { defineBean, Injectable } from "@reforce/context";',
+        'import { defineBean, Injectable } from "@reforce/core";',
         "@Injectable() export class Concrete {}",
         "export const concreteFactory = defineBean<Concrete>({",
         "  create: () => new Concrete(),",

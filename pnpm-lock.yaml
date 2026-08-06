@@ -59,9 +59,9 @@ importers:
       '@reforce/config':
         specifier: workspace:*
         version: link:../packages/config
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../packages/context
+        version: link:../packages/core
       '@reforce/web':
         specifier: workspace:*
         version: link:../packages/web
@@ -127,9 +127,9 @@ importers:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.6
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@reforce/tooling-rslib':
         specifier: workspace:*
         version: link:../../tooling/rslib
@@ -258,9 +258,9 @@ importers:
       '@reforce/config':
         specifier: workspace:*
         version: link:../config
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@reforce/tooling-rslib':
         specifier: workspace:*
         version: link:../../tooling/rslib
@@ -297,9 +297,9 @@ importers:
 
   packages/config:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -344,7 +344,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/context:
+  packages/core:
     dependencies:
       '@swc/helpers':
         specifier: 'catalog:'
@@ -377,6 +377,43 @@ importers:
       fast-check:
         specifier: ^4.9.0
         version: 4.9.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
+
+  packages/create-reforce:
+    dependencies:
+      '@clack/core':
+        specifier: ^1.4.3
+        version: 1.4.3
+      '@clack/prompts':
+        specifier: ^1.7.0
+        version: 1.7.0
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
+    devDependencies:
+      '@biomejs/biome':
+        specifier: 'catalog:'
+        version: 2.5.6
+      '@reforce/tooling-rslib':
+        specifier: workspace:*
+        version: link:../../tooling/rslib
+      '@reforce/tooling-tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/tsconfig
+      '@reforce/tooling-vitest':
+        specifier: workspace:*
+        version: link:../../tooling/vitest
+      '@rslib/core':
+        specifier: 'catalog:'
+        version: 0.23.2(typescript@7.0.2)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -420,9 +457,9 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -460,9 +497,9 @@ importers:
 
   packages/testing:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -500,9 +537,9 @@ importers:
 
   packages/transaction:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -571,9 +608,9 @@ importers:
 
   packages/web:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -614,9 +651,9 @@ importers:
 
   packages/web-fastify:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@reforce/web':
         specifier: workspace:*
         version: link:../web
@@ -660,9 +697,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.0)
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@reforce/web':
         specifier: workspace:*
         version: link:../web
@@ -703,9 +740,9 @@ importers:
 
   packages/web-node:
     dependencies:
-      '@reforce/context':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../context
+        version: link:../core
       '@reforce/web':
         specifier: workspace:*
         version: link:../web
@@ -1135,6 +1172,14 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@clack/core@1.4.3':
+    resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
+    engines: {node: '>= 20.12.0'}
+
+  '@clack/prompts@1.7.0':
+    resolution: {integrity: sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A==}
+    engines: {node: '>= 20.12.0'}
 
   '@commitlint/cli@21.2.1':
     resolution: {integrity: sha512-blsZGe29hJ72VGEFVl72IVYX+1vsfINpjA9yWQA6i7OKD/McGEOXg08sKIRKjFk4JvzhV/9n0l3i6NooPLTNfg==}
@@ -2850,11 +2895,20 @@ packages:
   fast-querystring@1.1.2:
     resolution: {integrity: sha512-g6KuKWmFXc0fID8WWH0jit4g0AGBoJhCkJMb1RmbsSEUNvQ+ZC8D6CUZ+GtF8nMzSPXnhiePyyqqipzNNEnHjg==}
 
+  fast-string-truncated-width@3.0.3:
+    resolution: {integrity: sha512-0jjjIEL6+0jag3l2XWWizO64/aZVtpiGE3t0Zgqxv0DPuxiMjvB3M24fCyhZUO4KomJQPj3LTSUnDP3GpdwC0g==}
+
+  fast-string-width@3.0.2:
+    resolution: {integrity: sha512-gX8LrtNEI5hq8DVUfRQMbr5lpaS4nMIWV+7XEbXk2b8kiQIizgnlr12B4dA3ZEx3308ze0O4Q1R+cHts8kyUJg==}
+
   fast-uri@3.1.5:
     resolution: {integrity: sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==}
 
   fast-uri@4.1.2:
     resolution: {integrity: sha512-TyGmBcbDTZXcb2cj5MV89DrF42DKvb3y5DDUNh95iO+IMeAzMkVSxK1PZRrRIpc9yg8U2GhGdbofNa0LS/a4Bw==}
+
+  fast-wrap-ansi@0.2.2:
+    resolution: {integrity: sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q==}
 
   fastify@5.11.2:
     resolution: {integrity: sha512-i/eJG7nXR9OkbFgoX4jFiPOHoRq0rXqDACVAXELh5Fdg6BFBErIVZ8MyibGCwup9Go1pYrxZJ0ogIub8vVdEcQ==}
@@ -4014,6 +4068,9 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
+  sisteransi@1.0.5:
+    resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
+
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
 
@@ -4613,6 +4670,18 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.7':
     optional: true
+
+  '@clack/core@1.4.3':
+    dependencies:
+      fast-wrap-ansi: 0.2.2
+      sisteransi: 1.0.5
+
+  '@clack/prompts@1.7.0':
+    dependencies:
+      '@clack/core': 1.4.3
+      fast-string-width: 3.0.2
+      fast-wrap-ansi: 0.2.2
+      sisteransi: 1.0.5
 
   '@commitlint/cli@21.2.1(@types/node@26.1.2)(conventional-commits-parser@7.1.2)(typescript@7.0.2)':
     dependencies:
@@ -6068,9 +6137,19 @@ snapshots:
     dependencies:
       fast-decode-uri-component: 1.0.1
 
+  fast-string-truncated-width@3.0.3: {}
+
+  fast-string-width@3.0.2:
+    dependencies:
+      fast-string-truncated-width: 3.0.3
+
   fast-uri@3.1.5: {}
 
   fast-uri@4.1.2: {}
+
+  fast-wrap-ansi@0.2.2:
+    dependencies:
+      fast-string-width: 3.0.2
 
   fastify@5.11.2:
     dependencies:
@@ -7471,6 +7550,8 @@ snapshots:
   siginfo@2.0.0: {}
 
   signal-exit@4.1.0: {}
+
+  sisteransi@1.0.5: {}
 
   sonic-boom@4.2.1:
     dependencies:

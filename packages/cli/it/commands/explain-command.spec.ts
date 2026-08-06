@@ -109,7 +109,7 @@ test("explains a local provider winning while the starter default stands aside",
     sources: {
       ...starterApplicationSources,
       "local-cache.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { Cache } from "@acme/starter-redis";',
         "",
         "@Injectable()",
@@ -159,14 +159,14 @@ test("reports an ambiguous export name listing every match", async () => {
       "application.ts": starterApplicationSources["application.ts"],
       "consumer.ts": starterApplicationSources["consumer.ts"],
       "one.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         "export class Probe {}",
         "",
       ].join("\n"),
       "two.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         "export class Probe {}",
@@ -221,7 +221,7 @@ test("runCli dispatches the explain command", async () => {
 
 const webApplicationSources = {
   "web.ts": [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import { Controller, Get, Middleware, type RequestContext } from "@reforce/web";',
     "",
     '@Middleware({ phase: "admission", global: true })',
@@ -298,7 +298,7 @@ test("explains a transactional bean with its woven chain and effective semantics
   const project = await createExplainProject({
     sources: {
       "manager.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -310,7 +310,7 @@ test("explains a transactional bean with its woven chain and effective semantics
         "",
       ].join("\n"),
       "orders.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -339,7 +339,7 @@ test("explains the synthesized framework interceptor bean itself", async () => {
   const project = await createExplainProject({
     sources: {
       "manager.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -351,7 +351,7 @@ test("explains the synthesized framework interceptor bean itself", async () => {
         "",
       ].join("\n"),
       "orders.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",

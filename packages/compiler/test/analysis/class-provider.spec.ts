@@ -48,12 +48,12 @@ const contextNames = [
   "ApplicationContext",
 ];
 
-function contextSymbol(name: string): LinkedSymbol {
+function coreSymbol(name: string): LinkedSymbol {
   return {
-    key: `@reforce/context#${name}`,
-    kind: "context",
+    key: `@reforce/core#${name}`,
+    kind: "core",
     name,
-    moduleSpecifier: "@reforce/context",
+    moduleSpecifier: "@reforce/core",
     generic: false,
   };
 }
@@ -134,7 +134,7 @@ interface LinkerInput {
 function createLinker(input: LinkerInput = {}): ProjectLinker {
   const byName = new Map((input.symbols ?? []).map((symbol) => [symbol.name, symbol]));
   for (const name of contextNames) {
-    byName.set(name, contextSymbol(name));
+    byName.set(name, coreSymbol(name));
   }
   const diagnostics: CompilerDiagnostic[] = [];
   return {

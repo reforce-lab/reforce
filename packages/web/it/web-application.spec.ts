@@ -1,17 +1,17 @@
-import type { Current } from "@reforce/context";
+import type { Current } from "@reforce/core";
 import {
   classBean,
   createApplicationContext,
   type GeneratedApplicationDefinition,
   type GeneratedResolver,
   type GeneratedSourceReference,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
 import type { GeneratedRouteTable } from "@/generated-runtime";
 import { createWebApplication, defineRouteMarker, type RequestContext } from "@/index";
 
-// 跨包全链路（ADR 0006 W1/W4/W7，#152）：真实 @reforce/context 运行时 + 引擎无关执行层 +
+// 跨包全链路（ADR 0006 W1/W4/W7，#152）：真实 @reforce/core 运行时 + 引擎无关执行层 +
 // 契约的最小假适配器，走通"启动时一次性消费路由表 → 每请求开作用域并播种根请求 bean →
 // 洋葱链 → Current 句柄取请求态 → 错误处理器兜底"的完整闭环。真实引擎适配是 #153。
 

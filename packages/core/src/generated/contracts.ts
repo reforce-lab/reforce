@@ -128,7 +128,7 @@ export type GeneratedConfigBindingOutcome =
       readonly issues: readonly ConfigBindingIssue[];
     };
 
-// The binding implementation lives outside this package (ADR 0005 keeps @reforce/context
+// The binding implementation lives outside this package (ADR 0005 keeps @reforce/core
 // free of any schema vocabulary): the runtime only sees an opaque phase that either yields
 // one instance per declared config or reports value-free issues.
 export interface GeneratedConfigBinding {

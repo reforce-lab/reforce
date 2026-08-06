@@ -36,7 +36,7 @@ async function linkPackage(
 
 export async function linkApplicationPackages(projectRoot: string): Promise<void> {
   await Promise.all([
-    linkPackage(projectRoot, "@reforce/context", path.join(repositoryRoot, "packages", "context")),
+    linkPackage(projectRoot, "@reforce/core", path.join(repositoryRoot, "packages", "core")),
     linkPackage(
       projectRoot,
       "@types/node",
@@ -84,7 +84,7 @@ export async function addQualifiedSelectionProbe(projectRoot: string): Promise<v
   await writeFile(
     path.join(projectRoot, "src", "qualified-selection.ts"),
     [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import type { DefaultPort, UniquePort } from "@/providers";',
       "",
       "@Injectable()",

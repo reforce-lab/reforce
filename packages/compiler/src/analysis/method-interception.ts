@@ -84,7 +84,7 @@ function methodMarkerDeclarationOf(
     return undefined;
   }
   const callee = linker.resolveEntity(source, initializer.callee);
-  if (callee?.kind !== "context" || callee.name !== "defineMethodMarker") {
+  if (callee?.kind !== "core" || callee.name !== "defineMethodMarker") {
     return undefined;
   }
   if (
@@ -350,7 +350,7 @@ interface InterceptorBinding {
   readonly contract: LinkedSymbol;
 }
 
-function contextDecoratorsNamed(
+function coreDecoratorsNamed(
   source: ParsedSource,
   decorators: readonly DecoratorUse[],
   name: string,
@@ -361,7 +361,7 @@ function contextDecoratorsNamed(
       return false;
     }
     const symbol = linker.resolveEntity(source, decorator.callee);
-    return symbol?.kind === "context" && symbol.name === name;
+    return symbol?.kind === "core" && symbol.name === name;
   });
 }
 
@@ -541,7 +541,7 @@ function interceptorBindingOf(
   providerById: ReadonlyMap<string, ProviderModel>,
   diagnostics: CompilerDiagnostic[],
 ): InterceptorBinding | undefined {
-  const decorators = contextDecoratorsNamed(source, declaration.decorators, "Interceptor", linker);
+  const decorators = coreDecoratorsNamed(source, declaration.decorators, "Interceptor", linker);
   const first = decorators.at(0);
   if (first === undefined) {
     return undefined;
@@ -612,7 +612,7 @@ function reportMethodLevelInterceptorUses(
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): void {
-  const misplaced = contextDecoratorsNamed(source, method.decorators, "Interceptor", linker).at(0);
+  const misplaced = coreDecoratorsNamed(source, method.decorators, "Interceptor", linker).at(0);
   if (misplaced !== undefined) {
     report(
       diagnostics,

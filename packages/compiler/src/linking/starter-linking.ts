@@ -133,7 +133,7 @@ function collectDefineApplicationSites(
     const record = recordFor(source);
     for (const declaration of source.unit.applicationDefinitions) {
       const callee = resolveCallee(record, declaration.callee);
-      if (callee?.kind === "context" && callee.name === "defineApplication") {
+      if (callee?.kind === "core" && callee.name === "defineApplication") {
         sites.push({ source, record, declaration });
       }
     }

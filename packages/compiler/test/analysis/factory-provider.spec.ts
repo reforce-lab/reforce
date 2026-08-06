@@ -28,12 +28,12 @@ function booleanLiteral(value: boolean): ExpressionValue {
   return { kind: "boolean-literal", value, span: span() };
 }
 
-function contextSymbol(name: string): LinkedSymbol {
+function coreSymbol(name: string): LinkedSymbol {
   return {
-    key: `@reforce/context#${name}`,
-    kind: "context",
+    key: `@reforce/core#${name}`,
+    kind: "core",
     name,
-    moduleSpecifier: "@reforce/context",
+    moduleSpecifier: "@reforce/core",
     generic: false,
   };
 }
@@ -102,7 +102,7 @@ function createLinker(
   input: LinkerInput = {},
 ): ProjectLinker {
   const byName = new Map(symbols.map((symbol) => [symbol.name, symbol]));
-  byName.set("defineBean", contextSymbol("defineBean"));
+  byName.set("defineBean", coreSymbol("defineBean"));
   const diagnostics: CompilerDiagnostic[] = [];
   return {
     diagnostics,

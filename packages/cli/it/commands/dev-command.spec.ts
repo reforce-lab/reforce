@@ -22,7 +22,7 @@ const windowsSignalHarnessPath = fileURLToPath(
 );
 const nodeExecutable = await resolveNodeExecutable();
 const workspaceRoot = resolve("../..");
-const contextRoot = join(workspaceRoot, "packages", "context");
+const coreRoot = join(workspaceRoot, "packages", "core");
 const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 const projects: TemporaryProject[] = [];
@@ -85,7 +85,7 @@ function applicationProjectTree() {
     src: {
       "application.ts": `import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService implements OnContextStart, OnContextClose {
@@ -105,14 +105,14 @@ export class ApplicationService implements OnContextStart, OnContextClose {
 async function createApplicationProject(tree: ProjectTree): Promise<TemporaryProject> {
   const project = await createTemporaryProject(tree);
   projects.push(project);
-  const contextTarget = join(project.projectRoot, "node_modules", "@reforce", "context");
+  const coreTarget = join(project.projectRoot, "node_modules", "@reforce", "core");
   await Promise.all([
-    mkdir(contextTarget, { recursive: true }),
+    mkdir(coreTarget, { recursive: true }),
     mkdir(join(project.projectRoot, "node_modules", "@types"), { recursive: true }),
   ]);
   await Promise.all([
-    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
-    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
+    cp(join(coreRoot, "package.json"), join(coreTarget, "package.json")),
+    cp(join(coreRoot, "dist"), join(coreTarget, "dist"), { recursive: true }),
     symlink(
       nodeTypesRoot,
       join(project.projectRoot, "node_modules", "@types", "node"),
@@ -153,7 +153,7 @@ async function startHmrApplication(): Promise<{
 
 const initialHmrApplicationSource = `import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";
 
 const generation = "one";
 

@@ -36,7 +36,7 @@
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@reforce/config": "workspace:*",
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",

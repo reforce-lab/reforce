@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { Injectable, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextStart } from "@reforce/core";
 import type { FixtureServerConfig } from "@/server-config";
 
 @Injectable()

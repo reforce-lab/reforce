@@ -136,7 +136,7 @@ describe("collection membership and ordering", () => {
   test("all providers of the contract join in beanId order without @Order", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         handlerContract,
         '@Injectable() export class Beta implements PaymentHandler { name(): string { return "beta"; } }',
         '@Injectable() export class Alpha implements PaymentHandler { name(): string { return "alpha"; } }',
@@ -155,7 +155,7 @@ describe("collection membership and ordering", () => {
   test("@Order sorts ascending ahead of unordered members and records itself in the manifest", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, Order } from "@reforce/context";',
+        'import { Injectable, Order } from "@reforce/core";',
         handlerContract,
         // beanId 序为 First < Late < Negative < Unordered；@Order 必须推翻它。
         '@Injectable() @Order(5) export class First implements PaymentHandler { name(): string { return "first"; } }',
@@ -183,7 +183,7 @@ describe("collection membership and ordering", () => {
   test("equal @Order values fall back to beanId order", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable, Order } from "@reforce/context";',
+        'import { Injectable, Order } from "@reforce/core";',
         handlerContract,
         '@Injectable() @Order(1) export class Zulu implements PaymentHandler { name(): string { return "zulu"; } }',
         '@Injectable() @Order(1) export class Alpha implements PaymentHandler { name(): string { return "alpha"; } }',
@@ -201,7 +201,7 @@ describe("collection membership and ordering", () => {
   test("an empty collection is legal and injects no members", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         handlerContract,
         "@Injectable() export class Registry {",
         "  constructor(readonly handlers: readonly PaymentHandler[]) {}",
@@ -215,7 +215,7 @@ describe("collection membership and ordering", () => {
   test("a factory provider joins the collection", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { defineBean, Injectable } from "@reforce/context";',
+        'import { defineBean, Injectable } from "@reforce/core";',
         handlerContract,
         'class Manual implements PaymentHandler { name(): string { return "manual"; } }',
         "export const manualHandler = defineBean<PaymentHandler>({ create: () => new Manual() });",
@@ -234,7 +234,7 @@ describe("collection membership and ordering", () => {
   test("ReadonlyArray<T> is the same collection edge as readonly T[]", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         handlerContract,
         '@Injectable() export class Only implements PaymentHandler { name(): string { return "only"; } }',
         "@Injectable() export class Registry {",
@@ -251,7 +251,7 @@ describe("collection membership and ordering", () => {
   test("a collection member cycling back through its consumer becomes a cycle-proxy member", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         handlerContract,
         "@Injectable() export class Registry {",
         "  constructor(readonly handlers: readonly PaymentHandler[]) {}",
@@ -274,7 +274,7 @@ describe("collection injection diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           handlerContract,
           "@Injectable() export class Registry {",
           "  constructor(readonly handlers: PaymentHandler[]) {}",
@@ -292,7 +292,7 @@ describe("collection injection diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           handlerContract,
           "@Injectable() export class Registry {",
           "  constructor(readonly handlers: Array<PaymentHandler>) {}",
@@ -308,7 +308,7 @@ describe("collection injection diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, type Lazy } from "@reforce/context";',
+          'import { Injectable, type Lazy } from "@reforce/core";',
           handlerContract,
           "@Injectable() export class Registry {",
           "  constructor(readonly handlers: Lazy<readonly PaymentHandler[]>) {}",
@@ -324,7 +324,7 @@ describe("collection injection diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, type Lazy } from "@reforce/context";',
+          'import { Injectable, type Lazy } from "@reforce/core";',
           handlerContract,
           "@Injectable() export class Registry {",
           "  constructor(readonly handlers: readonly Lazy<PaymentHandler>[]) {}",
@@ -340,7 +340,7 @@ describe("collection injection diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, Qualifier } from "@reforce/context";',
+          'import { Injectable, Qualifier } from "@reforce/core";',
           handlerContract,
           '@Injectable() @Qualifier("Manual") export class Manual implements PaymentHandler { name(): string { return "manual"; } }',
           "@Injectable() export class Registry {",
@@ -357,7 +357,7 @@ describe("collection injection diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           handlerContract,
           "@Injectable() export class Registry {",
           "  constructor(readonly handlers: readonly (readonly PaymentHandler[])[]) {}",
@@ -374,7 +374,7 @@ describe("@Order usage diagnostics", () => {
   test("@Order without @Injectable is rejected", async () => {
     const failure = expectFailure(
       await compileSource(
-        ['import { Order } from "@reforce/context";', "@Order(1) export class Plain {}"].join("\n"),
+        ['import { Order } from "@reforce/core";', "@Order(1) export class Plain {}"].join("\n"),
       ),
     );
 
@@ -385,7 +385,7 @@ describe("@Order usage diagnostics", () => {
     const failure = expectFailure(
       await compileSource(
         [
-          'import { Injectable, Order } from "@reforce/context";',
+          'import { Injectable, Order } from "@reforce/core";',
           '@Injectable() @Order("first") export class Text {}',
           "@Injectable() @Order(1.5) export class Fractional {}",
           "@Injectable() @Order() export class Missing {}",
@@ -407,7 +407,7 @@ describe("generated output schema", () => {
   test("collection edges emit resolveAll typed edges under schemaVersion 4", async () => {
     const result = await compileSourceOrThrow(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         handlerContract,
         '@Injectable() export class Only implements PaymentHandler { name(): string { return "only"; } }',
         "@Injectable() export class Registry {",
@@ -486,14 +486,14 @@ describe("starter members", () => {
   function starterApplicationSources(extraRegistrySource = ""): Record<string, string> {
     return {
       "application.ts": [
-        'import { defineApplication } from "@reforce/context";',
+        'import { defineApplication } from "@reforce/core";',
         'import { auditStarter } from "@acme/starter-audit";',
         "",
         "export default defineApplication({ starters: [auditStarter] });",
         "",
       ].join("\n"),
       "registry.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { AuditSink } from "@acme/starter-audit";',
         "",
         "@Injectable()",
@@ -617,14 +617,14 @@ describe("starter beans consuming collection edges", () => {
       node_modules: nodeModulesTree({ "@acme/starter-hub": hubStarter() }),
       src: {
         "application.ts": [
-          'import { defineApplication } from "@reforce/context";',
+          'import { defineApplication } from "@reforce/core";',
           'import { hubStarter } from "@acme/starter-hub";',
           "",
           "export default defineApplication({ starters: [hubStarter] });",
           "",
         ].join("\n"),
         "plugins.ts": [
-          'import { Injectable, Order } from "@reforce/context";',
+          'import { Injectable, Order } from "@reforce/core";',
           'import type { HubPlugin } from "@acme/starter-hub";',
           "",
           pluginSource,
@@ -717,14 +717,14 @@ describe("starter beans consuming collection edges", () => {
       }),
       src: {
         "application.ts": [
-          'import { defineApplication } from "@reforce/context";',
+          'import { defineApplication } from "@reforce/core";',
           'import { hubStarter } from "@acme/starter-hub";',
           "",
           "export default defineApplication({ starters: [hubStarter] });",
           "",
         ].join("\n"),
         "plugins.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { HubPlugin } from "@acme/starter-hub";',
           "",
           "@Injectable()",
@@ -774,7 +774,7 @@ describe("starter beans consuming collection edges", () => {
       }),
       src: {
         "application.ts": [
-          'import { defineApplication } from "@reforce/context";',
+          'import { defineApplication } from "@reforce/core";',
           'import { hubStarter } from "@acme/starter-hub";',
           "",
           "export default defineApplication({ starters: [hubStarter] });",
@@ -795,7 +795,7 @@ describe("generated collection execution", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "application.ts": [
-          'import { Injectable, Order } from "@reforce/context";',
+          'import { Injectable, Order } from "@reforce/core";',
           "export interface PaymentHandler {",
           "  name(): string;",
           "}",

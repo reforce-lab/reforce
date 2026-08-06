@@ -3,7 +3,7 @@ import type {
   BeanClass,
   BeanDefinition,
   RequestScopeSeed,
-} from "@reforce/context";
+} from "@reforce/core";
 import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";

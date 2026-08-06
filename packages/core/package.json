@@ -1,5 +1,5 @@
 {
-  "name": "@reforce/context",
+  "name": "@reforce/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",

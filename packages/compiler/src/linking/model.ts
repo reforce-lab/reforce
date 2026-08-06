@@ -9,7 +9,7 @@ import type { ParsedSource } from "@/project/source-files";
 type LinkedSymbolKind =
   | "class"
   | "interface"
-  | "context"
+  | "core"
   | "config"
   | "web"
   | "transaction"

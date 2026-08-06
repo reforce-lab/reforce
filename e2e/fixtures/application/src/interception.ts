@@ -1,5 +1,5 @@
-import type { ReplacingInterceptHandle } from "@reforce/context";
-import { Injectable, Interceptor } from "@reforce/context";
+import type { ReplacingInterceptHandle } from "@reforce/core";
+import { Injectable, Interceptor } from "@reforce/core";
 import { Controller, Get } from "@reforce/web";
 import { Audited } from "@/method-markers";
 

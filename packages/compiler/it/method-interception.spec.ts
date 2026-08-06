@@ -55,13 +55,13 @@ function failureCodes(result: CompileResult): readonly string[] {
 }
 
 const markerSource = [
-  'import { defineMethodMarker } from "@reforce/context";',
+  'import { defineMethodMarker } from "@reforce/core";',
   'export const Audited = defineMethodMarker<{ label: string }>("audited");',
 ].join("\n");
 
 const auditInterceptorSource = [
-  'import { Injectable, Interceptor } from "@reforce/context";',
-  'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
+  'import { Injectable, Interceptor } from "@reforce/core";',
+  'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";',
   'import { Audited } from "@/markers";',
   "@Interceptor({ marker: Audited })",
   "export class AuditInterceptor implements MethodInterceptor<{ label: string }> {",
@@ -75,7 +75,7 @@ describe("method marker declaration shape (hard error #1)", () => {
   test("rejects a non-const declaration", async () => {
     const result = await compileSources({
       "markers.ts": [
-        'import { defineMethodMarker } from "@reforce/context";',
+        'import { defineMethodMarker } from "@reforce/core";',
         'export let Audited = defineMethodMarker<{ label: string }>("audited");',
       ].join("\n"),
     });
@@ -86,7 +86,7 @@ describe("method marker declaration shape (hard error #1)", () => {
   test("rejects a missing or empty string literal key", async () => {
     const result = await compileSources({
       "markers.ts": [
-        'import { defineMethodMarker } from "@reforce/context";',
+        'import { defineMethodMarker } from "@reforce/core";',
         'export const Audited = defineMethodMarker<{ label: string }>("");',
       ].join("\n"),
     });
@@ -115,7 +115,7 @@ describe("marked bean shape (hard errors #2-#5)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class StaticService {",
@@ -132,7 +132,7 @@ describe("marked bean shape (hard errors #2-#5)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class SyncService {",
@@ -151,7 +151,7 @@ describe("marked bean shape (hard errors #2-#5)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         '@Audited({ label: "class" })',
@@ -170,7 +170,7 @@ describe("marker values (hard errors #6-#7)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class DuplicateService {",
@@ -194,7 +194,7 @@ describe("marker values (hard errors #6-#7)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         'const label = { label: "computed" };',
         "@Injectable()",
@@ -214,7 +214,7 @@ describe("interceptor declarations (hard error #8)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "@Interceptor({ marker: Audited })",
@@ -229,7 +229,7 @@ describe("interceptor declarations (hard error #8)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Interceptor, RequestScoped } from "@reforce/context";',
+        'import { Interceptor, RequestScoped } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@RequestScoped()",
         "@Interceptor({ marker: Audited })",
@@ -244,7 +244,7 @@ describe("interceptor declarations (hard error #8)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         '@Interceptor({ phase: "cache" })',
         "export class MarkerlessInterceptor {}",
       ].join("\n"),
@@ -257,7 +257,7 @@ describe("interceptor declarations (hard error #8)", () => {
     const unknownKey = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Interceptor({ marker: Audited, global: true })",
         "export class UnknownOptionInterceptor {}",
@@ -268,7 +268,7 @@ describe("interceptor declarations (hard error #8)", () => {
     const unknownPhase = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         '@Interceptor({ marker: Audited, phase: "security" })',
         "export class UnknownPhaseInterceptor {}",
@@ -281,7 +281,7 @@ describe("interceptor declarations (hard error #8)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "interceptor.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         "@Injectable()",
         "export class NotAMarker {}",
         "@Interceptor({ marker: NotAMarker })",
@@ -297,7 +297,7 @@ describe("interceptor declarations (hard error #8)", () => {
       "markers.ts": markerSource,
       "interceptor.ts": auditInterceptorSource,
       "service.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class MisplacedService {",
@@ -316,7 +316,7 @@ describe("bean inheritance (hard error #9)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "base.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class BaseService {",
@@ -334,7 +334,7 @@ describe("bean inheritance (hard error #9)", () => {
     const dropped = await compileSources({
       "markers.ts": markerSource,
       "base.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class BaseService {",
@@ -345,7 +345,7 @@ describe("bean inheritance (hard error #9)", () => {
         "}",
       ].join("\n"),
       "child.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { BaseService } from "@/base";',
         "@Injectable()",
         "export class ChildService extends BaseService {",
@@ -369,7 +369,7 @@ describe("bean inheritance (hard error #9)", () => {
     const result = await compileSources({
       "markers.ts": markerSource,
       "base.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
         "export class BaseService {",
@@ -380,7 +380,7 @@ describe("bean inheritance (hard error #9)", () => {
         "}",
       ].join("\n"),
       "child.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { BaseService } from "@/base";',
         'import { Audited } from "@/markers";',
         "@Injectable()",
