@@ -142,6 +142,39 @@ function validateRoutePath(value: unknown, path: string): void {
   }
 }
 
+// 路由形状归一（与 compiler 的 shapeKey 同源，见 analysis/web-routes.ts 的 routePathOf）：参数段
+// 只贡献一个 ":"，参数名不参与区分。这里比编译期多一步过滤空段——编译期的 path 已被
+// literalSegmentPattern 校验过不含空段，而本文件按不可信输入处理，而引擎把 /p、/p/、//p 视作
+// 同一条路由（web-node 走 find-my-way 的 ignoreTrailingSlash / ignoreDuplicateSlashes，#211），
+// 不过滤就漏掉这类等价重复。改归一规则时两侧要同步。
+function routeShapeOf(path: string): string {
+  return path
+    .split("/")
+    .filter((segment) => segment !== "")
+    .map((segment) => (segment.startsWith(":") ? ":" : segment))
+    .join("/");
+}
+
+// 同 method + 同路径形状只能注册一次（#213）：编译期 DUPLICATE_ROUTE 的运行时对位（ADR 0006
+// W1 / #152）。检测放在这一层，所有引擎适配器就共享同一份保证，不必各自依赖底层路由库碰巧
+// 有没有重复检测。硬错而非警告：重复意味着有一个 handler 永远不会被调用，静默失效比启动失败坏。
+function requireUniqueShape(value: unknown, index: number, seen: Map<string, string>): void {
+  const path = `routeTable.routes[${index}]`;
+  const route = requireObject(value, path);
+  // method/path 紧邻的 validateRoute 已验过，这里重取一次是幂等的，换来无断言的窄化
+  const method = requireString(Reflect.get(route, "method"), `${path}.method`);
+  const routePath = requireString(Reflect.get(route, "path"), `${path}.path`);
+  const key = `${method} ${routeShapeOf(routePath)}`;
+  const first = seen.get(key);
+  if (first !== undefined) {
+    fail(
+      `${path} registers ${method} ${routePath}, already registered as ${first}. ` +
+        "Each method + path shape pair may be registered once; parameter names do not disambiguate.",
+    );
+  }
+  seen.set(key, `${method} ${routePath}`);
+}
+
 function validateRoute(value: unknown, path: string): void {
   const route = requireObject(value, path);
   requireExactKeys(
@@ -193,8 +226,10 @@ export function validateGeneratedRouteTable(value: unknown): GeneratedRouteTable
     fail("routeTable.schemaVersion must be 1.");
   }
   const routes = requireArray(Reflect.get(table, "routes"), "routeTable.routes");
+  const shapes = new Map<string, string>();
   for (const [index, route] of routes.entries()) {
     validateRoute(route, `routeTable.routes[${index}]`);
+    requireUniqueShape(route, index, shapes);
   }
   const errorHandlers = requireArray(
     Reflect.get(table, "errorHandlers"),
