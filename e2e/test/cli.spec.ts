@@ -1330,6 +1330,53 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // C6（RFC 0011，#250）：逐 bean 台账。断言的是 debug 明细而不是摘要里那条折叠的
+  // slow beans——触发折叠要一条真的跑满 5ms 的 bean，而单例构造被强制同步返回，那意味着
+  // 忙等，正是要避开的时序 flake。折叠规则由 @reforce/logging 的单测确定性覆盖。
+  test(
+    "streams one per-bean timing record when the framework logger is opened to debug",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "timings-start", false, {
+          LOGGING_LEVEL_REFORCE_WEB: "debug",
+        });
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const timings = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.message === "bean timing");
+        expect(timings.length).toBeGreaterThan(0);
+        expect(timings[0]).toMatchObject({
+          bean: expect.any(String),
+          phase: expect.any(String),
+          ms: expect.any(Number),
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // A2（RFC 0011 L7，#250）：引导期缓冲的重放此前是零调用的——@reforce/config 的绑定警告
   // 只能以进程退出时的裸 stderr 形态出现，进不了用户配置的日志格式与目标。
   //

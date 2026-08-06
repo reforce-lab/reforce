@@ -1,3 +1,9 @@
+export {
+  type BeanTimingLogger,
+  type BeanTimingRecord,
+  beanTimingSections,
+  emitBeanTimings,
+} from "@/bean-timings";
 export { type BootstrapLogBuffer, createBootstrapLogBuffer } from "@/bootstrap-buffer";
 export {
   bootstrapLogger,

@@ -17,7 +17,7 @@ import { schemaOf } from "../support/schemas";
 function contextOf(beans: readonly (readonly [BeanClass, object])[]): ApplicationContext {
   const byTarget = new Map<unknown, object>(beans);
   return {
-    start: () => Promise.resolve(),
+    start: () => Promise.resolve({ beanTimings: [] }),
     get<T extends object>(target: BeanClass<T> | BeanDefinition<T>): T {
       const instance = byTarget.get(target);
       if (instance === undefined) {

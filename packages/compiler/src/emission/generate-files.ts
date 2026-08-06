@@ -1,6 +1,10 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { WeavingModel, WovenBeanModel, WovenMethodModel } from "@/analysis/interception-model";
-import { loggerBeanIdPrefix, webFrameworkLoggerBeanId } from "@/analysis/logger-synthesis";
+import {
+  loggerBeanIdPrefix,
+  webFrameworkLoggerBeanId,
+  webFrameworkLoggerName,
+} from "@/analysis/logger-synthesis";
 import {
   type BeanProviderModel,
   type ConfigProviderModel,
@@ -669,14 +673,15 @@ function contextStartLines(logging: LoggingExports, beanCount: number): readonly
   return [
     "  const startedAt = Date.now();",
     "  const application = createApplicationContext(applicationDefinition);",
-    "  try {",
-    "    await application.start();",
-    "  } catch (error) {",
+    // 写 `.catch` 而不是 try/catch：hoist 出来的 startReport 在 catch 之后会被窄化成
+    // `ContextStartReport | undefined`，读 .beanTimings 过不了 strictNullChecks。回调返回
+    // never，await 出来的类型仍是 ContextStartReport。
+    "  const startReport = await application.start().catch((error) => {",
     // 绑定构造失败时缓冲是唯一的现场。显式排空而不是只靠 exit 兜底：调用方接着要打自己的
     // 错误，那些输出会排在缓冲之前，把因果顺序颠倒过来。
     "    drainBootstrapLogs();",
     "    throw error;",
-    "  }",
+    "  });",
     `  const contextMs = Date.now() - startedAt;`,
     // 重放要 LoggerFactory 而不是 logger：缓冲里的记录各带自己的 logger 名。
     "  replayBootstrapLogs(application.get(loggerFactory));",
@@ -691,10 +696,18 @@ function renderBootstrap(
   beanCount: number,
 ): string {
   const startLines = contextStartLines(logging, beanCount);
+  // 一个条件而不是两个：框架 logger bean 只在有 LoggerFactory 绑定时才被合成
+  // （logger-synthesis 的 `provided !== undefined` 分支），所以「有框架 logger」与
+  // 「摘要可发」是同一件事，两个名字只会让改这三十行的人以为它们能分开。
+  const summarised =
+    web.engines.length > 0 &&
+    logging.frameworkLogger !== undefined &&
+    logging.loggerFactory !== undefined;
   const loggingImportNames = [
-    ...(logging.loggerFactory === undefined
-      ? []
-      : ["drainBootstrapLogs", "emitStartupSummary", "replayBootstrapLogs"]),
+    ...(summarised ? ["beanTimingSections"] : []),
+    ...(logging.loggerFactory === undefined ? [] : ["drainBootstrapLogs"]),
+    ...(summarised ? ["emitBeanTimings"] : []),
+    ...(logging.loggerFactory === undefined ? [] : ["emitStartupSummary", "replayBootstrapLogs"]),
   ];
   const beansImportNames = [
     "applicationDefinition",
@@ -718,7 +731,6 @@ function renderBootstrap(
     ].join("\n")}\n`;
   }
   const seeder = web.requestSeeder;
-  const summarised = logging.frameworkLogger !== undefined && logging.loggerFactory !== undefined;
   const webImportNames = ["connectWebApplication", ...(summarised ? ["webStartupSections"] : [])];
   const imports = [
     `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
@@ -737,13 +749,19 @@ function renderBootstrap(
     `import { routeTable } from "./routes.js";`,
   ];
   const engineList = web.engines.map((_, index) => `webEngine${index}`).join(", ");
-  const hasLogger = logging.frameworkLogger !== undefined;
   return `${[
     ...imports,
     "",
     "export async function bootstrap() {",
     ...startLines,
-    ...(hasLogger ? ["  const frameworkLog = application.get(frameworkLogger);"] : []),
+    ...(summarised
+      ? [
+          "  const frameworkLog = application.get(frameworkLogger);",
+          // 逐 bean 台账走 debug（RFC 0011 C6，#250），与摘要里那条折叠的 slow beans 分开：
+          // 一个是「哪几条慢」的结论，一个是要它时才付钱的全量明细。
+          "  emitBeanTimings({ logger: frameworkLog, timings: startReport.beanTimings });",
+        ]
+      : []),
     "  return await connectWebApplication({",
     "    context: application,",
     "    table: routeTable,",
@@ -751,7 +769,7 @@ function renderBootstrap(
     ...(seeder === undefined ? [] : ["    requestSeeds: webSeeder0,"]),
     // 请求日志与 500 兜底的 logger（RFC 0011 L6，#250）：容器 start 之后才取，取的是框架
     // 自己那条 logger bean。没装任何日志绑定的应用这一行不存在，web 核心照旧不打。
-    ...(hasLogger ? ["    logger: frameworkLog,"] : []),
+    ...(summarised ? ["    logger: frameworkLog,"] : []),
     // 启动摘要的生产者（RFC 0011 D2）：web 侧事实由 connectWebApplication 回调交出，
     // bean 数与 context 耗时只有这里知道，两半在这一处合成。
     ...(summarised
@@ -760,7 +778,10 @@ function renderBootstrap(
           "      emitStartupSummary({",
           "        logger: frameworkLog,",
           "        summary: {",
-          "          sections: webStartupSections(facts, { beanCount, contextMs }),",
+          "          sections: [",
+          "            ...webStartupSections(facts, { beanCount, contextMs }),",
+          `            ...beanTimingSections(startReport.beanTimings, ${JSON.stringify(webFrameworkLoggerName)}),`,
+          "          ],",
           "          startedAt,",
           "          readyAt: Date.now(),",
           "        },",

@@ -11,7 +11,12 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
-import { type CompileSuccess, linkApplicationPackages, linkWebPackage } from "./support/project";
+import {
+  type CompileSuccess,
+  linkApplicationPackages,
+  linkLoggingPackage,
+  linkWebPackage,
+} from "./support/project";
 import {
   nodeModulesTree,
   starterHandleDeclaration,
@@ -39,7 +44,7 @@ async function compileTree(
   tree: ProjectTree,
   // 引擎 starter 的 provides 里有 @reforce/web 的文件坐标（dist/adapter.d.ts#WebEngineAdapter），
   // 那是要落到真实磁盘上解析的，与根导出走 export-binding 短路的装饰器不同。
-  options: { readonly linkWeb?: boolean } = {},
+  options: { readonly linkWeb?: boolean; readonly linkLogging?: boolean } = {},
 ): Promise<{
   readonly project: TemporaryProject;
   readonly result: CompileResult;
@@ -48,6 +53,9 @@ async function compileTree(
   temporaryProjects.push(project);
   if (options.linkWeb === true) {
     await linkWebPackage(project.projectRoot);
+  }
+  if (options.linkLogging === true) {
+    await linkLoggingPackage(project.projectRoot);
   }
   const compiler = createCompiler();
   const resolution = await compiler.resolveProject({ projectDirectory: project.projectRoot });
@@ -1224,6 +1232,82 @@ describe("web engine wiring", () => {
     expect(
       result.watchInputs.fileDependencies.filter((dependency) => dependency.includes("web-engine")),
     ).toEqual([]);
+  });
+
+  // 装了日志绑定的 web 应用是唯一走得到摘要分支的形状：logger-synthesis.spec.ts 的树有
+  // LoggerFactory 没引擎，上面那棵树有引擎没 LoggerFactory，两边都到不了这里。
+  // RFC 0011 的运行期观测项（C6 的台账、后续的崩溃与关停接线）都要对着这棵树断言。
+  const loggerFactorySource = [
+    'import { Injectable } from "@reforce/context";',
+    'import type { Logger, LoggerFactory } from "@reforce/logging";',
+    "",
+    "@Injectable()",
+    "export class TestLoggerFactory implements LoggerFactory {",
+    "  create(name: string): Logger {",
+    "    return {",
+    "      isEnabled: () => true,",
+    "      trace() {},",
+    "      debug() {},",
+    "      info() {},",
+    "      warn() {},",
+    "      error() {},",
+    "      fatal() {},",
+    "    };",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  function compileWebWithLogging() {
+    return compileTree(
+      wiringTree({
+        "application.ts": [
+          'export * from "@/logger-factory";',
+          'import { defineApplication } from "@reforce/context";',
+          'import { webEngine } from "@acme/web-engine";',
+          "export default defineApplication({ starters: [webEngine] });",
+          "",
+        ].join("\n"),
+        "logger-factory.ts": loggerFactorySource,
+        "ping-controller.ts": pingController,
+      }),
+      { linkWeb: true, linkLogging: true },
+    );
+  }
+
+  // C6（RFC 0011，#250）：台账从 start() 的返回值出，生成的 bootstrap 是唯一同时拿得到
+  // 它与框架 logger 的地方。
+  test("the generated bootstrap captures the container's start report", async () => {
+    const { result } = await compileWebWithLogging();
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(generatedContent(result, "bootstrap.ts")).toContain(
+      "const startReport = await application.start()",
+    );
+  });
+
+  test("the generated bootstrap emits the per-bean timing stream at debug", async () => {
+    const { result } = await compileWebWithLogging();
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(generatedContent(result, "bootstrap.ts")).toContain(
+      "emitBeanTimings({ logger: frameworkLog, timings: startReport.beanTimings });",
+    );
+  });
+
+  test("the generated bootstrap folds slow beans into the startup summary", async () => {
+    const { result } = await compileWebWithLogging();
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(generatedContent(result, "bootstrap.ts")).toContain(
+      '...beanTimingSections(startReport.beanTimings, "reforce.web"),',
+    );
   });
 
   // 认导出名的旧判据下，命名不符的引擎是静默失败：bean 无需求方 → 不物化 → 连 manifest
