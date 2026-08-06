@@ -1518,9 +1518,9 @@ async function installStarters(appRoot: string, starters: CompiledStarters): Pro
 }
 
 const starterRegistrationSource = `import { defineApplication } from "@reforce/context";
-import cacheStarter from "@acme/starter-cache/reforce";
+import { cache } from "@acme/starter-cache";
 
-export default defineApplication({ starters: [cacheStarter] });
+export default defineApplication({ starters: [cache] });
 `;
 
 const cacheConfigSource = `import { Injectable } from "@reforce/context";

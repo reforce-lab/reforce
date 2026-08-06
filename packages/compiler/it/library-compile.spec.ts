@@ -11,7 +11,7 @@ import {
   type LibraryGeneratedFile,
 } from "@/index";
 import { applicationTsconfig, type CompileSuccess } from "./support/project";
-import { nodeModulesTree, starterPackage } from "./support/starters";
+import { nodeModulesTree, starterHandleDeclaration, starterPackage } from "./support/starters";
 
 // ADR 0004（#120）M2 生产侧 IT（#147）：reforce lib 复用流水线中段编出 meta，schema 由
 // linking/starter-meta.ts（M1，#145）钉死。闭环用例把编出的 meta 原样装进应用 node_modules 走
@@ -32,7 +32,6 @@ const libraryPackageName = "@acme/starter-redis";
 const defaultExports = {
   ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
   "./client": { types: "./dist/client.d.ts", default: "./dist/client.js" },
-  "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
   "./reforce-meta": "./reforce-meta.json",
 };
 
@@ -79,9 +78,13 @@ const metricsSource = [
 ].join("\n");
 
 const indexSource = [
+  'import { defineStarter } from "@reforce/context";',
+  "",
   'export { RedisClient } from "./client";',
   'export { MetricsPusher } from "./metrics";',
   'export type { Cache, RedisConfig } from "./contracts";',
+  "",
+  "export const redisStarter = defineStarter();",
   "",
 ].join("\n");
 
@@ -135,11 +138,13 @@ const defaultDist: ProjectTree = {
     'export { RedisClient } from "./client.js";',
     'export { MetricsPusher } from "./metrics.js";',
     'export type { Cache, RedisConfig } from "./contracts.js";',
+    starterHandleDeclaration("redisStarter"),
     "",
   ].join("\n"),
   "index.js": [
     'export { RedisClient } from "./client.js";',
     'export { MetricsPusher } from "./metrics.js";',
+    "export const redisStarter = Object.freeze({});",
     "",
   ].join("\n"),
 };
@@ -238,7 +243,7 @@ function beanOf(meta: ParsedMeta, id: string): ParsedMetaBean {
 }
 
 describe("library compile", () => {
-  test("emits meta symbols, beans, and registration handle for a starter library", async () => {
+  test("emits meta symbols and beans for a starter library", async () => {
     const result = expectLibrarySuccess(await compileLibrary(authorTree()));
 
     expect(result.packageName).toBe(libraryPackageName);
@@ -281,9 +286,6 @@ describe("library compile", () => {
     expect(client.source.file).toBe("src/client.ts");
     const clientSpan = clientSource.slice(client.source.start.offset, client.source.end.offset);
     expect(clientSpan).toContain("class RedisClient");
-
-    expect(generatedLibraryFile(result, "reforce.js")).toBe("export default Object.freeze({});\n");
-    expect(generatedLibraryFile(result, "reforce.d.ts")).toContain("StarterDefinition");
   });
 
   test("compiles a starter library whose bean imports a Node.js builtin module", async () => {
@@ -328,7 +330,6 @@ describe("library compile", () => {
           },
           exports: {
             ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-            "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
             "./reforce-meta": "./reforce-meta.json",
           },
         }),
@@ -399,7 +400,6 @@ describe("library compile", () => {
           },
           exports: {
             ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-            "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
             "./reforce-meta": "./reforce-meta.json",
           },
         }),
@@ -468,7 +468,6 @@ describe("library compile", () => {
           },
           exports: {
             ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-            "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
             "./reforce-meta": "./reforce-meta.json",
           },
         }),
@@ -836,7 +835,7 @@ describe("library compile", () => {
 const registrationSource = [
   'import { defineApplication, Injectable } from "@reforce/context";',
   'import type { Cache, RedisConfig } from "@acme/starter-redis";',
-  'import redisStarter from "@acme/starter-redis/reforce";',
+  'import { redisStarter } from "@acme/starter-redis";',
   "",
   "@Injectable()",
   "export class LocalConfig implements RedisConfig {",
@@ -858,13 +857,7 @@ const registrationSource = [
   "",
 ].join("\n");
 
-async function compileApplication(
-  metaBytes: string,
-  handles: {
-    readonly js: string;
-    readonly dts: string;
-  },
-): Promise<CompileSuccess> {
+async function compileApplication(metaBytes: string): Promise<CompileSuccess> {
   const installed: ProjectTree = {
     ...starterPackage({
       name: libraryPackageName,
@@ -874,8 +867,6 @@ async function compileApplication(
       exports: defaultExports,
     }),
     "reforce-meta.json": metaBytes,
-    "reforce.d.ts": handles.dts,
-    "reforce.js": handles.js,
   };
   const project = await createTemporaryProject({
     "tsconfig.json": applicationTsconfig(),
@@ -899,10 +890,6 @@ describe("library compile closed loop", () => {
   test("meta compiled by reforce lib links exactly like the handwritten equivalent", async () => {
     const library = expectLibrarySuccess(await compileLibrary(authorTree()));
     const metaBytes = generatedLibraryFile(library, "reforce-meta.json");
-    const handles = {
-      js: generatedLibraryFile(library, "reforce.js"),
-      dts: generatedLibraryFile(library, "reforce.d.ts"),
-    };
     const produced = parseMeta(library);
 
     // 手写孪生：结构逐字段手写，仅 bean source span 取自产出（span 会进生成物，孪生必须同点位）。
@@ -939,10 +926,9 @@ describe("library compile closed loop", () => {
     };
     expect(produced).toEqual(handwritten);
 
-    const fromProduced = await compileApplication(metaBytes, handles);
+    const fromProduced = await compileApplication(metaBytes);
     const fromHandwritten = await compileApplication(
       `${JSON.stringify(handwritten, undefined, 2)}\n`,
-      handles,
     );
     expect(fromProduced.files).toEqual(fromHandwritten.files);
 

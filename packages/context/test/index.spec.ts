@@ -35,6 +35,7 @@ test("the root entry exposes only the public programming model", () => {
     "defineApplication",
     "defineBean",
     "defineMethodMarker",
+    "defineStarter",
     "interceptPhases",
     "isNestedTransactionManager",
     "transactionIsolationLevels",

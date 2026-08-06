@@ -12,7 +12,13 @@ import {
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 import { type CompileSuccess, linkApplicationPackages, linkWebPackage } from "./support/project";
-import { nodeModulesTree, starterMetaSpan, starterPackage } from "./support/starters";
+import {
+  nodeModulesTree,
+  starterHandleDeclaration,
+  starterHandleRuntime,
+  starterMetaSpan,
+  starterPackage,
+} from "./support/starters";
 
 // web 核心 IT（ADR 0006 W1/W3/W4/W5，#142 / #152）：路由表是编译器的第二种生成物——
 // routes.json 稳定序列化可 diff，routes.ts 是 typed-edge 背书的可执行表。这里钉住：
@@ -1107,6 +1113,7 @@ describe("web engine wiring", () => {
       "  readonly name: string;",
       "  start(application: WebApplication): WebApplicationHandle;",
       "}",
+      starterHandleDeclaration("webEngine"),
       "",
     ].join("\n");
   }
@@ -1125,6 +1132,7 @@ describe("web engine wiring", () => {
       "    };",
       "  }",
       "}",
+      starterHandleRuntime("webEngine"),
       "",
     ].join("\n");
   }
@@ -1165,7 +1173,7 @@ describe("web engine wiring", () => {
         : [`${seeder === "exported" ? "export " : ""}const webRequestSeeder = () => [];`];
     return [
       'import { defineApplication } from "@reforce/context";',
-      'import webEngine from "@acme/web-engine/reforce";',
+      'import { webEngine } from "@acme/web-engine";',
       ...seederLine,
       "export default defineApplication({ starters: [webEngine] });",
       "",

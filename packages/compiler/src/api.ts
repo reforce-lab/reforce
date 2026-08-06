@@ -116,14 +116,15 @@ export interface CompileRequest {
 }
 
 // 库模式（ADR 0004 决策 1/4，#120/#147）：reforce lib 复用流水线中段，不产执行计划与
-// beans.ts/bootstrap.ts；产物是 meta JSON 与 ./reforce 注册 handle 两个文件面。写盘位置由
-// 调用方（CLI/unplugin 插件）决定，exports subpath 是唯一契约。
+// beans.ts/bootstrap.ts；产物只有 meta JSON 这一个文件面——注册 handle 由包作者用
+// defineStarter() 手写在主入口，不再生成。写盘位置由调用方（CLI/unplugin 插件）决定，
+// exports subpath 是唯一契约。
 export interface CompileLibraryRequest {
   readonly project: ResolvedApplicationProject;
 }
 
 export interface LibraryGeneratedFile {
-  readonly path: "reforce-meta.json" | "reforce.d.ts" | "reforce.js";
+  readonly path: "reforce-meta.json";
   readonly content: string;
 }
 

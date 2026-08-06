@@ -8,10 +8,6 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./reforce": {
-      "types": "./reforce.d.ts",
-      "default": "./reforce.js"
-    },
     "./reforce-meta": "./reforce-meta.json"
   },
   "scripts": {

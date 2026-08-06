@@ -73,10 +73,7 @@ afterAll(async () => {
 async function retargetEngine(projectRoot: string, engine: EngineCase): Promise<void> {
   const applicationPath = join(projectRoot, "src", "application.ts");
   const application = await readFile(applicationPath, "utf8");
-  await writeFile(
-    applicationPath,
-    application.replaceAll("@reforce/web-node/reforce", `${engine.packageName}/reforce`),
-  );
+  await writeFile(applicationPath, application.replaceAll("@reforce/web-node", engine.packageName));
   const configPath = join(projectRoot, "src", "web-config.ts");
   const config = await readFile(configPath, "utf8");
   await writeFile(

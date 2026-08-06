@@ -19,6 +19,8 @@ import {
 import {
   contractPackage,
   nodeModulesTree,
+  starterHandleDeclaration,
+  starterHandleRuntime,
   starterMetaSpan,
   starterPackage,
 } from "./support/starters";
@@ -138,6 +140,7 @@ const redisDistDeclaration = [
   "}",
   "export declare class MetricsPusher {}",
   "export declare class OrphanTicker {}",
+  starterHandleDeclaration("redisStarter"),
   "",
 ].join("\n");
 
@@ -152,6 +155,7 @@ const redisDistRuntime = [
   "}",
   "export class MetricsPusher {}",
   "export class OrphanTicker {}",
+  starterHandleRuntime("redisStarter"),
   "",
 ].join("\n");
 
@@ -201,7 +205,7 @@ function redisStarterPackage(
 
 const registrationSource = [
   'import { defineApplication } from "@reforce/context";',
-  'import redisStarter from "@acme/starter-redis/reforce";',
+  'import { redisStarter } from "@acme/starter-redis";',
   "",
   "export default defineApplication({ starters: [redisStarter] });",
   "",
@@ -281,6 +285,7 @@ function competingStarter(options: {
         `export declare class ${options.className} implements Cache {`,
         "  get(key: string): string;",
         "}",
+        starterHandleDeclaration("starter"),
         "",
       ].join("\n"),
       "index.js": [
@@ -289,6 +294,7 @@ function competingStarter(options: {
         `    return "${options.className}:" + key;`,
         "  }",
         "}",
+        starterHandleRuntime("starter"),
         "",
       ].join("\n"),
     },
@@ -310,7 +316,7 @@ function competingRegistrationSource(packageNames: readonly string[]): string {
   return [
     'import { defineApplication } from "@reforce/context";',
     ...packageNames.map(
-      (name, index) => `import starter${index} from ${JSON.stringify(`${name}/reforce`)};`,
+      (name, index) => `import { starter as starter${index} } from ${JSON.stringify(name)};`,
     ),
     "",
     `export default defineApplication({ starters: [${packageNames
@@ -574,6 +580,7 @@ describe("starter linking semantics", () => {
           "  constructor(cache: Cache);",
           "  read(key: string): string;",
           "}",
+          starterHandleDeclaration("starter"),
           "",
         ].join("\n"),
         "index.js": [
@@ -585,6 +592,7 @@ describe("starter linking semantics", () => {
           "    return this.cache.get(key);",
           "  }",
           "}",
+          starterHandleRuntime("starter"),
           "",
         ].join("\n"),
       },
@@ -660,7 +668,7 @@ describe("defineApplication reading", () => {
   test("rejects a non-literal starters option", async () => {
     const source = [
       'import { defineApplication } from "@reforce/context";',
-      'import redisStarter from "@acme/starter-redis/reforce";',
+      'import { redisStarter } from "@acme/starter-redis";',
       "",
       "const starters = [redisStarter];",
       "export default defineApplication({ starters });",
@@ -680,8 +688,7 @@ describe("defineApplication reading", () => {
   test("rejects duplicate starter registration", async () => {
     const source = [
       'import { defineApplication } from "@reforce/context";',
-      'import redisStarter from "@acme/starter-redis/reforce";',
-      'import redisAgain from "@acme/starter-redis/reforce";',
+      'import { redisStarter, redisStarter as redisAgain } from "@acme/starter-redis";',
       "",
       "export default defineApplication({ starters: [redisStarter, redisAgain] });",
       "",
@@ -720,7 +727,7 @@ describe("defineApplication reading", () => {
   test("reports STARTER_META_NOT_FOUND for an unresolvable starter package", async () => {
     const source = [
       'import { defineApplication } from "@reforce/context";',
-      'import missingStarter from "@acme/missing/reforce";',
+      'import { missingStarter } from "@acme/missing";',
       "",
       "export default defineApplication({ starters: [missingStarter] });",
       "",
@@ -736,10 +743,7 @@ describe("defineApplication reading", () => {
       name: "@acme/starter-redis",
       meta: redisMeta(),
       dist: { "index.d.ts": redisDistDeclaration, "index.js": redisDistRuntime },
-      exports: {
-        ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-        "./reforce": { types: "./reforce.d.ts", default: "./reforce.js" },
-      },
+      exports: { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } },
     });
     const { result } = await compile(
       applicationTree({ "application.ts": registrationSource }, { "@acme/starter-redis": bare }),

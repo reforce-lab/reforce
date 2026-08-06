@@ -12,7 +12,13 @@ import {
 import { afterEach, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
 import { type CompileSuccess, linkApplicationPackages, linkConfigPackage } from "./support/project";
-import { nodeModulesTree, starterMetaSpan, starterPackage } from "./support/starters";
+import {
+  nodeModulesTree,
+  starterHandleDeclaration,
+  starterHandleRuntime,
+  starterMetaSpan,
+  starterPackage,
+} from "./support/starters";
 
 // ADR 0005（#130）配置绑定的编译器语义 IT（#146）：识别 extends 位置的 ConfigProperties
 // 直接调用、prefix 字面量与唯一性、子类形状约束、装饰器/Lazy 组合硬错、括号/条件/中间变量
@@ -456,6 +462,7 @@ const redisDistDeclaration = [
   "  constructor(settings: RedisSettings);",
   "  address(): string;",
   "}",
+  starterHandleDeclaration("redisStarter"),
   "",
 ].join("\n");
 
@@ -468,6 +475,7 @@ const redisDistRuntime = [
   "    return this.settings.url;",
   "  }",
   "}",
+  starterHandleRuntime("redisStarter"),
   "",
 ].join("\n");
 
@@ -509,7 +517,7 @@ function redisStarterPackage(): ProjectTree {
 
 const registrationSource = [
   'import { defineApplication } from "@reforce/context";',
-  'import redisStarter from "@acme/starter-redis/reforce";',
+  'import { redisStarter } from "@acme/starter-redis";',
   "",
   "export const application = defineApplication({ starters: [redisStarter] });",
   "",
