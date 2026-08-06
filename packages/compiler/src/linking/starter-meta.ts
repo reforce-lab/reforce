@@ -68,6 +68,8 @@ export interface StarterMetaSymbol {
 export interface StarterMetaDependency {
   readonly contract: string;
   readonly open: boolean;
+  // 构造参数是 readonly T[]：该契约的全部候选按集合语义注入（零成员合法）。
+  readonly collection: boolean;
 }
 
 export interface StarterMetaBean {
@@ -170,18 +172,25 @@ function parseSymbol(value: unknown, packageName: string): StarterMetaSymbol | s
   return { id, exportName: coordinate.exportName, file, subpaths: subpaths.map(String) };
 }
 
+// collection 是可选键（#228）：省略即单边，老 meta 一字不改仍然合法。反过来不成立——schemaVersion
+// 是 `!== 1` 硬拒（parseStarterMeta），没有 minor 概念，带 collection 键的新 meta 被旧编译器
+// 读到会在这里落 INVALID_STARTER_META。仓内单版本可接受，对外发版前要连同 #162 的
+// schemaVersion 归零一起处理。
 function parseDependency(value: unknown, beanId: string): StarterMetaDependency | string {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["contract", "open"])) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["contract", "open"], ["collection"])) {
     return `bean ${beanId} dependencies entries must have exactly contract and open`;
   }
-  const { contract, open } = value;
+  const { contract, open, collection } = value;
   if (typeof contract !== "string" || parseContractCoordinate(contract) === undefined) {
     return `bean ${beanId} dependency contract must be a symbol coordinate`;
   }
   if (typeof open !== "boolean") {
     return `bean ${beanId} dependency open must be a boolean`;
   }
-  return { contract, open };
+  if (collection !== undefined && typeof collection !== "boolean") {
+    return `bean ${beanId} dependency collection must be a boolean`;
+  }
+  return { contract, open, collection: collection === true };
 }
 
 function parseLifecycle(value: unknown, beanId: string): StarterMetaBean["lifecycle"] | string {

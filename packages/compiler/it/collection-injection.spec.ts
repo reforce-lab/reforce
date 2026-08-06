@@ -550,6 +550,235 @@ describe("starter members", () => {
   });
 });
 
+// starter bean 自己吃集合边（#228，meta 的 dependencies[].collection）。这是 starter 声明"用户
+// 可以提供 0..N 个实现"的唯一形态：单边下用户不写实现就是 MISSING_BEAN，starter 因此表达
+// 不了 configurer / route customizer 这类可选扩展点。
+describe("starter beans consuming collection edges", () => {
+  const hubDistDeclaration = [
+    "export interface HubPlugin {",
+    "  name(): string;",
+    "}",
+    "export declare class Hub {",
+    "  constructor(plugins: readonly HubPlugin[]);",
+    "}",
+    "",
+  ].join("\n");
+
+  const hubDistRuntime = [
+    "export class Hub {",
+    "  constructor(plugins) {",
+    "    this.plugins = plugins;",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+  // role: "root" 让 Hub 无需应用侧需求方就物化——引擎 bean 走的是 demandedBeanIds 那条等价通道。
+  function hubStarter(): ProjectTree {
+    return starterPackage({
+      name: "@acme/starter-hub",
+      meta: {
+        schemaVersion: 1,
+        starterDeps: [],
+        symbols: [
+          { id: "@acme/starter-hub#Hub", file: "dist/index.d.ts", subpaths: ["."] },
+          { id: "@acme/starter-hub#HubPlugin", file: "dist/index.d.ts", subpaths: ["."] },
+        ],
+        beans: [
+          {
+            id: "@acme/starter-hub#Hub",
+            runtimeExport: { module: "@acme/starter-hub", export: "Hub" },
+            provides: ["@acme/starter-hub#Hub"],
+            dependencies: [
+              { contract: "@acme/starter-hub#HubPlugin", open: true, collection: true },
+            ],
+            role: "root",
+            source: starterMetaSpan("src/hub.ts"),
+          },
+        ],
+      },
+      dist: { "index.d.ts": hubDistDeclaration, "index.js": hubDistRuntime },
+    });
+  }
+
+  async function compileHubApplication(pluginSource: string): Promise<CompileResult> {
+    const { result } = await compileTree({
+      "tsconfig.json": applicationTsconfig(),
+      node_modules: nodeModulesTree({ "@acme/starter-hub": hubStarter() }),
+      src: {
+        "application.ts": [
+          'import { defineApplication } from "@reforce/context";',
+          'import hubStarter from "@acme/starter-hub/reforce";',
+          "",
+          "export default defineApplication({ starters: [hubStarter] });",
+          "",
+        ].join("\n"),
+        "plugins.ts": [
+          'import { Injectable, Order } from "@reforce/context";',
+          'import type { HubPlugin } from "@acme/starter-hub";',
+          "",
+          pluginSource,
+          "",
+        ].join("\n"),
+      },
+    });
+    return result;
+  }
+
+  // 这条是两座桥能成立的全部理由：用户一个实现都不写，也必须编译通过
+  test("a starter collection edge with no implementation injects an empty array", async () => {
+    const result = await compileHubApplication("export const unused = 0;");
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(collectionMembers(result, "@acme/starter-hub#Hub", 0)).toEqual([]);
+  });
+
+  test("local implementations join the starter collection in @Order then beanId order", async () => {
+    const result = await compileHubApplication(
+      [
+        "@Injectable()",
+        "export class ZebraPlugin implements HubPlugin {",
+        '  name(): string { return "zebra"; }',
+        "}",
+        "",
+        "@Injectable()",
+        "@Order(-1)",
+        "export class LatePlugin implements HubPlugin {",
+        '  name(): string { return "late"; }',
+        "}",
+        "",
+        "@Injectable()",
+        "export class AlphaPlugin implements HubPlugin {",
+        '  name(): string { return "alpha"; }',
+        "}",
+      ].join("\n"),
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    expect(collectionMembers(result, "@acme/starter-hub#Hub", 0).map((m) => m.targetId)).toEqual([
+      "src/plugins.ts#LatePlugin",
+      "src/plugins.ts#AlphaPlugin",
+      "src/plugins.ts#ZebraPlugin",
+    ]);
+  });
+
+  // 老 meta 一字不改仍然合法：省略 collection 键即单边
+  test("a dependency entry without the collection key stays a single edge", async () => {
+    const { result } = await compileTree({
+      "tsconfig.json": applicationTsconfig(),
+      node_modules: nodeModulesTree({
+        "@acme/starter-hub": starterPackage({
+          name: "@acme/starter-hub",
+          meta: {
+            schemaVersion: 1,
+            starterDeps: [],
+            symbols: [
+              { id: "@acme/starter-hub#Hub", file: "dist/index.d.ts", subpaths: ["."] },
+              { id: "@acme/starter-hub#HubPlugin", file: "dist/index.d.ts", subpaths: ["."] },
+            ],
+            beans: [
+              {
+                id: "@acme/starter-hub#Hub",
+                runtimeExport: { module: "@acme/starter-hub", export: "Hub" },
+                provides: ["@acme/starter-hub#Hub"],
+                dependencies: [{ contract: "@acme/starter-hub#HubPlugin", open: true }],
+                role: "root",
+                source: starterMetaSpan("src/hub.ts"),
+              },
+            ],
+          },
+          dist: {
+            "index.d.ts": [
+              "export interface HubPlugin {",
+              "  name(): string;",
+              "}",
+              "export declare class Hub {",
+              "  constructor(plugin: HubPlugin);",
+              "}",
+              "",
+            ].join("\n"),
+            "index.js": hubDistRuntime,
+          },
+        }),
+      }),
+      src: {
+        "application.ts": [
+          'import { defineApplication } from "@reforce/context";',
+          'import hubStarter from "@acme/starter-hub/reforce";',
+          "",
+          "export default defineApplication({ starters: [hubStarter] });",
+          "",
+        ].join("\n"),
+        "plugins.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import type { HubPlugin } from "@acme/starter-hub";',
+          "",
+          "@Injectable()",
+          "export class OnlyPlugin implements HubPlugin {",
+          '  name(): string { return "only"; }',
+          "}",
+          "",
+        ].join("\n"),
+      },
+    });
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    const [dependency] = manifestBean(result, "@acme/starter-hub#Hub").dependencies;
+    expect(dependency).toMatchObject({
+      parameterIndex: 0,
+      targetId: "src/plugins.ts#OnlyPlugin",
+      mode: "eager",
+    });
+  });
+
+  test("a non-boolean collection key is rejected as invalid starter meta", async () => {
+    const { result } = await compileTree({
+      "tsconfig.json": applicationTsconfig(),
+      node_modules: nodeModulesTree({
+        "@acme/starter-hub": starterPackage({
+          name: "@acme/starter-hub",
+          meta: {
+            schemaVersion: 1,
+            starterDeps: [],
+            symbols: [{ id: "@acme/starter-hub#Hub", file: "dist/index.d.ts", subpaths: ["."] }],
+            beans: [
+              {
+                id: "@acme/starter-hub#Hub",
+                runtimeExport: { module: "@acme/starter-hub", export: "Hub" },
+                provides: ["@acme/starter-hub#Hub"],
+                dependencies: [
+                  { contract: "@acme/starter-hub#HubPlugin", open: true, collection: "yes" },
+                ],
+                source: starterMetaSpan("src/hub.ts"),
+              },
+            ],
+          },
+          dist: { "index.d.ts": hubDistDeclaration, "index.js": hubDistRuntime },
+        }),
+      }),
+      src: {
+        "application.ts": [
+          'import { defineApplication } from "@reforce/context";',
+          'import hubStarter from "@acme/starter-hub/reforce";',
+          "",
+          "export default defineApplication({ starters: [hubStarter] });",
+          "",
+        ].join("\n"),
+      },
+    });
+
+    expect(expectFailure(result).diagnostics.map((item) => item.code)).toContain(
+      "INVALID_STARTER_META",
+    );
+  });
+});
+
 describe("generated collection execution", () => {
   test("the generated definition typechecks and injects the ordered readonly array", async () => {
     const project = await createTemporaryProject({

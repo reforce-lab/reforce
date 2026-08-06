@@ -29,12 +29,20 @@ afterAll(async () => {
   await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
 });
 
-async function compileTree(tree: ProjectTree): Promise<{
+async function compileTree(
+  tree: ProjectTree,
+  // 引擎 starter 的 provides 里有 @reforce/web 的文件坐标（dist/adapter.d.ts#WebEngineAdapter），
+  // 那是要落到真实磁盘上解析的，与根导出走 export-binding 短路的装饰器不同。
+  options: { readonly linkWeb?: boolean } = {},
+): Promise<{
   readonly project: TemporaryProject;
   readonly result: CompileResult;
 }> {
   const project = await createTemporaryProject(tree);
   temporaryProjects.push(project);
+  if (options.linkWeb === true) {
+    await linkWebPackage(project.projectRoot);
+  }
   const compiler = createCompiler();
   const resolution = await compiler.resolveProject({ projectDirectory: project.projectRoot });
   if (resolution.status === "failure") {
@@ -1064,18 +1072,25 @@ describe("full chain over a fake adapter", () => {
 // "WebEngine" 的 starter bean 即引擎——bootstrap 是它的需求方（无需 role:"root"），
 // 生成的 bootstrap 把路由表与容器交给 connectWebApplication，close 先排空引擎再走容器关闭序。
 describe("web engine wiring", () => {
-  function webEngineStarter(dist: ProjectTree): ProjectTree {
+  // 引擎身份认的是 provides 里的 WebEngineAdapter 契约，不是导出名（见 web-model.ts）。
+  // exportName 可变就是为了让"命名不是 WebEngine 的引擎"成为可测形态。
+  function webEngineStarter(dist: ProjectTree, exportName = "WebEngine"): ProjectTree {
     return starterPackage({
       name: "@acme/web-engine",
       meta: {
         schemaVersion: 1,
         starterDeps: [],
-        symbols: [{ id: "@acme/web-engine#WebEngine", file: "dist/index.d.ts", subpaths: ["."] }],
+        symbols: [
+          { id: `@acme/web-engine#${exportName}`, file: "dist/index.d.ts", subpaths: ["."] },
+        ],
         beans: [
           {
-            id: "@acme/web-engine#WebEngine",
-            runtimeExport: { module: "@acme/web-engine", export: "WebEngine" },
-            provides: ["@acme/web-engine#WebEngine"],
+            id: `@acme/web-engine#${exportName}`,
+            runtimeExport: { module: "@acme/web-engine", export: exportName },
+            provides: [
+              `@acme/web-engine#${exportName}`,
+              "@reforce/web:dist/adapter.d.ts#WebEngineAdapter",
+            ],
             dependencies: [],
             source: starterMetaSpan("src/engine.ts"),
           },
@@ -1085,40 +1100,47 @@ describe("web engine wiring", () => {
     });
   }
 
-  const engineDeclaration = [
-    'import type { WebApplication, WebApplicationHandle } from "@reforce/web/adapter";',
-    "export declare class WebEngine {",
-    "  readonly name: string;",
-    "  start(application: WebApplication): WebApplicationHandle;",
-    "}",
-    "",
-  ].join("\n");
+  function engineDeclaration(exportName = "WebEngine"): string {
+    return [
+      'import type { WebApplication, WebApplicationHandle } from "@reforce/web/adapter";',
+      `export declare class ${exportName} {`,
+      "  readonly name: string;",
+      "  start(application: WebApplication): WebApplicationHandle;",
+      "}",
+      "",
+    ].join("\n");
+  }
 
-  const engineRuntime = [
-    "export class WebEngine {",
-    '  name = "fake-engine";',
-    "  start(application) {",
-    '    globalThis.__wiring.push("engine:start:" + application.routes.length);',
-    "    return {",
-    "      close: () => {",
-    '        globalThis.__wiring.push("engine:close");',
-    "        return Promise.resolve();",
-    "      },",
-    "    };",
-    "  }",
-    "}",
-    "",
-  ].join("\n");
+  function engineRuntime(exportName = "WebEngine"): string {
+    return [
+      `export class ${exportName} {`,
+      '  name = "fake-engine";',
+      "  start(application) {",
+      '    globalThis.__wiring.push("engine:start:" + application.routes.length);',
+      "    return {",
+      "      close: () => {",
+      '        globalThis.__wiring.push("engine:close");',
+      "        return Promise.resolve();",
+      "      },",
+      "    };",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+  }
 
-  function wiringTree(sources: Record<string, string>): ProjectTree {
+  function wiringTree(sources: Record<string, string>, exportName = "WebEngine"): ProjectTree {
     return {
       "tsconfig.json": webApplicationTsconfig(),
       src: sources,
       node_modules: nodeModulesTree({
-        "@acme/web-engine": webEngineStarter({
-          "index.js": engineRuntime,
-          "index.d.ts": engineDeclaration,
-        }),
+        "@acme/web-engine": webEngineStarter(
+          {
+            "index.js": engineRuntime(exportName),
+            "index.d.ts": engineDeclaration(exportName),
+          },
+          exportName,
+        ),
       }),
     };
   }
@@ -1156,6 +1178,7 @@ describe("web engine wiring", () => {
         "application.ts": applicationSource("exported"),
         "ping-controller.ts": pingController,
       }),
+      { linkWeb: true },
     );
     if (result.status === "failure") {
       throw new Error(JSON.stringify(result.diagnostics));
@@ -1195,13 +1218,40 @@ describe("web engine wiring", () => {
     ).toEqual([]);
   });
 
+  // 认导出名的旧判据下，命名不符的引擎是静默失败：bean 无需求方 → 不物化 → 连 manifest
+  // 都进不去，bootstrap 完全不含 connectWebApplication，零诊断、routes.json 照常产出、
+  // 应用能起、端口永不监听。
+  test("an engine bean whose export is not named WebEngine still wires the bootstrap", async () => {
+    const { result } = await compileTree(
+      wiringTree(
+        {
+          "application.ts": applicationSource("missing"),
+          "ping-controller.ts": pingController,
+        },
+        "HonoEngine",
+      ),
+      { linkWeb: true },
+    );
+    if (result.status === "failure") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+
+    const bootstrap = generatedContent(result, "bootstrap.ts");
+    expect(bootstrap).toContain('import { HonoEngine as webEngine0 } from "@acme/web-engine";');
+    expect(bootstrap).toContain("engines: [webEngine0],");
+    const manifest = JSON.parse(generatedContent(result, "manifest.json")) as {
+      beans: readonly { id: string }[];
+    };
+    expect(manifest.beans.map((bean) => bean.id)).toContain("@acme/web-engine#HonoEngine");
+  });
+
   test("the same wiring compiles to byte-identical bootstrap output", async () => {
     const tree = wiringTree({
       "application.ts": applicationSource("exported"),
       "ping-controller.ts": pingController,
     });
-    const first = await compileTree(tree);
-    const second = await compileTree(tree);
+    const first = await compileTree(tree, { linkWeb: true });
+    const second = await compileTree(tree, { linkWeb: true });
     if (first.result.status === "failure" || second.result.status === "failure") {
       throw new Error("Expected both compilations to succeed");
     }
@@ -1217,6 +1267,7 @@ describe("web engine wiring", () => {
         "application.ts": applicationSource("missing"),
         "ping-controller.ts": pingController,
       }),
+      { linkWeb: true },
     );
     if (result.status === "failure") {
       throw new Error(JSON.stringify(result.diagnostics));
@@ -1234,6 +1285,7 @@ describe("web engine wiring", () => {
         "application.ts": applicationSource("unexported"),
         "ping-controller.ts": pingController,
       }),
+      { linkWeb: true },
     );
 
     expect(failureCodes(result)).toContain("INVALID_WEB_REQUEST_SEEDER");
@@ -1244,6 +1296,7 @@ describe("web engine wiring", () => {
       wiringTree({
         "application.ts": applicationSource("missing"),
       }),
+      { linkWeb: true },
     );
     if (result.status === "failure") {
       throw new Error(JSON.stringify(result.diagnostics));
@@ -1276,12 +1329,13 @@ describe("web engine wiring", () => {
           "",
         ].join("\n"),
       }),
+      { linkWeb: true },
     );
     if (result.status === "failure") {
       throw new Error(JSON.stringify(result.diagnostics));
     }
+    // @reforce/web 已由 compileTree 的 linkWeb 在编译前链好，这里只补运行时其余依赖
     await linkApplicationPackages(project.projectRoot);
-    await linkWebPackage(project.projectRoot);
     const generatedDirectory = path.join(project.projectRoot, ".reforce", "generated");
     await mkdir(generatedDirectory, { recursive: true });
     await Promise.all(
