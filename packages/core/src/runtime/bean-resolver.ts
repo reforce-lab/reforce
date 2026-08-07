@@ -4,7 +4,7 @@ import {
   BeanCreationError,
   EarlyBeanAccessError,
   InvalidGeneratedDefinitionError,
-  ReforceRuntimeError,
+  ReforceError,
   RequestContextMissingError,
   UnregisteredBeanTargetError,
 } from "@/errors";
@@ -96,8 +96,8 @@ export class BeanResolver {
     }
   }
 
-  normalizeStartupError(error: unknown): ReforceRuntimeError {
-    if (error instanceof ReforceRuntimeError) {
+  normalizeStartupError(error: unknown): ReforceError {
+    if (error instanceof ReforceError) {
       return error;
     }
     return new BeanCreationError({

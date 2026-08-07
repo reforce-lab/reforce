@@ -22,12 +22,14 @@ export {
   BeanLifecycleError,
   ConfigBindingError,
   type ConfigBindingIssue,
+  type CoreErrorCode,
   EarlyBeanAccessError,
   InterceptorReenteredError,
   InvalidGeneratedDefinitionError,
-  ReforceRuntimeError,
+  isReforceError,
+  ReforceError,
+  type ReforceErrorOptions,
   RequestContextMissingError,
-  type RuntimeErrorCode,
   UnregisteredBeanTargetError,
 } from "@/errors";
 export {

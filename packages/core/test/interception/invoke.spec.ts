@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { InterceptorReenteredError, ReforceRuntimeError } from "@/errors";
+import { InterceptorReenteredError, ReforceError } from "@/errors";
 import type {
   MethodInterceptor,
   MethodInvocationContext,
@@ -239,7 +239,7 @@ describe("invokeIntercepted", () => {
   });
 
   // 兜底拦截器吞掉框架护栏是本仓最贵的静默失败（#202 定案 2 配套纪律）：错误归队成
-  // ReforceRuntimeError 之后，拦截器契约注释里那条 instanceof 放行才写得出来。裸 Error 时代
+  // ReforceError 之后，拦截器契约注释里那条 instanceof 放行才写得出来。裸 Error 时代
   // 这条用例会得到 "fallback" 而不是 reject。
   const fallbackOnBusinessFailure: ReplacingMethodInterceptor<MethodMetaValue | undefined, string> =
     {
@@ -247,7 +247,7 @@ describe("invokeIntercepted", () => {
         try {
           return await next();
         } catch (error) {
-          if (error instanceof ReforceRuntimeError) {
+          if (error instanceof ReforceError) {
             throw error;
           }
           return "fallback";

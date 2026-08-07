@@ -10,6 +10,7 @@ import {
   toPortablePath,
 } from "@reforce/primitives";
 import { isObject } from "radashi";
+import { ReforceCliError } from "@/errors";
 import { hasExactKeys } from "@/project/exact-keys";
 import { isMissingPathError, pathExists } from "@/project/fs-error";
 import { validateGeneratedManifestBytes } from "@/project/generated-manifest";
@@ -177,12 +178,13 @@ class FifoMutex {
   }
 }
 
-export class DirectoryTransactionError extends Error {
+export class DirectoryTransactionError extends ReforceCliError<
+  "GENERATED_TRANSACTION_FAILED" | "DIST_TRANSACTION_FAILED"
+> {
   readonly code: "GENERATED_TRANSACTION_FAILED" | "DIST_TRANSACTION_FAILED";
 
   constructor(kind: TransactionKind, message: string, options: { readonly cause?: unknown } = {}) {
     super(message, options);
-    this.name = "DirectoryTransactionError";
     this.code = kind === "generated" ? "GENERATED_TRANSACTION_FAILED" : "DIST_TRANSACTION_FAILED";
   }
 }

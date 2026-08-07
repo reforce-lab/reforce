@@ -141,13 +141,15 @@ export class DevCommandController {
   }
 }
 
+// busy 只决定 phase 与 message；PROJECT_BUSY 这个码由 createFailureEvent 从 ProjectBusyError
+// 自身读出（ADR 0013 决议 4，#280）。
 function reportCommandFailure(reporter: Reporter, error: unknown): void {
   const busy = error instanceof ProjectBusyError;
   reporter.report(
     createFailureEvent({
       command: "dev",
       phase: busy ? "project" : "build",
-      fallbackCode: busy ? "PROJECT_BUSY" : "BUILD_FAILED",
+      fallbackCode: "BUILD_FAILED",
       message: busy ? error.message : "Development command failed.",
       cause: error,
     }),

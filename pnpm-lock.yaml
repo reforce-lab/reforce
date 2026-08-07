@@ -172,6 +172,9 @@ importers:
       '@reforce/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@reforce/core':
+        specifier: workspace:*
+        version: link:../core
       '@reforce/primitives':
         specifier: workspace:*
         version: link:../primitives

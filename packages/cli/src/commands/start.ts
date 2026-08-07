@@ -76,12 +76,13 @@ async function resolveProjectRoot(projectDirectory: string): Promise<string> {
 }
 
 function reportStartFailure(reporter: Reporter, error: unknown): void {
+  // 同 build.ts：分支只决定 phase 与 message，code 由 createFailureEvent 从错误自身读出。
   if (error instanceof ProjectBusyError) {
     reporter.report(
       createFailureEvent({
         command: "start",
         phase: "project",
-        fallbackCode: "PROJECT_BUSY",
+        fallbackCode: "CHILD_FAILED",
         message: error.message,
         cause: error,
       }),
@@ -93,7 +94,7 @@ function reportStartFailure(reporter: Reporter, error: unknown): void {
       createFailureEvent({
         command: "start",
         phase: "build",
-        fallbackCode: "ARTIFACT_INVALID",
+        fallbackCode: "CHILD_FAILED",
         message: error.message,
         cause: error,
       }),
