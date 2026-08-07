@@ -19,10 +19,12 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
-    }
+    },
+    "./reforce-meta": "./reforce-meta.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "reforce-meta.json"
   ],
   "scripts": {
     "build": "rslib build",
@@ -32,6 +34,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
+    "@reforce/context": "workspace:*",
     "@reforce/runtime": "workspace:*",
     "@swc/helpers": "catalog:"
   },

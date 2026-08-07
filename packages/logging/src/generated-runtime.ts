@@ -1,4 +1,7 @@
-import type { LogFields, Logger, LoggerFactory, LogLevel } from "@/contracts";
+import type { LogFieldSource, LogFields, Logger, LoggerFactory, LogLevel } from "@/contracts";
+import { DefaultLoggerFactory } from "@/default-logger";
+import type { LoggerLevels } from "@/levels";
+import type { LoggingSettings } from "@/settings";
 
 // 生成的 bootstrap 的消费面（RFC 0011 L7/D2，#250）：容器 start 之后重放引导期缓冲、
 // 绑定构造失败时把缓冲吐到 stderr、以及发出启动摘要。
@@ -6,6 +9,20 @@ export { beanTimingSections, contextStartupSections, emitBeanTimings } from "@/b
 export { drainBootstrapLogs, replayBootstrapLogs } from "@/bootstrap-registry";
 export { LoggerLevels, type LoggerLevelsSnapshot } from "@/levels";
 export { emitStartupSummary } from "@/startup-summary";
+
+// 默认绑定的 starter bean target（RFC 0011 L3 勘误，#242）：reforce-meta.json 的依赖边按构造
+// 参数位序排布，而 DefaultLoggerFactory 收 options 对象——这个包装类就是那层位序适配。它是
+// 公开导出（index 再导出），测试里 `overrides.replace(DefaultLoggingFactory, …)` 以它为锚点，
+// 与 pino 的 PinoLoggerFactory 同形。同步写、无 sink 可排空，所以不带 lifecycle。
+export class DefaultLoggingFactory extends DefaultLoggerFactory {
+  constructor(
+    settings: LoggingSettings,
+    levels: LoggerLevels,
+    fieldSources: readonly LogFieldSource[],
+  ) {
+    super({ settings, levels, fieldSources });
+  }
+}
 
 // 生成物消费面（RFC 0011 L2，#242）。编译器为每个 logger 名合成一条框架 bean，运行导出恒为
 // 本文件的 BoundLogger，名字作为字面量构造实参内联进 beans.ts。

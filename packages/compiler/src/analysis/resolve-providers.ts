@@ -1,7 +1,11 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
 import { beanRoleSpecOf } from "@/analysis/bean-roles";
-import { isLoggerLevelsContract, redirectKey } from "@/analysis/logger-synthesis";
+import {
+  isLoggerFactoryContract,
+  isLoggerLevelsContract,
+  redirectKey,
+} from "@/analysis/logger-synthesis";
 import {
   type CollectionDependencyModel,
   type PendingDependency,
@@ -376,7 +380,16 @@ function otherCopyRelated(
     }));
 }
 
-function missingBeanHelp(demand: DemandContext, injectableMessage: boolean): string {
+function missingBeanHelp(
+  demand: DemandContext,
+  injectableMessage: boolean,
+  symbol: LinkedSymbol,
+): string {
+  // 注入 Logger 却没装任何日志绑定的形状（RFC 0011 L3 勘误，#242）：这条 MISSING_BEAN 的
+  // 修法不是「写一个 LoggerFactory」，而是注册 starter——按 isLoggingContract 同款判据特判。
+  if (isLoggerFactoryContract(symbol)) {
+    return "Register the logging starter from @reforce/logging in defineApplication's starters (or a binding starter such as @reforce/logging-pino).";
+  }
   if (demand.consumer !== undefined) {
     return "Provide the starter's open dependency with a local provider or another registered starter.";
   }
@@ -399,7 +412,7 @@ function reportMissing(
         : `No Bean provides ${symbol.name}.`,
       sourceSpan: demand.span,
       related: [...demandRelated(demand), ...otherCopyRelated(state, symbol)],
-      help: missingBeanHelp(demand, injectableMessage),
+      help: missingBeanHelp(demand, injectableMessage, symbol),
     }),
   );
 }

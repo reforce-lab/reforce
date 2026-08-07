@@ -12,6 +12,13 @@ import {
   linkApplicationPackages,
   linkLoggingPackage,
 } from "./support/project";
+import {
+  nodeModulesTree,
+  starterHandleDeclaration,
+  starterHandleRuntime,
+  starterMetaSpan,
+  starterPackage,
+} from "./support/starters";
 
 // logger bean 合成的端到端（RFC 0011 L2，#242）：真编译一个注入 Logger 的应用，断言生成的
 // beans.ts 与 manifest 的形状。单测覆盖不到的正是这里——逐 logger 子类、字面量实参、以及
@@ -395,6 +402,172 @@ describe("synthesised logger beans", () => {
 
     expect(result.status).toBe("failure");
     expect(result.diagnostics.map((item) => item.code)).toContain("MISSING_BEAN");
+  }, 60_000);
+
+  // 修法不是「写一个 LoggerFactory」而是注册 starter（RFC 0011 L3 勘误，#242）：这条 help
+  // 是用户从「注入了 Logger 却装不上」走出来的唯一路标。
+  test("points a missing LoggerFactory at the logging starter in its help", async () => {
+    const result = await compileTree({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        "application.ts": [
+          'import { Injectable } from "@reforce/context";',
+          'import type { Logger } from "@reforce/logging";',
+          "",
+          "@Injectable()",
+          "export class OrderService {",
+          "  constructor(private readonly log: Logger) {}",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    const missing = result.diagnostics.find((item) => item.code === "MISSING_BEAN");
+    expect(missing?.help).toContain("Register the logging starter from @reforce/logging");
+  }, 60_000);
+
+  // —— logging 升格 starter（RFC 0011 勘误，#242）：默认绑定以 defaultBean 随 starter 进图 ——
+
+  // 场景 (c) 的竞争绑定：一个非 default 的 LoggerFactory starter，形状照 pino。
+  const fancyBindingPackage = starterPackage({
+    name: "@acme/fancy-logging",
+    meta: {
+      schemaVersion: 1,
+      starterDeps: [],
+      symbols: [
+        {
+          id: "@acme/fancy-logging#FancyLoggerFactory",
+          file: "dist/index.d.ts",
+          subpaths: ["."],
+        },
+      ],
+      beans: [
+        {
+          id: "@acme/fancy-logging#FancyLoggerFactory",
+          runtimeExport: { module: "@acme/fancy-logging", export: "FancyLoggerFactory" },
+          provides: [
+            "@acme/fancy-logging#FancyLoggerFactory",
+            "@reforce/logging:dist/contracts.d.ts#LoggerFactory",
+          ],
+          dependencies: [],
+          source: starterMetaSpan("src/factory.ts"),
+        },
+      ],
+    },
+    dist: {
+      "index.d.ts": [
+        'import type { Logger, LoggerFactory } from "@reforce/logging";',
+        "export declare class FancyLoggerFactory implements LoggerFactory {",
+        "  create(name: string): Logger;",
+        "}",
+        starterHandleDeclaration("fancyLogging"),
+        "",
+      ].join("\n"),
+      "index.js": [
+        "export class FancyLoggerFactory {",
+        "  create() {",
+        "    return {",
+        "      isEnabled: () => false,",
+        "      trace() {},",
+        "      debug() {},",
+        "      info() {},",
+        "      warn() {},",
+        "      error() {},",
+        "      fatal() {},",
+        "    };",
+        "  }",
+        "}",
+        starterHandleRuntime("fancyLogging"),
+        "",
+      ].join("\n"),
+    },
+  });
+
+  function loggingStarterApplication(input: {
+    readonly extraImports?: readonly string[];
+    readonly starters?: string;
+    readonly extraSource?: readonly string[];
+  }): Readonly<Record<string, string>> {
+    return {
+      "application.ts": [
+        'import { defineApplication, Injectable } from "@reforce/context";',
+        'import { logging, type Logger } from "@reforce/logging";',
+        ...(input.extraImports ?? []),
+        "",
+        "@Injectable()",
+        "export class OrderService {",
+        "  constructor(private readonly log: Logger) {}",
+        "}",
+        "",
+        ...(input.extraSource ?? []),
+        `export default defineApplication({ starters: [${input.starters ?? "logging"}] });`,
+        "",
+      ].join("\n"),
+    };
+  }
+
+  // 场景 (a)：只注册 logging——默认 settings 与默认 factory 两个 defaultBean 物化，零诊断。
+  test("materialises the default binding when only the logging starter is registered", async () => {
+    const { manifest, diagnostics } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      src: loggingStarterApplication({}),
+    });
+
+    const ids = manifest.beans.map((bean: { readonly id: string }) => bean.id);
+    expect(ids).toContain("@reforce/logging#DefaultLoggingFactory");
+    expect(ids).toContain("@reforce/logging#DefaultLoggingSettings");
+    expect(diagnostics).toEqual([]);
+  }, 60_000);
+
+  // 场景 (b)：本地 LoggingSettings bean 恒胜（决策 11）——starter 自带的默认 settings 让位，
+  // factory 的 settings 边指到用户 bean 上。零新机制，正是 defaultBean settings 模式的意义。
+  test("lets a local LoggingSettings bean displace the starter default", async () => {
+    const { manifest } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      src: loggingStarterApplication({
+        extraImports: ['import type { LoggingSettings } from "@reforce/logging";'],
+        extraSource: [
+          "@Injectable()",
+          "export class AppLogging implements LoggingSettings {",
+          '  readonly defaultLevel = "debug" as const;',
+          "}",
+          "",
+        ],
+      }),
+    });
+
+    const ids = manifest.beans.map((bean: { readonly id: string }) => bean.id);
+    expect(ids).not.toContain("@reforce/logging#DefaultLoggingSettings");
+    const factory = manifest.beans.find(
+      (bean: { readonly id: string }) => bean.id === "@reforce/logging#DefaultLoggingFactory",
+    );
+    expect(factory.dependencies).toContainEqual(
+      expect.objectContaining({ parameterIndex: 0, targetId: "src/application.ts#AppLogging" }),
+    );
+  }, 60_000);
+
+  // 场景 (c)：非 default 绑定在图 → 默认绑定子图整体不物化（决策 12 的让位），
+  // logger bean 的 factory 边指向竞争绑定。
+  test("stands the default binding aside when a non-default binding starter is registered", async () => {
+    const { manifest } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      node_modules: nodeModulesTree({ "@acme/fancy-logging": fancyBindingPackage }),
+      src: loggingStarterApplication({
+        extraImports: ['import { fancyLogging } from "@acme/fancy-logging";'],
+        starters: "logging, fancyLogging",
+      }),
+    });
+
+    const ids = manifest.beans.map((bean: { readonly id: string }) => bean.id);
+    expect(ids).toContain("@acme/fancy-logging#FancyLoggerFactory");
+    expect(ids).not.toContain("@reforce/logging#DefaultLoggingFactory");
+    expect(ids).not.toContain("@reforce/logging#DefaultLoggingSettings");
+    const logger = manifest.beans.find(
+      (bean: { readonly id: string }) => bean.id === "@reforce/logging#Logger(OrderService)",
+    );
+    expect(logger.dependencies[0].targetId).toBe("@acme/fancy-logging#FancyLoggerFactory");
   }, 60_000);
 
   test("reports two classes that resolve to one logger name", async () => {

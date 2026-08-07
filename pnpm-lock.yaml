@@ -401,6 +401,9 @@ importers:
 
   packages/logging:
     dependencies:
+      '@reforce/context':
+        specifier: workspace:*
+        version: link:../context
       '@reforce/runtime':
         specifier: workspace:*
         version: link:../runtime
