@@ -71,7 +71,15 @@ export type CompilerDiagnosticCode =
   | "UNUSED_SUPPRESSION"
   | "SUPPRESSION_NOT_APPLICABLE"
   // 日志接线（RFC 0011 L2/L5，#242）。
-  | "DUPLICATE_LOGGER_NAME";
+  | "DUPLICATE_LOGGER_NAME"
+  // checker 接入（RFC 0012 S1，#273）：tsgo 子进程崩溃/会话关闭时当次编译的统一失败出口，
+  // 下次编译由 supervisor 自动重建会话。
+  | "TYPE_CHECKER_UNAVAILABLE"
+  // 契约类型闭集（RFC 0012 S1，#273）：白名单精神，未列入闭集的类型形态一律硬错。
+  | "INVALID_CONTRACT_TYPE"
+  | "CONTRACT_CLASS_TYPE"
+  | "CONTRACT_INDEX_SIGNATURE"
+  | "CONTRACT_UNION_NOT_DISCRIMINATED";
 
 export interface CompilerDiagnostic {
   readonly kind: "compiler";

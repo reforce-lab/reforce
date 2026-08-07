@@ -3,5 +3,5 @@
   "compilerOptions": {
     "rootDir": "."
   },
-  "include": ["src", "rslib.config.ts", "vitest.config.ts"]
+  "include": ["src", "bench", "rslib.config.ts", "vitest.config.ts"]
 }
