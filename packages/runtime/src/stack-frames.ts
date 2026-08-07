@@ -21,7 +21,7 @@ const framePattern = /^\s+at\s/u;
 const frameworkPackageDirectories = [
   "cli",
   "config",
-  "context",
+  "core",
   "logging",
   "logging-pino",
   "primitives",
