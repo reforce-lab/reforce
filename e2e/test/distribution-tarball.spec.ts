@@ -1,8 +1,9 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveNodeExecutable, runCommand } from "@reforce/tooling-testing";
 import { describe, expect, test } from "vitest";
+import { listPackageDirectories } from "../support/package-directories";
 
 // 发布产物边界（Issue #252）。这一层是 workspace 符号链接与真实 tarball 的分界：
 // e2e 其余用例经 `workspace:*` 消费各包，pnpm 建的是指向包目录的链接，解析时整棵目录树可见，
@@ -106,10 +107,7 @@ async function packPackage(
 
 const nodeExecutable = await resolveNodeExecutable();
 const pnpmEntry = resolvePnpmEntry();
-const packageDirectories = (await readdir(packagesRoot, { withFileTypes: true }))
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
-  .sort();
+const packageDirectories = await listPackageDirectories(packagesRoot);
 const distributions = await Promise.all(
   packageDirectories.map((directory) => packPackage(nodeExecutable, pnpmEntry, directory)),
 );
