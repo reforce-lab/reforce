@@ -233,6 +233,8 @@ describe("route table generation", () => {
           ],
           meta: {},
           schemas: {},
+          // 未传 schemas 的路由自 #274 起走槽位解析:零参 handler = 空槽位 + passthrough 响应。
+          contract: { slots: [], response: { kind: "passthrough" } },
           source: expect.anything(),
         },
         {
@@ -285,10 +287,11 @@ describe("route table generation", () => {
     expect(routesModule).toContain(
       "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext<{ params: typeof webSchema0; response: typeof webSchema1 }>) => instance.show(),",
     );
-    // 无 schema 的路由退回裸 RequestContext。
+    // 未传 schemas 的路由走槽位 invoke(#274):第三参 slots 按参数序,零参 handler 全下划线。
     expect(routesModule).toContain(
-      "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext) => instance.create(),",
+      "invoke: (instance: InstanceType<typeof webTarget4>, _context: RequestContext, _slots: readonly unknown[]) => instance.create(),",
     );
+    expect(routesModule).toContain("slots: [],");
     expect(routesModule).toContain("} as const satisfies GeneratedRouteTable;");
     expect(routesModule).toContain(
       'import { idParamsSchema as webSchema0 } from "../../src/schemas.js";',
