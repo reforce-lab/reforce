@@ -8,7 +8,7 @@ import {
   bootstrapLogger,
   environmentKeyForLogger,
   isLevelEnabled,
-  parseLogLevel,
+  parseLogThreshold,
 } from "@reforce/logging";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { type EnvironmentSnapshot, loadEnvironmentSnapshot } from "@/binding/env-layers";
@@ -46,7 +46,7 @@ function boundKeyPrefixes(configs: readonly GeneratedConfigRegistration[]): read
 // （ADR 0005 决策 6.1）。快照里的 LOGGING_LEVEL_* 正是编译器当初读的同一份文本（RFC 0011 L5）。
 // 这里读 values 只为把一个字符串解析成级别枚举，值本身不进任何记录。
 function detailRequested(snapshot: EnvironmentSnapshot): boolean {
-  const level = parseLogLevel(snapshot.values.get(environmentKeyForLogger(configLoggerName)));
+  const level = parseLogThreshold(snapshot.values.get(environmentKeyForLogger(configLoggerName)));
   return isLevelEnabled("debug", level ?? "info");
 }
 

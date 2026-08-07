@@ -4,6 +4,7 @@ import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";
 import { createRequestInputValidator } from "@/execution/input-validation";
 import { RequestContextState } from "@/execution/request-context";
+import { runWithRequestFields } from "@/execution/request-fields";
 import { createResponseSerializer } from "@/execution/serialization";
 import type { GeneratedRoute } from "@/generated/route-table";
 import { validateGeneratedRouteTable } from "@/generated/validation";
@@ -232,37 +233,41 @@ function prepareRoute(
           params,
           meta: route.meta,
         }) ?? [];
-      // 落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
-      // 请求态字段。挪到外面就只剩静态字段了。
-      return await context.runInRequestScope(seeds, async () => {
-        const startedAt = performance.now();
-        // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
-        // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
-        const response = await (async () => {
+      // 请求字段先入场再开作用域（RFC 0011 L4，#242）：ALS 只向内传播，所以请求 bean 的构造
+      // 与整条中间件链都在它里面——这一段里任何一条应用日志都自带 method 与 path。
+      return await runWithRequestFields({ method: route.method, path: route.path }, async () =>
+        // 日志落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
+        // 请求态字段。挪到外面就只剩静态字段了。
+        context.runInRequestScope(seeds, async () => {
+          const startedAt = performance.now();
+          // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
+          // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
+          const response = await (async () => {
+            try {
+              return await chain(requestContext);
+            } catch (error) {
+              requestContext.recordFailure(error);
+              return await dispatchError(error, requestContext);
+            }
+          })();
+          // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
+          // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
+          // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
           try {
-            return await chain(requestContext);
-          } catch (error) {
-            requestContext.recordFailure(error);
-            return await dispatchError(error, requestContext);
+            logRequest({
+              logger,
+              method: route.method,
+              path: route.path,
+              response,
+              startedAt,
+              error: requestContext.failure,
+            });
+          } catch {
+            // 记不上就记不上，不值得赔上一个已经成功的响应。
           }
-        })();
-        // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
-        // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
-        // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
-        try {
-          logRequest({
-            logger,
-            method: route.method,
-            path: route.path,
-            response,
-            startedAt,
-            error: requestContext.failure,
-          });
-        } catch {
-          // 记不上就记不上，不值得赔上一个已经成功的响应。
-        }
-        return response;
-      });
+          return response;
+        }),
+      );
     },
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { environmentKeyForLogger, LoggerLevels, parseLogLevel } from "@/levels";
+import { environmentKeyForLogger, LoggerLevels, parseLogThreshold } from "@/levels";
 
 const snapshot = {
   names: ["orders", "reforce.web", "payments.Gateway"],
@@ -24,13 +24,19 @@ describe("logger environment keys", () => {
   });
 });
 
-describe("log level parsing", () => {
+describe("log threshold parsing", () => {
   test("accepts a level regardless of surrounding case and space", () => {
-    expect(parseLogLevel("  WARN ")).toBe("warn");
+    expect(parseLogThreshold("  WARN ")).toBe("warn");
   });
 
-  test("rejects a value that is not a level", () => {
-    expect(parseLogLevel("verbose")).toBeUndefined();
+  // silent 是阈值不是级别（RFC 0011 L1）：写不出 log.silent(...)，但「把这条 logger 关掉」
+  // 正是配置面最常用的一档，不收它用户只能去猜一个比 fatal 还高的词。
+  test("accepts silent, which turns a logger off entirely", () => {
+    expect(parseLogThreshold("silent")).toBe("silent");
+  });
+
+  test("rejects a value that is neither a level nor silent", () => {
+    expect(parseLogThreshold("verbose")).toBeUndefined();
   });
 });
 

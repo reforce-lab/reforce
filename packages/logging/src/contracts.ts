@@ -31,6 +31,19 @@ export const logLevelNames: readonly LogLevel[] = [
   "fatal",
 ];
 
+// `silent` 是**阈值**，不是级别（RFC 0011 L1：六档 + silent，数值 ∞）。两者分成两个类型不是
+// 洁癖：`log.silent(...)` 不存在，写得出来的调用只有六个，而「把这条 logger 关掉」是配置面
+// 最常用的一档。合成一个类型会让 Logger 接口凭空多出一个不该存在的方法签名位。
+export type LogThreshold = LogLevel | "silent";
+
+// ∞ 让「关掉」不需要一个特判分支：任何级别与它比较都是 false，这正是 pino 的做法。
+export const logThresholdValues = {
+  ...logLevelValues,
+  silent: Number.POSITIVE_INFINITY,
+} as const satisfies Record<LogThreshold, number>;
+
+export const logThresholdNames: readonly LogThreshold[] = [...logLevelNames, "silent"];
+
 export type LogFields = Readonly<Record<string, unknown>>;
 
 export interface Logger {
@@ -71,6 +84,6 @@ export interface LogRecord {
   readonly fields: LogFields;
 }
 
-export function isLevelEnabled(level: LogLevel, threshold: LogLevel): boolean {
-  return logLevelValues[level] >= logLevelValues[threshold];
+export function isLevelEnabled(level: LogLevel, threshold: LogThreshold): boolean {
+  return logLevelValues[level] >= logThresholdValues[threshold];
 }

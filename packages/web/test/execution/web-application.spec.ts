@@ -7,6 +7,7 @@ import type {
 import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
+import { WebRequestFields } from "@/execution/request-fields";
 import { createWebApplication } from "@/execution/web-application";
 import type { GeneratedRoute, GeneratedRouteTable } from "@/generated/route-table";
 import type { RouteMiddleware } from "@/routing/middleware";
@@ -451,5 +452,65 @@ describe("createWebApplication route assembly", () => {
         context: contextOf([]),
       }),
     ).toThrow(InvalidRouteTableError);
+  });
+});
+
+// L4（RFC 0011，#242 影响面：「@reforce/web：请求字段的 LogFieldSource 实现」）。在它存在
+// 之前，请求期间应用打的每一条日志都看不出是哪个请求触发的——请求完成时那条记录有
+// method/path，但那是另一条记录，靠时间戳去拼是猜。
+describe("WebRequestFields", () => {
+  test("reports no fields outside a request", () => {
+    expect(new WebRequestFields().fields()).toBeUndefined();
+  });
+
+  test("a handler running inside a request sees that request's method and path", async () => {
+    const source = new WebRequestFields();
+    let seen: unknown;
+    class Peeking {
+      list(): Response {
+        seen = source.fields();
+        return new Response("ok");
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          method: "POST",
+          path: "/orders/:id",
+          controller: Peeking,
+          invoke: (instance) => Reflect.apply(Peeking.prototype.list, instance, []),
+        }),
+      ]),
+      context: contextOf([[Peeking, new Peeking()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/orders/42", { method: "POST" }), {
+      id: "42",
+    });
+
+    // path 是编译期的路由模式而不是 /orders/42：字段要能聚合，具体路径基数无界。
+    expect(seen).toEqual({ method: "POST", path: "/orders/:id" });
+  });
+
+  // ALS 只向内传播，所以请求结束后必须什么都读不到——否则串成一条「上一个请求的 path」
+  // 挂在与请求无关的日志上，比没有字段更误导。
+  test("the fields are gone again once the request has finished", async () => {
+    const source = new WebRequestFields();
+    const application = createWebApplication({
+      table: tableOf([routeOf({})]),
+      context: contextOf([[ProbeController, new ProbeController()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(source.fields()).toBeUndefined();
   });
 });

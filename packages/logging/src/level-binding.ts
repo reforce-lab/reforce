@@ -1,5 +1,5 @@
 import { bootstrapLogger } from "@/bootstrap-registry";
-import type { Logger, LogLevel } from "@/contracts";
+import type { Logger, LogThreshold } from "@/contracts";
 import type { LoggerLevels } from "@/levels";
 
 // 编译期快照接到绑定上的那一步（RFC 0011 L5，#249 的「未做」第一条）。
@@ -32,7 +32,7 @@ export interface LevelBindingInput {
  */
 export function bindLoggerLevels(
   input: LevelBindingInput = {},
-): (name: string) => LogLevel | undefined {
+): (name: string) => LogThreshold | undefined {
   const levels = input.levels;
   if (levels === undefined) {
     return () => undefined;

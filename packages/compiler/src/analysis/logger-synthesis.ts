@@ -291,14 +291,17 @@ export interface CompileTimeLoggerLevels {
   readonly layers: readonly string[];
 }
 
-const logLevelNames = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
+// 六个级别加 `silent`（RFC 0011 L1）。silent 是阈值不是级别——写不出 `log.silent(...)`，但
+// 「把这条 logger 关掉」正是 logging.level.* 最常用的一档，不收它等于让用户去猜一个比 fatal
+// 还高的词，而拼错的下场是这条配置被静默丢弃。
+const logThresholdNames = ["trace", "debug", "info", "warn", "error", "fatal", "silent"] as const;
 
-// 与 @reforce/logging 的 parseLogLevel 同一套判据。不 import 过来：编译器不依赖它分析的包，
-// 而级别名是六个字面量的封闭集合，重复的是常量不是知识（DRY 认的是「改一处要同步多处」，
+// 与 @reforce/logging 的 parseLogThreshold 同一套判据。不 import 过来：编译器不依赖它分析的包，
+// 而阈值名是七个字面量的封闭集合，重复的是常量不是知识（DRY 认的是「改一处要同步多处」，
 // 这份名单真要变，@reforce/logging 的公开类型本身就是破坏性变更）。
-function parseLogLevel(value: string | undefined): string | undefined {
+function parseLogThreshold(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
-  return logLevelNames.find((level) => level === normalized);
+  return logThresholdNames.find((level) => level === normalized);
 }
 
 // 与运行期的 environmentKeyForLogger 逐字一致（analysis/logger-levels.ts 有同一份实现，那边
@@ -308,15 +311,15 @@ function environmentKeyForLogger(name: string): string {
 }
 
 // 快照只收**认得出**的级别：`.env` 里写了 `LOGGING_LEVEL_ORDERS=verbose` 时，把 "verbose"
-// 原样内联进生成物等于让运行期拿到一个非 LogLevel 的字符串，落进 pino 会直接抛。丢掉它并
-// 落回绑定缺省，与运行期 parseLogLevel 遇到坏值时的行为一致。
+// 原样内联进生成物等于让运行期拿到一个非 LogThreshold 的字符串，落进 pino 会直接抛。丢掉它并
+// 落回绑定缺省，与运行期 parseLogThreshold 遇到坏值时的行为一致。
 function levelsSnapshotFor(
   names: readonly string[],
   compileTime: CompileTimeLoggerLevels,
 ): Record<string, string> {
   const levels: Record<string, string> = {};
   for (const name of names) {
-    const level = parseLogLevel(compileTime.values.get(environmentKeyForLogger(name)));
+    const level = parseLogThreshold(compileTime.values.get(environmentKeyForLogger(name)));
     if (level !== undefined) {
       levels[name] = level;
     }

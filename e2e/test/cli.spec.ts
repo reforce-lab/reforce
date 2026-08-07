@@ -1330,6 +1330,35 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // 不变量 4 的另一半（RFC 0011 D2，#242）：上一条用例只证明摘要**印出**了展开命令，没证明它
+  // 跑得通。而它此前正是跑不通的——路由面的判据是「查询以 / 开头」，`routes` 这个词落到 bean
+  // 面报「没有 bean 叫 routes」。折叠给了出口、出口是死的，比不给出口更糟。
+  // 这条用例逐字敲摘要印出的那串命令，是这个缺陷唯一的稳定回归证据。
+  test(
+    "the expand command printed by the startup summary actually runs",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        const explain = await runCommand(
+          nodeExecutable,
+          [cliEntry, "explain", "routes", "--project", project.projectRoot],
+          { cwd: project.projectRoot, timeout: commandTimeout },
+        );
+
+        expect(explain.exitCode, commandFailure(explain)).toBe(0);
+        const stdout = String(explain.stdout);
+        expect(stdout).toMatch(/^\d+ routes · \d+ controllers$/mu);
+        expect(stdout).toContain('expand one route · reforce explain "<METHOD> <path>"');
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // C4（RFC 0011，#250）：配置来源。provenance 数据一直都有，只用于报错的 layer 字段，
   // 启动期一个字不打——「这个值到底是哪一层给的」得靠人去比对四个文件。
   //

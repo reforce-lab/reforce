@@ -215,6 +215,36 @@ describe.sequential("HTTP application over the built artifact", () => {
     });
   });
 
+  // L4 的完整用户链路（RFC 0011，#242 影响面：「@reforce/web：请求字段的 LogFieldSource
+  // 实现」）。断言的是**应用自己**打的那条记录，不是框架发的请求日志——后者的 method/path
+  // 是 web 核心直接写进去的，用它做断言证明不了贡献者接上没有。
+  test("an application log written during a request carries that request's fields", async () => {
+    await withServer(async (base, server) => {
+      expect((await fetch(`${base}/field-source`)).status).toBe(200);
+      // 记录是同步写出的，但落到父进程的 stderr 要过一次管道。
+      await sleep(100);
+
+      const handlerRecord = server
+        .output()
+        .split("\n")
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line)];
+          } catch {
+            return [];
+          }
+        })
+        .find((record) => record.message === "handler ran");
+
+      // probe 是调用点自己给的，method/path 两个字段没有一个是它传的：全部由贡献者补上。
+      expect(handlerRecord).toMatchObject({
+        probe: "field-source",
+        method: "GET",
+        path: "/field-source",
+      });
+    });
+  });
+
   test("concurrent requests keep their own request scope", async () => {
     await withServer(async (base) => {
       const ids = Array.from({ length: 16 }, (_, index) => `request-${index}`);

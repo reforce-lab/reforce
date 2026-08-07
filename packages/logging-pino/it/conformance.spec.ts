@@ -1,5 +1,11 @@
 import { Writable } from "node:stream";
-import { type LogFieldSource, LoggerLevels, type LogLevel, type LogRecord } from "@reforce/logging";
+import {
+  type LogFieldSource,
+  LoggerLevels,
+  type LogLevel,
+  type LogRecord,
+  type LogThreshold,
+} from "@reforce/logging";
 import { loggerConformanceCases } from "@reforce/logging/conformance";
 import { describe, expect, test } from "vitest";
 import { PinoLoggerFactory } from "@/factory";
@@ -66,7 +72,7 @@ function levelsOf(names: readonly string[] = []): LoggerLevels {
 }
 
 function bound(input: {
-  readonly defaultLevel: LogLevel;
+  readonly defaultLevel: LogThreshold;
   readonly fieldSources: readonly LogFieldSource[];
 }) {
   const captured = capturingStream();

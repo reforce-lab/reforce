@@ -6,6 +6,7 @@ import {
   type LoggerFactory,
   type LogLevel,
   type LogRecord,
+  type LogThreshold,
 } from "@/contracts";
 import { bindLoggerLevels } from "@/level-binding";
 import type { LoggerLevels } from "@/levels";
@@ -23,8 +24,8 @@ export interface DefaultLoggerFactoryOptions {
    */
   readonly levels?: LoggerLevels;
   /** 逐 logger 名的级别；返回 undefined 表示「这条没配」，交给 defaultLevel。 */
-  readonly levelFor?: (name: string) => LogLevel | undefined;
-  readonly defaultLevel?: LogLevel;
+  readonly levelFor?: (name: string) => LogThreshold | undefined;
+  readonly defaultLevel?: LogThreshold;
   /** 集合注入的字段贡献者（ADR 0006 W6）。 */
   readonly fieldSources?: readonly LogFieldSource[];
   readonly write?: (line: string) => void;
@@ -45,14 +46,14 @@ function defaultWrite(line: string): void {
 // 就会把 `const merged = this.merge(fields)` 提到判定之前，而那正是日志最贵的一步。
 class DefaultLogger implements Logger {
   private readonly name: string;
-  private readonly threshold: LogLevel;
+  private readonly threshold: LogThreshold;
   private readonly fieldSources: readonly LogFieldSource[];
   private readonly write: (line: string) => void;
   private readonly now: () => number;
 
   constructor(input: {
     readonly name: string;
-    readonly threshold: LogLevel;
+    readonly threshold: LogThreshold;
     readonly fieldSources: readonly LogFieldSource[];
     readonly write: (line: string) => void;
     readonly now: () => number;
@@ -100,18 +101,28 @@ class DefaultLogger implements Logger {
   }
 
   private record(level: LogLevel, fields: LogFields | undefined, message: string): LogRecord {
+    return { level, name: this.name, time: this.now(), message, fields: this.merged(fields) };
+  }
+
+  // 集合为空时整段合并不发生（RFC 0011 L4 的编译期优化：成员编译期封闭，空集合不该在热路径上
+  // 留下一次遍历加一次对象分配）。集合成员由编译期定死，所以这个分支的结果对某个应用是常量。
+  private merged(fields: LogFields | undefined): LogFields {
+    if (this.fieldSources.length === 0) {
+      return fields ?? {};
+    }
     const merged: Record<string, unknown> = {};
     for (const source of this.fieldSources) {
       Object.assign(merged, source.fields());
     }
+    // 调用点自己的字段压过收集来的：写在调用点的那个更具体，也更可能是这条日志的主语。
     Object.assign(merged, fields);
-    return { level, name: this.name, time: this.now(), message, fields: merged };
+    return merged;
   }
 }
 
 export class DefaultLoggerFactory implements LoggerFactory {
   private readonly options: DefaultLoggerFactoryOptions;
-  private readonly levelFor: (name: string) => LogLevel | undefined;
+  private readonly levelFor: (name: string) => LogThreshold | undefined;
 
   constructor(options: DefaultLoggerFactoryOptions = {}) {
     this.options = options;

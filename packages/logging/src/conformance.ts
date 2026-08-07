@@ -1,8 +1,8 @@
 import {
   type LogFieldSource,
   type LoggerFactory,
-  type LogLevel,
   type LogRecord,
+  type LogThreshold,
   logLevelNames,
 } from "@/contracts";
 
@@ -21,7 +21,7 @@ export interface LoggerConformanceOptions {
    * 不变量 8 的断言全靠它。
    */
   create(input: {
-    readonly defaultLevel: LogLevel;
+    readonly defaultLevel: LogThreshold;
     readonly fieldSources: readonly LogFieldSource[];
   }): {
     readonly factory: LoggerFactory;
@@ -119,6 +119,18 @@ export function loggerConformanceCases(
       },
     },
     {
+      // 空集合走的是「整段合并不发生」那条分支（L4 的编译期优化）。抄近路最容易抄掉的正是
+      // 调用点自己的字段——省掉合并的同时把 fields 一起省了，而那是这条记录的全部内容。
+      name: "still carries the call site's own fields with no sources at all",
+      run() {
+        const bound = options.create({ defaultLevel: "info", fieldSources: [] });
+        bound.factory.create("orders").info({ orderId: 7 }, "created");
+
+        const fields = bound.records()[0]?.fields ?? {};
+        assert(fields.orderId === 7, label("the call site's own fields must survive an empty set"));
+      },
+    },
+    {
       name: "reports isEnabled consistently with what it writes",
       run() {
         const bound = options.create({ defaultLevel: "warn", fieldSources: [] });
@@ -133,6 +145,32 @@ export function loggerConformanceCases(
             label(`isEnabled("${level}") disagrees with whether the record was written`),
           );
         }
+      },
+    },
+    {
+      // silent 是六档之上的第七个阈值（RFC 0011 L1，数值 ∞）。它必须在**每个**绑定上都是
+      // 「一条都不写」，否则 `logging.level.X=silent` 的效果就取决于装了哪个绑定——而门面
+      // 存在的理由正是换绑定不换语义。fatal 是最容易漏的那一档：任何「至少放行最高级别」的
+      // 实现都会在这里露馅。
+      name: "writes nothing at all when the threshold is silent",
+      run() {
+        const counting = countingFieldSource();
+        const bound = options.create({ defaultLevel: "silent", fieldSources: [counting.source] });
+        const logger = bound.factory.create("orders");
+
+        for (const level of logLevelNames) {
+          logger[level](undefined, level);
+          assert(
+            !logger.isEnabled(level),
+            label(`isEnabled("${level}") must be false when silent`),
+          );
+        }
+
+        assert(
+          bound.records().length === 0,
+          label(`silent wrote ${bound.records().length} record(s)`),
+        );
+        assert(counting.calls() === 0, label("silent must not consult a LogFieldSource"));
       },
     },
     {

@@ -1,13 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { loggerConformanceCases } from "@/conformance";
-import type { LogFieldSource, LogLevel, LogRecord } from "@/contracts";
+import type { LogFieldSource, LogRecord, LogThreshold } from "@/contracts";
 import { DefaultLoggerFactory } from "@/default-logger";
 import { LoggerLevels } from "@/levels";
 
 // 写出的是 JSON 行，测试把它解析回记录形状消费——这样断言的是「线上真的写了什么」，
 // 而不是内部对象。
 function collecting(input: {
-  readonly defaultLevel: LogLevel;
+  readonly defaultLevel: LogThreshold;
   readonly fieldSources: readonly LogFieldSource[];
 }) {
   const lines: string[] = [];

@@ -12,6 +12,7 @@ export {
   type WebErrorCode,
 } from "@/errors";
 export type { RequestContext } from "@/execution/request-context";
+export { type WebRequestFacts, WebRequestFields } from "@/execution/request-fields";
 export {
   type CreateWebApplicationOptions,
   createWebApplication,

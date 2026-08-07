@@ -7,6 +7,7 @@ import {
   type LoggerFactory,
   type LoggerLevels,
   type LogLevel,
+  type LogThreshold,
 } from "@reforce/logging";
 // destination 挂在默认导出上，不在具名 pino 上（pino 10 的类型如此）。
 import pinoDefault, { type LoggerOptions, type Logger as PinoLogger, pino } from "pino";
@@ -66,7 +67,12 @@ class PinoBoundLogger implements Logger {
     this.delegate[level](this.merged(fields), message);
   }
 
-  private merged(fields: LogFields | undefined): Record<string, unknown> {
+  // 集合为空时整段合并不发生（RFC 0011 L4）：成员是编译期封闭的，没有贡献者的应用不该在
+  // 每条日志上付一次遍历加一次对象分配——那正是「门面吃掉 pino 的性能优势」的形状（风险 2）。
+  private merged(fields: LogFields | undefined): LogFields {
+    if (this.fieldSources.length === 0) {
+      return fields ?? {};
+    }
     const merged: Record<string, unknown> = {};
     for (const source of this.fieldSources) {
       Object.assign(merged, source.fields());
@@ -96,7 +102,7 @@ function soleDestination(
 export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
   private readonly root: PinoLogger;
   private readonly fieldSources: readonly LogFieldSource[];
-  private readonly levelFor: (name: string) => LogLevel | undefined;
+  private readonly levelFor: (name: string) => LogThreshold | undefined;
 
   constructor(
     settings: PinoSettings,

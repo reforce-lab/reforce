@@ -1,4 +1,4 @@
-import { type LogLevel, logLevelValues } from "@/contracts";
+import { type LogThreshold, logThresholdValues } from "@/contracts";
 
 // 级别表（RFC 0011 L5，#242）。这个 bean 由编译器合成，构造实参是编译期算好的字面量——
 // 它是「编译期看见了什么」的快照，不是运行期配置面。
@@ -10,19 +10,22 @@ export interface LoggerLevelsSnapshot {
   /** 编译期见到的全部 logger 名，封闭名单。 */
   readonly names: readonly string[];
   /** 编译期可见的逐 logger 级别。 */
-  readonly levels: Readonly<Record<string, LogLevel>>;
+  readonly levels: Readonly<Record<string, LogThreshold>>;
   /** 未逐个指定时的兜底级别。 */
-  readonly defaultLevel: LogLevel;
+  readonly defaultLevel: LogThreshold;
   /** 编译期实际读过的 .env 层，按读取顺序。 */
   readonly layers: readonly string[];
 }
 
-const levelByName = new Map<string, LogLevel>(
-  Object.keys(logLevelValues).map((name) => [name, name as LogLevel]),
+const thresholdByName = new Map<string, LogThreshold>(
+  // as：Object.keys 的返回类型恒为 string[]，键的字面量类型在这一步已经丢了。
+  Object.keys(logThresholdValues).map((name) => [name, name as LogThreshold]),
 );
 
-export function parseLogLevel(value: string | undefined): LogLevel | undefined {
-  return value === undefined ? undefined : levelByName.get(value.trim().toLowerCase());
+// 收 `silent`：把一条 logger 彻底关掉是配置面最常用的动作，不收它等于让用户去猜一个
+// 「比 fatal 还高」的词（RFC 0011 L1）。
+export function parseLogThreshold(value: string | undefined): LogThreshold | undefined {
+  return value === undefined ? undefined : thresholdByName.get(value.trim().toLowerCase());
 }
 
 // `LOGGING_LEVEL_<NAME>` 的 <NAME> 反解回 logger 名：走封闭名单的精确查表，不做盲展开，也
@@ -46,11 +49,11 @@ export class LoggerLevels {
     return this.snapshot.layers;
   }
 
-  get defaultLevel(): LogLevel {
+  get defaultLevel(): LogThreshold {
     return this.snapshot.defaultLevel;
   }
 
-  levelFor(name: string, environment: Readonly<Record<string, string | undefined>>): LogLevel {
+  levelFor(name: string, environment: Readonly<Record<string, string | undefined>>): LogThreshold {
     return this.explicitLevelFor(name, environment) ?? this.snapshot.defaultLevel;
   }
 
@@ -60,9 +63,11 @@ export class LoggerLevels {
   explicitLevelFor(
     name: string,
     environment: Readonly<Record<string, string | undefined>>,
-  ): LogLevel | undefined {
+  ): LogThreshold | undefined {
     // 运行期注入的键压过编译期快照：容器编排常在启动时才给出级别，编译期看不到它。
-    return parseLogLevel(environment[environmentKeyForLogger(name)]) ?? this.snapshot.levels[name];
+    return (
+      parseLogThreshold(environment[environmentKeyForLogger(name)]) ?? this.snapshot.levels[name]
+    );
   }
 
   // 运行期兜底（L5.5）：同一份封闭名单、同一个 did-you-mean，warn 但不阻止启动。

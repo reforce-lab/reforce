@@ -231,8 +231,21 @@ describe("synthesised logger beans", () => {
     expect(beans).toContain('"levels":{"OrderService":"debug"}');
   }, 60_000);
 
-  // `.env` 里写了不是级别的值时，把它原样内联等于让运行期拿到一个非 LogLevel 的字符串——
-  // 落进 pino 会当场抛。丢掉它、落回绑定缺省，与运行期 parseLogLevel 遇到坏值时一致。
+  // silent 是第七个阈值（RFC 0011 L1）。它此前不在编译期名单里，于是「把这条 logger 关掉」
+  // 会走进下面那条「不是级别就丢掉」的路径——用户写了 silent，编译期一声不吭地把它扔了，
+  // 运行期落回绑定缺省照常刷屏。关掉一条 logger 恰恰是这套配置面最常用的动作。
+  test("inlines silent, which turns a named logger off entirely", async () => {
+    const { beans } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      ".env": "LOGGING_LEVEL_ORDERSERVICE=silent\n",
+      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
+    });
+
+    expect(beans).toContain('"levels":{"OrderService":"silent"}');
+  }, 60_000);
+
+  // `.env` 里写了不是阈值的值时，把它原样内联等于让运行期拿到一个非 LogThreshold 的字符串——
+  // 落进 pino 会当场抛。丢掉它、落回绑定缺省，与运行期 parseLogThreshold 遇到坏值时一致。
   test("drops a .env value that does not name a level", async () => {
     const { beans } = await compileTreeSuccessfully({
       "tsconfig.json": applicationTsconfig(),

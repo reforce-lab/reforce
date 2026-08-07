@@ -6,6 +6,7 @@ import {
   parseRouteQuery,
   type RouteManifest,
   renderRouteExplanation,
+  renderRouteOverview,
 } from "@/explain/routes";
 
 const manifest: RouteManifest = {
@@ -110,5 +111,26 @@ describe("renderRouteExplanation", () => {
       "error handlers (dispatch order)",
       "  1. order 0 · src/errors.ts#Teapot",
     ]);
+  });
+});
+
+describe("renderRouteOverview", () => {
+  test("the overview lists every route with counts and a next-level expand command", () => {
+    const lines = renderRouteOverview(manifest);
+
+    expect(lines).toEqual([
+      "2 routes · 1 controllers",
+      'expand one route · reforce explain "<METHOD> <path>"',
+      "GET /users/:id · src/users.ts#UsersController · show() · 2 middleware",
+      "POST /users · src/users.ts#UsersController · create() · no middleware",
+      "error handlers (dispatch order)",
+      "  1. order 0 · src/errors.ts#Teapot",
+    ]);
+  });
+
+  test("an application with no routes says so instead of rendering an empty table", () => {
+    const lines = renderRouteOverview({ routes: [], errorHandlers: [] });
+
+    expect(lines).toEqual(["0 routes"]);
   });
 });
