@@ -35,7 +35,7 @@ src/
       health.dto.ts
   infrastructure/                       和外部世界、和框架接壤的适配件
     web/                                  HTTP 这一面
-      request-logging.middleware.ts        所有请求都走（observability）
+      request.fields.ts                    请求期间的日志自动带上 method 和 path
       api-key.middleware.ts                写接口的准入检查（admission）
       http-error.handler.ts                异常 → 状态码的翻译层
       fallback-error.handler.ts            兜底 500，日志留全、响应不泄漏
@@ -118,7 +118,7 @@ curl 'http://localhost:3000/greetings?page=1&size=10&order=desc'
 
 | 阶段 | 干什么 | 模板里的例子 |
 | --- | --- | --- |
-| `observability` | 最外层，观测所有请求与最终响应 | `request-logging.middleware.ts` |
+| `observability` | 最外层，观测所有请求与最终响应 | ——（访问日志框架自带，见「日志」） |
 | `admission` | 认证 / 授权 / 限流，短路的典型位置 | `api-key.middleware.ts` |
 | `application` | 默认阶段，贴近 handler 的业务拦截 | —— |
 
@@ -127,9 +127,28 @@ curl 'http://localhost:3000/greetings?page=1&size=10&order=desc'
 
 有个坑值得先知道：**handler 抛的异常和中间件抛的异常，出口不一样。** 前者在链的内层就被
 error handler 换成了响应，外层中间件的 `await next()` 拿到的是正常 `Response`；后者走的是整条
-链之外的错误出口，外层中间件的 `await next()` 直接抛。所以做访问日志的中间件必须自己
-`try/catch`，否则被 `api-key` 挡下的请求在日志里根本不会出现——`request-logging.middleware.ts`
-里那段 catch 就是干这个的。
+链之外的错误出口，外层中间件的 `await next()` 直接抛。自己写 observability 中间件时必须
+`try/catch` 把两条出口都接住，否则被 `api-key` 挡下的请求会从你的统计里凭空消失。框架自带的
+访问日志在整条链**之外**统一记，两条出口都盖到，所以模板没有再写一个访问日志中间件。
+
+**日志**：`application.ts` 里注册的 `logging` starter 包办两件事。启动时打一份摘要——bean 数、
+路由数、**监听地址**、ready 耗时；运行期每个请求记一条访问日志（2xx/3xx 是 info、4xx 是 warn、
+5xx 是 error，带 method / path / status / handlerMs），admission 挡下的 401 和中间件抛的异常也在
+里面，不会有请求消失。`request.fields.ts` 再补一块：请求期间你自己打的日志自动带上 method 和
+path。输出形态自适应——终端里给人读，重定向到文件或容器采集时自动换成 JSON 行。
+
+默认级别是 info。调级别不用环境变量，写一个普通 bean（级别拼错是编译错误，logger 名拼错
+启动时会得到告警）：
+
+```ts
+import { Injectable } from "@reforce/core";
+import type { LoggerLevelMap, LoggingSettings } from "@reforce/logging";
+
+@Injectable()
+export class AppLogging implements LoggingSettings {
+  readonly levels = { "reforce.core": "debug" } satisfies LoggerLevelMap;
+}
+```
 
 **错误处理**：两级。service 只抛异常，不认识 HTTP；`http-error.handler.ts` 按表把已知异常翻译
 成状态码，不认识的重新 throw；`fallback-error.handler.ts` 用更大的 `order` 排在后面兜底，把
