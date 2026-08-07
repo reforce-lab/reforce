@@ -1,9 +1,14 @@
-// 诊断码长文（RFC 0011 D8，#242）：诊断行只有一句话的预算，说不完「为什么会这样、结构上
-// 该怎么改」。长文住在 CLI 而不是编译器，因为它是给人读的散文，不进任何生成物，也不该让
-// 编译器的诊断构造点扛住文案长度。
+// 错误码长文（RFC 0011 D8，#242；ADR 0013 决议 3/5 起覆盖框架错误码，#292）：诊断行与错误行
+// 都只有一句话的预算，说不完「为什么会这样、结构上该怎么改」。长文住在 CLI 而不是各自的包，
+// 因为它是给人读的散文，不进任何生成物，也不该让诊断/错误的构造点扛住文案长度。
 //
-// 纪律：新增诊断码时长文与码同 PR（CONTRIBUTING）。没有长文的码不是错误——诊断行不会打出
-// `= 详解:`，`reforce explain <CODE>` 会明确回答「暂无长文」。
+// 纪律：新增任何错误码，长文与码同 PR（CONTRIBUTING）。没有长文的码不是错误——诊断行不会打出
+// `= 详解:`，`reforce explain <CODE>` 会明确回答「暂无长文」；那是给**存量**码的过渡答案。
+//
+// 本表是 compiler 诊断长文；参数守卫码的长文在 @/explain/argument-articles，两者的读者场景
+// 不同（一个是「编译不过」，一个是「运行时被自己写的调用参数拦住」），合成一个对象没人读得动。
+
+import { argumentArticles } from "@/explain/argument-articles";
 
 export interface DiagnosticArticle {
   readonly summary: string;
@@ -310,7 +315,10 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
 export function diagnosticArticle(code: string): DiagnosticArticle | undefined {
   // Object.hasOwn 而不是直接索引：query 是用户输入，"constructor" / "toString" 会在原型链上
   // 命中函数，索引出来的东西不是 DiagnosticArticle。
-  return Object.hasOwn(articles, code) ? articles[code] : undefined;
+  if (Object.hasOwn(articles, code)) {
+    return articles[code];
+  }
+  return Object.hasOwn(argumentArticles, code) ? argumentArticles[code] : undefined;
 }
 
 // 诊断行尾的 `= 详解:` 只在长文存在时打印，否则是一条走不通的指路。

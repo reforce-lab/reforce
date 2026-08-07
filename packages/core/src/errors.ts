@@ -1,3 +1,4 @@
+import { markReforceError, reforceErrorMarker } from "@/error-marker";
 import type { ContextOperation, ContextState } from "@/public-types";
 
 export interface ReforceErrorOptions {
@@ -5,12 +6,6 @@ export interface ReforceErrorOptions {
   readonly errors?: readonly unknown[];
   readonly help?: string;
 }
-
-// 框架错误的身份标记（ADR 0013 决议 1，#280）。识别不能只靠 instanceof：@reforce/core 被装成
-// 两份物理拷贝时（starter 版本撕裂，同 ADR 0004 决策 10），web 抛的错误 instanceof 的是另一份
-// 拷贝的基类，reporter 这一侧一律判否——@fastify/error 正是因此改按 code 匹配。Symbol.for 走
-// 全局注册表，按字符串跨副本同一，识别因此与"哪一份 core 定义了基类"无关。
-const reforceErrorMarker = Symbol.for("reforce.error");
 
 // Code 的上界是 string 而不是 CoreErrorCode：框架包（@reforce/transaction 起）在自己的包里
 // 声明自己的码，容器无从枚举。全仓零穷尽 switch、零 Record<CoreErrorCode, …>，reporter 本来
@@ -34,9 +29,7 @@ export abstract class ReforceError<Code extends string = string> extends Error {
     this.name = new.target.name;
     this.errors = options.errors;
     this.help = options.help;
-    // defineProperty 而非字段赋值：默认 non-enumerable，标记因此不会漏进 JSON.stringify、
-    // 结构化日志的字段展开或 expect(...).toEqual 的对象比较里。
-    Object.defineProperty(this, reforceErrorMarker, { value: true });
+    markReforceError(this);
   }
 }
 
