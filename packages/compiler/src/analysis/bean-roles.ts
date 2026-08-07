@@ -1,6 +1,7 @@
 import { type ProviderModel, providerId } from "@/analysis/model";
-import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@/api";
+import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
+import type { CompilerDiagnosticCode } from "@/error-codes";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ClassDeclaration } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";

@@ -116,6 +116,34 @@ reforce start --project apps/api
 
 完整正向应用场景只使用 `e2e/fixtures/application`。它不是独立 workspace，由 `@reforce/e2e` 提供依赖和检查；测试先复制项目输入到临时目录再生成、修改或启动，禁止直接污染模板。
 
+## 错误码（ADR 0013，#280）
+
+**公开契约。** 错误码是公开接口，它进过 `--error-format json` 的 wire 输出（ADR 0009）、`--diagnostic-level <CODE>=off`、`// reforce-ignore <CODE>` 注释，还有用户按 `code` 分派的代码。因此：
+
+- **code 永久稳定。改一个已发布的码 = semver major。** 这条原样采纳 Node.js core 的做法，理由也一样：不这么切，每次改错误文案都要按 breaking change 发版。
+- **`message` 与 `help` 可以随任何版本改。** 它们是给人读的散文，不是接口。
+- **程序化识别一律用 `code`，不匹配 `message`。** 文档、示例和模板都必须示范这一条。
+
+**码表在哪。** 每个持有码的包都把自己的表声明在 **`src/error-codes.ts`**——**只此一处，不散在 `errors.ts` / `api.ts` / `reporter.ts` 里**。表以 `as const` 数组为唯一真相、union 从数组派生（中央注册包会造成反向依赖）：
+
+| 域 | 表 |
+|---|---|
+| compiler 诊断 | `packages/compiler/src/error-codes.ts` → `compilerDiagnosticCodes` |
+| 容器 | `packages/core/src/error-codes.ts` → `coreErrorCodes` |
+| 事务 | `packages/transaction/src/error-codes.ts` → `transactionErrorCodes` |
+| web | `packages/web/src/error-codes.ts` → `webErrorCodes` |
+| runtime / CLI 失败码 | `packages/runtime/src/error-codes.ts` → `cliFailureCodes` |
+| CLI 错误码 | `packages/cli/src/error-codes.ts` → `cliErrorCodes`（前者的子集） |
+
+`packages/cli/src/explain/code-registry.ts` 把它们聚合到一起，`packages/cli/test/explain/code-registry.spec.ts` 断言全局唯一。**新增一个持有码的包，就建它的 `src/error-codes.ts` 并在 registry 里登记一行**，否则它不参与查重。
+
+**新增码的纪律。**
+
+- **新码带域前缀**：`CORE_` / `CONFIG_` / `WEB_` / `CLI_` / `TRANSACTION_`。compiler 诊断码维持无前缀惯例——它们有独立闭集与独立消费面（抑制注释、诊断级别）。
+- **存量码一律不改名。** 改码会砸掉用户已经写下的 `--diagnostic-level`、`// reforce-ignore` 注释和 json 消费方。
+- **长文与码同 PR**：新增任何错误码，`packages/cli/src/explain/codes.ts` 里同时补上它的长文。没有长文时诊断行不会打出 `= 详解:`，`reforce explain <CODE>` 会明确回答「暂无长文」——但那是给**存量**码的过渡答案，不是新码的许可。
+- **不是所有失败都要码。** 纯包内的控制流信号（不会越过框架边界抵达用户的那种）维持裸 `Error`，不进码表。
+
 ## 知识沉淀义务
 
 - 做了影响后续设计的决定 → 在对应 issue 顶楼记录结论（**顶楼 = 正式文档，评论 = 过程**），打 `type: adr` 标签并登记 Wiki ADR 索引。

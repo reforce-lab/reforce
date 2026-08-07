@@ -13,6 +13,10 @@
       "types": "./dist/dev-runtime.d.ts",
       "default": "./dist/dev-runtime.js"
     },
+    "./error-codes": {
+      "types": "./dist/error-codes.d.ts",
+      "default": "./dist/error-codes.js"
+    },
     "./reporter": {
       "types": "./dist/reporter.d.ts",
       "default": "./dist/reporter.js"

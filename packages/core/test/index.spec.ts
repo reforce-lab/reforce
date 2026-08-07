@@ -23,6 +23,7 @@ test("the root entry exposes only the public programming model", () => {
     "RequestContextMissingError",
     "RequestScoped",
     "UnregisteredBeanTargetError",
+    "coreErrorCodes",
     "defineApplication",
     "defineBean",
     "defineMethodMarker",

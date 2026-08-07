@@ -6,7 +6,7 @@ import type { TransactionIsolation } from "@/manager";
 // validateExistingTransaction 才拒绝；我们默认即拒绝）。
 //
 // 全部继续继承 @reforce/core 的 ReforceError：拦截器契约里那条「兜底拦截器要
-// `if (error instanceof ReforceError) throw error`」的放行纪律必须同时覆盖这四个护栏
+// `if (isReforceError(error)) throw error`」的放行纪律必须同时覆盖这四个护栏
 // 错误，否则拆包就等于把它们从护栏名单里划掉。
 
 export class TransactionSavepointUnsupportedError extends ReforceError<"TRANSACTION_SAVEPOINT_UNSUPPORTED"> {
