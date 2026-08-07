@@ -244,7 +244,10 @@ describe("production stack frame relocation", () => {
 
     const sources = await emittedMapSources(built.stagingDirectory);
 
-    const throwerSource = sources.find((source) => source.endsWith("src/thrower.ts"));
+    // Windows 下 Rsbuild 写进 map 的 sources 用反斜杠，归一后再比对尾段。
+    const throwerSource = sources.find((source) =>
+      source.replaceAll("\\", "/").endsWith("src/thrower.ts"),
+    );
     expect(
       throwerSource,
       `no source ended with src/thrower.ts: ${JSON.stringify(sources)}`,
@@ -268,7 +271,7 @@ describe("production stack frame relocation", () => {
     if (!("originalSource" in entry)) {
       throw new Error(`The bundle carries no source mapping at ${line}:${column}.`);
     }
-    expect(entry.originalSource.endsWith("src/thrower.ts")).toBe(true);
+    expect(entry.originalSource.replaceAll("\\", "/").endsWith("src/thrower.ts")).toBe(true);
     // thrower.ts 的 throw 在第 2 行；SourceMap 的行号是 0-based。
     expect(entry.originalLine).toBe(1);
   }, 60_000);
