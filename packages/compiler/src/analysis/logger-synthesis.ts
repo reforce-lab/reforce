@@ -22,6 +22,25 @@ import type { ParsedSource } from "@/project/source-files";
 // **这是全设计唯一的解析特例**，所以它有名字：redirectedLoggerDependency。合成的 logger bean
 // 刻意 `provides: []`——不进候选池。否则 N 个 logger 同时提供 Logger 契约，每条 Logger 边都会
 // 是 AMBIGUOUS_BEAN。它们的消费者由重定向表点名，不经 selectProvider。
+//
+// ## L5b 的可行性结论（RFC 0011 要求「实现期给可行性结论」，#242）
+//
+// 问题：编译期能不能检出 `log.info({ user }, "logged in")` 这种「把整个实体塞进日志」的写法？
+// **结论：不能，本波不做。** 但否决它的理由比 RFC 预设的早一层——
+//
+// RFC 假设风险在「需要一套『敏感』标记机制，那本身是新公开面」。真正第一个拦路的是：
+// **编译器根本看不见调用点**。`ClassMethodDeclaration`（parser/source-ir.ts）只有
+// parameterCount / returnType / decorators / span，没有方法体；`FunctionDescriptor.body` 也只
+// 认得出 `direct-new`（工厂 bean 那一种），其余表达式一律落成 `unsupported`。也就是说
+// `log.info(...)` 这个调用从来没有进过 Source IR，更谈不上分析它的实参形状。
+//
+// 补这一层要把语句与表达式全量下降进 Source IR。那不是加个字段：IR 的形状、体积与确定性
+// 都要重新过一遍，而 CONTRIBUTING 规定 Parser-to-IR 测试断言整份 Source IR，等于全量重写
+// 那批用例。代价与「多一条编译期告警」不成比例。
+//
+// 唯一现成的是**字段枚举**：`LinkedSymbol.declaration` 给得出 ClassDeclaration /
+// InterfaceDeclaration，字段就在 IR 里。所以真要做，缺的是调用点这一半，不是类型这一半。
+// 标记机制（RFC 点名的那条风险）排在第三位——前两条都过不去。
 
 export const loggingPackageName = "@reforce/logging";
 export const loggerContractName = "Logger";
