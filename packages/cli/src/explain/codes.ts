@@ -110,6 +110,30 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
       "name does not take part in matching.",
     ],
   },
+  DUPLICATE_ROUTE_MARKER: {
+    summary: "Two defineRouteMarker declarations share one key.",
+    article: [
+      "A marker key names a slot in each route's meta table, and the key space is global to the",
+      "application. Two markers sharing a key alias one slot: route.meta(A) returns whatever B",
+      "wrote on that route, so middleware keyed on A silently reacts to routes marked with B.",
+      "",
+      "The report names both declarations. To share one marker across files, declare it once and",
+      "import it everywhere; a second declaration needs a key of its own. Bare words collide",
+      "easily — a dotted namespace of your own ('acme.rateLimit') is cheap insurance.",
+    ],
+  },
+  DUPLICATE_METHOD_MARKER: {
+    summary: "Two defineMethodMarker declarations share one key.",
+    article: [
+      "A marker key names a slot in each woven method's meta table, and the key space is global",
+      "to the application. Two markers sharing a key alias one slot: an interceptor bound to A",
+      "fires on methods marked with B, with B's value delivered as its context.",
+      "",
+      "The report names both declarations. To share one marker across files, declare it once and",
+      "import it everywhere; a second declaration needs a key of its own. The key 'transactional'",
+      "is reserved by the framework's @Transactional and reported separately.",
+    ],
+  },
   ROLE_BEAN_AS_DEPENDENCY: {
     summary: "A role Bean was injected as if it were an ordinary provider.",
     article: [

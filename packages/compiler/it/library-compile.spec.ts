@@ -732,6 +732,57 @@ describe("library compile", () => {
     expect(use?.code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
   });
 
+  // route marker 在库模式同拒（#254）：meta v1 没有 marker 槽位，而应用编译对 d.ts 里的
+  // marker 声明查表 miss 后按非 Reforce 装饰器静默丢弃——不拒就是"装了但不生效"。
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for defineRouteMarker declarations", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "markers.ts": [
+              'import { defineRouteMarker } from "@reforce/web";',
+              'export const RateLimit = defineRouteMarker<{ max: number }>("rateLimit");',
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    expect(failure.diagnostics[0].code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+    expect(failure.diagnostics[0].message).toContain("defineRouteMarker");
+  });
+
+  test("reports UNSUPPORTED_LIBRARY_DECLARATION for route marker uses", async () => {
+    const failure = expectLibraryFailure(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "markers.ts": [
+              'import { defineRouteMarker } from "@reforce/web";',
+              'export const RateLimit = defineRouteMarker<{ max: number }>("rateLimit");',
+              "",
+            ].join("\n"),
+            "client.ts": [
+              'import { Injectable } from "@reforce/core";',
+              'import { RateLimit } from "./markers";',
+              "",
+              "@Injectable()",
+              "export class RedisClient {",
+              "  @RateLimit({ max: 10 })",
+              "  async ping(): Promise<void> {}",
+              "}",
+              "",
+            ].join("\n"),
+          },
+        }),
+      ),
+    );
+    const use = failure.diagnostics.find((item) => item.message.includes("Route markers"));
+    expect(use?.code).toBe("UNSUPPORTED_LIBRARY_DECLARATION");
+  });
+
   test("reports UNSUPPORTED_LIBRARY_DECLARATION for @Transactional uses", async () => {
     const failure = expectLibraryFailure(
       await compileLibrary(
