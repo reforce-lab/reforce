@@ -70,6 +70,23 @@ describe("scaffoldProject", () => {
     },
   );
 
+  // 观测接线是编译期条件发射（#271）：application.ts 不注册 logging，生成的 bootstrap 一条
+  // 观测代码都不发射，dev 启动静默、连监听地址都看不到。三个引擎各有一份 application.ts，
+  // 逐个钉住默认注册，防回归。
+  test.each(["hono", "fastify", "node"] as const)(
+    "engine %s 的 application.ts 默认注册 logging starter",
+    async (engine) => {
+      await withTemporaryDirectory(async (root) => {
+        const target = join(root, "my-api");
+
+        await scaffoldProject(target, specOf({ engine }));
+
+        const application = await readGenerated(target, "src/application.ts");
+        expect(application).toContain('import { logging } from "@reforce/logging"');
+      });
+    },
+  );
+
   test.each(["hono", "fastify", "node"] as const)(
     "engine %s 的 web-server.config.ts 闭合对应的 ServeSettings 契约",
     async (engine) => {
@@ -120,7 +137,7 @@ describe("scaffoldProject", () => {
           "src/infrastructure/web/api-key.middleware.ts",
           "src/infrastructure/web/fallback-error.handler.ts",
           "src/infrastructure/web/http-error.handler.ts",
-          "src/infrastructure/web/request-logging.middleware.ts",
+          "src/infrastructure/web/request.fields.ts",
           "src/shared/http/not-found.exception.ts",
           "src/shared/pagination/pagination.dto.ts",
           "src/shared/pagination/sort-order.enum.ts",

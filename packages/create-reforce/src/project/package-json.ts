@@ -21,6 +21,7 @@ function createDependencies(engine: EngineKey): Record<string, string> {
   return sortByKey({
     "@reforce/config": REFORCE_VERSION,
     "@reforce/core": REFORCE_VERSION,
+    "@reforce/logging": REFORCE_VERSION,
     "@reforce/web": REFORCE_VERSION,
     [ENGINES[engine].packageName]: REFORCE_VERSION,
     zod: DEPENDENCY_VERSIONS.zod,
