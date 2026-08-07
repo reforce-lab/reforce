@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
-# 分支保护是 strict: true，main 每前进一次所有未合分支都要 rebase 重推，旧 run 不取消就会同时
-# 挂着好几轮抢 windows 名额。只对 PR 取消：push 到 main 的 run 是该 commit 唯一的验证记录，
-# 取消它会让某个 main commit 永久失去证据（Issue #75）。
+# 只对 PR 取消：连推同一分支时旧 run 已无人看，留着只是抢 windows 名额。
+#
+# push 到 main 的 run 不取消，两重理由：它是该 commit 唯一的验证记录，取消就让某个 main commit
+# 永久失去证据（Issue #75）；而且分支保护是 strict: false（PR 不要求先 rebase 到最新 main），
+# 所以两个各自绿的 PR 合进来之后，那个**组合**没被任何 PR run 验证过——只有 main 上这一轮跑的
+# 才是它的验证记录。此处曾写「strict: true，main 每前进一次未合分支都要 rebase 重推」，与实际
+# 配置相反，照它规划会白做一轮 rebase 与 CI（Issue #305）。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
