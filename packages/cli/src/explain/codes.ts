@@ -12,7 +12,7 @@ export interface DiagnosticArticle {
 
 export const unwrittenArticleIssueUrl = "https://github.com/reforce-lab/reforce/issues/242";
 
-// 首版覆盖依赖图与路由两条最常撞墙的路径。其余 51 个码走「暂无长文」。
+// 覆盖依赖图、路由与日志/抑制三条最常撞墙的路径。其余码走「暂无长文」。
 const articles: Readonly<Record<string, DiagnosticArticle>> = {
   MISSING_BEAN: {
     summary: "A dependency has no provider anywhere in the resolved graph.",
@@ -134,6 +134,53 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
       "Across packages it means one starter is installed twice at incompatible versions and both",
       "copies registered. `reforce explain <bean id>` prints the introduction chain for each copy,",
       "which shows who pulled in which version.",
+    ],
+  },
+  DUPLICATE_LOGGER_NAME: {
+    summary: "Two classes resolve to the same logger name.",
+    article: [
+      "A logger name identifies one stream in the log output: dashboards filter on it, alert rules",
+      "match on it, and LoggingSettings.levels keys on it. Two classes sharing one name would merge",
+      "two unrelated streams, and tuning the level for one would silently tune the other.",
+      "",
+      "The default name is the class's exported name, so the usual cause is two classes with the",
+      "same short name in different files — both derive the same logger. Give one of them an",
+      'explicit @LoggerName("…"). The name must be a string literal: it is compiled into the',
+      "generated Bean, not read at runtime.",
+      "",
+      "The report names both classes. Only the first keeps the name; the compilation fails rather",
+      "than letting registration order decide which class owns the stream.",
+    ],
+  },
+  UNUSED_SUPPRESSION: {
+    summary: "A suppression comment matched no diagnostic on its target line.",
+    article: [
+      "A suppression ('// reforce-ignore <CODE>: <why>') is a standing promise that the next line",
+      "reports that code. When nothing on that line reports it any more, the comment is stale —",
+      "and a stale suppression is how a real regression later slips through unread.",
+      "",
+      "Three ways it goes stale: the diagnostic was fixed (delete the comment — this is the happy",
+      "case the report exists for), the code moved lines while the comment stayed put (move the",
+      "comment back onto the reporting line; suppressions may be stacked, one per line), or the",
+      "code in the comment is misspelt and never matched anything.",
+      "",
+      "This report itself cannot be suppressed by a comment — a suppression that could hide its own",
+      "staleness would make staleness undetectable. Turn it off globally with",
+      "--diagnostic-level UNUSED_SUPPRESSION=off if you must.",
+    ],
+  },
+  SUPPRESSION_NOT_APPLICABLE: {
+    summary: "A suppression comment targets something a comment cannot silence.",
+    article: [
+      "Suppressions only apply to warnings. An error means the analysis could not produce a",
+      "complete graph — past that point the compiler would be emitting constructor calls with",
+      "missing arguments, so there is nothing valid to generate. Fix what the error reports; the",
+      "comment cannot make the graph whole.",
+      "",
+      "The report also fires when the comment targets UNUSED_SUPPRESSION or",
+      "SUPPRESSION_NOT_APPLICABLE themselves. Letting a comment silence the 'this suppression is",
+      "stale' report would make staleness undetectable, so those two are only switchable globally",
+      "via --diagnostic-level <CODE>=off.",
     ],
   },
 };
