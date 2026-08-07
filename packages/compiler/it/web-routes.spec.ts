@@ -548,6 +548,68 @@ describe("route marker extraction", () => {
     expect(failure.diagnostics.map((item) => item.code)).toEqual(["INVALID_ROUTE_MARKER_VALUE"]);
     expect(failure.diagnostics[0]?.related).toHaveLength(1);
   });
+
+  // key 空间是全局的（#254）：meta 表按裸字符串 key 存，撞 key 的两个 marker 互为别名。
+  test("two declarations sharing one key across files are rejected with both sites", async () => {
+    const result = await compileSources({
+      "audit-markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const AuditRoles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+      "markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const Roles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+    });
+
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toEqual(["DUPLICATE_ROUTE_MARKER"]);
+    expect(failure.diagnostics[0]?.message).toContain("AuditRoles");
+    expect(failure.diagnostics[0]?.related).toHaveLength(1);
+    expect(JSON.stringify(failure.diagnostics)).toContain("src/audit-markers.ts");
+    expect(JSON.stringify(failure.diagnostics)).toContain("src/markers.ts");
+  });
+
+  test("every later declaration of a taken key is reported against the deterministic first", async () => {
+    const result = await compileSources({
+      "alpha-markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const AlphaRoles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+      "beta-markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const BetaRoles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+      "gamma-markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const GammaRoles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+    });
+
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toEqual([
+      "DUPLICATE_ROUTE_MARKER",
+      "DUPLICATE_ROUTE_MARKER",
+    ]);
+    for (const item of failure.diagnostics) {
+      expect(item.message).toContain("AlphaRoles");
+    }
+  });
+
+  test("distinct keys in separate files stay independent", async () => {
+    const result = await compileSources({
+      "audit-markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const Audit = defineRouteMarker<boolean>("audit");',
+      ].join("\n"),
+      "markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web";',
+        'export const Roles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+    });
+
+    expect(result.status).toBe("success");
+  });
 });
 
 describe("route schema references", () => {

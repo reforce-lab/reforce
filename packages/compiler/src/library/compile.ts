@@ -71,7 +71,8 @@ function validateModuleSyntax(source: ParsedSource, diagnostics: CompilerDiagnos
 
 // 方法级织入在库模式硬错（ADR 0008 AM1，#202 范围定案）：meta v1 没有方法级槽位，静默丢弃
 // 违反"要么生效、要么编译错"；槽位演进等真实 starter 消费者出现时另开 issue。三种形态都拒：
-// defineMethodMarker 声明、@Interceptor 绑定、方法标记使用。
+// defineMethodMarker 声明、@Interceptor 绑定、方法标记使用。route marker 同拒（#254）：
+// meta v1 同样没有槽位，而应用编译对 d.ts 里的 marker 声明查表 miss 后会静默丢弃整个标记。
 function isMethodMarkerDeclaration(
   source: ParsedSource,
   declaration: ParsedSource["unit"]["valueDeclarations"][number],
@@ -86,6 +87,19 @@ function isMethodMarkerDeclaration(
   return symbol?.kind === "core" && symbol.name === "defineMethodMarker";
 }
 
+function isRouteMarkerDeclaration(
+  source: ParsedSource,
+  declaration: ParsedSource["unit"]["valueDeclarations"][number],
+  linker: ProjectLinker,
+): boolean {
+  const initializer = declaration.initializer;
+  if (initializer?.kind !== "call") {
+    return false;
+  }
+  const symbol = linker.resolveEntity(source, initializer.callee);
+  return symbol?.kind === "web" && symbol.name === "defineRouteMarker";
+}
+
 function rejectMethodWeavingDeclarations(
   source: ParsedSource,
   linker: ProjectLinker,
@@ -98,6 +112,15 @@ function rejectMethodWeavingDeclarations(
           "defineMethodMarker cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
           declaration.span,
           "Keep method markers and their marked Beans application-side for now.",
+        ),
+      );
+    }
+    if (isRouteMarkerDeclaration(source, declaration, linker)) {
+      diagnostics.push(
+        unsupportedDeclaration(
+          "defineRouteMarker cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+          declaration.span,
+          "Keep route markers and their controllers application-side for now.",
         ),
       );
     }
@@ -155,6 +178,21 @@ function rejectFrameworkWeavingDecorator(
   diagnostics.push(unsupportedDeclaration(entry.message, span, entry.help));
 }
 
+const markerUseRejections = [
+  {
+    matches: isMethodMarkerDeclaration,
+    message:
+      "Method markers cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+    help: "Keep method markers and their marked Beans application-side for now.",
+  },
+  {
+    matches: isRouteMarkerDeclaration,
+    message:
+      "Route markers cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
+    help: "Keep route markers and their controllers application-side for now.",
+  },
+] as const;
+
 function rejectMethodMarkerUses(
   source: ParsedSource,
   declaration: SourceFileIr["classes"][number],
@@ -173,17 +211,14 @@ function rejectMethodMarkerUses(
         continue;
       }
       const resolved = linker.resolveValueDeclaration(source, decorator.callee.name);
-      if (
-        resolved !== undefined &&
-        isMethodMarkerDeclaration(resolved.source, resolved.declaration, linker)
-      ) {
-        diagnostics.push(
-          unsupportedDeclaration(
-            "Method markers cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
-            decorator.span,
-            "Keep method markers and their marked Beans application-side for now.",
-          ),
-        );
+      if (resolved === undefined) {
+        continue;
+      }
+      const rejection = markerUseRejections.find((entry) =>
+        entry.matches(resolved.source, resolved.declaration, linker),
+      );
+      if (rejection !== undefined) {
+        diagnostics.push(unsupportedDeclaration(rejection.message, decorator.span, rejection.help));
       }
     }
   }
