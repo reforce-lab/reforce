@@ -42,13 +42,6 @@ export interface RouteMiddlewareModel {
   readonly mount: MiddlewareMountModel;
 }
 
-export interface RouteSchemasModel {
-  readonly params?: WebExportRefModel;
-  readonly query?: WebExportRefModel;
-  readonly body?: WebExportRefModel;
-  readonly response?: WebExportRefModel;
-}
-
 // 契约来源(RFC 0012 S2,#274):type = 编译器按类型生成解码器;schema = typeof 追溯命中的
 // 用户 Standard Schema,routes.ts 按 ref 重新 import,解码交给它,vendor 落 routes.json。
 export type ContractSourceModel =
@@ -100,13 +93,10 @@ export interface RouteModel {
   readonly controller: WebExportRefModel;
   readonly controllerId: string;
   readonly handler: string;
-  // emission 用它决定 invoke 闭包传不传 RequestContext：零参 handler 多传实参是 tsc 错误。
-  readonly handlerArity: 0 | 1;
   readonly middleware: readonly RouteMiddlewareModel[];
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
-  readonly schemas: RouteSchemasModel;
-  // 槽位路由的契约(#274);旧 schemas 路由缺省,旧链路删除后所有路由都携带。
-  readonly contract?: RouteContractModel;
+  // 路由契约(#274):槽位与响应侧的唯一真相,emission 据它渲染 slots/invoke/encode。
+  readonly contract: RouteContractModel;
   readonly source: GeneratedSourceReferenceModel;
 }
 

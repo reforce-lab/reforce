@@ -9,7 +9,6 @@ import {
   type RouteMetaValueModel,
   type RouteMiddlewareModel,
   type RouteModel,
-  type RouteSchemasModel,
   type WebEngineModel,
   type WebErrorHandlerModel,
   type WebExportRefModel,
@@ -38,7 +37,8 @@ import type { TypeQuery } from "@/typescript/type-query";
 
 // web 路由分析（ADR 0006 W1/W3/W4/W5，#142 / #152）：controller/中间件/错误处理器都是 bean，
 // 身份由各自的角色装饰器蕴含（bean-roles.ts）。这里静态提取路由表：路径归并与冲突检测、
-// marker 字面量提取、schema 引用核实、中间件链按 (阶段, order, beanId) 压平写死。
+// marker 字面量提取、槽位契约解析(RFC 0012 S2,#274)、中间件链按 (阶段, order, beanId)
+// 压平写死。
 
 const routeMethodByDecorator = {
   Delete: "DELETE",
@@ -59,9 +59,6 @@ const markerDeclarationHelp =
   'Declare route markers as export const X = defineRouteMarker<T>("key") with a non-empty string literal key.';
 const markerValueHelp =
   "Route marker values must be static JSON literals: string, number, boolean, null, array, or object literals.";
-const schemaHelp =
-  "Reference a top-level const exported from an application module; re-export chains and external packages are not supported.";
-
 function report(
   diagnostics: CompilerDiagnostic[],
   code: CompilerDiagnostic["code"],
@@ -598,154 +595,10 @@ function routePathOf(
   return { path, shapeKey: shapeSegments.join("/"), parameters };
 }
 
-const schemaSlots = ["params", "query", "body", "response"] as const;
-
-type SchemaSlot = (typeof schemaSlots)[number];
-
-function isSchemaSlot(key: string): key is SchemaSlot {
-  return (schemaSlots as readonly string[]).includes(key);
-}
-
-// schema 引用（ADR 0006 W5）：装饰器运行时是 no-op，schema 值不会活到运行时——routes.ts 必须
-// 按 module × exportName 重新 import，因此引用必须静态解析到应用源集内的具名导出 const。
-function schemaRefOf(
-  source: ParsedSource,
-  slot: string,
-  value: DecoratorArgumentValue,
-  linker: ProjectLinker,
-  diagnostics: CompilerDiagnostic[],
-): WebExportRefModel | undefined {
-  if (value.kind !== "identifier-reference" || value.entity.kind !== "identifier") {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_SCHEMA",
-      `Route ${slot} schema must be a plain identifier referencing an exported const.`,
-      value.span,
-      { help: schemaHelp },
-    );
-    return undefined;
-  }
-  const resolved = linker.resolveValueDeclaration(source, value.entity.name);
-  if (resolved === undefined || !resolved.declaration.topLevel) {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_SCHEMA",
-      `Cannot statically resolve route ${slot} schema ${value.entity.name}.`,
-      value.span,
-      { help: schemaHelp },
-    );
-    return undefined;
-  }
-  if (resolved.exportName === undefined) {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_SCHEMA",
-      `Route ${slot} schema ${value.entity.name} must be exported so the generated route table can import it.`,
-      value.span,
-      { help: schemaHelp },
-    );
-    return undefined;
-  }
-  return { source: resolved.source, exportName: resolved.exportName };
-}
-
-function routeSchemaSlotOf(
-  source: ParsedSource,
-  property: ObjectLiteralProperty,
-  linker: ProjectLinker,
-  diagnostics: CompilerDiagnostic[],
-): readonly [SchemaSlot, WebExportRefModel] | undefined {
-  if (property.kind === "unsupported-property") {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_SCHEMA",
-      `Route schemas cannot use ${property.propertyKind} properties.`,
-      property.span,
-      { help: schemaHelp },
-    );
-    return undefined;
-  }
-  if (!isSchemaSlot(property.key)) {
-    report(
-      diagnostics,
-      "INVALID_ROUTE_SCHEMA",
-      `Route schemas do not include "${property.key}".`,
-      property.span,
-      { help: schemaHelp },
-    );
-    return undefined;
-  }
-  const ref = schemaRefOf(source, property.key, property.value, linker, diagnostics);
-  return ref === undefined ? undefined : [property.key, ref];
-}
-
-interface RouteSchemaGroup {
-  // 属性里的 schema 标识符要在声明这组 schema 的模块里回查，不是在 controller 模块里。
-  readonly source: ParsedSource;
-  readonly properties: readonly ObjectLiteralProperty[];
-}
-
-// schema 组既可以内联，也可以是指向顶层 const 对象字面量的标识符。后者是 handler 侧类型
-// 标注的落点：`show(context: RequestContext<typeof showSchemas>)` 只提一次名字，内联形态
-// 则要把整组 schema 类型在标注里重打一遍——比原先的 `as unknown` 断言更糟。
-// 解析规则照 defineRouteMarker 办：顶层 const、静态可解析，且必须真的是对象字面量初始化。
-function routeSchemaGroupOf(
-  source: ParsedSource,
-  argument: DecoratorArgumentValue,
-  linker: ProjectLinker,
-  diagnostics: CompilerDiagnostic[],
-): RouteSchemaGroup | undefined {
-  if (argument.kind === "object-literal") {
-    return { source, properties: argument.properties };
-  }
-  const resolved =
-    argument.kind === "identifier-reference" && argument.entity.kind === "identifier"
-      ? linker.resolveValueDeclaration(source, argument.entity.name)
-      : undefined;
-  if (
-    resolved?.declaration.topLevel === true &&
-    resolved.declaration.declarationKind === "const" &&
-    resolved.declaration.initializer?.kind === "object-literal"
-  ) {
-    return { source: resolved.source, properties: resolved.declaration.initializer.properties };
-  }
-  report(
-    diagnostics,
-    "INVALID_ROUTE_SCHEMA",
-    "Route schemas must be one object literal, or an identifier referencing a top-level const object literal, with params/query/body/response keys.",
-    argument.span,
-    { help: schemaHelp },
-  );
-  return undefined;
-}
-
-function routeSchemasOf(
-  source: ParsedSource,
-  argument: DecoratorArgumentValue,
-  linker: ProjectLinker,
-  diagnostics: CompilerDiagnostic[],
-): RouteSchemasModel | undefined {
-  const group = routeSchemaGroupOf(source, argument, linker, diagnostics);
-  if (group === undefined) {
-    return undefined;
-  }
-  let schemas: RouteSchemasModel = {};
-  for (const property of group.properties) {
-    const slot = routeSchemaSlotOf(group.source, property, linker, diagnostics);
-    if (slot === undefined) {
-      return undefined;
-    }
-    schemas = { ...schemas, [slot[0]]: slot[1] };
-  }
-  return schemas;
-}
-
-// 槽位路由(#274)参数列表放开,逐参数由槽位解析裁决;旧 schemas 路由维持「至多一个
-// RequestContext 参数」。
+// 参数列表形态不设上限(#274):逐参数合法性全部由槽位解析裁决。
 function validRouteHandlerMethod(
   method: ClassMethodDeclaration,
   controllerName: string,
-  allowSlotParameters: boolean,
   diagnostics: CompilerDiagnostic[],
 ): string | undefined {
   const name = method.name.kind === "identifier" ? method.name.name : undefined;
@@ -755,8 +608,7 @@ function validRouteHandlerMethod(
     method.accessibility !== "public" ||
     method.generator ||
     method.optional ||
-    !method.implementation ||
-    (!allowSlotParameters && method.parameters.length > 1)
+    !method.implementation
   ) {
     report(
       diagnostics,
@@ -1275,33 +1127,44 @@ function collectMethodRoutes(
   if (claim === undefined || basePath === undefined) {
     return;
   }
-  // 路径触发判定(#274 过渡态):任一路由装饰器带 schemas 实参 → 整方法走旧分析路径;
-  // 未传 schemas → 槽位解析(零参 = 空槽位;唯一 RequestContext 参数 = requestContext 槽,
-  // 与旧 handlerArity 语义等价)。旧链路删除后 schemas 实参本身转为迁移硬错。
-  const usesSchemas = routeDecorators.some(([, decorators]) =>
-    decorators.some((decorator) => decorator.arguments.length > 1),
+  // 旧 `@Get(path, schemas)` 链路已随 RFC 0012 S2 删除(#274 终态):第二实参一律迁移硬错,
+  // 整方法不再进任何分析路径——槽位契约与它表达的是同一份事实,带着旧实参继续解析只会
+  // 产出两套互相矛盾的诊断。
+  const schemaArguments = routeDecorators.flatMap(([, decorators]) =>
+    decorators.filter((decorator) => decorator.arguments.length > 1),
   );
-  const handlerName = validRouteHandlerMethod(method, controllerName, !usesSchemas, diagnostics);
+  if (schemaArguments.length > 0) {
+    for (const decorator of schemaArguments) {
+      report(
+        diagnostics,
+        "INVALID_ROUTE_SCHEMA",
+        "Route decorators no longer accept a schemas argument.",
+        decorator.arguments.at(1)?.span ?? decorator.span,
+        {
+          help: "Declare inputs as typed handler parameters (Body/Param/Query/Header, RFC 0012); a Standard Schema keeps driving decoding when the parameter type traces to it via typeof.",
+        },
+      );
+    }
+    return;
+  }
+  const handlerName = validRouteHandlerMethod(method, controllerName, diagnostics);
   if (handlerName === undefined) {
     return;
   }
-  let contract: RouteContractModel | undefined;
-  if (!usesSchemas) {
-    contract = resolveRouteSlots({
+  const contract = resolveRouteSlots({
+    method,
+    controllerName,
+    context: createSlotResolutionContext({
+      source: scan.source,
       method,
-      controllerName,
-      context: createSlotResolutionContext({
-        source: scan.source,
-        method,
-        linker: inputs.linker,
-        query: inputs.typeQuery,
-        fileIdOf: inputs.fileIdOf,
-        diagnostics,
-      }),
-    });
-    if (contract === undefined) {
-      return;
-    }
+      linker: inputs.linker,
+      query: inputs.typeQuery,
+      fileIdOf: inputs.fileIdOf,
+      diagnostics,
+    }),
+  });
+  if (contract === undefined) {
+    return;
   }
   const routeUse = useTargetsOf(
     scan.source,
@@ -1315,7 +1178,6 @@ function collectMethodRoutes(
     basePath,
     claim,
     handlerName,
-    handlerArity: method.parameters.length === 0 ? 0 : 1,
     contract,
     middleware: flattenedChain(inputs.globalMiddleware, controllerUse, routeUse),
     meta: routeMetaOf(scan.source, method, inputs.markers, inputs.linker, diagnostics),
@@ -1327,8 +1189,7 @@ interface RouteCandidateInputs {
   readonly basePath: string;
   readonly claim: WebBeanClaim;
   readonly handlerName: string;
-  readonly handlerArity: 0 | 1;
-  readonly contract: RouteContractModel | undefined;
+  readonly contract: RouteContractModel;
   readonly middleware: readonly RouteMiddlewareModel[];
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
 }
@@ -1346,7 +1207,6 @@ function pushRouteCandidates(
         basePath: candidateInputs.basePath,
         claim: candidateInputs.claim,
         handlerName: candidateInputs.handlerName,
-        handlerArity: candidateInputs.handlerArity,
         contract: candidateInputs.contract,
         middleware: candidateInputs.middleware,
         meta: candidateInputs.meta,
@@ -1367,8 +1227,7 @@ interface RouteOfInputs {
   readonly basePath: string;
   readonly claim: WebBeanClaim;
   readonly handlerName: string;
-  readonly handlerArity: 0 | 1;
-  readonly contract: RouteContractModel | undefined;
+  readonly contract: RouteContractModel;
   readonly middleware: readonly RouteMiddlewareModel[];
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
   readonly linker: ProjectLinker;
@@ -1394,11 +1253,11 @@ function routeSubPathOf(inputs: RouteOfInputs): string | undefined {
 
 function routeOf(inputs: RouteOfInputs): RouteCandidate | undefined {
   const { decorator, diagnostics } = inputs;
-  if (!decorator.called || decorator.arguments.length > 2) {
+  if (!decorator.called || decorator.arguments.length > 1) {
     report(
       diagnostics,
       "INVALID_ROUTE_DECLARATION",
-      `${inputs.decoratorName} must be called with an optional path literal and an optional schemas object.`,
+      `${inputs.decoratorName} must be called with an optional path literal.`,
       decorator.span,
     );
     return undefined;
@@ -1414,17 +1273,8 @@ function routeOf(inputs: RouteOfInputs): RouteCandidate | undefined {
   // 硬错 6(#274)按路由复裁:同方法多路由装饰器时各自的路径参数集不同,槽位解析本身
   // per-method 只跑一次。
   if (
-    inputs.contract !== undefined &&
     !reportUnknownPathParameters(inputs.contract, pathInfo.path, pathInfo.parameters, diagnostics)
   ) {
-    return undefined;
-  }
-  const schemaArgument = decorator.arguments.at(1);
-  const schemas =
-    schemaArgument === undefined
-      ? {}
-      : routeSchemasOf(inputs.source, schemaArgument, inputs.linker, diagnostics);
-  if (schemas === undefined) {
     return undefined;
   }
   // 名字表驱动：routeDecoratorNames 已经证明成员资格，索引推不回值联合
@@ -1438,11 +1288,9 @@ function routeOf(inputs: RouteOfInputs): RouteCandidate | undefined {
       controller: inputs.claim.ref,
       controllerId: inputs.claim.beanId,
       handler: inputs.handlerName,
-      handlerArity: inputs.handlerArity,
       middleware: inputs.middleware,
       meta: inputs.meta,
-      schemas,
-      ...(inputs.contract === undefined ? {} : { contract: inputs.contract }),
+      contract: inputs.contract,
       source: sourceReference(decorator.span),
     },
     shapeKey: pathInfo.shapeKey,
