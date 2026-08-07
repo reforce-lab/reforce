@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BeanClass } from "@reforce/context";
+import type { BeanClass } from "@reforce/core";
 import type {
   GeneratedConfigRegistration,
   GeneratedSourceReference,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 import {
   createTemporaryProject,
   resolveNodeExecutable,

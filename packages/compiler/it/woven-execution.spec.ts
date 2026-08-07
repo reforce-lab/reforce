@@ -92,7 +92,7 @@ async function compileAndRun(
 }
 
 const markersSource = [
-  'import { defineMethodMarker } from "@reforce/context";',
+  'import { defineMethodMarker } from "@reforce/core";',
   'export const Audited = defineMethodMarker<{ label: string }>("audited");',
   'export const Traced = defineMethodMarker<{ detail: boolean } | undefined>("traced");',
 ].join("\n");
@@ -102,8 +102,8 @@ test("weaves the flattened onion chain and intercepts self-invocation through th
     {
       "markers.ts": markersSource,
       "interceptors.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
-        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
+        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";',
         'import { Audited, Traced } from "./markers";',
         "",
         "export const trace: string[] = [];",
@@ -129,7 +129,7 @@ test("weaves the flattened onion chain and intercepts self-invocation through th
         "}",
       ].join("\n"),
       "repo.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { trace } from "./interceptors";',
         'import { Audited, Traced } from "./markers";',
         "",
@@ -185,8 +185,8 @@ test("weaves request-scoped beans on the request construction path", async () =>
     {
       "markers.ts": markersSource,
       "application.ts": [
-        'import { type Current, Injectable, Interceptor, RequestScoped } from "@reforce/context";',
-        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
+        'import { type Current, Injectable, Interceptor, RequestScoped } from "@reforce/core";',
+        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";',
         'import { Audited } from "./markers";',
         "",
         "export const trace: string[] = [];",
@@ -239,8 +239,8 @@ test("constructs interceptor and woven bean cycles through the cycle proxy", asy
     {
       "markers.ts": markersSource,
       "application.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
-        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
+        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";',
         'import { Audited } from "./markers";',
         "",
         "export const trace: string[] = [];",
@@ -295,7 +295,7 @@ test("weaves @Transactional through the synthesized framework interceptor", asyn
   const stdout = await compileAndRun(
     {
       "manager.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { activeResourceFor } from "@reforce/transaction";',
         'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
         "",
@@ -323,7 +323,7 @@ test("weaves @Transactional through the synthesized framework interceptor", asyn
         "}",
       ].join("\n"),
       "orders.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         'import { events, RecordingManager } from "./manager";',
         "",

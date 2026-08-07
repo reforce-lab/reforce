@@ -4,7 +4,7 @@ import type {
   GeneratedDependency,
   GeneratedDependencyMode,
   GeneratedSourceReference,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 
 export function testSource(name: string): GeneratedSourceReference {
   return {

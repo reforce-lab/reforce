@@ -5,7 +5,7 @@ import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LibraryPackageManifest } from "@/library/package-exports";
 import {
-  contextModuleSpecifier,
+  coreModuleSpecifier,
   createExportBinder,
   transactionModuleSpecifier,
 } from "@/linking/export-binding";
@@ -98,7 +98,7 @@ export async function createLibrarySurface(inputs: LibrarySurfaceInputs): Promis
     locatePackage,
     symbolTable: { anchorEntry: () => undefined },
     skipSpecifier: (specifier) =>
-      specifier === contextModuleSpecifier ||
+      specifier === coreModuleSpecifier ||
       specifier === transactionModuleSpecifier ||
       isBuiltin(specifier),
   });

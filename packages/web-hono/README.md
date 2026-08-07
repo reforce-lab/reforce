@@ -16,7 +16,7 @@ reforce 只提供两座桥，其余一律交给 hono 生态。
 ### 应用级 configurer —— 注册任何路由之前调用一次
 
 ```ts
-import { Injectable } from "@reforce/context";
+import { Injectable } from "@reforce/core";
 import { type HonoConfigure, type HonoConfigurer } from "@reforce/web-hono";
 import { cors } from "hono/cors";
 

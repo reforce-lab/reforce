@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "lib": ["ESNext"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    // Reforce 用的是 TC39 标准装饰器，不是 TypeScript 的老版实现，这两项必须保持 false。
+    "experimentalDecorators": false,
+    "emitDecoratorMetadata": false,
+    // 编译交给 reforce build，tsc 只负责类型检查。
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  // .reforce/generated 是编译期产物，里面的 .d.ts 让 qualifier 之类的生成类型可见。
+  "include": ["src", ".reforce/generated/**/*.d.ts"]
+}

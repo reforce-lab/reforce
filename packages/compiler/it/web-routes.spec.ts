@@ -157,19 +157,19 @@ describe("route table generation", () => {
       'export const Roles = defineRouteMarker<readonly string[]>("roles");',
     ].join("\n"),
     "trace.ts": [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import { Middleware } from "@reforce/web";',
       '@Middleware({ phase: "observability", order: -5, global: true })',
       "export class TraceMiddleware {}",
     ].join("\n"),
     "auth.ts": [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import { Middleware } from "@reforce/web";',
       '@Middleware({ phase: "admission" })',
       "export class AuthMiddleware {}",
     ].join("\n"),
     "errors.ts": [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import { ErrorHandler } from "@reforce/web";',
       "@ErrorHandler({ order: 2 })",
       "export class TeapotHandler {}",
@@ -177,7 +177,7 @@ describe("route table generation", () => {
       "export class FirstHandler {}",
     ].join("\n"),
     "users-controller.ts": [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import { Controller, Get, Post, Use } from "@reforce/web";',
       'import { AuthMiddleware } from "@/auth";',
       'import { Roles } from "@/markers";',
@@ -298,7 +298,7 @@ describe("route table generation", () => {
   test("emits an import-free empty table when the application has no web declarations", async () => {
     const result = await compileSourcesOrThrow({
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "@Injectable() export class Service {}",
       ].join("\n"),
     });
@@ -314,7 +314,7 @@ describe("route conflicts", () => {
   test("the same method and path registered twice is a hard error with both sites", async () => {
     const result = await compileSources({
       "a-controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         '@Controller("/users")',
         "export class AController {",
@@ -323,7 +323,7 @@ describe("route conflicts", () => {
         "}",
       ].join("\n"),
       "b-controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         "@Controller()",
         "export class BController {",
@@ -341,7 +341,7 @@ describe("route conflicts", () => {
   test("parameter names do not disambiguate the same path shape", async () => {
     const result = await compileSources({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         "@Controller()",
         "export class UsersController {",
@@ -359,7 +359,7 @@ describe("route conflicts", () => {
   test("the same shape on different methods is not a conflict", async () => {
     const result = await compileSourcesOrThrow({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Delete, Get } from "@reforce/web";',
         "@Controller()",
         "export class UsersController {",
@@ -379,7 +379,7 @@ describe("middleware chain flattening", () => {
   test("phase wins over order and beanId; order wins inside a phase; beanId breaks ties", async () => {
     const result = await compileSourcesOrThrow({
       "middleware.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Middleware } from "@reforce/web";',
         // 阶段决胜：application 阶段的 order=-10 也排在 admission 阶段的 order=99 之后。
         '@Middleware({ phase: "application", order: -10, global: true })',
@@ -396,7 +396,7 @@ describe("middleware chain flattening", () => {
         "export class AlphaTrace {}",
       ].join("\n"),
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         "@Controller()",
         "export class PingController {",
@@ -419,7 +419,7 @@ describe("middleware chain flattening", () => {
   test("global, controller, and route mounts merge with mount provenance and no duplicates", async () => {
     const result = await compileSourcesOrThrow({
       "middleware.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Middleware } from "@reforce/web";',
         '@Middleware({ phase: "observability", global: true })',
         "export class TraceMiddleware {}",
@@ -429,7 +429,7 @@ describe("middleware chain flattening", () => {
         "export class AuditMiddleware {}",
       ].join("\n"),
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get, Use } from "@reforce/web";',
         'import { AuditMiddleware, AuthMiddleware, TraceMiddleware } from "@/middleware";',
         "@Controller() @Use(AuthMiddleware)",
@@ -473,7 +473,7 @@ describe("route marker extraction", () => {
         'export const Roles = defineRouteMarker<readonly string[]>("roles");',
       ].join("\n"),
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         'import { Roles } from "@/markers";',
         'const adminRoles = ["admin"] as const;',
@@ -497,7 +497,7 @@ describe("route marker extraction", () => {
         "export const Roles = defineRouteMarker<readonly string[]>(key);",
       ].join("\n"),
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "@Injectable() export class Service {}",
       ].join("\n"),
     });
@@ -523,7 +523,7 @@ describe("route marker extraction", () => {
         'export const Roles = defineRouteMarker<readonly string[]>("roles");',
       ].join("\n"),
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         'import { Roles } from "@/markers";',
         "@Controller()",
@@ -546,7 +546,7 @@ describe("route schema references", () => {
   test("a schema identifier that is not exported cannot be wired into the table", async () => {
     const result = await compileSources({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         'const localSchema = { "~standard": { version: 1, vendor: "it", validate: (value: unknown) => ({ value }) } };',
         "@Controller()",
@@ -563,7 +563,7 @@ describe("route schema references", () => {
   test("an inline schema expression is rejected: only identifier references are static", async () => {
     const result = await compileSources({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         "@Controller()",
         "export class UsersController {",
@@ -579,7 +579,7 @@ describe("route schema references", () => {
   test("an unresolvable schema identifier is rejected", async () => {
     const result = await compileSources({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         "declare const ghostSchema: object;",
         "@Controller()",
@@ -660,7 +660,7 @@ describe("route schema references", () => {
     const result = await compileSources({
       "schemas.ts": passthroughSchemaSource,
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         'import { idParamsSchema } from "@/schemas";',
         "@Controller()",
@@ -679,7 +679,7 @@ describe("web role validation", () => {
   test("route decorators without @Controller are rejected", async () => {
     const result = await compileSources({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Get } from "@reforce/web";',
         "@Injectable()",
         "export class UsersController {",
@@ -695,7 +695,7 @@ describe("web role validation", () => {
   test("a controller marked @Injectable is rejected: the role decorator already declares the Bean", async () => {
     const result = await compileSources({
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
         "@Injectable() @Controller()",
         "export class UsersController {",
@@ -728,7 +728,7 @@ describe("web role validation", () => {
   test("a request-scoped middleware is rejected", async () => {
     const result = await compileSources({
       "middleware.ts": [
-        'import { RequestScoped } from "@reforce/context";',
+        'import { RequestScoped } from "@reforce/core";',
         'import { Middleware } from "@reforce/web";',
         "@RequestScoped() @Middleware({ global: true })",
         "export class SessionMiddleware {}",
@@ -741,7 +741,7 @@ describe("web role validation", () => {
   test("an unknown middleware phase is rejected", async () => {
     const result = await compileSources({
       "middleware.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Middleware } from "@reforce/web";',
         '@Middleware({ phase: "security" })',
         "export class SecurityMiddleware {}",
@@ -754,11 +754,11 @@ describe("web role validation", () => {
   test("Use only accepts middleware Beans", async () => {
     const result = await compileSources({
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "@Injectable() export class PlainService {}",
       ].join("\n"),
       "controller.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Controller, Get, Use } from "@reforce/web";',
         'import { PlainService } from "@/service";',
         "@Controller() @Use(PlainService)",
@@ -835,14 +835,14 @@ describe("full chain over a fake adapter", () => {
           'export const Roles = defineRouteMarker<readonly string[]>("roles");',
         ].join("\n"),
         "log-book.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           "@Injectable()",
           "export class LogBook {",
           "  readonly entries: string[] = [];",
           "}",
         ].join("\n"),
         "request-holder.ts": [
-          'import { defineBean } from "@reforce/context";',
+          'import { defineBean } from "@reforce/core";',
           "export class RequestHolder {",
           "  constructor(readonly requestId: string) {}",
           "}",
@@ -852,7 +852,7 @@ describe("full chain over a fake adapter", () => {
           "});",
         ].join("\n"),
         "trace.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { Middleware, type RequestContext } from "@reforce/web";',
           'import { LogBook } from "@/log-book";',
           '@Middleware({ phase: "observability", global: true })',
@@ -867,7 +867,7 @@ describe("full chain over a fake adapter", () => {
           "}",
         ].join("\n"),
         "auth.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { Middleware, type RequestContext } from "@reforce/web";',
           'import { LogBook } from "@/log-book";',
           'import { Roles } from "@/markers";',
@@ -886,7 +886,7 @@ describe("full chain over a fake adapter", () => {
           "}",
         ].join("\n"),
         "errors.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { ErrorHandler } from "@reforce/web";',
           "@ErrorHandler()",
           "export class TeapotHandler {",
@@ -899,7 +899,7 @@ describe("full chain over a fake adapter", () => {
           "}",
         ].join("\n"),
         "users-controller.ts": [
-          'import { type Current, Injectable } from "@reforce/context";',
+          'import { type Current, Injectable } from "@reforce/core";',
           'import { Controller, Get, type RequestContext, Use } from "@reforce/web";',
           'import { AuthMiddleware } from "@/auth";',
           'import { LogBook } from "@/log-book";',
@@ -1154,7 +1154,7 @@ describe("web engine wiring", () => {
   }
 
   const pingController = [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import { Controller, Get } from "@reforce/web";',
     '@Controller("/ping")',
     "export class PingController {",
@@ -1172,7 +1172,7 @@ describe("web engine wiring", () => {
         ? []
         : [`${seeder === "exported" ? "export " : ""}const webRequestSeeder = () => [];`];
     return [
-      'import { defineApplication } from "@reforce/context";',
+      'import { defineApplication } from "@reforce/core";',
       'import { webEngine } from "@acme/web-engine";',
       ...seederLine,
       "export default defineApplication({ starters: [webEngine] });",
@@ -1194,7 +1194,7 @@ describe("web engine wiring", () => {
 
     expect(generatedContent(result, "bootstrap.ts")).toBe(
       [
-        'import { createApplicationContext } from "@reforce/context/generated-runtime";',
+        'import { createApplicationContext } from "@reforce/core/generated-runtime";',
         'import { connectWebApplication } from "@reforce/web/generated-runtime";',
         'import { WebEngine as webEngine0 } from "@acme/web-engine";',
         'import { webRequestSeeder as webSeeder0 } from "../../src/application.js";',
@@ -1324,7 +1324,7 @@ describe("web engine wiring", () => {
         "application.ts": applicationSource("exported"),
         "ping-controller.ts": pingController,
         "close-probe.ts": [
-          'import { Injectable, type OnContextClose } from "@reforce/context";',
+          'import { Injectable, type OnContextClose } from "@reforce/core";',
           "declare global {",
           "  var __wiring: string[];",
           "}",

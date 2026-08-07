@@ -23,7 +23,7 @@ export type BeanRole = "controller" | "error-handler" | "interceptor" | "middlew
 interface BeanRoleSpec {
   readonly role: BeanRole;
   // 角色识别沿用现有机制：kind 由模块 specifier 决定，角色名按符号名字符串比对。
-  readonly symbolKind: "context" | "web";
+  readonly symbolKind: "core" | "web";
   readonly decorator: string;
   // 诊断文案里的角色名。
   readonly label: string;
@@ -65,7 +65,7 @@ const beanRoleSpecs = [
   },
   {
     role: "interceptor",
-    symbolKind: "context",
+    symbolKind: "core",
     decorator: "Interceptor",
     label: "interceptor",
     code: "INVALID_INTERCEPTOR_DECLARATION",

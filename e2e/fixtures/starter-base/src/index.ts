@@ -1,4 +1,4 @@
-import { defineStarter, Injectable } from "@reforce/context";
+import { defineStarter, Injectable } from "@reforce/core";
 
 export interface Clock {
   now(): number;

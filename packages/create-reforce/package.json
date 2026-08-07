@@ -1,21 +1,24 @@
 {
-  "name": "@reforce/context",
+  "name": "create-reforce",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./generated-runtime": {
-      "types": "./dist/generated-runtime.d.ts",
-      "default": "./dist/generated-runtime.js"
-    }
+  "description": "Create a Reforce application",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reforce-lab/reforce",
+    "directory": "packages/create-reforce"
+  },
+  "bin": {
+    "create-reforce": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
@@ -24,18 +27,17 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@swc/helpers": "catalog:",
-    "radashi": "^12.9.1"
+    "@clack/core": "^1.4.3",
+    "@clack/prompts": "^1.7.0",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@reforce/tooling-rslib": "workspace:*",
-    "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@reforce/tooling-vitest": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/node": "catalog:",
-    "fast-check": "^4.9.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

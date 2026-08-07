@@ -1,4 +1,4 @@
-import { defineStarter } from "@reforce/context";
+import { defineStarter } from "@reforce/core";
 
 export type {
   HonoConfigure,

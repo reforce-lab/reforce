@@ -366,7 +366,7 @@ export function analyzeFactoryProvider(
   diagnostics: CompilerDiagnostic[],
 ): ProviderDraft | undefined {
   const callee = linker.resolveEntity(source, declaration.callee);
-  if (callee?.kind !== "context" || callee.name !== "defineBean") {
+  if (callee?.kind !== "core" || callee.name !== "defineBean") {
     return undefined;
   }
   const exportName = factoryExportName(declaration, diagnostics);

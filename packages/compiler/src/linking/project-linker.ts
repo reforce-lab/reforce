@@ -94,7 +94,7 @@ export async function createProjectLinker(
     return location;
   };
   // binder 的每次查询都现读 records，因此可以在外部闭包装载前创建：注册读取只会命中应用记录
-  // 与 @reforce/context 特例，装载后同一实例自动看见外部记录。
+  // 与 @reforce/core 特例，装载后同一实例自动看见外部记录。
   const binder = createExportBinder({ diagnostics, resolveModule });
 
   function recordFor(source: ParsedSource): ModuleRecord {
@@ -189,7 +189,7 @@ export async function createProjectLinker(
     outer: LinkedSymbol | undefined,
   ): { readonly matched: boolean; readonly type?: LinkedType } {
     if (
-      outer?.kind !== "context" ||
+      outer?.kind !== "core" ||
       (outer.name !== "Lazy" && outer.name !== "Current") ||
       type.typeArguments.length !== 1
     ) {

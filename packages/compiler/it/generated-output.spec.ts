@@ -4,7 +4,7 @@ import type {
   GeneratedDependency,
   GeneratedExecutionPlans,
   GeneratedSourceReference,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 import type { TemporaryProject } from "@reforce/tooling-testing";
 import stableStringify from "json-stable-stringify";
 import { afterEach, describe, expect, test } from "vitest";

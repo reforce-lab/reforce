@@ -24,7 +24,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@standard-schema/spec": "^1.1.0",
     "@swc/helpers": "catalog:",
     "dotenv": "^17.4.2"

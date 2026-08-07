@@ -22,7 +22,7 @@ afterEach(async () => {
 });
 function applicationSource(packageName: string): string {
   return [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     `import type { Port } from ${JSON.stringify(packageName)};`,
     "@Injectable()",
     "export class Provider implements Port {}",
@@ -168,7 +168,7 @@ describe("module resolution watch inputs", () => {
       sourceTree(
         [
           'import { writeFileSync } from "node:fs";',
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           "void writeFileSync;",
           "@Injectable()",
           "export class Provider {}",
@@ -238,7 +238,7 @@ describe("module resolution watch inputs", () => {
   });
 
   test("includes a declaration endpoint resolved only while linking a star re-export", async () => {
-    // The fixture depends on loadExternalDeclarations skipping "@reforce/context": that skip is what
+    // The fixture depends on loadExternalDeclarations skipping "@reforce/core": that skip is what
     // leaves the star re-export below unresolved until analysis runs, which is the only way to reach
     // a link-phase resolution. Watch inputs used to be snapshotted before analysis and dropped it
     // (Issue #26). If the skip ever goes away this test silently degrades into an early-resolution
@@ -247,9 +247,9 @@ describe("module resolution watch inputs", () => {
       "tsconfig.json": applicationTsconfig(),
       node_modules: {
         "@reforce": {
-          context: {
+          core: {
             "package.json": `${JSON.stringify({
-              name: "@reforce/context",
+              name: "@reforce/core",
               version: "1.0.0",
               type: "module",
               exports: { ".": { types: "./index.d.ts", default: "./index.js" } },
@@ -261,26 +261,20 @@ describe("module resolution watch inputs", () => {
       },
       src: {
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { Port } from "./barrel";',
           "@Injectable()",
           "export class Provider implements Port {}",
           "",
         ].join("\n"),
-        "barrel.ts": ['export * from "@reforce/context";', 'export * from "./ports";', ""].join(
-          "\n",
-        ),
+        "barrel.ts": ['export * from "@reforce/core";', 'export * from "./ports";', ""].join("\n"),
         "ports.ts": "export interface Port {}\n",
       },
     });
-    const contextDirectory = path.join(project.projectRoot, "node_modules", "@reforce", "context");
+    const coreDirectory = path.join(project.projectRoot, "node_modules", "@reforce", "core");
 
-    expect(result.watchInputs.fileDependencies).toContain(
-      path.join(contextDirectory, "package.json"),
-    );
-    expect(result.watchInputs.fileDependencies).toContain(
-      path.join(contextDirectory, "index.d.ts"),
-    );
+    expect(result.watchInputs.fileDependencies).toContain(path.join(coreDirectory, "package.json"));
+    expect(result.watchInputs.fileDependencies).toContain(path.join(coreDirectory, "index.d.ts"));
   });
 
   test("includes unresolved package candidates", async () => {
@@ -377,7 +371,7 @@ describe("project linking", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { Port } from "./barrel";',
           "@Injectable()",
           "export class Consumer { constructor(readonly dependency: Port) {} }",
@@ -395,7 +389,7 @@ describe("project linking", () => {
   test("does not treat a local class in an implements clause as a provided contract", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "export class BaseClass {}",
         "@Injectable() export class Implementation implements BaseClass {}",
         "@Injectable()",
@@ -411,7 +405,7 @@ describe("project linking", () => {
   test("does not treat an external class in an implements clause as a provided contract", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { BaseClass } from "external-contract";',
         "@Injectable() export class Implementation implements BaseClass {}",
         "@Injectable()",
@@ -434,7 +428,7 @@ describe("project linking", () => {
   test("rejects type arguments applied to a non-generic provided interface", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "export interface Port {}",
         "@Injectable() export class Provider implements Port<string> {}",
         "",
@@ -448,7 +442,7 @@ describe("project linking", () => {
   test("rejects a generic parent of a provided application interface", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "export interface Parent<T> {}",
         "export interface Port extends Parent<string> {}",
         "@Injectable() export class Provider implements Port {}",
@@ -463,7 +457,7 @@ describe("project linking", () => {
   test("rejects an external parent of a provided application interface", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { Parent } from "external-contract";',
         "export interface Port extends Parent {}",
         "@Injectable() export class Provider implements Port {}",
@@ -485,7 +479,7 @@ describe("project linking", () => {
   test("rejects an unsupported parent of a provided application interface", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "export type Parent = {};",
         "export interface Port extends Parent {}",
         "@Injectable() export class Provider implements Port {}",
@@ -503,7 +497,7 @@ describe("project linking", () => {
       src: {
         "contract.ts": "export type ServiceContract = { readonly value: string };\n",
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { ServiceContract } from "./contract";',
           "@Injectable()",
           "export class Service {",
@@ -529,7 +523,7 @@ describe("project linking", () => {
           "",
         ].join("\n"),
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { Port } from "./contract";',
           "@Injectable()",
           'export class Provider implements Port { readonly value = "provider"; }',
@@ -553,7 +547,7 @@ describe("project linking", () => {
           "",
         ].join("\n"),
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { Port } from "./contract";',
           "@Injectable()",
           'export class Provider implements Port { readonly value = "provider"; }',
@@ -582,7 +576,7 @@ describe("project linking", () => {
         left: {
           node_modules: { "shared-contract": contractPackage },
           "provider.ts": [
-            'import { Injectable } from "@reforce/context";',
+            'import { Injectable } from "@reforce/core";',
             'import type { Port } from "shared-contract";',
             "@Injectable()",
             'export class LeftProvider implements Port { readonly value = "left"; }',
@@ -592,7 +586,7 @@ describe("project linking", () => {
         right: {
           node_modules: { "shared-contract": contractPackage },
           "application.ts": [
-            'import { Injectable } from "@reforce/context";',
+            'import { Injectable } from "@reforce/core";',
             'import type { Port } from "shared-contract";',
             "@Injectable()",
             'export class RightProvider implements Port { readonly value = "right"; }',
@@ -610,7 +604,7 @@ describe("project linking", () => {
   test("rejects a package without a public type declaration endpoint", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { Port } from "runtime-only";',
         "@Injectable()",
         "export class Consumer { constructor(readonly port: Port) {} }",
@@ -638,7 +632,7 @@ describe("project linking", () => {
   test("resolves public type entries through effective custom conditions", async () => {
     const baseTree = sourceTree(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { Port } from "conditioned-contract";',
         "@Injectable()",
         "export class Provider implements Port { readonly custom = true as const; }",
@@ -707,7 +701,7 @@ describe("project linking", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { PackageImportPort } from "#package-import";',
           "@Injectable()",
           "export class PackageImportProvider implements PackageImportPort {}",

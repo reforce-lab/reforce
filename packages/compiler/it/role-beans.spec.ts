@@ -13,7 +13,7 @@ import { type CompileSuccess, linkApplicationPackages, linkWebPackage } from "./
 //
 // 合成的事务拦截器同样带 role（transaction-weaving.ts），但今天不可能写出触发它的用例：
 // 它的契约符号只从 @reforce/transaction/generated-runtime 导出，而框架符号短路只认
-// "@reforce/context" 这个精确 specifier，用户源码里根本拿不到这个类型。那条 role 是为了让
+// "@reforce/core" 这个精确 specifier，用户源码里根本拿不到这个类型。那条 role 是为了让
 // 规则对合成 bean 与手写 @Interceptor 保持同一句话，不是当下可达的行为。
 
 type FailureResult = Extract<CompileResult, { readonly status: "failure" }>;
@@ -103,7 +103,7 @@ const auditContract = ["export interface AuditSink {", "  record(line: string): 
 );
 
 const tokenService = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   "@Injectable()",
   "export class TokenService {",
   "  valid(token: string): boolean {",
@@ -147,7 +147,7 @@ describe("role Beans stay out of the resolvable candidate set", () => {
       "token-service.ts": tokenService,
       "role-guard.ts": roleGuard,
       "reporting.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { RoleGuard } from "@/role-guard";',
         "@Injectable()",
         "export class Reporting {",
@@ -178,7 +178,7 @@ describe("role Beans stay out of the resolvable candidate set", () => {
         "}",
       ].join("\n"),
       "reporting.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { AuditSink } from "@/audit-sink";',
         "@Injectable()",
         "export class Reporting {",
@@ -195,11 +195,11 @@ describe("role Beans stay out of the resolvable candidate set", () => {
   test("injecting an interceptor by its own class is rejected", async () => {
     const result = await compileSources({
       "markers.ts": [
-        'import { defineMethodMarker } from "@reforce/context";',
+        'import { defineMethodMarker } from "@reforce/core";',
         'export const Audited = defineMethodMarker<{ label: string }>("audited");',
       ].join("\n"),
       "interceptor.ts": [
-        'import { Interceptor, type MethodInterceptor, type MethodInvocationContext } from "@reforce/context";',
+        'import { Interceptor, type MethodInterceptor, type MethodInvocationContext } from "@reforce/core";',
         'import { Audited } from "@/markers";',
         "@Interceptor({ marker: Audited })",
         "export class AuditInterceptor implements MethodInterceptor<{ label: string }> {",
@@ -210,7 +210,7 @@ describe("role Beans stay out of the resolvable candidate set", () => {
         "}",
       ].join("\n"),
       "reporting.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { AuditInterceptor } from "@/interceptor";',
         "@Injectable()",
         "export class Reporting {",
@@ -232,7 +232,7 @@ describe("role Beans stay out of collection membership", () => {
     const result = await compileSourcesOrThrow({
       "audit-sink.ts": auditContract,
       "file-sink.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { AuditSink } from "@/audit-sink";',
         "@Injectable()",
         "export class FileSink implements AuditSink {",
@@ -256,7 +256,7 @@ describe("role Beans stay out of collection membership", () => {
         "}",
       ].join("\n"),
       "reporting.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { AuditSink } from "@/audit-sink";',
         "@Injectable()",
         "export class Reporting {",

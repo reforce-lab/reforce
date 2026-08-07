@@ -167,7 +167,7 @@ test("an application package.json edit invalidates the development watch", async
   const { project, compilations, invalidations } = await setupSignalsWatch({
     sources: {
       "application.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         "export class ApplicationService {}",

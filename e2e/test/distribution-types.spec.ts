@@ -28,7 +28,7 @@ const nodeExecutable = await resolveNodeExecutable();
 
 // 消费者侧的判定探针：把一个函数导出赋给 number。类型正常解析时必然 TS2322；
 // 一旦符号退化，这行就静默通过——这正是要防的回归。
-const probeSource = `import { Injectable } from "@reforce/context";
+const probeSource = `import { Injectable } from "@reforce/core";
 import { createWebApplication } from "@reforce/web";
 
 export const effectiveTypeProbe: number = createWebApplication;

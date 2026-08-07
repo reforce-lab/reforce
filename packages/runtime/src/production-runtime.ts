@@ -1,4 +1,4 @@
-import type { ApplicationContext } from "@reforce/context";
+import type { ApplicationContext } from "@reforce/core";
 import { isObject } from "radashi";
 import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { requireNodeExecutable } from "@/node-runtime";

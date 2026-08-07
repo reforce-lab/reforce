@@ -1,4 +1,4 @@
-import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";
+import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";
 import type { TransactionManager } from "@/manager";
 import { readTransactionalValue, type TransactionalValue } from "@/marker";
 import { runWithPropagation } from "@/transactional";
