@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Injectable, type OnContextClose } from "@reforce/core";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
+import { webEngineAddress } from "@reforce/web/adapter";
 import { createRouter } from "@/router";
 import type { WebNodeServeSettings } from "@/settings";
 
@@ -95,12 +96,14 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       throw new Error("The Node.js web engine is already running.");
     }
     const dispatch = createRouter(application.routes, this.settings.maxParamLength);
+    // 参数传递而不是实例字段：引擎是 start→close→start 可重启的（HMR），字段会跨轮次留着。
+    const notFound = application.logNotFound;
     const server = createServer((request, response) => {
       // 写出期故障不在 PreparedRoute.handle 的"永不 reject"契约内（#226）：客户端读到一半断开时
       // pipeline 抛 ERR_STREAM_PREMATURE_CLOSE，没有这道 catch 它就是 unhandled rejection，
       // Node 默认行为是进程退出——任何客户端都能远程打崩服务。此时响应已无处可写，只能
       // 拆掉这条连接（destroy 对已销毁的响应是 no-op）。
-      void this.serve(dispatch, request, response).catch(() => response.destroy());
+      void this.serve(dispatch, notFound, request, response).catch(() => response.destroy());
     });
     this.server = server;
     await new Promise<void>((resolve, reject) => {
@@ -115,13 +118,15 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     if (address === null || typeof address === "string") {
       throw new Error("The Node.js web engine must listen on a TCP address.");
     }
-    // 监听地址走 stderr：端口 0（临时端口）时这是唯一的实际端口出口，但 stdout 属于应用
-    // 数据面（生成的 bootstrap 会被当作库嵌入 Worker/管道消费，stdout 必须保持纯净），
-    // 运维日志与 @reforce/config 的 console.warn 同走 stderr。
-    process.stderr.write(
-      `[reforce.web-node] listening on http://${this.settings.hostname ?? "localhost"}:${address.port}/\n`,
-    );
-    return { close: () => this.close() };
+    // 地址经 handle 流出，不由引擎自己打（RFC 0011 L6/D2，#250）：三个引擎各写一行会得到
+    // 三个不同前缀、绕过日志门面、也喂不进启动摘要。谁来说、说成什么样归框架统一决定。
+    return {
+      close: () => this.close(),
+      address: webEngineAddress({
+        ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
+        port: address.port,
+      }),
+    };
   }
 
   onContextClose(): Promise<void> {
@@ -132,6 +137,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
 
   private async serve(
     dispatch: ReturnType<typeof createRouter>,
+    notFound: WebApplication["logNotFound"],
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
@@ -147,6 +153,9 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       // 未命中与方法不符都是 404，不带 Allow（WebEngineAdapter 契约）
       response.writeHead(404);
       response.end();
+      // 先答复再记账：日志晚一拍不影响客户端。url.pathname 就是原始请求目标去掉 query，
+      // 正是 logNotFound 契约要的形状（RFC 0011 C7，#250）。
+      notFound?.({ method, path: url.pathname });
       return;
     }
     // PreparedRoute.handle 契约保证永不 reject（@reforce/web/adapter），无需兜底

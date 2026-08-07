@@ -1,4 +1,5 @@
 import type { Current } from "@reforce/core";
+import type { Logger } from "@reforce/logging";
 import { Controller, Get, Post, type RequestContext } from "@reforce/web";
 import type { RequestAudit } from "@/http-exchange";
 import { Roles } from "@/web-markers";
@@ -69,6 +70,20 @@ export class AuditController {
 export class HealthController {
   @Get()
   probe(): Response {
+    return new Response("ok");
+  }
+}
+
+// L4（RFC 0011，#242）：请求期间应用自己打的日志要带上是哪个请求触发的。这个 handler 存在
+// 的唯一目的是让 e2e 拿到一条**应用**日志（不是框架发的请求日志），断言它自带 method 与
+// path——那些字段没有一个是这里传的，全部由注册进 LoggerFactory 的 LogFieldSource 贡献。
+@Controller("/field-source")
+export class FieldSourceController {
+  constructor(private readonly log: Logger) {}
+
+  @Get()
+  probe(): Response {
+    this.log.info({ probe: "field-source" }, "handler ran");
     return new Response("ok");
   }
 }

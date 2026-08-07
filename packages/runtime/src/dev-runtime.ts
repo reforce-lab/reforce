@@ -7,6 +7,7 @@ import {
   isDevChildLeaseParticipantAcknowledgement,
   writerLeaseTokenEnvironmentVariable,
 } from "@/dev-ipc";
+import type { FrameworkLogging } from "@/framework-logging";
 import type { RspackHmrRuntime } from "@/hmr-manager";
 import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { requireNodeExecutable } from "@/node-runtime";
@@ -16,6 +17,9 @@ import { withTimeout } from "@/with-timeout";
 
 export interface DevelopmentBootstrapModule {
   bootstrap(): Promise<{ close(): Promise<void> }>;
+  // 生成的 bootstrap 的可选导出（RFC 0011 C2/C3）：没装日志绑定的应用它整个不存在，
+  // 所以是可选成员而不是可选返回值。
+  frameworkLogging?: () => FrameworkLogging | undefined;
 }
 
 export interface RunDevelopmentApplicationOptions {
@@ -147,7 +151,11 @@ export async function runDevelopmentApplication(
     bootstrap: async () => {
       await joinWriterLease();
       const module = await options.loadBootstrap();
-      return await module.bootstrap();
+      const application = await module.bootstrap();
+      // bootstrap 之后才有 logger（它是容器里的一条 bean），而 HMR 每次重载都会走一遍这里，
+      // 所以接线也每轮重做。
+      entry.attachLogging(module.frameworkLogging?.());
+      return application;
     },
   });
 

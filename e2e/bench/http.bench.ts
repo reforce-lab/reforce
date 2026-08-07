@@ -108,7 +108,7 @@ try {
   const reforce = await startTarget(
     [join(project.projectRoot, "dist", "main.mjs")],
     project.projectRoot,
-    /\[reforce\.web-node\] listening on (http:\/\/[^\s]+)/,
+    /listening on (http:\/\/[^"\s]+)/,
   );
   let reforceResults: Record<string, LoadResult>;
   try {

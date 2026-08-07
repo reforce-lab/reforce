@@ -39,7 +39,9 @@ await runProductionApplication(
   async () => {
     process.send?.({ type: "harness:ready" });
     return {
-      async start() {},
+      async start() {
+        return { beanTimings: [] };
+      },
       get() {
         throw new Error("The production runtime ordering harness has no Beans.");
       },

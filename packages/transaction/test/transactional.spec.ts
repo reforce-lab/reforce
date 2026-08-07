@@ -5,6 +5,7 @@ import {
   TransactionIsolationOnJoinError,
   TransactionResourceReusedError,
   TransactionSavepointUnsupportedError,
+  TransactionTimeoutError,
   TransactionTimeoutOnJoinError,
 } from "@/errors";
 import { TransactionInterceptor } from "@/interceptor";
@@ -669,5 +670,178 @@ describe("runTransactional", () => {
       ]),
     ).rejects.toThrow(TypeError);
     expect(events).toEqual([]);
+  });
+});
+
+// C5（RFC 0011，#250）：事务边界此前零日志——排查一笔「明明 commit 了却没落库」的写，
+// 手上一个字都没有。logger 形状由本包声明，@reforce/logging 的 Logger 结构性满足它。
+describe("transaction logging", () => {
+  function capturingLogger(enabled = true) {
+    const records: {
+      level: string;
+      fields: Readonly<Record<string, unknown>> | undefined;
+      message: string;
+    }[] = [];
+    return {
+      records,
+      messages: () => records.map((record) => record.message),
+      logger: {
+        isEnabled: () => enabled,
+        debug: (fields: Readonly<Record<string, unknown>> | undefined, message: string) => {
+          records.push({ level: "debug", fields, message });
+        },
+      },
+    };
+  }
+
+  test("pairs begin with commit when a new boundary returns", async () => {
+    const { manager } = nestedManager();
+    const { messages, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    await boundary(interceptor, undefined, async () => "saved");
+
+    expect(messages()).toEqual(["transaction begin", "transaction commit"]);
+  });
+
+  test("carries the declared propagation and options on the begin record", async () => {
+    const { manager } = nestedManager();
+    const { records, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    await boundary(
+      interceptor,
+      { propagation: "REQUIRES_NEW", isolation: "SERIALIZABLE", timeout: 5_000 },
+      async () => "saved",
+    );
+
+    expect(records[0]?.fields).toMatchObject({
+      beanId: "app#Orders",
+      method: "save",
+      propagation: "REQUIRES_NEW",
+      isolation: "SERIALIZABLE",
+      timeout: 5_000,
+    });
+  });
+
+  // 加入不是边界，发 commit/rollback 会让告警规则把外层的结果重复计一遍。
+  test("logs a REQUIRED join without a commit or rollback of its own", async () => {
+    const { manager } = nestedManager();
+    const { messages, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    await boundary(interceptor, undefined, async () =>
+      boundary(interceptor, { propagation: "REQUIRED" }, async () => "inner"),
+    );
+
+    expect(messages()).toEqual(["transaction begin", "transaction join", "transaction commit"]);
+  });
+
+  test("names the outer boundary a REQUIRES_NEW suspended", async () => {
+    const { manager } = nestedManager();
+    const { records, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    await boundary(interceptor, undefined, async () =>
+      boundary(interceptor, { propagation: "REQUIRES_NEW" }, async () => "inner"),
+    );
+
+    expect(records[1]?.fields).toMatchObject({ propagation: "REQUIRES_NEW", suspended: true });
+  });
+
+  test("pairs savepoint with release when a NESTED boundary returns", async () => {
+    const { manager } = nestedManager();
+    const { messages, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    await boundary(interceptor, undefined, async () =>
+      boundary(interceptor, { propagation: "NESTED" }, async () => "inner"),
+    );
+
+    expect(messages()).toContain("transaction savepoint");
+    expect(messages()).toContain("transaction savepoint release");
+  });
+
+  // 回滚降 debug（Spring 对位）：异常原样传播，真 500 的 error 已由 error-dispatch 与请求
+  // 日志记账，这里再发一条 error 就是一次失败三条 error。
+  test("reports a rollback at debug level carrying the escaping error", async () => {
+    const { manager } = nestedManager();
+    const { records, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+    const failure = new Error("boom");
+
+    await expect(
+      boundary(interceptor, undefined, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+
+    expect(records.at(-1)).toMatchObject({
+      level: "debug",
+      message: "transaction rollback",
+      fields: { err: failure },
+    });
+  });
+
+  test("names a timeout separately and carries its budget", async () => {
+    const { manager } = nestedManager();
+    const { records, logger } = capturingLogger();
+    const interceptor = new TransactionInterceptor(manager, logger);
+    const failure = new TransactionTimeoutError({ timeout: 5_000 });
+
+    await expect(
+      boundary(interceptor, undefined, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+
+    expect(records.at(-1)).toMatchObject({
+      message: "transaction timeout",
+      fields: { timeout: 5_000 },
+    });
+  });
+
+  // 不变量 8：级别判定在字段构造之前。
+  test("builds no debug record when debug is disabled", async () => {
+    const { manager } = nestedManager();
+    const interceptor = new TransactionInterceptor(manager, {
+      isEnabled: () => false,
+      debug: () => {
+        throw new Error("must not build a record when debug is off");
+      },
+    });
+
+    await expect(boundary(interceptor, undefined, async () => "saved")).resolves.toBe("saved");
+  });
+
+  // 与 web 侧 500 兜底的分歧：那边吞掉日志故障，因为 dispatchError 永不 reject 是契约；
+  // 这边吞掉会让坏 logger 顶替业务错误。
+  test("rethrows the original error when the boundary logger itself throws", async () => {
+    const { manager } = nestedManager();
+    const interceptor = new TransactionInterceptor(manager, {
+      isEnabled: () => true,
+      // 只在回滚记录上爆：begin/commit 走 debugBoundary，不在被测的故障兜底路径上。
+      debug: (_fields, message) => {
+        if (message === "transaction rollback") {
+          throw new Error("logger exploded");
+        }
+      },
+    });
+    const failure = new Error("boom");
+
+    await expect(
+      boundary(interceptor, undefined, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  test("stays silent when no logger was wired in", async () => {
+    const { manager, events } = nestedManager();
+    const interceptor = new TransactionInterceptor(manager);
+
+    await boundary(interceptor, undefined, async () => "saved");
+
+    expect(ops(events)).toEqual(["begin", "commit"]);
   });
 });

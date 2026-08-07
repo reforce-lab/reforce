@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Writable } from "node:stream";
 import { defineRouteMarker } from "@reforce/web";
 import type { PreparedRoute, WebApplication } from "@reforce/web/adapter";
 import type { FastifyInstance } from "fastify";
@@ -386,5 +387,94 @@ describe("engine lifecycle", () => {
 
       await handle.close();
     }
+  });
+});
+
+// L8（RFC 0011，#242）：我们不把 reforce 的 Logger 交给 Fastify——为迁就单个引擎给门面加
+// child，方向是反的。但 L8 的立论前提是「开不开是用户的事」，而 fastify 的 logger 是构造期
+// 选项、configurer 改不了，不从 settings 递出去用户就**没有任何办法**打开它。
+describe("fastify's own logging stays the user's decision", () => {
+  function capturing(): { readonly stream: Writable; readonly messages: () => readonly string[] } {
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk: Buffer, _encoding, done) {
+        lines.push(chunk.toString());
+        done();
+      },
+    });
+    return {
+      stream,
+      messages: () =>
+        lines
+          .join("")
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [String(JSON.parse(line).msg)];
+            } catch {
+              return [];
+            }
+          }),
+    };
+  }
+
+  // 缺省一个字都不该出：常被担心的「用户要维护两套日志配置」不成立，正是因为这一套默认
+  // 是关的。断言写 stdout 而不是读 app.log 的内部字段——用户看到的就是流上的字节。
+  test("writes nothing of its own by default", async () => {
+    const written: string[] = [];
+    const original = process.stdout.write.bind(process.stdout);
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      await withEngine([ping], async (base) => {
+        expect(await (await fetch(`${base}/ping`)).text()).toBe("pong");
+      });
+    } finally {
+      process.stdout.write = original;
+    }
+
+    expect(written).toEqual([]);
+  });
+
+  test("the settings hand fastify's native logger option straight through", async () => {
+    const captured = capturing();
+
+    await withEngine(
+      [ping],
+      async (base) => {
+        expect((await fetch(`${base}/ping`)).status).toBe(200);
+      },
+      { settings: { logger: { level: "info", stream: captured.stream } } },
+    );
+
+    // fastify 原生那两条，逐字是它自己的文案——我们不翻译，所以断言的也是它的原话。
+    expect(captured.messages()).toEqual(
+      expect.arrayContaining(["incoming request", "request completed"]),
+    );
+  });
+
+  test("disableRequestLogging drops the per-request pair and keeps the rest", async () => {
+    const captured = capturing();
+
+    await withEngine(
+      [ping],
+      async (base) => {
+        expect((await fetch(`${base}/ping`)).status).toBe(200);
+      },
+      {
+        settings: {
+          logger: { level: "info", stream: captured.stream },
+          disableRequestLogging: true,
+        },
+      },
+    );
+
+    expect(captured.messages()).not.toContain("incoming request");
+    // logger 本身仍然是开的：关掉的只是每请求那两条，不是整套输出。
+    expect(captured.messages()).toEqual(
+      expect.arrayContaining([expect.stringContaining("Server")]),
+    );
   });
 });

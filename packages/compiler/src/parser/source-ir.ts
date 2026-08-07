@@ -1,4 +1,5 @@
 import type { SourceSpan } from "@/parser/source-location";
+import type { SuppressionComment } from "@/parser/suppressions";
 
 export type SourceKind = "ts" | "tsx" | "mts" | "cts" | "d.ts" | "d.mts" | "d.cts";
 
@@ -544,6 +545,10 @@ export interface UnsupportedNamedDeclaration {
 }
 
 export interface SourceFileIr {
+  // 抑制注释必须住进 IR（RFC 0011 D7，#242）：source-files.ts 的 LRU 以 [fileId, kind, sha256]
+  // 缓存 SourceFileIr，命中时 parseSource 根本不执行——任何算在 parse 里但不进 IR 的东西，在
+  // 缓存路径上就会凭空消失。
+  readonly suppressions: readonly SuppressionComment[];
   readonly imports: readonly ImportDeclaration[];
   readonly exports: readonly ExportDeclaration[];
   readonly interfaces: readonly InterfaceDeclaration[];

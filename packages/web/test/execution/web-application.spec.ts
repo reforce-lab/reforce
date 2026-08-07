@@ -5,8 +5,9 @@ import type {
   RequestScopeSeed,
 } from "@reforce/core";
 import { describe, expect, test } from "vitest";
-import { InvalidRouteTableError } from "@/errors";
+import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
+import { WebRequestFields } from "@/execution/request-fields";
 import { createWebApplication } from "@/execution/web-application";
 import type { GeneratedRoute, GeneratedRouteTable } from "@/generated/route-table";
 import type { RouteMiddleware } from "@/routing/middleware";
@@ -17,7 +18,7 @@ import { schemaOf } from "../support/schemas";
 function contextOf(beans: readonly (readonly [BeanClass, object])[]): ApplicationContext {
   const byTarget = new Map<unknown, object>(beans);
   return {
-    start: () => Promise.resolve(),
+    start: () => Promise.resolve({ beanTimings: [] }),
     get<T extends object>(target: BeanClass<T> | BeanDefinition<T>): T {
       const instance = byTarget.get(target);
       if (instance === undefined) {
@@ -208,6 +209,124 @@ describe("createWebApplication onion execution", () => {
     expect(seen).toEqual([500]);
   });
 
+  // #255：重复调 next() 此前抛的是裸 Error，无码无定位——用户的错误处理器只能匹配 message
+  // 字符串，而那串字符没有任何契约保证。
+  test("a middleware that calls next() twice fails with a coded error naming the offending Bean", async () => {
+    class DoubleNext {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        await next();
+        return await next();
+      }
+    }
+    let captured: unknown;
+    class Capture {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        try {
+          return await next();
+        } catch (error) {
+          captured = error;
+          throw error;
+        }
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          middleware: [
+            {
+              bean: Capture,
+              beanId: "src/capture.ts#Capture",
+              phase: "application",
+              order: 0,
+              mount: "global",
+            },
+            {
+              bean: DoubleNext,
+              beanId: "src/double-next.ts#DoubleNext",
+              phase: "application",
+              order: 1,
+              mount: "global",
+            },
+          ],
+        }),
+      ]),
+      context: contextOf([
+        [ProbeController, new ProbeController()],
+        [Capture, new Capture()],
+        [DoubleNext, new DoubleNext()],
+      ]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(captured).toBeInstanceOf(MiddlewareReenteredError);
+    expect(captured).toMatchObject({
+      code: "MIDDLEWARE_REENTERED",
+      beanId: "src/double-next.ts#DoubleNext",
+    });
+  });
+
+  // 点名的必须是里面那个犯规的，不是外面那个守规矩的——链是嵌套的，弄反了排查方向就反了。
+  test("the re-entry failure names the route it happened on", async () => {
+    class DoubleNext {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        await next();
+        return await next();
+      }
+    }
+    let captured: unknown;
+    class Capture {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        try {
+          return await next();
+        } catch (error) {
+          captured = error;
+          throw error;
+        }
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          middleware: [
+            {
+              bean: Capture,
+              beanId: "src/capture.ts#Capture",
+              phase: "application",
+              order: 0,
+              mount: "global",
+            },
+            {
+              bean: DoubleNext,
+              beanId: "src/double-next.ts#DoubleNext",
+              phase: "application",
+              order: 1,
+              mount: "global",
+            },
+          ],
+        }),
+      ]),
+      context: contextOf([
+        [ProbeController, new ProbeController()],
+        [Capture, new Capture()],
+        [DoubleNext, new DoubleNext()],
+      ]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(captured).toMatchObject({ method: "GET", path: "/probe" });
+    expect(captured instanceof Error ? captured.message : "").toContain("GET /probe");
+  });
+
   test("a middleware error is still converted by the outer boundary", async () => {
     class Faulty {
       handle(): Response {
@@ -333,5 +452,65 @@ describe("createWebApplication route assembly", () => {
         context: contextOf([]),
       }),
     ).toThrow(InvalidRouteTableError);
+  });
+});
+
+// L4（RFC 0011，#242 影响面：「@reforce/web：请求字段的 LogFieldSource 实现」）。在它存在
+// 之前，请求期间应用打的每一条日志都看不出是哪个请求触发的——请求完成时那条记录有
+// method/path，但那是另一条记录，靠时间戳去拼是猜。
+describe("WebRequestFields", () => {
+  test("reports no fields outside a request", () => {
+    expect(new WebRequestFields().fields()).toBeUndefined();
+  });
+
+  test("a handler running inside a request sees that request's method and path", async () => {
+    const source = new WebRequestFields();
+    let seen: unknown;
+    class Peeking {
+      list(): Response {
+        seen = source.fields();
+        return new Response("ok");
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          method: "POST",
+          path: "/orders/:id",
+          controller: Peeking,
+          invoke: (instance) => Reflect.apply(Peeking.prototype.list, instance, []),
+        }),
+      ]),
+      context: contextOf([[Peeking, new Peeking()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/orders/42", { method: "POST" }), {
+      id: "42",
+    });
+
+    // path 是编译期的路由模式而不是 /orders/42：字段要能聚合，具体路径基数无界。
+    expect(seen).toEqual({ method: "POST", path: "/orders/:id" });
+  });
+
+  // ALS 只向内传播，所以请求结束后必须什么都读不到——否则串成一条「上一个请求的 path」
+  // 挂在与请求无关的日志上，比没有字段更误导。
+  test("the fields are gone again once the request has finished", async () => {
+    const source = new WebRequestFields();
+    const application = createWebApplication({
+      table: tableOf([routeOf({})]),
+      context: contextOf([[ProbeController, new ProbeController()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(source.fields()).toBeUndefined();
   });
 });

@@ -79,7 +79,10 @@ async function startServer(): Promise<StartedServer> {
   );
   const deadline = Date.now() + 30_000;
   for (;;) {
-    const match = stderr.match(/\[reforce\.web-node\] listening on (http:\/\/[^\s]+)\//);
+    // 监听行从三个引擎各自的裸 stderr 收回启动摘要（RFC 0011 L6/D2，#250），所以这里抓的是
+    // 摘要那条 JSON 记录里的 fact，不再是 `[reforce.web-node] …` 前缀。`[^"\s]` 而不是 `[^\s]`：
+    // 在 JSON 里 URL 后面紧跟的是引号，不是空白。
+    const match = stderr.match(/listening on (http:\/\/[^"\s]+)\//);
     if (match?.[1] !== undefined) {
       return { child, completion, baseUrl: match[1], output: () => `${stdout}\n${stderr}` };
     }
@@ -202,7 +205,43 @@ describe.sequential("HTTP application over the built artifact", () => {
       const teapot = await fetch(`${base}/boom/teapot`);
       expect(teapot.status).toBe(418);
       expect(await teapot.text()).toBe("teapot");
-      expect((await fetch(`${base}/boom/unhandled`)).status).toBe(500);
+      // C1（#250）：兜底 500 带 errorId，栈绝不进响应体。
+      const unhandled = await fetch(`${base}/boom/unhandled`);
+      expect(unhandled.status).toBe(500);
+      expect(await unhandled.json()).toEqual({
+        error: "internal",
+        errorId: expect.any(String),
+      });
+    });
+  });
+
+  // L4 的完整用户链路（RFC 0011，#242 影响面：「@reforce/web：请求字段的 LogFieldSource
+  // 实现」）。断言的是**应用自己**打的那条记录，不是框架发的请求日志——后者的 method/path
+  // 是 web 核心直接写进去的，用它做断言证明不了贡献者接上没有。
+  test("an application log written during a request carries that request's fields", async () => {
+    await withServer(async (base, server) => {
+      expect((await fetch(`${base}/field-source`)).status).toBe(200);
+      // 记录是同步写出的，但落到父进程的 stderr 要过一次管道。
+      await sleep(100);
+
+      const handlerRecord = server
+        .output()
+        .split("\n")
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line)];
+          } catch {
+            return [];
+          }
+        })
+        .find((record) => record.message === "handler ran");
+
+      // probe 是调用点自己给的，method/path 两个字段没有一个是它传的：全部由贡献者补上。
+      expect(handlerRecord).toMatchObject({
+        probe: "field-source",
+        method: "GET",
+        path: "/field-source",
+      });
     });
   });
 

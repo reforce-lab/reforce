@@ -213,3 +213,37 @@ export function renderRouteExplanation(
 export function knownRouteList(manifest: RouteManifest): string {
   return manifest.routes.map((route) => `${route.method} ${route.path}`).join(", ");
 }
+
+// `reforce explain routes` 的全量列表（RFC 0011 D2，#242）。
+//
+// 这条命令此前**不存在**：路由面的判据是「查询以 / 开头」，`routes` 这个词会落到 bean 面然后
+// 报「没有 bean 叫 routes」。而启动摘要把这个字面量印给了用户（`37 routes — reforce explain
+// routes`），于是折叠给了出口、出口是死的——那比不给出口更糟，读者会以为自己敲错了。
+// 不变量 4 要的是「计数 + **可用**的展开路径」，两者缺一不可。
+//
+// 每条路由的中间件在这里仍是计数（37 条路由各展开一遍链就又变成刷屏了），所以顶部单独给一行
+// 下一级出口，而不是每行重复一遍。
+export function renderRouteOverview(manifest: RouteManifest): readonly string[] {
+  if (manifest.routes.length === 0) {
+    return ["0 routes"];
+  }
+  const controllers = new Set(manifest.routes.map((route) => route.controller.beanId));
+  const lines = [
+    `${manifest.routes.length} routes · ${controllers.size} controllers`,
+    `expand one route · reforce explain "<METHOD> <path>"`,
+  ];
+  for (const route of manifest.routes) {
+    const chain =
+      route.middleware.length === 0 ? "no middleware" : `${route.middleware.length} middleware`;
+    lines.push(
+      `${route.method} ${route.path} · ${route.controller.beanId} · ${route.controller.handler}() · ${chain}`,
+    );
+  }
+  if (manifest.errorHandlers.length > 0) {
+    lines.push("error handlers (dispatch order)");
+    manifest.errorHandlers.forEach((handler, index) => {
+      lines.push(`  ${index + 1}. order ${handler.order} · ${handler.beanId}`);
+    });
+  }
+  return lines;
+}

@@ -1,0 +1,52 @@
+{
+  "name": "@reforce/logging",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./conformance": {
+      "types": "./dist/conformance.d.ts",
+      "default": "./dist/conformance.js"
+    },
+    "./generated-runtime": {
+      "types": "./dist/generated-runtime.d.ts",
+      "default": "./dist/generated-runtime.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./reforce-meta": "./reforce-meta.json"
+  },
+  "files": [
+    "dist",
+    "reforce-meta.json"
+  ],
+  "scripts": {
+    "build": "rslib build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "vitest run",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@reforce/core": "workspace:*",
+    "@reforce/runtime": "workspace:*",
+    "@swc/helpers": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-testing": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
+    "@rslib/core": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

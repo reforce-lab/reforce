@@ -12,6 +12,13 @@ import {
   reportShutdownFailure,
 } from "@reforce/runtime/reporter";
 import { isObject } from "radashi";
+import {
+  applyDiagnosticPolicy,
+  type DiagnosticPolicy,
+  deniedByDiagnosticPolicy,
+  permissiveDiagnosticPolicy,
+} from "@/diagnostic-policy";
+import { reportDiagnostics } from "@/diagnostic-reporting";
 import { renameWithWindowsRetry } from "@/project/windows-rename-retry";
 
 // reforce lib（ADR 0004 决策 1/4，#120/#147）：库模式编译的 CLI 面。产物写在包根——与 M1 起
@@ -24,6 +31,7 @@ export interface LibCommandOptions {
   readonly projectDirectory: string;
   readonly tsconfigPath?: string;
   readonly reporter: Reporter;
+  readonly diagnosticPolicy?: DiagnosticPolicy;
 }
 
 // subpath 字面量由 ADR 0004 决策 2 与 compiler 的 starter-meta schema 闸门（#145）钉死；
@@ -38,9 +46,7 @@ function reportCompilerDiagnostics(
   phase: "project" | "compiler",
   diagnostics: readonly CompilerDiagnostic[],
 ): void {
-  for (const diagnostic of diagnostics) {
-    reporter.report({ kind: "diagnostic", command: "lib", phase, diagnostic });
-  }
+  reportDiagnostics({ reporter, command: "lib", phase, diagnostics });
 }
 
 // 接受 exports 的两种直写形态：字符串目标，或 default 条件指向目标的条件对象。其余形态
@@ -78,6 +84,45 @@ async function writeGeneratedFile(projectRoot: string, file: LibraryGeneratedFil
   await renameWithWindowsRetry(staging, destination);
 }
 
+type LibraryCompilation = Awaited<ReturnType<ReturnType<typeof createCompiler>["compileLibrary"]>>;
+type LibraryCompilationSuccess = Extract<LibraryCompilation, { readonly status: "success" }>;
+
+// 落盘与上报独立成段：runLibCommand 只说「解析 → 编译 → 交给它 → 收尾」，成功分支里的
+// 诊断策略、写文件、exports 校验三件事不该和外层的失败聚合挤在同一个抽象层级上。
+async function commitLibraryOutput(input: {
+  readonly projectRoot: string;
+  readonly compilation: LibraryCompilationSuccess;
+  readonly reporter: Reporter;
+  readonly policy: DiagnosticPolicy;
+}): Promise<0 | 1> {
+  // 成功路径也要遍历诊断（RFC 0011 OM2，#242）：编译成功不再等于零诊断。
+  const warnings = applyDiagnosticPolicy(input.policy, input.compilation.diagnostics);
+  reportCompilerDiagnostics(input.reporter, "compiler", warnings);
+  for (const file of input.compilation.files) {
+    await writeGeneratedFile(input.projectRoot, file);
+  }
+  const exportsProblem = await findExportsProblem(input.projectRoot);
+  if (exportsProblem !== undefined) {
+    input.reporter.report(
+      createFailureEvent({
+        command: "lib",
+        phase: "project",
+        fallbackCode: "PACKAGE_EXPORTS_INVALID",
+        message: `${input.compilation.packageName} ${exportsProblem}`,
+        cause: undefined,
+      }),
+    );
+    return 1;
+  }
+  input.reporter.report({
+    kind: "success",
+    command: "lib",
+    message: `Generated starter meta for ${input.compilation.packageName}.`,
+  });
+  // 产物照常落盘：图是完整的。非零退出只是给 CI 的闸门信号。
+  return deniedByDiagnosticPolicy(input.policy, warnings) ? 1 : 0;
+}
+
 export async function runLibCommand(options: LibCommandOptions): Promise<0 | 1> {
   const compiler = createCompiler();
   let exitCode: 0 | 1 = 1;
@@ -96,28 +141,12 @@ export async function runLibCommand(options: LibCommandOptions): Promise<0 | 1> 
       if (compilation.status === "failure") {
         reportCompilerDiagnostics(options.reporter, "compiler", compilation.diagnostics);
       } else {
-        for (const file of compilation.files) {
-          await writeGeneratedFile(projectRoot, file);
-        }
-        const exportsProblem = await findExportsProblem(projectRoot);
-        if (exportsProblem === undefined) {
-          options.reporter.report({
-            kind: "success",
-            command: "lib",
-            message: `Generated starter meta for ${compilation.packageName}.`,
-          });
-          exitCode = 0;
-        } else {
-          options.reporter.report(
-            createFailureEvent({
-              command: "lib",
-              phase: "project",
-              fallbackCode: "PACKAGE_EXPORTS_INVALID",
-              message: `${compilation.packageName} ${exportsProblem}`,
-              cause: undefined,
-            }),
-          );
-        }
+        exitCode = await commitLibraryOutput({
+          projectRoot,
+          compilation,
+          reporter: options.reporter,
+          policy: options.diagnosticPolicy ?? permissiveDiagnosticPolicy,
+        });
       }
     }
   } catch (error) {

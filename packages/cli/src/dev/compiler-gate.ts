@@ -9,7 +9,9 @@ interface GeneratedOutputCommitter {
 
 export type DevCompilerGateResult =
   | {
+      // 成功也可能带诊断，且必然全是 warning（RFC 0011 OM2，#242）。
       readonly status: "success";
+      readonly diagnostics: readonly CompilerDiagnostic[];
       readonly watchInputs: CompilerWatchInputs;
     }
   | {
@@ -166,7 +168,7 @@ export class DevCompilerGate {
         return { status: "failure", diagnostics: compilation.diagnostics, watchInputs };
       }
       await this.generatedOutput.commitGenerated(compilation.files);
-      return { status: "success", watchInputs };
+      return { status: "success", diagnostics: compilation.diagnostics, watchInputs };
     } catch (error) {
       return {
         status: "error",

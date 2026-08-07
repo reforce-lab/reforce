@@ -5,6 +5,7 @@ import type {
   BaseNode,
   CallExpression,
   Class,
+  Comment,
   Declaration,
   Directive,
   ExpressionStatement,
@@ -77,6 +78,7 @@ import type {
 } from "@/parser/source-ir";
 import type { CanonicalFileId } from "@/parser/source-location";
 import { createSourceMapper } from "@/parser/source-location";
+import { collectSuppressions } from "@/parser/suppressions";
 
 type ExportMode =
   | { readonly kind: "none" }
@@ -1242,6 +1244,7 @@ export function lowerSource(
   file: CanonicalFileId,
   sourceText: string,
   program: Program,
+  comments: readonly Comment[],
 ): SourceFileIr {
   const collector: Collector = {
     imports: [],
@@ -1260,6 +1263,7 @@ export function lowerSource(
     visitStatement(statement, true, { kind: "none" }, collector, context);
   }
   return {
+    suppressions: collectSuppressions({ file, sourceText, comments, mapper: context.mapper }),
     imports: normalizeSpanned(collector.imports),
     exports: normalizeSpanned(collector.exports),
     interfaces: normalizeSpanned(collector.interfaces),

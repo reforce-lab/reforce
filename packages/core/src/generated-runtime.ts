@@ -44,6 +44,7 @@ export {
   type GeneratedMethodChain,
   invokeIntercepted,
 } from "@/interception/invoke";
+export type { BeanTiming, BeanTimingPhase, ContextStartReport } from "@/public-types";
 export type { ConfigBindingIssue };
 
 // scope 缺省即 singleton：既有手写注册面不被 v4 强制打扰，生成物则总是显式写 scope。

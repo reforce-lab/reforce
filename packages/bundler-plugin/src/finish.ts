@@ -41,6 +41,17 @@ function renderDiagnostic(diagnostic: CompilerDiagnostic): string {
   return `[${diagnostic.code}]${location} ${diagnostic.message}${help}`;
 }
 
+// 这是与 @reforce/runtime 的 reporter 并列的第二套渲染：打包器收尾钩子跑在作者的构建里，拿不到
+// CLI 的 reporter。两套必须同步演进（RFC 0011 OM2，#242）——warning 走 console.warn，不能像
+// error 那样 throw 掉作者的构建。
+function reportWarnings(step: string, diagnostics: readonly CompilerDiagnostic[]): void {
+  const warnings = diagnostics.filter((item) => item.severity === "warning");
+  if (warnings.length === 0) {
+    return;
+  }
+  console.warn(`reforce starter ${step} warnings:\n${warnings.map(renderDiagnostic).join("\n")}`);
+}
+
 function failWith(step: string, diagnostics: readonly CompilerDiagnostic[]): never {
   const lines = diagnostics.map(renderDiagnostic).join("\n");
   throw new Error(`reforce starter ${step} failed:\n${lines}`);
@@ -171,10 +182,12 @@ export async function finishStarterBuild(options: ReforceStarterOptions): Promis
   if (resolution.status === "failure") {
     failWith("project resolution", resolution.diagnostics);
   }
+  reportWarnings("project resolution", resolution.diagnostics);
   const compilation = await compiler.compileLibrary({ project: resolution.project });
   if (compilation.status === "failure") {
     failWith("library compilation", compilation.diagnostics);
   }
+  reportWarnings("library compilation", compilation.diagnostics);
   const projectRoot = resolution.project.projectRoot;
   const outputDirectory = path.resolve(projectRoot, options.outputDirectory ?? "dist");
   await mkdir(outputDirectory, { recursive: true });

@@ -1,4 +1,9 @@
-import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/core";
+import type {
+  ApplicationContext,
+  BeanClass,
+  BeanDefinition,
+  ContextStartReport,
+} from "@reforce/core";
 import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle } from "@/adapter";
 import { connectWebApplication } from "@/execution/connect";
@@ -17,9 +22,9 @@ class FakeContext implements ApplicationContext {
     this.instances.set(target, instance);
   }
 
-  start(): Promise<void> {
+  start(): Promise<ContextStartReport> {
     this.events.push("context:start");
-    return Promise.resolve();
+    return Promise.resolve({ beanTimings: [] });
   }
 
   get<T extends object>(target: BeanClass<T> | BeanDefinition<T>): T {

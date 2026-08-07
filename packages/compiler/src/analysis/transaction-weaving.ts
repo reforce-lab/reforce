@@ -42,6 +42,20 @@ export const transactionInterceptorSymbol: LinkedSymbol = Object.freeze({
 export const transactionManagerSymbol: LinkedSymbol =
   transactionFrameworkSymbol("TransactionManager");
 
+/** 事务自己那条 logger（RFC 0011 C5，#250）：边界的 begin/commit/rollback 都从它出。 */
+export const transactionFrameworkLoggerName = "reforce.transaction";
+
+// 这个符号从不经 linker 解析——它只是让生成的 beans.ts 对 @reforce/transaction 自己那份结构性
+// 接口产出一条 typed edge，从而把 @reforce/logging 挡在类型位置之外，同时仍然让 tsc 背书
+// resolve<T>(1)。
+const transactionLoggerSymbol: LinkedSymbol = Object.freeze({
+  key: "transaction:TransactionLogger",
+  kind: "transaction",
+  name: "TransactionLogger",
+  moduleSpecifier: transactionInterceptorRuntimeExport.module,
+  generic: false,
+});
+
 // savepoint 能力表达在契约身份上（ADR 0008 T4 定案）：NESTED 使用处按这个符号解析依赖边，
 // manager 没实现就是 MISSING_BEAN——与"图里根本没有 manager"同一种编译期诊断。
 export const nestedTransactionManagerSymbol: LinkedSymbol = transactionFrameworkSymbol(
@@ -135,13 +149,17 @@ function declaresNestedPropagation(use: DecoratorUse): boolean {
 export function transactionInterceptorDraft(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
-): ProviderDraft | undefined {
+  // 有日志绑定时才追加 logger 边（RFC 0011 C5，#250）。无条件追加是致命的：没装绑定的应用
+  // 会因此凭空多出一条 LoggerFactory 的 MISSING_BEAN，而它从没打算写日志。
+  loggerAvailable: boolean,
+): (ProviderDraft & { readonly span: SourceSpan }) | undefined {
   const demand = transactionalDemandOf(sources, linker);
   if (demand === undefined) {
     return undefined;
   }
   const { span, nested } = demand;
   return {
+    span,
     provider: {
       kind: "class",
       id: transactionInterceptorBeanId,
@@ -179,6 +197,21 @@ export function transactionInterceptorDraft(
         },
         sourceSpan: span,
       },
+      ...(loggerAvailable
+        ? [
+            {
+              index: 1,
+              linkedType: {
+                symbol: transactionLoggerSymbol,
+                typeArguments: [],
+                lazy: false,
+                current: false,
+                span,
+              },
+              sourceSpan: span,
+            },
+          ]
+        : []),
     ],
   };
 }

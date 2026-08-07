@@ -417,9 +417,9 @@ describe("generated output schema", () => {
     );
 
     const beans = generatedContent(result, "beans.ts");
-    expect(beans).toContain("schemaVersion: 4,");
+    expect(beans).toContain("schemaVersion: 6,");
     expect(beans).toMatch(/resolver\.resolveAll<beanContract\d+>\(0\)/);
-    expect(manifestOf(result).schemaVersion).toBe(4);
+    expect(manifestOf(result).schemaVersion).toBe(6);
   });
 });
 
