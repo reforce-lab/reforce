@@ -3,6 +3,7 @@
 // 涉及的 RouteMatch 是应用作者面，保留在根入口。
 export type { RequestSeeder, RouteMatch } from "@/adapter";
 export { type WebErrorCode, webErrorCodes } from "@/error-codes";
+export * as errors from "@/error-namespace";
 export {
   InvalidRouteTableError,
   MiddlewareReenteredError,

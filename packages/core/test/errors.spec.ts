@@ -67,3 +67,33 @@ describe("InterceptorReenteredError", () => {
     );
   });
 });
+
+// 双参形态（ADR 0013 决议 8，#296）：按 code 字面量分派，本包的码收窄到具体子类。
+describe("isReforceError narrowed by code", () => {
+  test("accepts a matching code", () => {
+    expect(
+      isReforceError(new UnregisteredBeanTargetError(class Absent {}), "UNREGISTERED_BEAN_TARGET"),
+    ).toBe(true);
+  });
+
+  test("rejects a lineage error carrying a different code", () => {
+    expect(
+      isReforceError(new UnregisteredBeanTargetError(class Absent {}), "BEAN_CREATION_FAILED"),
+    ).toBe(false);
+  });
+
+  test("rejects a value that is not in the lineage at all", () => {
+    expect(isReforceError(new Error("boom"), "BEAN_CREATION_FAILED")).toBe(false);
+  });
+
+  // 收窄的价值就在这里：分派之后能直接读子类自己的字段，不必再 instanceof 一次。
+  test("narrows to the concrete subclass so its own fields are readable", () => {
+    const error: unknown = new InterceptorReenteredError({ beanId: "app#Orders", method: "save" });
+
+    if (!isReforceError(error, "INTERCEPTOR_REENTERED")) {
+      throw new Error("the guard was expected to accept this error");
+    }
+
+    expect(error.beanId).toBe("app#Orders");
+  });
+});

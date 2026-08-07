@@ -15,7 +15,9 @@ export interface DiagnosticArticle {
   readonly article: readonly string[];
 }
 
-export const unwrittenArticleIssueUrl = "https://github.com/reforce-lab/reforce/issues/242";
+// 长文缺口的跟踪 issue（ADR 0013 决议 5，#296 从 explain 的「暂无长文」出口指向它）。
+// 此前指向 #242（RFC 0011 观测性波）——长文缺口挂在那里已经名不副实。
+export const unwrittenArticleIssueUrl = "https://github.com/reforce-lab/reforce/issues/297";
 
 // 覆盖依赖图、路由与日志/抑制三条最常撞墙的路径。其余码走「暂无长文」。
 const articles: Readonly<Record<string, DiagnosticArticle>> = {
