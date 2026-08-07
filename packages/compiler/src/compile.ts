@@ -1,12 +1,10 @@
 import type { LRUCache } from "lru-cache";
 import { analyzeProject } from "@/analysis/analyze-project";
-import { validateLoggerLevelKeys } from "@/analysis/logger-levels";
 import type { CompileRequest, CompileResult, CompilerDiagnostic, CompilerWatchInputs } from "@/api";
 import { diagnostic, orderDiagnostics } from "@/diagnostics";
 import { generateFiles } from "@/emission/generate-files";
 import { createProjectLinker } from "@/linking/project-linker";
 import type { SourceFileIr } from "@/parser/source-ir";
-import { readEnvironmentKeyLayers } from "@/project/env-layers";
 import type { ProjectState } from "@/project/project-config";
 import { snapshotStillMatches } from "@/project/project-snapshot";
 import { parseProjectSources } from "@/project/source-files";
@@ -57,18 +55,7 @@ export async function compile(
     cache,
     state.parsedConfig.config.compilerOptions?.customConditions,
   );
-  // logging.level.* 的编译期通道（RFC 0011 L5，#242 / #249）：读在分析之前——分析要把级别
-  // 快照作为字面量实参合成进 LoggerLevels bean，等到分析之后就赶不上了。.env 层进 watch
-  // inputs：存在的进 fileDependencies，缺席的进 missingDependencies——后者是 dev 下
-  // 「新建 .env 触发重编译」的唯一通道（先例逐字照 library/compile.ts 的 packageJsonWatch）。
-  const environment = readEnvironmentKeyLayers({
-    projectRoot: request.project.projectRoot,
-    env: process.env,
-  });
-  const analysis = analyzeProject(parsed.sources, linker, {
-    values: environment.loggingLevelValues,
-    layers: environment.layers,
-  });
+  const analysis = analyzeProject(parsed.sources, linker);
   const watchInputs = mergeWatchInputs(parsed.watchInputs, linker.collectWatchInputs());
   // 抑制在分派之前应用（RFC 0011 D7，#242）。抑制只作用于 warning，所以失败分析里那些 error
   // 一条不少地留下，failure() 拿得到诊断；成功分析这边压掉全部 warning 后也仍然是 success——
@@ -84,25 +71,11 @@ export async function compile(
       watchInputs,
     );
   }
-  const levelDiagnostics: CompilerDiagnostic[] = [];
-  validateLoggerLevelKeys({
-    environmentKeys: environment.keys,
-    loggerNames: analysis.loggerNames,
-    diagnostics: levelDiagnostics,
-  });
-  const withEnvironment = mergeWatchInputs(
-    watchInputs,
-    createWatchInputs({
-      fileDependencies: environment.presentFiles,
-      missingDependencies: environment.missingFiles,
-    }),
-  );
   return {
     status: "success",
     // 分析成功即无 error，而抑制只会追加 warning，所以这里必然全是 warning。
     diagnostics: orderDiagnostics(
-      applySuppressions([...analysis.diagnostics, ...levelDiagnostics], suppressionSources)
-        .diagnostics,
+      applySuppressions(analysis.diagnostics, suppressionSources).diagnostics,
     ),
     files: generateFiles(
       request.project,
@@ -113,6 +86,6 @@ export async function compile(
       analysis.weaving,
       linker.starterLinkage,
     ),
-    watchInputs: withEnvironment,
+    watchInputs,
   };
 }

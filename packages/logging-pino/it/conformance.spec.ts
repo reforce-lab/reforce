@@ -65,10 +65,10 @@ function parseRecord(line: string): LogRecord {
   return { level: pinoLevelName(level), name, time, message: msg, fields };
 }
 
-// 级别快照（RFC 0011 L5）：这些用例验的是门面契约与 pino 的原生选项，逐 logger 调级另有专门
-// 用例，所以缺省给一份空名单——每条 logger 都落回 settings.level，正是它们要的基线。
+// 封闭名单（RFC 0011 L5 勘误）：这些用例验的是门面契约与 pino 的原生选项，逐 logger 调级
+// 另有专门用例，所以缺省给一份空名单——每条 logger 都落回 LoggingSettings.defaultLevel。
 function levelsOf(names: readonly string[] = []): LoggerLevels {
-  return new LoggerLevels({ names, levels: {}, defaultLevel: "info", layers: [] });
+  return new LoggerLevels({ names });
 }
 
 function bound(input: {

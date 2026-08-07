@@ -16,7 +16,6 @@ describe("configProvenanceRecords", () => {
         ["SERVER_TIMEOUT", ".env"],
       ]),
       keyPrefixes: ["SERVER_"],
-      detail: false,
     });
 
     expect(records[0]?.fields).toMatchObject({
@@ -36,7 +35,6 @@ describe("configProvenanceRecords", () => {
         ["PATH", "process-env"],
       ]),
       keyPrefixes: ["SERVER_"],
-      detail: false,
     });
 
     expect(records[0]?.fields.keyCount).toBe(1);
@@ -52,7 +50,6 @@ describe("configProvenanceRecords", () => {
         ["SERVER_D", ".env.local"],
       ]),
       keyPrefixes: ["SERVER_"],
-      detail: false,
     });
 
     expect(records[0]?.fields.layers).toEqual([
@@ -63,42 +60,34 @@ describe("configProvenanceRecords", () => {
     ]);
   });
 
-  // 不变量 8：detail 为假时逐键那段根本不构造。
-  test("produces only the summary when detail was not requested", () => {
-    const records = configProvenanceRecords({
-      provenance: provenanceOf([["SERVER_HOST", ".env"]]),
-      keyPrefixes: ["SERVER_"],
-      detail: false,
-    });
-
-    expect(records).toHaveLength(1);
-  });
-
-  test("names every key and its layer when detail was requested", () => {
+  // 明细恒发 debug（RFC 0011 L5 勘误）：绑定期没有任何配置面能回答「debug 开没开」，
+  // 记录先进引导缓冲，重放时由真 logger 按用户的 LoggingSettings 过滤。
+  test("names every key and its layer in the debug detail record", () => {
     const records = configProvenanceRecords({
       provenance: provenanceOf([
         ["SERVER_PORT", ".env.local"],
         ["SERVER_HOST", ".env"],
       ]),
       keyPrefixes: ["SERVER_"],
-      detail: true,
     });
 
+    expect(records[1]?.level).toBe("debug");
     expect(records[1]?.fields.sources).toEqual([
       { key: "SERVER_HOST", layer: ".env" },
       { key: "SERVER_PORT", layer: ".env.local" },
     ]);
   });
 
-  // 折叠必带出口（不变量 4），而且出口得是真能跑的手势。
+  // 折叠必带出口（不变量 4），而且出口得是真能跑的手势——env 通道已撤，出口指向显式配置。
   test("points at the level that expands the summary", () => {
     const records = configProvenanceRecords({
       provenance: provenanceOf([["SERVER_HOST", ".env"]]),
       keyPrefixes: ["SERVER_"],
-      detail: false,
     });
 
-    expect(records[0]?.fields.expandWith).toBe("LOGGING_LEVEL_REFORCE_CONFIG=debug");
+    expect(records[0]?.fields.expandWith).toBe(
+      'LoggingSettings.levels: { "reforce.config": "debug" }',
+    );
   });
 
   // 脱敏铁律（ADR 0005 决策 6.2）：只出键名与层，永不出值。签名根本收不到 values map，
@@ -111,7 +100,6 @@ describe("configProvenanceRecords", () => {
         ["SERVER_PASSWORD", ".env.local"],
       ]),
       keyPrefixes: ["SERVER_"],
-      detail: true,
     });
 
     expect(JSON.stringify(records)).not.toContain(secret);

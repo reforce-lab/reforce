@@ -189,10 +189,9 @@ export const webFrameworkLoggerBeanId = loggerBeanId(webFrameworkLoggerName);
 
 export const contextFrameworkLoggerBeanId = loggerBeanId(contextFrameworkLoggerName);
 
-// 引导期 logger 不是 bean（bootstrapLogger 在运行时直接造），但对它调级是合法的：级别名单
-// 与快照必须收它，否则编译期的 UNKNOWN_LOGGER_NAME 与运行期的未知名告警都会把
-// LOGGING_LEVEL_REFORCE_CONFIG 当成拼错——而那句「设了也没用」还是假的，运行期的
-// explicitLevelFor 照样从 process.env 读得到它（RFC 0011 C4，#250）。
+// 引导期 logger 不是 bean（bootstrapLogger 在运行时直接造），但对它调级是合法的：封闭名单
+// 必须收它，否则 LoggingSettings.levels 写 "reforce.config" 会被启动期的未知名 warn 当成
+// 拼错——而调它的级是合法动作，引导缓冲重放后由真 logger 按它过滤（RFC 0011 C4，#250）。
 const bootstrapLoggerNames = ["reforce.config"] as const;
 
 // metaSource 与 SourceSpan 逐字段同构（差一个 file/fileId 的名字），所以这是改名不是伪造位置。
@@ -302,66 +301,11 @@ export interface LoggerSynthesis {
   readonly levelsBeanId?: string;
 }
 
-/** 编译期可见的级别配置（`.env` 那几层，RFC 0011 L5 表前两行）。 */
-export interface CompileTimeLoggerLevels {
-  /** `LOGGING_LEVEL_*` 的原始值，键是环境变量名。 */
-  readonly values: ReadonlyMap<string, string>;
-  /** 编译期实际读过的层，按读取顺序；启动时比对 REFORCE_PROFILE 偏斜用。 */
-  readonly layers: readonly string[];
-}
-
-// 六个级别加 `silent`（RFC 0011 L1）。silent 是阈值不是级别——写不出 `log.silent(...)`，但
-// 「把这条 logger 关掉」正是 logging.level.* 最常用的一档，不收它等于让用户去猜一个比 fatal
-// 还高的词，而拼错的下场是这条配置被静默丢弃。
-const logThresholdNames = ["trace", "debug", "info", "warn", "error", "fatal", "silent"] as const;
-
-// 与 @reforce/logging 的 parseLogThreshold 同一套判据。不 import 过来：编译器不依赖它分析的包，
-// 而阈值名是七个字面量的封闭集合，重复的是常量不是知识（DRY 认的是「改一处要同步多处」，
-// 这份名单真要变，@reforce/logging 的公开类型本身就是破坏性变更）。
-function parseLogThreshold(value: string | undefined): string | undefined {
-  const normalized = value?.trim().toLowerCase();
-  return logThresholdNames.find((level) => level === normalized);
-}
-
-// 与运行期的 environmentKeyForLogger 逐字一致（analysis/logger-levels.ts 有同一份实现，那边
-// 服务拼写校验、这边服务快照构造）。
-function environmentKeyForLogger(name: string): string {
-  return `LOGGING_LEVEL_${name.replaceAll(/[^A-Za-z0-9]/gu, "_").toUpperCase()}`;
-}
-
-// 快照只收**认得出**的级别：`.env` 里写了 `LOGGING_LEVEL_ORDERS=verbose` 时，把 "verbose"
-// 原样内联进生成物等于让运行期拿到一个非 LogThreshold 的字符串，落进 pino 会直接抛。丢掉它并
-// 落回绑定缺省，与运行期 parseLogThreshold 遇到坏值时的行为一致。
-function levelsSnapshotFor(
-  names: readonly string[],
-  compileTime: CompileTimeLoggerLevels,
-): Record<string, string> {
-  const levels: Record<string, string> = {};
-  for (const name of names) {
-    const level = parseLogThreshold(compileTime.values.get(environmentKeyForLogger(name)));
-    if (level !== undefined) {
-      levels[name] = level;
-    }
-  }
-  return levels;
-}
-
-// 级别快照 bean（RFC 0011 L5，#249 的「未做」第一条）。它没有依赖边，全部内容是编译期算好的
-// 字面量——封闭名单、逐 logger 级别、编译期读过的层。运行期的 process.env 那一层由
-// LoggerLevels 自己在 levelFor 里叠加，不进快照：它是启动时才存在的事实。
-function loggerLevelsDraft(
-  names: readonly string[],
-  compileTime: CompileTimeLoggerLevels,
-  span: SourceSpan,
-): ProviderDraft {
-  const snapshot = {
-    names,
-    levels: levelsSnapshotFor(names, compileTime),
-    // 兜底级别不从 .env 猜：绑定自己的缺省（PinoSettings.level / defaultLevel）是用户显式
-    // 写下的，快照给一个"info"会把它顶掉。这里的 info 只在绑定也没有缺省时才轮得到。
-    defaultLevel: "info",
-    layers: compileTime.layers,
-  } satisfies LiteralArgumentValue;
+// 级别快照 bean（RFC 0011 L5 勘误，#242）。它没有依赖边，全部内容是编译期算好的封闭名单：
+// 级别的真相在 LoggingSettings bean 里，快照的职责收缩为「编译期看见了哪些名字」——供启动期
+// 对 settings.levels 的键做确定性 did-you-mean。
+function loggerLevelsDraft(names: readonly string[], span: SourceSpan): ProviderDraft {
+  const snapshot = { names } satisfies LiteralArgumentValue;
   return {
     provider: {
       kind: "class",
@@ -450,8 +394,6 @@ export function synthesizeLoggerBeans(input: {
   readonly diagnostics: CompilerDiagnostic[];
   /** 编译器自己要的 logger（框架输出面）；只有图里真有绑定时才合成。 */
   readonly frameworkLoggers?: readonly FrameworkLoggerRequest[];
-  /** 编译期可见的级别配置，进 LoggerLevels 快照的字面量实参。 */
-  readonly compileTimeLevels: CompileTimeLoggerLevels;
 }): LoggerSynthesis {
   const demands = loggerDemandsOf(input.drafts);
   const provided = input.loggerFactory;
@@ -483,9 +425,7 @@ export function synthesizeLoggerBeans(input: {
   return {
     drafts: [
       ...beanNames.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
-      ...(levelsSpan === undefined
-        ? []
-        : [loggerLevelsDraft(names, input.compileTimeLevels, levelsSpan)]),
+      ...(levelsSpan === undefined ? [] : [loggerLevelsDraft(names, levelsSpan)]),
     ],
     redirects,
     names,

@@ -47,7 +47,6 @@ export function configProvenanceRecords(input: {
   readonly provenance: ReadonlyMap<string, string>;
   /** 只报本应用真的绑了的那些前缀，环境里其余几百个变量与配置无关。 */
   readonly keyPrefixes: readonly string[];
-  readonly detail: boolean;
 }): readonly ProvenanceRecord[] {
   const keys = [...input.provenance.keys()]
     .filter((key) => input.keyPrefixes.some((prefix) => key.startsWith(prefix)))
@@ -58,14 +57,14 @@ export function configProvenanceRecords(input: {
     fields: {
       keyCount: keys.length,
       layers: countByLayer(input.provenance, keys),
-      // 出口是调级别（不变量 4）：逐键明细是 debug 档的内容，要它时才付钱。
-      expandWith: "LOGGING_LEVEL_REFORCE_CONFIG=debug",
+      // 出口是调级别（不变量 4）：逐键明细是 debug 档的内容。env 通道已撤（RFC 0011 L5
+      // 勘误），出口指向显式配置。
+      expandWith: 'LoggingSettings.levels: { "reforce.config": "debug" }',
     },
   };
-  // 不变量 8：早返回在逐键结构构造**之前**，不是构造完再丢。
-  if (!input.detail) {
-    return [summary];
-  }
+  // 明细恒发 debug：绑定跑在一切 bean 之前（ADR 0005 决策 6.1），此刻没有任何配置面能回答
+  // 「debug 开没开」，这两条都先进引导缓冲（收 trace 起），重放时由真 logger 按用户配置的
+  // 阈值过滤——「要不要看」的判定被推迟到了第一个知道答案的时刻。
   return [
     summary,
     {

@@ -45,7 +45,7 @@ describe("beanTimingSections", () => {
   test("derives the expand command from the emitting logger's own level key", () => {
     const sections = beanTimingSections([timing("a", 40)], "reforce.web");
 
-    expect(sections[0]?.expandWith).toBe("LOGGING_LEVEL_REFORCE_WEB=debug reforce start");
+    expect(sections[0]?.expandWith).toBe('LoggingSettings.levels: { "reforce.web": "debug" }');
   });
 });
 

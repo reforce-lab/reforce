@@ -1380,9 +1380,10 @@ describe.sequential("built Reforce CLI", () => {
         const build = await buildProject(project.projectRoot);
         expect(build.exitCode, commandFailure(build)).toBe(0);
 
+        // reforce.config 的 debug 档由 fixture 的 AppLogging.levels 调开（RFC 0011 L5 勘误：
+        // 级别走显式 settings，env 通道已撤）。
         started = await startApplication(project.projectRoot, "provenance-start", false, {
           FIXTURE_SERVER_HOST: secret,
-          LOGGING_LEVEL_REFORCE_CONFIG: "debug",
         });
         const shutdown = await shutdownWithIpc(started);
         stopped = true;
@@ -1518,10 +1519,9 @@ describe.sequential("built Reforce CLI", () => {
         const build = await buildProject(project.projectRoot);
         expect(build.exitCode, commandFailure(build)).toBe(0);
 
-        started = await startApplication(project.projectRoot, "timings-start", false, {
-          // 台账归 reforce.context：它是容器的事实不是 web 的（RFC 0011 L6【已定】）。
-          LOGGING_LEVEL_REFORCE_CONTEXT: "debug",
-        });
+        // 台账归 reforce.context：它是容器的事实不是 web 的（RFC 0011 L6【已定】）。debug 档
+        // 由 fixture 的 AppLogging.levels 调开——级别走显式 settings，env 通道已撤。
+        started = await startApplication(project.projectRoot, "timings-start", false);
         const shutdown = await shutdownWithIpc(started);
         stopped = true;
         expect(shutdown.result.exitCode).toBe(0);

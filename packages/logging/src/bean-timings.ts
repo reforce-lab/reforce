@@ -1,5 +1,4 @@
 import type { LogFields, LogLevel } from "@/contracts";
-import { environmentKeyForLogger } from "@/levels";
 import type { StartupSummarySection } from "@/startup-summary";
 
 // 启动台账的折叠规则与展开出口（RFC 0011 C6，#250）。
@@ -44,8 +43,9 @@ export function beanTimingSections(
       // 第二个完整 bean id 就撑破 80 列了。
       facts: [`${slow.length} over ${slowBeanThresholdMs}ms`, `${slowest.id} ${slowest.ms}ms`],
       // 出口是调级别，不是 `reforce explain <名词>`：CLI 只读生成物，它算不出运行期耗时。
-      // 事实里给的是完整 bean id，读者可以原样贴进 `reforce explain <id>`。
-      expandWith: `${environmentKeyForLogger(loggerName)}=debug reforce start`,
+      // 事实里给的是完整 bean id，读者可以原样贴进 `reforce explain <id>`。调级走显式配置
+      //（RFC 0011 L5 勘误）：LoggingSettings.levels 是级别的唯一真相，没有 env 通道。
+      expandWith: `LoggingSettings.levels: { "${loggerName}": "debug" }`,
     },
   ];
 }
@@ -81,7 +81,7 @@ export function contextStartupSections(
     {
       label: "context",
       facts: [`${facts.beanCount} beans`, `${facts.contextMs}ms`],
-      expandWith: `${environmentKeyForLogger(loggerName)}=debug reforce start`,
+      expandWith: `LoggingSettings.levels: { "${loggerName}": "debug" }`,
     },
   ];
 }

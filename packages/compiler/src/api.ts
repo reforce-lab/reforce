@@ -66,8 +66,7 @@ export type CompilerDiagnosticCode =
   | "UNUSED_SUPPRESSION"
   | "SUPPRESSION_NOT_APPLICABLE"
   // 日志接线（RFC 0011 L2/L5，#242）。
-  | "DUPLICATE_LOGGER_NAME"
-  | "UNKNOWN_LOGGER_NAME";
+  | "DUPLICATE_LOGGER_NAME";
 
 export interface CompilerDiagnostic {
   readonly kind: "compiler";

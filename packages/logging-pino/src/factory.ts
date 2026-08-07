@@ -142,11 +142,8 @@ export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
   }
 
   create(name: string): Logger {
-    // 逐 logger 调级（RFC 0011 L5 的分层表，#242）：两层合在 bindLoggerLevels 里——`.env`
-    // 那几层由编译期读进快照（仓库里静态可见，拼写错误归编译期诊断查），process.env 那层
-    // 由运行期读并压过快照（CI 与生产注入的部分，编译期看不见，拼写错误只能启动时 warn）。
-    //
-    // 这里不再开一个 dotenv 加载器：.env 不回写 process.env 是 ADR 0005 决策 4.3 定过的。
+    // 逐 logger 调级（RFC 0011 L5 勘误，#242）：级别的唯一真相是 LoggingSettings.levels，
+    // 解析收在 bindLoggerLevels 里，两个绑定共用同一套优先级与启动期 warn。
     const level = this.levelFor(name);
     // pino 的 child 在这里是实现细节而不是门面特性：它给的是「同一个 sink、带 name 字段」，
     // 正是 logger 名需要的。门面首版不出 child(bindings) 是另一回事（Rule of Three）。

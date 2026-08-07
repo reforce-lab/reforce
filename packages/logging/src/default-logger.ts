@@ -24,10 +24,7 @@ export interface DefaultLoggerFactoryOptions {
    * settings.defaultLevel 兜没逐个指定的部分。拼错的 logger 名对快照名单 warn。
    */
   readonly settings?: LoggingSettings;
-  /**
-   * 编译器合成的级别快照 bean（RFC 0011 L5，#249）。给了它，`logging.level.*` 与
-   * `LOGGING_LEVEL_<NAME>` 才真正生效——这是把编译期校验过的名单接到运行期的那根线。
-   */
+  /** 编译器合成的封闭名单 bean：有它才能对 settings.levels 的键做启动期 did-you-mean。 */
   readonly levels?: LoggerLevels;
   /** 逐 logger 名的级别；返回 undefined 表示「这条没配」，交给 defaultLevel。 */
   readonly levelFor?: (name: string) => LogThreshold | undefined;

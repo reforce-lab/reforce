@@ -58,7 +58,7 @@ interface Plans {
 function manifestBytes(beans: readonly object[], plans: Plans): Uint8Array {
   return new TextEncoder().encode(
     JSON.stringify({
-      schemaVersion: 5,
+      schemaVersion: 6,
       configs: [],
       beans,
       plans: { requestConstructionOrder: [], ...plans },

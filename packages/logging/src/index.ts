@@ -30,12 +30,7 @@ export {
 export { DefaultLoggerFactory, type DefaultLoggerFactoryOptions } from "@/default-logger";
 export { DefaultLoggingFactory } from "@/generated-runtime";
 export { bindLoggerLevels, type LevelBindingInput } from "@/level-binding";
-export {
-  environmentKeyForLogger,
-  LoggerLevels,
-  type LoggerLevelsSnapshot,
-  parseLogThreshold,
-} from "@/levels";
+export { LoggerLevels, type LoggerLevelsSnapshot } from "@/levels";
 export { LoggerName } from "@/logger-name";
 export {
   DefaultLoggingSettings,

@@ -43,8 +43,8 @@ function codesOf(input: {
 describe("applySuppressions", () => {
   test("drops a warning reported on the line the comment points at", () => {
     const result = applySuppressions(
-      [warning("UNKNOWN_LOGGER_NAME", "a.ts", 4)],
-      [{ fileId: "a.ts", suppressions: [suppression("UNKNOWN_LOGGER_NAME", 3)] }],
+      [warning("DUPLICATE_ROUTE", "a.ts", 4)],
+      [{ fileId: "a.ts", suppressions: [suppression("DUPLICATE_ROUTE", 3)] }],
     );
 
     expect(codesOf(result)).toEqual([]);
@@ -52,30 +52,30 @@ describe("applySuppressions", () => {
 
   test("leaves a warning reported on any other line alone", () => {
     const result = applySuppressions(
-      [warning("UNKNOWN_LOGGER_NAME", "a.ts", 9)],
-      [{ fileId: "a.ts", suppressions: [suppression("UNKNOWN_LOGGER_NAME", 3)] }],
+      [warning("DUPLICATE_ROUTE", "a.ts", 9)],
+      [{ fileId: "a.ts", suppressions: [suppression("DUPLICATE_ROUTE", 3)] }],
     );
 
-    expect(codesOf(result)).toEqual(["UNKNOWN_LOGGER_NAME", "UNUSED_SUPPRESSION"]);
+    expect(codesOf(result)).toEqual(["DUPLICATE_ROUTE", "UNUSED_SUPPRESSION"]);
   });
 
   // 抑制按 fileId 匹配，不只按行号——两个文件的第 4 行是两回事。
   test("does not reach across files", () => {
     const result = applySuppressions(
-      [warning("UNKNOWN_LOGGER_NAME", "b.ts", 4)],
-      [{ fileId: "a.ts", suppressions: [suppression("UNKNOWN_LOGGER_NAME", 3)] }],
+      [warning("DUPLICATE_ROUTE", "b.ts", 4)],
+      [{ fileId: "a.ts", suppressions: [suppression("DUPLICATE_ROUTE", 3)] }],
     );
 
-    expect(codesOf(result)).toEqual(["UNKNOWN_LOGGER_NAME", "UNUSED_SUPPRESSION"]);
+    expect(codesOf(result)).toEqual(["DUPLICATE_ROUTE", "UNUSED_SUPPRESSION"]);
   });
 
   test("leaves a warning whose code differs alone", () => {
     const result = applySuppressions(
-      [warning("UNKNOWN_LOGGER_NAME", "a.ts", 4)],
-      [{ fileId: "a.ts", suppressions: [suppression("DUPLICATE_ROUTE", 3)] }],
+      [warning("DUPLICATE_ROUTE", "a.ts", 4)],
+      [{ fileId: "a.ts", suppressions: [suppression("INVALID_ROUTE_MARKER", 3)] }],
     );
 
-    expect(codesOf(result)).toEqual(["UNKNOWN_LOGGER_NAME", "UNUSED_SUPPRESSION"]);
+    expect(codesOf(result)).toEqual(["DUPLICATE_ROUTE", "UNUSED_SUPPRESSION"]);
   });
 
   // error 不可抑制：分析没能产出完整的图，emission 会照着它发射实参缺失的构造调用。
@@ -101,14 +101,11 @@ describe("applySuppressions", () => {
   // 压住，判它 unused 会让人删错。
   test("counts every suppression that matched, not just the first", () => {
     const result = applySuppressions(
-      [warning("UNKNOWN_LOGGER_NAME", "a.ts", 4)],
+      [warning("DUPLICATE_ROUTE", "a.ts", 4)],
       [
         {
           fileId: "a.ts",
-          suppressions: [
-            suppression("UNKNOWN_LOGGER_NAME", 3),
-            suppression("UNKNOWN_LOGGER_NAME", 3),
-          ],
+          suppressions: [suppression("DUPLICATE_ROUTE", 3), suppression("DUPLICATE_ROUTE", 3)],
         },
       ],
     );
@@ -139,14 +136,11 @@ describe("the suppression stage's own diagnostics are not suppressible", () => {
   // 于是一条彻头彻尾的僵尸抑制永远不报。
   test("a live suppression next door does not launder a stale one", () => {
     const result = applySuppressions(
-      [warning("UNKNOWN_LOGGER_NAME", "a.ts", 5)],
+      [warning("DUPLICATE_ROUTE", "a.ts", 5)],
       [
         {
           fileId: "a.ts",
-          suppressions: [
-            suppression("UNUSED_SUPPRESSION", 3),
-            suppression("UNKNOWN_LOGGER_NAME", 4),
-          ],
+          suppressions: [suppression("UNUSED_SUPPRESSION", 3), suppression("DUPLICATE_ROUTE", 4)],
         },
       ],
     );

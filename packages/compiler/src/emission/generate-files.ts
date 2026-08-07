@@ -517,7 +517,7 @@ function renderBeans(
     ...registrations.flatMap((registration) => [registration, ""]),
     ...frameworkLoggerExport(providers).flatMap((line) => [line, ""]),
     "export const applicationDefinition = {",
-    "  schemaVersion: 5,",
+    "  schemaVersion: 6,",
     `  configs: [${configNames}],`,
     ...(configs.length > 0 ? ["  configBinding: createConfigBinding(),"] : []),
     `  registrations: [${names}],`,
@@ -664,7 +664,7 @@ function renderManifest(
       dispose: provider.kind === "factory" && provider.dispose,
     },
   }));
-  return `${json({ schemaVersion: 5, configs: manifestConfigs, beans, plans })}\n`;
+  return `${json({ schemaVersion: 6, configs: manifestConfigs, beans, plans })}\n`;
 }
 
 // web 接线（ADR 0006 W2 的 #153 修订）：路由表与容器只有生成代码同时拿得到，注册了 web 引擎

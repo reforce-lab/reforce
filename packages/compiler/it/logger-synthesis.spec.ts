@@ -211,9 +211,8 @@ describe("synthesised logger beans", () => {
     expect(logger.provides).toEqual([]);
   }, 60_000);
 
-  // A1（RFC 0011 L5，#249）：这一组是「快照真的被人读」那条线的编译期一半。在它们之前，
-  // LoggerLevels 是运行期零消费者的——编译期校验拼写、给 did-you-mean，但没有任何代码读
-  // 那份名单，用户改了级别不生效。
+  // A1（RFC 0011 L5 勘误，#242）：快照收缩为封闭名单——级别的真相在 LoggingSettings bean
+  // 里，这份名单供启动期对 settings.levels 的键做确定性 did-you-mean。
   test("synthesises one LoggerLevels bean holding the closed name list", async () => {
     const { manifest, beans } = await compileApplication(twoConsumers);
 
@@ -222,56 +221,10 @@ describe("synthesised logger beans", () => {
     );
     expect(levels).toBeDefined();
     // reforce.config 在名单里但不是 bean：引导期 logger 由 bootstrapLogger 直接造，收进
-    // 名单只是为了让 LOGGING_LEVEL_REFORCE_CONFIG 不被当成拼错（RFC 0011 C4，#250）。
+    // 名单只是为了让 settings.levels 写 "reforce.config" 不被当成拼错（RFC 0011 C4，#250）。
     expect(beans).toContain(
       '"names":["OrderService","PaymentService","reforce.config","reforce.context"]',
     );
-  }, 60_000);
-
-  test("inlines the level a .env layer sets for a named logger", async () => {
-    const { beans } = await compileTreeSuccessfully({
-      "tsconfig.json": applicationTsconfig(),
-      ".env": "LOGGING_LEVEL_ORDERSERVICE=debug\n",
-      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
-    });
-
-    expect(beans).toContain('"levels":{"OrderService":"debug"}');
-  }, 60_000);
-
-  // silent 是第七个阈值（RFC 0011 L1）。它此前不在编译期名单里，于是「把这条 logger 关掉」
-  // 会走进下面那条「不是级别就丢掉」的路径——用户写了 silent，编译期一声不吭地把它扔了，
-  // 运行期落回绑定缺省照常刷屏。关掉一条 logger 恰恰是这套配置面最常用的动作。
-  test("inlines silent, which turns a named logger off entirely", async () => {
-    const { beans } = await compileTreeSuccessfully({
-      "tsconfig.json": applicationTsconfig(),
-      ".env": "LOGGING_LEVEL_ORDERSERVICE=silent\n",
-      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
-    });
-
-    expect(beans).toContain('"levels":{"OrderService":"silent"}');
-  }, 60_000);
-
-  // `.env` 里写了不是阈值的值时，把它原样内联等于让运行期拿到一个非 LogThreshold 的字符串——
-  // 落进 pino 会当场抛。丢掉它、落回绑定缺省，与运行期 parseLogThreshold 遇到坏值时一致。
-  test("drops a .env value that does not name a level", async () => {
-    const { beans } = await compileTreeSuccessfully({
-      "tsconfig.json": applicationTsconfig(),
-      ".env": "LOGGING_LEVEL_ORDERSERVICE=verbose\n",
-      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
-    });
-
-    expect(beans).toContain('"levels":{}');
-  }, 60_000);
-
-  // 快照带上编译期实际读过的层，启动时才比得出 REFORCE_PROFILE 偏斜（L5 表第三行）。
-  test("records the env layers it actually read", async () => {
-    const { beans } = await compileTreeSuccessfully({
-      "tsconfig.json": applicationTsconfig(),
-      ".env": "LOGGING_LEVEL_ORDERSERVICE=debug\n",
-      src: { "logger-factory.ts": loggerFactorySource, ...twoConsumers },
-    });
-
-    expect(beans).toContain('"layers":[".env"]');
   }, 60_000);
 
   // 快照 bean 与 logger bean 同属那条解析特例：provides 为空，不进候选池。进了的话，注入

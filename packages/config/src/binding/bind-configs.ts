@@ -4,12 +4,7 @@ import type {
   GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
 } from "@reforce/context/generated-runtime";
-import {
-  bootstrapLogger,
-  environmentKeyForLogger,
-  isLevelEnabled,
-  parseLogThreshold,
-} from "@reforce/logging";
+import { bootstrapLogger } from "@reforce/logging";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { type EnvironmentSnapshot, loadEnvironmentSnapshot } from "@/binding/env-layers";
 import {
@@ -40,14 +35,6 @@ function boundKeyPrefixes(configs: readonly GeneratedConfigRegistration[]): read
     // 缺元数据是硬错，但那条 TypeError 归校验路径抛（文案更完整），这里只是跳过。
     return metadata === undefined ? [] : [environmentKeyPrefix(prefixWordsOf(metadata.prefix))];
   });
-}
-
-// 绑定期唯一能拿到的级别就是刚读完的这份四层快照：LoggerLevels 是一条 bean，此刻还不存在
-// （ADR 0005 决策 6.1）。快照里的 LOGGING_LEVEL_* 正是编译器当初读的同一份文本（RFC 0011 L5）。
-// 这里读 values 只为把一个字符串解析成级别枚举，值本身不进任何记录。
-function detailRequested(snapshot: EnvironmentSnapshot): boolean {
-  const level = parseLogThreshold(snapshot.values.get(environmentKeyForLogger(configLoggerName)));
-  return isLevelEnabled("debug", level ?? "info");
 }
 
 export interface CreateConfigBindingOptions {
@@ -214,7 +201,6 @@ export function createConfigBinding(
       for (const record of configProvenanceRecords({
         provenance: snapshot.provenance,
         keyPrefixes: boundKeyPrefixes(configs),
-        detail: detailRequested(snapshot),
       })) {
         log[record.level](record.fields, record.message);
       }

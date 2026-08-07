@@ -39,7 +39,7 @@ const cacheSymbol = {
 
 function manifestOf(beans: readonly ManifestBean[]): GeneratedManifest {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     configs: [],
     beans,
     plans: {

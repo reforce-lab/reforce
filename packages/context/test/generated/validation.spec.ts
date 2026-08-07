@@ -233,19 +233,20 @@ describe("generated definition config validation", () => {
 
     const snapshot = snapshotApplicationDefinition(definition);
 
-    expect(snapshot.schemaVersion).toBe(5);
+    expect(snapshot.schemaVersion).toBe(6);
     expect(Object.isFrozen(snapshot.configs)).toBe(true);
     expect(Object.isFrozen(snapshot.configs[0])).toBe(true);
     expect(snapshot.configs[0]?.target).toBe(ServerConfig);
   });
 
   // v4 随 RFC 0011 L2（#242）退役：合成的 logger bean 是「一个运行导出承载 N 个 bean 身份、
-  // 且不提供任何契约」的新形态，按 v4 读取的一方会把它判成非法产物。
-  test("rejects the retired schema versions 1 through 4", () => {
+  // 且不提供任何契约」的新形态。v5 随 L5 勘误退役：LoggerLevels 快照收缩为封闭名单
+  // `{names}`，旧产物按四键形状构造的实参在新运行时上没有读者。
+  test("rejects the retired schema versions 1 through 5", () => {
     const { configs: _configs, ...rest } = testDefinition([consumerRegistration()]);
 
-    for (const retired of [1, 2, 3, 4]) {
-      expectInvalid({ ...rest, configs: [], schemaVersion: retired }, "schemaVersion must be 5");
+    for (const retired of [1, 2, 3, 4, 5]) {
+      expectInvalid({ ...rest, configs: [], schemaVersion: retired }, "schemaVersion must be 6");
     }
   });
 

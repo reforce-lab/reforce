@@ -107,7 +107,7 @@ interface ManifestPlans {
 }
 
 export interface GeneratedManifest {
-  readonly schemaVersion: 5;
+  readonly schemaVersion: 6;
   readonly configs: readonly ManifestConfig[];
   readonly beans: readonly ManifestBean[];
   readonly plans: ManifestPlans;
@@ -853,7 +853,7 @@ function isGeneratedManifest(value: unknown): value is GeneratedManifest {
   if (
     !isObject(value) ||
     !hasExactKeys(value, ["schemaVersion", "configs", "beans", "plans"]) ||
-    Reflect.get(value, "schemaVersion") !== 5
+    Reflect.get(value, "schemaVersion") !== 6
   ) {
     return false;
   }

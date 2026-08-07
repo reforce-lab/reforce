@@ -61,7 +61,7 @@ class TeapotErrorHandler {
 
 function applicationDefinition(): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     configs: [],
     registrations: [
       classBean({

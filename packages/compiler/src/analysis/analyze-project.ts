@@ -5,7 +5,6 @@ import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
 import {
-  type CompileTimeLoggerLevels,
   contextFrameworkLoggerName,
   loggingPackageName,
   providedLoggerFactorySymbol,
@@ -41,8 +40,6 @@ interface AnalysisSuccess {
   readonly status: "success";
   // 分析成功也可能有话要说：这里的诊断全是 warning（RFC 0011 OM2，#242）。
   readonly diagnostics: readonly CompilerDiagnostic[];
-  // 编译期见到的全部 logger 名，升序：logging.level.* 的校验拿它当封闭名单（RFC 0011 L5）。
-  readonly loggerNames: readonly string[];
   readonly providers: readonly BeanProviderModel[];
   readonly configs: readonly ConfigProviderModel[];
   readonly plans: ExecutionPlansModel;
@@ -123,9 +120,6 @@ function isBeanProvider(provider: ProviderModel): provider is BeanProviderModel 
 export function analyzeProject(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
-  // 编译期可见的级别配置（RFC 0011 L5，#249）：进 LoggerLevels 快照的字面量实参。分析要它，
-  // 所以 .env 的读取排在 analyzeProject 之前——快照是分析产物的一部分，不能等到 emission。
-  compileTimeLevels: CompileTimeLoggerLevels = { values: new Map(), layers: [] },
 ): AnalysisResult {
   const diagnostics: CompilerDiagnostic[] = [];
   validateModuleSyntax(sources, diagnostics);
@@ -198,7 +192,6 @@ export function analyzeProject(
             },
           ]),
     ],
-    compileTimeLevels,
   });
   const localDrafts = [...applicationDrafts, ...loggers.drafts];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
@@ -241,7 +234,6 @@ export function analyzeProject(
   return {
     status: "success",
     diagnostics: Object.freeze(orderDiagnostics(diagnostics)),
-    loggerNames: loggers.names,
     providers: Object.freeze(providers),
     configs: Object.freeze(configs),
     plans: createExecutionPlans(providers, new Set(configs.map((config) => config.id))),

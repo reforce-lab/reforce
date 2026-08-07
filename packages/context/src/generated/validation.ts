@@ -620,8 +620,8 @@ function validateApplicationDefinition(value: unknown): void {
     ["schemaVersion", "configs", "configBinding", "registrations", "plans"],
     "definition",
   );
-  if (Reflect.get(definition, "schemaVersion") !== 5) {
-    fail("definition.schemaVersion must be 5.");
+  if (Reflect.get(definition, "schemaVersion") !== 6) {
+    fail("definition.schemaVersion must be 6.");
   }
   const configCandidates = requireArray(Reflect.get(definition, "configs"), "definition.configs");
   const configs: GeneratedConfigRegistration[] = [];
@@ -766,7 +766,7 @@ export function snapshotApplicationDefinition(
 ): GeneratedApplicationDefinition {
   validateApplicationDefinition(definition);
   return Object.freeze({
-    schemaVersion: 5 as const,
+    schemaVersion: 6 as const,
     configs: Object.freeze(definition.configs.map(cloneConfigRegistration)),
     // The binding is carried by reference: it is behavior, not data, and the bind contract
     // is per-call stateless, so a clone could only obscure its identity.

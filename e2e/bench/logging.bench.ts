@@ -81,9 +81,9 @@ function best(run: () => void): number {
 
 // —— 三档参照系 ——
 
-// 空名单的级别快照：基准比的是每条记录的写出开销，逐 logger 调级不在被测面内，名单为空
+// 空名单的封闭名单快照：基准比的是每条记录的写出开销，逐 logger 调级不在被测面内，名单为空
 // 意味着每条 logger 都落回 defaultLevel，三档的门槛因此一致。
-const benchLevels = new LoggerLevels({ names: [], levels: {}, defaultLevel: "info", layers: [] });
+const benchLevels = new LoggerLevels({ names: [] });
 
 const barePino = pino({ level: "info" }, countingStream()).child({ name: "bench" });
 const facadeOverPino = new PinoLoggerFactory(
