@@ -3,7 +3,8 @@ import { serve } from "@hono/node-server";
 import { Injectable, type OnContextClose } from "@reforce/context";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
 import { webEngineAddress } from "@reforce/web/adapter";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { matchedRoutes } from "hono/route";
 import { TrieRouter } from "hono/router/trie-router";
 import type { HonoConfigurer, HonoRouteCustomizer } from "@/bridges";
 import { honoRequestPath } from "@/path";
@@ -12,8 +13,9 @@ import type { WebHonoServeSettings } from "@/settings";
 
 // hono 引擎适配器（#236）：reforce 的路由处理函数就是一个普通的 hono handler，不绕过 hono 的任何通道。
 //
-//   hono 生态中间件（cors / helmet / compress / rate-limit / static）
-//    └─ hono 路由匹配（未命中 → hono 自己的 404，reforce 不接管）
+//   未命中观察者（RFC 0011 C7，#250：await next() 之后只读一眼 c.res，什么都不改）
+//    └─ hono 生态中间件（cors / helmet / compress / rate-limit / static）
+//        └─ hono 路由匹配（未命中 → hono 自己的 404，reforce 不接管）
 //        └─ reforce handler ── 直接 return 标准 Response（hono 原生用法）
 //
 // 因此外层 `app.use('*')` 的 `await next()` 之后既能改头也能整体替换 c.res，生态中间件按它们
@@ -88,6 +90,30 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
 
   private async buildApplication(application: WebApplication): Promise<Hono> {
     const app = new Hono({ router: new TrieRouter(), getPath: honoRequestPath });
+    const notFound = application.logNotFound;
+    // reforce 自己注册的 handler 身份表：判据必须是「reforce 路由表没匹配上」而不只是
+    // status === 404——handler 自己返回的 404 已经由核心的请求日志记过（会重复记两条），
+    // configurer 注册的自有路由与静态资源中间件的短路也都不是未命中。
+    const reforceHandlers = new Set<unknown>();
+    if (notFound !== undefined) {
+      // 装在 configurer 之前：hono 的 app.use 只对**之后**注册的路由生效（见下），观察者要
+      // 盖住全部路由就必须最先装。
+      //
+      // 不用 app.notFound()：那会换掉响应体（契约里 404 的 body 归引擎），而且是最后写入者
+      // 赢——用户 configurer 再调一次就把日志静默关掉了，hono 内部就是一次赋值，不报错。
+      app.use("*", async (context, next) => {
+        await next();
+        if (context.res.status !== 404) {
+          return;
+        }
+        if (matchedRoutes(context).some((route) => reforceHandlers.has(route.handler))) {
+          return;
+        }
+        // path 取 new URL(...).pathname 而不是 c.req.path：后者被自定义 getPath 解码归一，
+        // 坏转义时还会变成哨兵值，与 logNotFound 契约要的「原始目标去掉 query」不符。
+        notFound({ method: context.req.method, path: new URL(context.req.url).pathname });
+      });
+    }
     // configurer 必须全部跑在 app.on 之前：hono 的 app.use 只对**之后**注册的路由生效，
     // 装晚了静默无效（实测）。
     for (const configurer of this.configurers) {
@@ -104,9 +130,9 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
           app.on(route.method, route.path, middleware);
         }
       }
-      app.on(route.method, route.path, (context) =>
-        route.handle(context.req.raw, context.req.param()),
-      );
+      const handler = (context: Context) => route.handle(context.req.raw, context.req.param());
+      reforceHandlers.add(handler);
+      app.on(route.method, route.path, handler);
     }
     return app;
   }

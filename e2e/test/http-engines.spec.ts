@@ -223,6 +223,27 @@ describe.sequential("the same application behaves identically across engines", (
 
         // 优雅关闭：排空后正常退出
         expect(await shutdown(server)).toBe(0);
+
+        // 未命中日志三引擎一致（RFC 0011 C7，#250）：404 从不进入引擎无关执行层，所以
+        // 「谁来记、记成什么样」由核心统一决定，三个引擎只负责调它。path 是原始请求目标
+        // 去掉 query，级别是 info（未命中不是应用出错，且级别完全由客户端说了算）。
+        const misses = server
+          .output()
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.message === "route not found");
+        expect(misses).toContainEqual(
+          expect.objectContaining({ level: "info", method: "GET", path: "/nowhere", status: 404 }),
+        );
+        expect(misses).toContainEqual(
+          expect.objectContaining({ level: "info", method: "DELETE", path: "/health" }),
+        );
       },
       commandTimeout,
     );

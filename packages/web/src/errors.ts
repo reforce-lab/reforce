@@ -1,7 +1,9 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { HttpMethod } from "@/routing/vocabulary";
 
 export type WebErrorCode =
   | "INVALID_ROUTE_TABLE"
+  | "MIDDLEWARE_REENTERED"
   | "REQUEST_VALIDATION_FAILED"
   | "RESPONSE_SERIALIZATION_FAILED";
 
@@ -22,6 +24,35 @@ export class InvalidRouteTableError extends ReforceWebError<"INVALID_ROUTE_TABLE
   constructor(detail: string) {
     super(`Generated route table is invalid: ${detail}`);
     this.detail = detail;
+  }
+}
+
+// 洋葱链重入（ADR 0006 W4，#255）：链不可重入与 @reforce/context 的 InterceptorReenteredError
+// 同款语义，违约信号因此同样必须是带码的框架错误——用户的 @ErrorHandler 要按 code 分派，
+// 裸 Error 只能匹配 message 字符串。
+//
+// 点名 beanId 而不是层号：每条路由的链在编译期已按 beanId 去重，beanId 已经唯一定位那一层；
+// 层号是 dispatch 下标不是链下标，读者拿它去数中间件会数错（同 #202 定案 2）。
+//
+// 「下一步怎么办」并进 message，与 InterceptorReenteredError 一致：基类没有 help 字段，
+// 而框架里也没有任何渲染器会读它——加一个没人读的字段是凭空的扩展点。
+export class MiddlewareReenteredError extends ReforceWebError<"MIDDLEWARE_REENTERED"> {
+  readonly code = "MIDDLEWARE_REENTERED" as const;
+  readonly beanId: string;
+  readonly method: HttpMethod;
+  readonly path: string;
+
+  constructor(input: {
+    readonly beanId: string;
+    readonly method: HttpMethod;
+    readonly path: string;
+  }) {
+    super(
+      `Middleware Bean "${input.beanId}" on ${input.method} ${input.path} called next() more than once; the middleware chain is not re-entrant. next() runs the rest of the chain exactly once — put whatever has to happen afterwards after \`await next()\`.`,
+    );
+    this.beanId = input.beanId;
+    this.method = input.method;
+    this.path = input.path;
   }
 }
 

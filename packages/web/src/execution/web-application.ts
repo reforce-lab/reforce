@@ -1,6 +1,6 @@
 import type { ApplicationContext } from "@reforce/context";
 import type { PreparedRoute, RequestSeeder, WebApplication } from "@/adapter";
-import { InvalidRouteTableError } from "@/errors";
+import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";
 import { createRequestInputValidator } from "@/execution/input-validation";
 import { RequestContextState } from "@/execution/request-context";
@@ -92,6 +92,38 @@ function logRequest(input: {
   );
 }
 
+// 日志系统自己坏了不能连累一次已经答完的 404，但也不许一声不吭（不变量 9）。每进程只喊
+// 一次：这条路径由客户端触发，扫描器一秒几百下，喊多了它自己就成了刷屏源。
+let missLoggerFailureReported = false;
+
+function createNotFoundLogger(
+  logger: RequestLogger,
+): (miss: { readonly method: string; readonly path: string }) => void {
+  return (miss) => {
+    // 不变量 8：判定在字段构造之前。
+    //
+    // 级别取 info 而不是 levelForStatus 的 4xx→warn：路由未命中不是应用出错——没有 handler
+    // 跑过，也没有任何东西行为异常；而且这条记录的级别完全由客户端说了算，任何人都能靠请求
+    // 不存在的路径把 warn 刷满，扫描器每天的 /wp-login.php 会把告警面淹掉。需要告警的人按
+    // status=404 自己筛。
+    if (!logger.isEnabled("info")) {
+      return;
+    }
+    try {
+      // message 不复用 "request"：两条记录的 path 基数不同——请求日志的 path 是编译期路由
+      // 模式（有界，可安全聚合），这里的是客户端完全控制的原始路径（无界）。
+      // 不写 handlerMs：什么都没跑过，写 0 就是假的。
+      logger.info({ method: miss.method, path: miss.path, status: 404 }, "route not found");
+    } catch (error) {
+      if (missLoggerFailureReported) {
+        return;
+      }
+      missLoggerFailureReported = true;
+      process.stderr.write(`[reforce.web] the 404 logger failed: ${String(error)}\n`);
+    }
+  };
+}
+
 type RouteRunner = (context: RequestContextState) => Promise<Response>;
 
 function requireMiddlewareInstance(instance: object, beanId: string): RouteMiddleware {
@@ -112,21 +144,42 @@ function requireErrorHandlerInstance(instance: object, beanId: string): RouteErr
   return instance as RouteErrorHandler;
 }
 
+interface ChainLink {
+  readonly beanId: string;
+  readonly middleware: RouteMiddleware;
+}
+
 // 洋葱链组装：middleware 数组顺序即外→内顺序（编译期压平写死）。next() 每层至多一次，
 // 重复调用是中间件实现错误，原位拒绝而不是静默重跑内层。
-function composeChain(middleware: readonly RouteMiddleware[], core: RouteRunner): RouteRunner {
+//
+// 守卫挂在每层自己的 next 闭包上而不是共享游标（#255）：出错时要点名是哪个中间件，闭包里
+// link 是词法可见的，用 dispatch 下标反查还要处理越界、还容易写反。语义与共享游标版一致——
+// 每个 next 只会调一次 dispatch(index + 1)，所以「游标退了」与「这个 next 被调了第二次」
+// 本来就是同一件事；entered 在第一个 await 之前同步置位，未 await 的重复调用照样被拒。
+function composeChain(
+  links: readonly ChainLink[],
+  route: Pick<GeneratedRoute, "method" | "path">,
+  core: RouteRunner,
+): RouteRunner {
   return (context) => {
-    let nextIndex = 0;
     const dispatch = async (index: number): Promise<Response> => {
-      if (index < nextIndex) {
-        throw new Error("Middleware called next() more than once.");
-      }
-      nextIndex = index + 1;
-      const entry = middleware[index];
-      if (entry === undefined) {
+      const link = links[index];
+      if (link === undefined) {
         return await core(context);
       }
-      return await entry.handle(context, () => dispatch(index + 1));
+      let entered = false;
+      const next = async (): Promise<Response> => {
+        if (entered) {
+          throw new MiddlewareReenteredError({
+            beanId: link.beanId,
+            method: route.method,
+            path: route.path,
+          });
+        }
+        entered = true;
+        return await dispatch(index + 1);
+      };
+      return await link.middleware.handle(context, next);
     };
     return dispatch(0);
   };
@@ -140,9 +193,11 @@ function prepareRoute(
   logger: RequestLogger | undefined,
 ): PreparedRoute {
   const controller = context.get(route.controller);
-  const middleware = route.middleware.map((entry) =>
-    requireMiddlewareInstance(context.get(entry.bean), entry.beanId),
-  );
+  // beanId 留到运行期只为重入拒绝点名（#255）；热路径不读它，解析仍是启动期一次性的。
+  const middleware = route.middleware.map((entry) => ({
+    beanId: entry.beanId,
+    middleware: requireMiddlewareInstance(context.get(entry.bean), entry.beanId),
+  }));
   const validateInputs = createRequestInputValidator(route.schemas);
   const serialize = createResponseSerializer(route.schemas.response);
 
@@ -155,7 +210,7 @@ function prepareRoute(
       return await dispatchError(error, requestContext);
     }
   };
-  const chain = composeChain(middleware, core);
+  const chain = composeChain(middleware, route, core);
 
   return {
     method: route.method,
@@ -232,5 +287,6 @@ export function createWebApplication(options: CreateWebApplicationOptions): Prep
       prepareRoute(route, options.context, dispatchError, options.requestSeeds, options.logger),
     ),
     controllerCount: new Set(table.routes.map((route) => route.controller)).size,
+    ...(options.logger === undefined ? {} : { logNotFound: createNotFoundLogger(options.logger) }),
   };
 }

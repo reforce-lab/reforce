@@ -33,6 +33,19 @@ export interface PreparedRoute {
 
 export interface WebApplication {
   readonly routes: readonly PreparedRoute[];
+  /**
+   * 未命中上报（RFC 0011 C7，#250）。404 从不进入引擎无关执行层——每个引擎在自己的路由层
+   * 就答复了——所以核心交出一个函数，而不是让三个引擎各自发明一份字段（同 L6 把请求日志
+   * 收回核心的理由）。
+   *
+   * `path` 必须是**原始请求目标去掉 query**：不解码、不归一（`/users/%ZZ`、`//p` 原样传），
+   * query 串永不进日志（里面有 token 与个人信息）。
+   *
+   * 缺席即没装日志绑定，引擎该整套机制都不装（不加钩子、不加中间件），零开销。
+   *
+   * 调它绝不影响响应：404 的响应体仍归引擎（见下面的响应契约），未命中也仍然不带 Allow。
+   */
+  readonly logNotFound?: (miss: { readonly method: string; readonly path: string }) => void;
 }
 
 // 响应出站的缓冲/流式判据（#232）：`handle` 返回的 Response 带 `content-length` 即"整体已在内存中、

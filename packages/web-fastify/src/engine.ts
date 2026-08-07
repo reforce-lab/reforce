@@ -1,4 +1,4 @@
-import type { Server } from "node:http";
+import type { IncomingMessage, Server } from "node:http";
 import { Readable } from "node:stream";
 import { Injectable, type OnContextClose } from "@reforce/context";
 import type {
@@ -59,6 +59,20 @@ async function transfer(reply: FastifyReply, result: Response): Promise<FastifyR
   return reply.send(body === null ? undefined : await body);
 }
 
+// 两个上报点共用一份取值（RFC 0011 C7，#250）：契约要求 path 是原始请求目标去掉 query，
+// 而 fastify 的 request.url 与 find-my-way 交给 onBadUrl 的 path 都带着 query。Host 头畸形时
+// requestUrl 返回 undefined，没有可信路径可报——这条宁可不记，也不把带 query 的原串当路径记。
+function reportMiss(
+  notFound: NonNullable<WebApplication["logNotFound"]>,
+  raw: IncomingMessage,
+): void {
+  const path = requestUrl(raw)?.pathname;
+  if (path === undefined) {
+    return;
+  }
+  notFound({ method: raw.method ?? "GET", path });
+}
+
 // customizer 返回的选项不得覆盖 reforce 的注册面（被改写就是静默错路由），也不得覆盖
 // schema.response（fast-json-stringify 会插进序列化路径，与 @reforce/web 的白名单投影双重
 // 裁剪，结果不可预测）。硬错而非静默丢弃：静默丢弃会让用户以为定制生效了。
@@ -105,7 +119,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     }
     // 实例必须在 start 里造，不能在构造函数里：fastify 实例单次可用，close 之后再 listen 抛
     // FST_ERR_REOPENED_CLOSE_SERVER。HMR 的 start→close→start 循环因此必须每轮重建。
-    const app = this.createInstance();
+    const app = this.createInstance(application.logNotFound);
     // 关停收尾：fastify 的 close 确实会等在途请求结束（实测），但**不会**收掉"关停开始后才
     // 变空闲"的 keep-alive 连接——`forceCloseConnections: "idle"` 与 `closeIdleConnections()`
     // 都只处理调用那一刻已空闲的连接，实测两者都让 close 永远挂着。
@@ -147,7 +161,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     return this.close();
   }
 
-  private createInstance(): FastifyInstance {
+  private createInstance(notFound: WebApplication["logNotFound"]): FastifyInstance {
     return Fastify({
       // exposeHeadRoutes 必须关掉（#238），两个理由：
       //
@@ -171,9 +185,14 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
         // 只能手写 writeHead，绕过所有钩子。契约要求坏转义按未命中处理，所以是 404 不是 400。
         // 更阴的是它**只对已注册过路由的方法**触发：GET /users/%ZZ 走这里，而 POST /users/%ZZ
         // （无 POST 路由）落 notFoundHandler——两条路径都得是 404，后者用 fastify 的默认行为。
-        onBadUrl: (_path, _raw, response) => {
+        onBadUrl: (_path, raw, response) => {
           response.writeHead(404);
           response.end();
+          // 这条 404 走 raw 通道、绕过所有钩子（实测只触发 onBadUrl，onRequest/onResponse
+          // 都不来），未命中日志因此只能在这里发。
+          if (notFound !== undefined) {
+            reportMiss(notFound, raw);
+          }
         },
       },
       ...(this.settings.bodyLimit === undefined ? {} : { bodyLimit: this.settings.bodyLimit }),
@@ -194,6 +213,22 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     app.addContentTypeParser<Buffer>("*", { parseAs: "buffer" }, (_request, body, done) =>
       done(null, body),
     );
+    // 只观察不接管（RFC 0011 C7，#250）：用 onResponse 而不是 setNotFoundHandler——后者会换掉
+    // 404 的响应体（契约里那个 body 归引擎），而且它每实例只有一个槽位，reforce 占了之后用户
+    // configurer 自己调 setNotFoundHandler 就变成启动硬错。全局钩子够得到 404 路由：fastify
+    // 在 preReady 时把它们拷进 404 上下文，所以注册顺序与 configurer 无关。
+    //
+    // 留了一个洞，明写出来免得被当成漏改：**没有任何已注册路由的方法**上的坏转义
+    // （POST /users/%ZZ）由 fastify 的 basic404 在钩子链之外答复，报不上来。
+    const notFound = application.logNotFound;
+    if (notFound !== undefined) {
+      app.addHook("onResponse", (request, reply, done) => {
+        if (request.is404 && reply.statusCode === 404) {
+          reportMiss(notFound, request.raw);
+        }
+        done();
+      });
+    }
     for (const configurer of this.configurers) {
       await configurer.configure(app);
     }

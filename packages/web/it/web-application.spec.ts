@@ -228,7 +228,7 @@ async function startedApplication(
   });
   const adapter = new FakeAdapter();
   await adapter.start(application);
-  return { context, adapter };
+  return { context, adapter, application };
 }
 
 describe("web application over the real context runtime", () => {
@@ -339,6 +339,55 @@ function capturingLogger(options: { readonly enabled?: boolean } = {}): {
     },
   };
 }
+
+// C7（RFC 0011，#250）：未命中从不进入引擎无关执行层——引擎在自己的路由层就答复了——所以
+// 核心交出一个函数，让三个引擎调同一份实现，而不是各自发明一份字段。
+describe("route miss logging", () => {
+  test("hands the engines a miss reporter only when a logging binding is installed", async () => {
+    const withLogger = await startedApplication(capturingLogger().logger);
+    const withoutLogger = await startedApplication();
+
+    expect(withLogger.application.logNotFound).toBeTypeOf("function");
+    expect(withoutLogger.application.logNotFound).toBeUndefined();
+  });
+
+  test("records the miss at info carrying the method, the raw path and 404", async () => {
+    const capture = capturingLogger();
+    const { application } = await startedApplication(capture.logger);
+
+    application.logNotFound?.({ method: "GET", path: "/wp-login.php" });
+
+    expect(capture.captured).toEqual([
+      {
+        level: "info",
+        fields: { method: "GET", path: "/wp-login.php", status: 404 },
+        message: "route not found",
+      },
+    ]);
+  });
+
+  // 与请求日志分开命名：两条记录的 path 基数不同——请求日志的 path 是编译期路由模式
+  // （有界，可安全聚合），这条是客户端完全控制的原始路径（无界）。
+  test("keeps the miss record out of the request stream", async () => {
+    const capture = capturingLogger();
+    const { application } = await startedApplication(capture.logger);
+
+    application.logNotFound?.({ method: "GET", path: "/nowhere" });
+
+    expect(capture.requests()).toEqual([]);
+  });
+
+  // 不变量 8：判定在字段构造之前。这条路径由客户端触发，扫描器一秒几百下。
+  test("builds no fields when the level is disabled", async () => {
+    const capture = capturingLogger({ enabled: false });
+    const { application } = await startedApplication(capture.logger);
+
+    application.logNotFound?.({ method: "GET", path: "/nowhere" });
+
+    expect(capture.captured).toEqual([]);
+    expect(capture.enabledChecks()).toBe(1);
+  });
+});
 
 describe("request logging", () => {
   test("writes one record per request carrying method, path and status", async () => {

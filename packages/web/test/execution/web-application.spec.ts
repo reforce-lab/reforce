@@ -5,7 +5,7 @@ import type {
   RequestScopeSeed,
 } from "@reforce/context";
 import { describe, expect, test } from "vitest";
-import { InvalidRouteTableError } from "@/errors";
+import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
 import { createWebApplication } from "@/execution/web-application";
 import type { GeneratedRoute, GeneratedRouteTable } from "@/generated/route-table";
@@ -206,6 +206,124 @@ describe("createWebApplication onion execution", () => {
 
     expect(response.status).toBe(500);
     expect(seen).toEqual([500]);
+  });
+
+  // #255：重复调 next() 此前抛的是裸 Error，无码无定位——用户的错误处理器只能匹配 message
+  // 字符串，而那串字符没有任何契约保证。
+  test("a middleware that calls next() twice fails with a coded error naming the offending Bean", async () => {
+    class DoubleNext {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        await next();
+        return await next();
+      }
+    }
+    let captured: unknown;
+    class Capture {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        try {
+          return await next();
+        } catch (error) {
+          captured = error;
+          throw error;
+        }
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          middleware: [
+            {
+              bean: Capture,
+              beanId: "src/capture.ts#Capture",
+              phase: "application",
+              order: 0,
+              mount: "global",
+            },
+            {
+              bean: DoubleNext,
+              beanId: "src/double-next.ts#DoubleNext",
+              phase: "application",
+              order: 1,
+              mount: "global",
+            },
+          ],
+        }),
+      ]),
+      context: contextOf([
+        [ProbeController, new ProbeController()],
+        [Capture, new Capture()],
+        [DoubleNext, new DoubleNext()],
+      ]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(captured).toBeInstanceOf(MiddlewareReenteredError);
+    expect(captured).toMatchObject({
+      code: "MIDDLEWARE_REENTERED",
+      beanId: "src/double-next.ts#DoubleNext",
+    });
+  });
+
+  // 点名的必须是里面那个犯规的，不是外面那个守规矩的——链是嵌套的，弄反了排查方向就反了。
+  test("the re-entry failure names the route it happened on", async () => {
+    class DoubleNext {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        await next();
+        return await next();
+      }
+    }
+    let captured: unknown;
+    class Capture {
+      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+        try {
+          return await next();
+        } catch (error) {
+          captured = error;
+          throw error;
+        }
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          middleware: [
+            {
+              bean: Capture,
+              beanId: "src/capture.ts#Capture",
+              phase: "application",
+              order: 0,
+              mount: "global",
+            },
+            {
+              bean: DoubleNext,
+              beanId: "src/double-next.ts#DoubleNext",
+              phase: "application",
+              order: 1,
+              mount: "global",
+            },
+          ],
+        }),
+      ]),
+      context: contextOf([
+        [ProbeController, new ProbeController()],
+        [Capture, new Capture()],
+        [DoubleNext, new DoubleNext()],
+      ]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(captured).toMatchObject({ method: "GET", path: "/probe" });
+    expect(captured instanceof Error ? captured.message : "").toContain("GET /probe");
   });
 
   test("a middleware error is still converted by the outer boundary", async () => {

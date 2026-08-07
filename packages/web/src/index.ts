@@ -4,6 +4,7 @@
 export type { RequestSeeder, RouteMatch } from "@/adapter";
 export {
   InvalidRouteTableError,
+  MiddlewareReenteredError,
   ReforceWebError,
   type RequestInputSource,
   RequestValidationError,
