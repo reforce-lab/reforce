@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 纯 .md 变更跳过三平台 verify（Issue #43）。verify 是 required check，
-  # 不能用 workflow 级 paths-ignore：被过滤掉的 workflow 不上报 check，
-  # required 状态会永远 pending 卡住合并；job 级 if 跳过则以 skipped 结论
-  # 上报，分支保护视同通过。
+  # 纯 .md 变更跳过三平台 verify（Issue #43）。verify 是 required check，跳过只能落在
+  # step 级：workflow 级 paths-ignore 让整个 workflow 不上报 check；job 级 if 为 false
+  # 则 matrix 不展开，三个 verify (<os>) 一次都不上报——两者都让 required 永远 pending、
+  # 合并永久卡死（Issue #267）。
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -39,37 +39,44 @@ jobs:
 
   verify:
     needs: changes
-    # fail-safe：changes 自身失败时 verify 照常执行，探测故障不得放行（Issue #43）。
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
+    # 这里只能挡 cancelled：任何其他条件为 false 都会让 matrix 不展开（Issue #267）。
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # 真正的闸门。fail-safe：changes 自身失败时 verify 照常执行，探测故障不得放行
+      # （Issue #43）。纯 .md 时全部 step 跳过，job 仍以 success 上报三个具名 check。
+      RUN_VERIFY: ${{ needs.changes.result != 'success' || needs.changes.outputs.code == 'true' }}
     # 正常一轮 3 分钟（ubuntu ~55s / macos ~55s / windows 2m30s–3m10s，check/typecheck 仅 ubuntu
     # 执行后 macos/windows 各省 3–15s，Issue #172）；冷缓存留足余量后仍远小于 GitHub 默认的
     # 6 小时。挂死的测试必须快速失败，而不是把 runner 占一上午（Issue #75）。
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        if: env.RUN_VERIFY == 'true'
 
       - uses: pnpm/action-setup@v6
+        if: env.RUN_VERIFY == 'true'
         with:
           version: "11.20.0"
 
       - uses: actions/setup-node@v6
+        if: env.RUN_VERIFY == 'true'
         with:
           node-version: "26"
           cache: pnpm
 
       - uses: microsoft/apm-action@v1
-        if: runner.os != 'Windows'
+        if: env.RUN_VERIFY == 'true' && runner.os != 'Windows'
         with:
           apm-version: "0.27.0"
           setup-only: true
 
       - name: Install APM on Windows
-        if: runner.os == 'Windows'
+        if: env.RUN_VERIFY == 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP "apm-windows-x86_64.zip"
@@ -89,9 +96,11 @@ jobs:
           & $executable --version
 
       - name: Verify exact toolchain versions
+        if: env.RUN_VERIFY == 'true'
         run: node -e "if (process.versions.node.split('.')[0] !== '26') process.exit(1)"
 
       - name: Install dependencies
+        if: env.RUN_VERIFY == 'true'
         run: pnpm install --frozen-lockfile
 
       # CI 不做 turbo 任务缓存（曾按 Issue #40 以 SHA 分条 + restore-keys 复用）：跨 run 恢复
@@ -103,24 +112,27 @@ jobs:
       # macos/windows 显示 skipped（Issue #172）。不拆独立 job：那要动分支保护的
       # required checks，且新增 job 的 checkout/install 开销把几秒收益吃回去。
       - name: Check source contracts and formatting
-        if: runner.os == 'Linux'
+        if: env.RUN_VERIFY == 'true' && runner.os == 'Linux'
         run: pnpm run check
 
       - name: Typecheck (TS7)
-        if: runner.os == 'Linux'
+        if: env.RUN_VERIFY == 'true' && runner.os == 'Linux'
         run: pnpm run typecheck
 
       - name: Test unit, integration, process, lease, and recovery behavior (Node.js)
+        if: env.RUN_VERIFY == 'true'
         run: pnpm run test
 
       - name: Build
+        if: env.RUN_VERIFY == 'true'
         run: pnpm run build
 
       - name: Real CLI, process, Worker, signal, and Node.js artifact smoke
+        if: env.RUN_VERIFY == 'true'
         run: pnpm --dir e2e run test:e2e:evidence
 
       - name: Upload CLI process failure evidence
-        if: failure()
+        if: failure() && env.RUN_VERIFY == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: cli-process-evidence-${{ runner.os }}
