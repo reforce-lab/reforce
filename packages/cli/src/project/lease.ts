@@ -9,6 +9,7 @@ import {
   probeLeaseEndpoint,
 } from "@reforce/runtime/lease-endpoint";
 import { isObject, sleep } from "radashi";
+import { ReforceCliError } from "@/errors";
 import { hasExactKeys } from "@/project/exact-keys";
 import {
   publishMissingDestinationWithWindowsRetry,
@@ -213,12 +214,13 @@ async function probeOwner(
   return results.includes("unknown") ? "unknown" : "dead";
 }
 
-export class ProjectBusyError extends Error {
+export class ProjectBusyError extends ReforceCliError<"PROJECT_BUSY"> {
   readonly code = "PROJECT_BUSY" as const;
 
   constructor(projectRoot: string) {
-    super(`Project is already in use: ${projectRoot}`);
-    this.name = "ProjectBusyError";
+    super(`Project is already in use: ${projectRoot}`, {
+      help: "Another reforce process holds this project's writer lease. Stop it, or point --project at a different project root.",
+    });
   }
 }
 

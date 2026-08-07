@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { ReforceRuntimeError } from "@reforce/core";
+import { isReforceError } from "@reforce/core";
 import { isObject } from "radashi";
 import { renderDiagnostic } from "@/diagnostic-render";
 import {
@@ -109,9 +109,10 @@ interface CliFailureEvent {
   readonly phase: CliCommandPhase;
   readonly message: string;
   readonly cause: unknown;
-  // 值域是 CliFailureCode ∪ compiler 诊断码 ∪ RuntimeErrorCode；后两者的语汇属各自的包，
-  // reporter 只原样透传，类型如实坍缩为 string（ADR 0009）。构造点仍然静态成立：fallbackCode
-  // 收 CliFailureCode，ReforceRuntimeError.code 收 RuntimeErrorCode。
+  // 值域是 CliFailureCode ∪ compiler 诊断码 ∪ 各框架包自持的码（CoreErrorCode / WebErrorCode /
+  // CliErrorCode / transaction 七码）；后两类的语汇属各自的包，reporter 只原样透传，类型如实
+  // 坍缩为 string（ADR 0009）。构造点仍然静态成立：fallbackCode 收 CliFailureCode，谱系一侧
+  // 由各包的类字面量收。
   readonly code: string;
 }
 
@@ -145,8 +146,14 @@ function isReportedDiagnosticCode(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+// 认形状而不是认某一个基类（ADR 0013 决议 4，#280）：谱系统一后 core / transaction / web / cli
+// 四棵子树共用 Symbol.for("reforce.error") 标记，isReforceError 一次覆盖全域；此前 cli 的三个
+// 带码错误之所以能报出码，是调用点把 error.code 手抄进 fallbackCode，那几处随本次改动删掉。
+//
+// 只看顶层 cause、不沿链遍历：与 failureHelp 走 5 层不对称，但改它会让「被包了一层的框架错误」
+// 报出的码发生变化，而决议 2 的公开契约正是「code 永久稳定」——那属于独立的行为变更。
 function resolveFailureCode(cause: unknown): CliFailureEvent["code"] | undefined {
-  if (cause instanceof ReforceRuntimeError) {
+  if (isReforceError(cause)) {
     return cause.code;
   }
   if (!isCompilerFailureCause(cause)) {
@@ -273,12 +280,12 @@ function failureSegments(event: CliFailureEvent): readonly string[] {
   return segments;
 }
 
-// 运行期错误与编译期诊断同框（RFC 0011 D5，#242）：help 挂在 ReforceRuntimeError 上，但抛出点
-// 常被包装若干层，所以整条 cause 链上取第一条 help。
+// 运行期错误与编译期诊断同框（RFC 0011 D5，#242）：help 挂在 ReforceError 上，但抛出点
+// 常被包装若干层，所以整条 cause 链上取第一条 help。判据同 resolveFailureCode 走形状守卫。
 function failureHelp(event: CliFailureEvent): string | undefined {
   let cause = event.cause;
   for (let depth = 0; depth < maximumCauseDepth && cause !== undefined; depth += 1) {
-    if (cause instanceof ReforceRuntimeError && cause.help !== undefined) {
+    if (isReforceError(cause) && cause.help !== undefined) {
       return cause.help;
     }
     cause = nextCause(cause);

@@ -255,6 +255,64 @@ describe("failure rendering across modes", () => {
   });
 });
 
+// 谱系统一后的识别（ADR 0013 决议 4，#280）：判据是 Symbol.for("reforce.error") 标记而不是
+// instanceof，所以 web / cli 子树的错误——以及 @reforce/core 装成第二份物理拷贝时那一份抛出的
+// 错误——都能被认出来，码不再靠调用点手抄进 fallbackCode。这里直接造一个「另一份拷贝」形状的
+// 错误：@reforce/runtime 依赖不到 web 与 cli，而这恰好也是最严的判据。
+function foreignLineageError(code: string, options: { readonly help?: string } = {}): Error {
+  const error = new Error(`foreign failure with code ${code}`);
+  Object.defineProperty(error, Symbol.for("reforce.error"), { value: true });
+  Object.defineProperty(error, "code", { value: code });
+  if (options.help !== undefined) {
+    Object.defineProperty(error, "help", { value: options.help });
+  }
+  return error;
+}
+
+describe("failure code resolution across the lineage", () => {
+  test("takes the code off a lineage error instead of the fallback", () => {
+    const event = createFailureEvent({
+      command: "start",
+      phase: "child",
+      fallbackCode: "CHILD_FAILED",
+      message: "Production application failed.",
+      cause: foreignLineageError("MIDDLEWARE_REENTERED"),
+    });
+
+    expect(event.code).toBe("MIDDLEWARE_REENTERED");
+  });
+
+  test("falls back when the cause carries no lineage marker", () => {
+    const event = createFailureEvent({
+      command: "start",
+      phase: "child",
+      fallbackCode: "CHILD_FAILED",
+      message: "Production application failed.",
+      cause: Object.assign(new Error("boom"), { code: "MIDDLEWARE_REENTERED" }),
+    });
+
+    expect(event.code).toBe("CHILD_FAILED");
+  });
+
+  test("renders a lineage error's help from inside the cause chain", async () => {
+    const output = await collect({ mode: "human" }, (reporter) =>
+      reporter.report(
+        createFailureEvent({
+          command: "start",
+          phase: "child",
+          fallbackCode: "CHILD_FAILED",
+          message: "Production application failed.",
+          cause: new Error("wrapped", {
+            cause: foreignLineageError("MIDDLEWARE_REENTERED", { help: "put it after next()." }),
+          }),
+        }),
+      ),
+    );
+
+    expect(output).toContain("= help: put it after next().");
+  });
+});
+
 // D2（RFC 0011，#242）：dev 的 HMR 重载行原地重写，不滚屏。改一百次代码，终端上只占一行。
 class InteractiveWritable extends RecordingWritable {
   readonly isTTY = true;

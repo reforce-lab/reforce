@@ -94,12 +94,15 @@ async function buildResolvedProject(input: {
 }
 
 function reportUnexpectedFailure(reporter: Reporter, error: unknown): void {
+  // 分支只决定 phase 与 message；code 由 createFailureEvent 从错误自身读出（ADR 0013 决议 4，
+  // #280）。fallbackCode 回归本义——它是「这个 cause 认不出来」时的兜底，不再是手抄 error.code
+  // 的补丁位。error.code 在这里仍出现一次，但读的是 phase 而不是码。
   if (error instanceof ProjectBusyError) {
     reporter.report(
       createFailureEvent({
         command: "build",
         phase: "project",
-        fallbackCode: "PROJECT_BUSY",
+        fallbackCode: "BUILD_FAILED",
         message: error.message,
         cause: error,
       }),
@@ -111,7 +114,7 @@ function reportUnexpectedFailure(reporter: Reporter, error: unknown): void {
       createFailureEvent({
         command: "build",
         phase: error.code === "GENERATED_TRANSACTION_FAILED" ? "generated-commit" : "dist-commit",
-        fallbackCode: error.code,
+        fallbackCode: "BUILD_FAILED",
         message: error.message,
         cause: error,
       }),

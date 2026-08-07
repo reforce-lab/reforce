@@ -19,7 +19,7 @@ test("the root entry exposes only the public programming model", () => {
     "Order",
     "Primary",
     "Qualifier",
-    "ReforceRuntimeError",
+    "ReforceError",
     "RequestContextMissingError",
     "RequestScoped",
     "UnregisteredBeanTargetError",
@@ -28,6 +28,7 @@ test("the root entry exposes only the public programming model", () => {
     "defineMethodMarker",
     "defineStarter",
     "interceptPhases",
+    "isReforceError",
   ]);
 });
 

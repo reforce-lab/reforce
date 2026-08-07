@@ -1,9 +1,10 @@
 import type { ContextOperation, ContextState } from "@/public-types";
 
 // 容器自己的错误码闭集。它不是"全框架的码表"——框架包各自持有自己的码（@reforce/transaction
-// 的七个 TRANSACTION_* 即是），因此 ReforceRuntimeError 的类型参数上界只能是 string：闭集留在
-// 这里做本包的自证，跨包的码由各自的类字面量声明，CLI 侧本来就按 string 消费（ADR 0009）。
-export type RuntimeErrorCode =
+// 的七个 TRANSACTION_*、@reforce/web 的四个、@reforce/cli 的四个即是），因此 ReforceError 的
+// 类型参数上界只能是 string：闭集留在这里做本包的自证，跨包的码由各自的类字面量声明，CLI 侧
+// 本来就按 string 消费（ADR 0009）。
+export type CoreErrorCode =
   | "EARLY_BEAN_ACCESS"
   | "BEAN_CREATION_FAILED"
   | "BEAN_LIFECYCLE_FAILED"
@@ -17,16 +18,26 @@ export type RuntimeErrorCode =
   | "INVALID_GENERATED_DEFINITION"
   | "INTERCEPTOR_REENTERED";
 
-interface RuntimeErrorOptions {
+export interface ReforceErrorOptions {
   readonly cause?: unknown;
   readonly errors?: readonly unknown[];
   readonly help?: string;
 }
 
-// Code 的上界是 string 而不是 RuntimeErrorCode：框架包（@reforce/transaction 起）在自己的包里
-// 声明自己的码，容器无从枚举。全仓零穷尽 switch、零 Record<RuntimeErrorCode, …>，reporter 本来
+// 框架错误的身份标记（ADR 0013 决议 1，#280）。识别不能只靠 instanceof：@reforce/core 被装成
+// 两份物理拷贝时（starter 版本撕裂，同 ADR 0004 决策 10），web 抛的错误 instanceof 的是另一份
+// 拷贝的基类，reporter 这一侧一律判否——@fastify/error 正是因此改按 code 匹配。Symbol.for 走
+// 全局注册表，按字符串跨副本同一，识别因此与"哪一份 core 定义了基类"无关。
+const reforceErrorMarker = Symbol.for("reforce.error");
+
+// Code 的上界是 string 而不是 CoreErrorCode：框架包（@reforce/transaction 起）在自己的包里
+// 声明自己的码，容器无从枚举。全仓零穷尽 switch、零 Record<CoreErrorCode, …>，reporter 本来
 // 就把 code 坦成 string（ADR 0009），因此放宽不丢任何检查。
-export abstract class ReforceRuntimeError<Code extends string = string> extends Error {
+//
+// 全框架单一基类、每个包一棵子树（ADR 0013 决议 1）：@reforce/web 的 ReforceWebError、
+// @reforce/cli 的 ReforceCliError、@reforce/transaction 的七个护栏错误共用这个根。#246 决议 5
+// 那条兜底拦截器放行纪律（`if (isReforceError(error)) throw error`）因此一次覆盖全域。
+export abstract class ReforceError<Code extends string = string> extends Error {
   abstract readonly code: Code;
   // TS disallows combining declare with override; declare alone already keeps the
   // field type-only, so super(message, { cause }) is not clobbered by a field init.
@@ -36,15 +47,30 @@ export abstract class ReforceRuntimeError<Code extends string = string> extends 
   // 「发生了什么」分开。reporter 在 human 模式下沿 cause 链取第一条 help 渲染成 `= help:`。
   readonly help?: string;
 
-  protected constructor(message: string, options: RuntimeErrorOptions = {}) {
+  protected constructor(message: string, options: ReforceErrorOptions = {}) {
     super(message, { cause: options.cause });
     this.name = new.target.name;
     this.errors = options.errors;
     this.help = options.help;
+    // defineProperty 而非字段赋值：默认 non-enumerable，标记因此不会漏进 JSON.stringify、
+    // 结构化日志的字段展开或 expect(...).toEqual 的对象比较里。
+    Object.defineProperty(this, reforceErrorMarker, { value: true });
   }
 }
 
-export class EarlyBeanAccessError extends ReforceRuntimeError<"EARLY_BEAN_ACCESS"> {
+// 不写 `value instanceof Error`：dev HMR 的 Worker 边界会把错误结构化克隆，克隆件既丢原型也
+// 丢 own symbol 属性——那种情况两种判据都救不回来；而 vm/realm 边界下 instanceof Error 会平白
+// 判否。只看标记与 code 形态，判据与 realm 无关。
+export function isReforceError(value: unknown): value is ReforceError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Reflect.get(value, reforceErrorMarker) === true &&
+    typeof Reflect.get(value, "code") === "string"
+  );
+}
+
+export class EarlyBeanAccessError extends ReforceError<"EARLY_BEAN_ACCESS"> {
   readonly code = "EARLY_BEAN_ACCESS" as const;
   readonly beanId: string;
   readonly constructionPath: readonly string[];
@@ -61,7 +87,7 @@ export class EarlyBeanAccessError extends ReforceRuntimeError<"EARLY_BEAN_ACCESS
   }
 }
 
-export class BeanCreationError extends ReforceRuntimeError<"BEAN_CREATION_FAILED"> {
+export class BeanCreationError extends ReforceError<"BEAN_CREATION_FAILED"> {
   readonly code = "BEAN_CREATION_FAILED" as const;
   readonly beanId: string;
   readonly dependencyPath: readonly string[];
@@ -79,7 +105,7 @@ export class BeanCreationError extends ReforceRuntimeError<"BEAN_CREATION_FAILED
   }
 }
 
-export class BeanLifecycleError extends ReforceRuntimeError<"BEAN_LIFECYCLE_FAILED"> {
+export class BeanLifecycleError extends ReforceError<"BEAN_LIFECYCLE_FAILED"> {
   readonly code = "BEAN_LIFECYCLE_FAILED" as const;
   readonly beanId: string;
   readonly phase: "start" | "close";
@@ -97,7 +123,7 @@ export class BeanLifecycleError extends ReforceRuntimeError<"BEAN_LIFECYCLE_FAIL
   }
 }
 
-export class BeanDisposalError extends ReforceRuntimeError<"BEAN_DISPOSAL_FAILED"> {
+export class BeanDisposalError extends ReforceError<"BEAN_DISPOSAL_FAILED"> {
   readonly code = "BEAN_DISPOSAL_FAILED" as const;
   readonly beanId: string;
 
@@ -111,13 +137,13 @@ export class BeanDisposalError extends ReforceRuntimeError<"BEAN_DISPOSAL_FAILED
 
 export type CleanupActionError = BeanLifecycleError | BeanDisposalError;
 
-export class ApplicationStartError extends ReforceRuntimeError<"APPLICATION_START_FAILED"> {
+export class ApplicationStartError extends ReforceError<"APPLICATION_START_FAILED"> {
   readonly code = "APPLICATION_START_FAILED" as const;
-  declare readonly cause: ReforceRuntimeError;
+  declare readonly cause: ReforceError;
   declare readonly errors: readonly CleanupActionError[];
 
   constructor(input: {
-    readonly cause: ReforceRuntimeError;
+    readonly cause: ReforceError;
     readonly errors: readonly CleanupActionError[];
   }) {
     const errors = Object.freeze([...input.errors]);
@@ -128,7 +154,7 @@ export class ApplicationStartError extends ReforceRuntimeError<"APPLICATION_STAR
   }
 }
 
-export class ApplicationCleanupError extends ReforceRuntimeError<"APPLICATION_CLEANUP_FAILED"> {
+export class ApplicationCleanupError extends ReforceError<"APPLICATION_CLEANUP_FAILED"> {
   readonly code = "APPLICATION_CLEANUP_FAILED" as const;
   declare readonly errors: readonly CleanupActionError[];
 
@@ -152,7 +178,7 @@ function renderConfigBindingIssue(issue: ConfigBindingIssue): string {
   return `- ${issue.configId}: ${issue.environmentVariable} (${issue.layer}): ${issue.reason}`;
 }
 
-export class ConfigBindingError extends ReforceRuntimeError<"CONFIG_BINDING_FAILED"> {
+export class ConfigBindingError extends ReforceError<"CONFIG_BINDING_FAILED"> {
   readonly code = "CONFIG_BINDING_FAILED" as const;
   readonly issues: readonly ConfigBindingIssue[];
 
@@ -173,7 +199,7 @@ export class ConfigBindingError extends ReforceRuntimeError<"CONFIG_BINDING_FAIL
 
 // 请求作用域唯一的运行时失败模式（ADR 0006 W7）：请求外取请求态。Current 边点名双侧
 // beanId，读者能直接定位是哪条句柄在请求外被调用；context.get 一侧只有目标可点名。
-export class RequestContextMissingError extends ReforceRuntimeError<"REQUEST_CONTEXT_MISSING"> {
+export class RequestContextMissingError extends ReforceError<"REQUEST_CONTEXT_MISSING"> {
   readonly code = "REQUEST_CONTEXT_MISSING" as const;
   readonly targetBeanId: string;
   readonly consumerBeanId?: string;
@@ -202,7 +228,7 @@ function describeTarget(target: unknown): string {
   return typeof target;
 }
 
-export class UnregisteredBeanTargetError extends ReforceRuntimeError<"UNREGISTERED_BEAN_TARGET"> {
+export class UnregisteredBeanTargetError extends ReforceError<"UNREGISTERED_BEAN_TARGET"> {
   readonly code = "UNREGISTERED_BEAN_TARGET" as const;
   readonly target: unknown;
 
@@ -214,7 +240,7 @@ export class UnregisteredBeanTargetError extends ReforceRuntimeError<"UNREGISTER
   }
 }
 
-export class ApplicationContextStateError extends ReforceRuntimeError<"APPLICATION_CONTEXT_STATE"> {
+export class ApplicationContextStateError extends ReforceError<"APPLICATION_CONTEXT_STATE"> {
   readonly code = "APPLICATION_CONTEXT_STATE" as const;
   readonly operation: ContextOperation;
   readonly state: ContextState;
@@ -229,7 +255,7 @@ export class ApplicationContextStateError extends ReforceRuntimeError<"APPLICATI
   }
 }
 
-export class InvalidGeneratedDefinitionError extends ReforceRuntimeError<"INVALID_GENERATED_DEFINITION"> {
+export class InvalidGeneratedDefinitionError extends ReforceError<"INVALID_GENERATED_DEFINITION"> {
   readonly code = "INVALID_GENERATED_DEFINITION" as const;
   readonly detail: string;
 
@@ -243,7 +269,7 @@ export class InvalidGeneratedDefinitionError extends ReforceRuntimeError<"INVALI
 // 必须是框架错误词汇而不是裸 Error——它要经得起用户兜底拦截器的 catch（拦截器契约注释里那条
 // instanceof 放行），也要能被 CLI 报出 code。不带 index：那是 dispatch 下标不是 entries 下标，
 // 读者按它去数拦截器会数错。
-export class InterceptorReenteredError extends ReforceRuntimeError<"INTERCEPTOR_REENTERED"> {
+export class InterceptorReenteredError extends ReforceError<"INTERCEPTOR_REENTERED"> {
   readonly code = "INTERCEPTOR_REENTERED" as const;
   readonly beanId: string;
   readonly method: string;
