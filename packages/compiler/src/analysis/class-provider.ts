@@ -120,7 +120,7 @@ function validLifecycleMethod(methods: readonly ClassMethodDeclaration[], name: 
       method.generator === false &&
       method.optional === false &&
       method.implementation === true &&
-      method.parameterCount === 0 &&
+      method.parameters.length === 0 &&
       validLifecycleReturn(method),
   );
   if (ambiguousComputedCandidate) {
@@ -134,7 +134,7 @@ function validLifecycleMethod(methods: readonly ClassMethodDeclaration[], name: 
     candidate.generator === false &&
     candidate.optional === false &&
     candidate.implementation === true &&
-    candidate.parameterCount === 0 &&
+    candidate.parameters.length === 0 &&
     validLifecycleReturn(candidate)
   );
 }

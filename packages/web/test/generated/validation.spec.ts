@@ -33,12 +33,12 @@ function validRoute(): GeneratedRoute {
       },
     ],
     meta: { roles: ["admin"], limit: 3 },
-    schemas: { body: passthroughSchema() },
+    slots: [],
   };
 }
 
 function tableWith(overrides: Record<string, unknown>): unknown {
-  return { schemaVersion: 1, routes: [], errorHandlers: [], ...overrides };
+  return { schemaVersion: 2, routes: [], errorHandlers: [], ...overrides };
 }
 
 describe("validateGeneratedRouteTable", () => {
@@ -51,8 +51,13 @@ describe("validateGeneratedRouteTable", () => {
     expect(validateGeneratedRouteTable(table) === table).toBe(true);
   });
 
-  test("rejects an unknown schema version", () => {
-    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 2 }))).toThrow(
+  // 版本门是硬门(#264 决策 11):1 是旧 schemas 表的版本,旧生成物必须在启动时被拒绝,
+  // 而不是带着已删除的字段静默跑进槽位执行链。
+  test("rejects the retired schema version 1 and any unknown version", () => {
+    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 1 }))).toThrow(
+      InvalidRouteTableError,
+    );
+    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 3 }))).toThrow(
       InvalidRouteTableError,
     );
   });
@@ -95,10 +100,18 @@ describe("validateGeneratedRouteTable", () => {
     expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
   });
 
-  test("rejects a schema slot without ~standard.validate", () => {
-    const table = tableWith({ routes: [{ ...validRoute(), schemas: { body: {} } }] });
+  test("rejects a route without a slots array", () => {
+    const { slots: _slots, ...route } = validRoute();
 
-    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+    expect(() => validateGeneratedRouteTable(tableWith({ routes: [route] }))).toThrow(
+      InvalidRouteTableError,
+    );
+  });
+
+  test("rejects the retired schemas field as an unknown key", () => {
+    const table = tableWith({ routes: [{ ...validRoute(), schemas: {} }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/unknown field "schemas"/);
   });
 
   // 同 method + 同路径形状只能注册一次（#213）：编译期 DUPLICATE_ROUTE 的运行时对位，检测放在
@@ -143,5 +156,69 @@ describe("validateGeneratedRouteTable", () => {
     const table = tableWith({ routes: [validRoute(), { ...validRoute(), path: "/probe/self" }] });
 
     expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
+});
+
+// —— 槽位与编码器字段(RFC 0012 S2,#274) ——
+
+describe("validateGeneratedRouteTable slots and encode", () => {
+  function routeWithSlots(slots: unknown): unknown {
+    return { ...validRoute(), slots };
+  }
+
+  test("accepts a route with slot bindings and an encoder", () => {
+    const table = tableWith({
+      routes: [
+        {
+          ...validRoute(),
+          slots: [
+            { slot: "param", key: "id", decode: passthroughSchema() },
+            { slot: "body", schema: passthroughSchema() },
+            { slot: "requestContext" },
+          ],
+          encode: (value: unknown) => value,
+        },
+      ],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
+
+  test("rejects a slot with an unknown kind", () => {
+    const table = tableWith({ routes: [routeWithSlots([{ slot: "cookie" }])] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  test("rejects a slot declaring both decode and schema", () => {
+    const table = tableWith({
+      routes: [
+        routeWithSlots([
+          { slot: "query", key: "page", decode: passthroughSchema(), schema: passthroughSchema() },
+        ]),
+      ],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/both decode and schema/);
+  });
+
+  test("rejects a slot whose decode is not a standard schema", () => {
+    const table = tableWith({
+      routes: [routeWithSlots([{ slot: "header", key: "x-tenant", decode: {} }])],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  test("rejects a non-string slot key", () => {
+    const table = tableWith({ routes: [routeWithSlots([{ slot: "param", key: 42 }])] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/key must be a string/);
+  });
+
+  test("rejects a non-function encode", () => {
+    const table = tableWith({ routes: [{ ...validRoute(), encode: "not a function" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/encode must be a function/);
   });
 });

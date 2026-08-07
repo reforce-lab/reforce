@@ -1,64 +1,48 @@
 import type { Current } from "@reforce/core";
 import type { Logger } from "@reforce/logging";
-import { Controller, defineHttpError, Get, Post, type RequestContext } from "@reforce/web";
+import {
+  type Body,
+  Controller,
+  defineHttpError,
+  Get,
+  type Param,
+  Post,
+  type Query,
+} from "@reforce/web";
 import type { RequestAudit } from "@/http-exchange";
 import { Roles } from "@/web-markers";
-import {
-  auditQuerySchema,
-  auditResponseSchema,
-  createUserBodySchema,
-  profileResponseSchema,
-  snowflakeParamsSchema,
-  userResponseSchema,
-} from "@/web-schemas";
+import type { CreateUserBody, SnowflakeParams } from "@/web-schemas";
 
-// handler 参数必须显式标注：TS 不给类方法参数做上下文类型化。类型本身来自装饰器里的
-// schema——把同一组 schema 提成顶层 const，标注写 RequestContext<typeof X> 即可，
-// 装饰器签名负责校验标注与传入的 schemas 一致（ADR 0006 W5）。
-const showSchemas = {
-  params: snowflakeParamsSchema,
-  response: userResponseSchema,
-} as const;
-
-const createSchemas = {
-  body: createUserBodySchema,
-  response: profileResponseSchema,
-} as const;
+// 槽位写法(RFC 0012 S2,#274):输入契约由 handler 参数的类型标注表达,响应契约由返回类型
+// 标注表达。SnowflakeParams/CreateUserBody 经 typeof 追溯到 web-schemas 的 Standard Schema,
+// 解码交给 schema(codec 语义保留);Query 单键与全部响应由编译器按类型生成解码器/编码器。
 
 @Controller("/users")
 export class UsersController {
-  @Get("/:id", showSchemas)
+  // 第四档投影:解码按整个 SnowflakeParams 契约跑,参数值按 "id" 键取,handler 直接拿 bigint。
+  @Get("/:id")
   @Roles(["admin"])
-  show(context: RequestContext<typeof showSchemas>): { id: bigint; name: string } {
-    const { id } = context.params;
+  show(id: Param<SnowflakeParams, "id">): { id: bigint; name: string } {
     return { id, name: `user-${id}` };
   }
 
-  @Post("", createSchemas)
-  create(context: RequestContext<typeof createSchemas>): {
-    id: string;
-    name: string;
-    secret: string;
-  } {
-    const { name } = context.body;
-    // secret 字段故意返回：响应白名单必须把它挡在线上形状之外。
-    return { id: "created", name, secret: "do-not-leak" };
+  @Post()
+  create(name: Body<CreateUserBody, "name">): { id: string; name: string } {
+    // secret 字段故意返回：返回类型契约的白名单必须把它挡在线上形状之外。
+    // 非字面量返回绕开 excess property check,正是"映射漏删的实体字段"的真实形态。
+    const entity = { id: "created", name, secret: "do-not-leak" };
+    return entity;
   }
 }
-
-const auditSchemas = {
-  query: auditQuerySchema,
-  response: auditResponseSchema,
-} as const;
 
 @Controller("/audit")
 export class AuditController {
   constructor(private readonly audit: Current<RequestAudit>) {}
 
-  @Get("", auditSchemas)
-  async show(context: RequestContext<typeof auditSchemas>): Promise<{ id: string; path: string }> {
-    const { delay } = context.query;
-    if (delay > 0) {
+  // 可选单键:线上 string → number 由生成解码器完成,缺省语义在 handler 里落 0。
+  @Get()
+  async show(delay: Query<"delay", number | undefined>): Promise<{ id: string; path: string }> {
+    if (delay !== undefined && delay > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     const audit = this.audit.get();

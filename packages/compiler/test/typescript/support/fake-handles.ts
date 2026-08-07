@@ -80,6 +80,9 @@ export function fakeChecker(overrides: Partial<CheckerPort> = {}): CheckerPort {
       throw new Error("unexpected getTypeOfSymbol");
     },
     getTypeArguments: () => [],
+    getReturnTypeOfSignature: () => {
+      throw new Error("unexpected getReturnTypeOfSignature");
+    },
     isArrayType: () => false,
     isTupleType: () => false,
     typeToString: () => "<fake>",

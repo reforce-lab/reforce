@@ -32,8 +32,29 @@ export type TypeNode =
       readonly span: SourceSpan;
     }
   | {
+      // 槽位解析（RFC 0012 S2，#274）要在语法层裁决"裸标量当键名"（Param<string> 硬错）与
+      // 可选单键（Header<"x" | undefined>），undefined 因此必须是可表达的 primitive。
       readonly kind: "primitive";
-      readonly name: "void";
+      readonly name: "void" | "string" | "number" | "bigint" | "boolean" | "undefined";
+      readonly span: SourceSpan;
+    }
+  | {
+      // 单键槽位写法 Param<"id">（RFC 0012 S2，#274）：第一实参是字符串字面量类型。
+      readonly kind: "string-literal";
+      readonly value: string;
+      readonly span: SourceSpan;
+    }
+  | {
+      // 可选单键（"x" | undefined）与字面量联合硬错的形态裁决都在语法层做（#274）。
+      readonly kind: "union";
+      readonly members: readonly TypeNode[];
+      readonly span: SourceSpan;
+    }
+  | {
+      // typeof X（#274 schema 追溯）：槽位契约写 z.infer<typeof schema> 时，语法层要在类型
+      // 实参树里找到被 typeof 引用的值标识符，才能把解码器换成用户 schema。
+      readonly kind: "type-query";
+      readonly name: EntityName;
       readonly span: SourceSpan;
     }
   | {
@@ -235,6 +256,9 @@ export interface InterfaceDeclaration {
   readonly kind: "interface";
   readonly topLevel: boolean;
   readonly name?: string;
+  // 声明名标识符的位置(#274):投影形态槽位(Param<Contract, "key">)要在契约声明的名字位
+  // 查整契约类型,span(关键字位)对 checker 查询恒答 error type。
+  readonly nameSpan?: SourceSpan;
   readonly export: DeclarationExport;
   readonly generic: boolean;
   readonly extends: readonly TypeNode[];
@@ -278,13 +302,31 @@ export interface ConstructorDeclaration {
 }
 
 export type ClassMethodName =
-  | { readonly kind: "identifier"; readonly name: string }
+  // span 指向方法名标识符本身(RFC 0012 S2,#274):响应契约要在方法名位查函数类型——
+  // checker 对关键字/注解位一律答 error type,名字位是唯一可用锚点(与 MethodParameter.nameSpan 同理)。
+  | { readonly kind: "identifier"; readonly name: string; readonly span: SourceSpan }
   | {
       readonly kind: "string-literal";
       readonly value: string;
       readonly span: SourceSpan;
     }
   | { readonly kind: "computed"; readonly span: SourceSpan };
+
+// 路由 handler 的逐参数槽位解析（RFC 0012 S2，#274）需要每个参数的名字位置与类型标注：
+// name/nameSpan 只对标识符模式存在（解构/rest 留给槽位解析层发硬错）；nameSpan 是 checker
+// 位置查询的锚点——类型注解位对 error type 查不出东西，必须查参数名位。不复用
+// ConstructorParameter：它带 decorators、无 nameSpan，合并会牵动构造器消费面。
+export interface MethodParameter {
+  readonly kind: "method-parameter";
+  readonly index: number;
+  readonly name?: string;
+  readonly nameSpan?: SourceSpan;
+  readonly typeAnnotation?: TypeNode;
+  readonly optional: boolean;
+  readonly rest: boolean;
+  readonly hasInitializer: boolean;
+  readonly span: SourceSpan;
+}
 
 export interface ClassMethodDeclaration {
   readonly kind: "method";
@@ -295,7 +337,7 @@ export interface ClassMethodDeclaration {
   readonly generator: boolean;
   readonly optional: boolean;
   readonly implementation: boolean;
-  readonly parameterCount: number;
+  readonly parameters: readonly MethodParameter[];
   readonly returnType?: TypeNode;
   // 方法级装饰器服务路由提取（ADR 0006 W3，#152）：@Get/@Post、@Use 与路由 marker 都落在
   // handler 方法上，分析层经链接核实来源后消费。
@@ -539,8 +581,14 @@ export interface UnsupportedNamedDeclaration {
   readonly declarationKind: UnsupportedNamedDeclarationKind;
   readonly topLevel: boolean;
   readonly name?: string;
+  // 同 InterfaceDeclaration.nameSpan(#274):type-alias 作投影契约时在名字位查类型。
+  readonly nameSpan?: SourceSpan;
   readonly export: DeclarationExport;
   readonly generic: boolean;
+  // 仅非泛型 type-alias 填（RFC 0012 S2，#274）：schema 追溯要跟"type X = z.infer<typeof s>"
+  // 的别名右侧找 typeof。别名依旧不可注入、不改变链接语义——迁出 unsupportedDeclarations 会
+  // 复发 #109 的导出可见性误诊断，所以只做附加字段。泛型别名追溯不到，维持无 rhs 的降级。
+  readonly rhs?: TypeNode;
   readonly span: SourceSpan;
 }
 

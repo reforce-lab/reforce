@@ -1,6 +1,7 @@
 import { StaleCheckerHandleError } from "@/typescript/checker-errors";
 import {
   SymbolFlags,
+  type TsSignature,
   type TsSymbol,
   type TsType,
   type TsTypeReference,
@@ -69,6 +70,12 @@ export interface TypeQueryOf<TType, TSymbol> {
   getTypesOfSymbols(symbols: readonly TSymbol[]): readonly (TType | undefined)[];
   hasIndexSignature(type: TType): boolean;
   hasCallSignatures(type: TType): boolean;
+  // 响应契约（#274）：方法名位查到函数类型后，取各调用签名的返回类型；error type 翻译成
+  // undefined（与 getTypesOfSymbols 同口径）。
+  callSignatureReturnTypes(type: TType): readonly (TType | undefined)[];
+  // Promise<T> 拆包（#274）：只认默认库声明的 Promise（用户同名类型不拆）；非 Promise 或
+  // 无实参返回 undefined。tsgo 无 getAwaitedType，用 symbol 名 + default-lib + 类型实参拼。
+  promiseTypeArgument(type: TType): TType | undefined;
   symbolNameOf(symbol: TSymbol): string;
   isOptionalProperty(symbol: TSymbol): boolean;
   // 命名类型判定,取 aliasSymbol ?? symbol:
@@ -92,6 +99,8 @@ export interface CheckerPort {
   getTypeAtPosition(file: string, positions: readonly number[]): readonly (TsType | undefined)[];
   getTypeOfSymbol(symbols: readonly TsSymbol[]): readonly TsType[];
   getTypeArguments(type: TsTypeReference): readonly TsType[];
+  // 响应契约（RFC 0012 S2，#274）：方法名位查到的是函数类型，返回类型要经签名取。
+  getReturnTypeOfSignature(signature: TsSignature): TsType;
   isArrayType(type: TsType): boolean;
   isTupleType(type: TsType): boolean;
   typeToString(type: TsType): string;
@@ -335,6 +344,32 @@ export function createTypeQuery(input: CreateTypeQueryInput): TypeQuery {
     },
     hasCallSignatures(type) {
       return guard(() => expectOwnedType(type).getCallSignatures().length > 0);
+    },
+    callSignatureReturnTypes(type) {
+      return guard(() =>
+        expectOwnedType(type)
+          .getCallSignatures()
+          .map((signature) => {
+            const returnType = input.checker.getReturnTypeOfSignature(signature);
+            return returnType.isErrorType() ? undefined : adoptType(returnType);
+          }),
+      );
+    },
+    promiseTypeArgument(type) {
+      return guard(() => {
+        const owned = expectOwnedType(type);
+        const symbol = owned.getSymbol();
+        if (
+          symbol?.name !== "Promise" ||
+          symbol.declarations.length === 0 ||
+          !symbol.declarations.every((declaration) => isDefaultLibraryPath(declaration.path)) ||
+          !owned.isTypeReference()
+        ) {
+          return undefined;
+        }
+        const argument = input.checker.getTypeArguments(owned)[0];
+        return argument === undefined || argument.isErrorType() ? undefined : adoptType(argument);
+      });
     },
     symbolNameOf(symbol) {
       return guard(() => expectOwnedSymbol(symbol).name);

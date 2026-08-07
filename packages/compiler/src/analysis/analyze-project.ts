@@ -118,12 +118,13 @@ function isBeanProvider(provider: ProviderModel): provider is BeanProviderModel 
   return provider.kind !== "config";
 }
 
-// _typeQuery 在 S1 只入参不消费(RFC 0012 S1,#273):checker 门面沿管线时序在
-// createProjectLinker 之后就位,S2(#274)的 web 槽位解析从这里接手消费。
+// typeQuery(RFC 0012 S1 接入,#273;S2 消费,#274):checker 门面沿管线时序在
+// createProjectLinker 之后就位,web 槽位解析按需查询——lease 懒 spawn,全仓无槽位查询
+// 则 tsgo 不起。
 export function analyzeProject(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
-  _typeQuery?: TypeQuery,
+  typeQuery?: TypeQuery,
 ): AnalysisResult {
   const diagnostics: CompilerDiagnostic[] = [];
   validateModuleSyntax(sources, diagnostics);
@@ -218,7 +219,7 @@ export function analyzeProject(
   validateScopeRules(allProviders, diagnostics);
   // 路由提取要在 provider 全集就位后进行：controller/中间件/错误处理器的 bean 身份与
   // scope 校验都以最终 provider 表为准（ADR 0006 W3/W4，#152）。
-  const web = analyzeWebRoutes(sources, linker, allProviders, diagnostics, engineBeans);
+  const web = analyzeWebRoutes(sources, linker, allProviders, diagnostics, engineBeans, typeQuery);
   // 织入分析同样要求完整 provider 表（ADR 0008 AM1，#202），且必须先于 createExecutionPlans：
   // 它把每个被织 bean 的拦截器作为构造依赖边追加进 provider.dependencies，构造排序、
   // cycle-proxy 改写与 request 计划全部沿既有机制生效。拦截器被强制为 singleton，追加边

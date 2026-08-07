@@ -250,7 +250,14 @@ function methodBody(
     generator: options.generator ?? false,
     optional: options.optional ?? false,
     implementation: options.implementation ?? true,
-    parameterCount: options.parameterCount ?? 0,
+    parameters: Array.from({ length: options.parameterCount ?? 0 }, (_, index) => ({
+      kind: "method-parameter" as const,
+      index,
+      optional: false,
+      rest: false,
+      hasInitializer: false,
+      span: span(),
+    })),
     returnType: options.returnType ?? voidType,
     decorators: [],
     span: span(),
@@ -258,7 +265,7 @@ function methodBody(
 }
 
 function method(name: string, options: MethodOptions = {}): ClassMethodDeclaration {
-  return methodBody({ kind: "identifier", name }, options);
+  return methodBody({ kind: "identifier", name, span: span() }, options);
 }
 
 function computedMethod(options: MethodOptions = {}): ClassMethodDeclaration {

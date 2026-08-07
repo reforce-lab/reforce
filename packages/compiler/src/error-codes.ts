@@ -80,6 +80,14 @@ export const compilerDiagnosticCodes = [
   "CONTRACT_CLASS_TYPE",
   "CONTRACT_INDEX_SIGNATURE",
   "CONTRACT_UNION_NOT_DISCRIMINATED",
+  // 槽位解析（RFC 0012 S2，#274）：路由 handler 逐参数的六类硬错 + schema 追溯。
+  "INVALID_SLOT_ANNOTATION",
+  "INVALID_SLOT_KEY",
+  "INVALID_SLOT_CONTRACT",
+  "CONFLICTING_SLOT_CONTRACT",
+  "DUPLICATE_SLOT_BINDING",
+  "UNKNOWN_PATH_PARAMETER",
+  "INVALID_SLOT_SCHEMA",
 ] as const;
 
 export type CompilerDiagnosticCode = (typeof compilerDiagnosticCodes)[number];

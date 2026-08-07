@@ -55,7 +55,8 @@ export class MiddlewareReenteredError extends ReforceWebError<"MIDDLEWARE_REENTE
   }
 }
 
-export type RequestInputSource = "body" | "params" | "query";
+// header 自槽位解析加入(RFC 0012 S2,#274);Cookie 槽位被砍,不进此闭集。
+export type RequestInputSource = "body" | "params" | "query" | "header";
 
 // 校验失败是请求级业务事实而非框架故障：作为错误抛出只为经错误处理器分派统一出口，
 // 消息只转述 schema 库的 issue 文案，不携带请求值（与 ConfigBindingIssue 的脱敏约定同理）。

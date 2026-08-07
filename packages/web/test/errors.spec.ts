@@ -41,3 +41,14 @@ describe("MiddlewareReenteredError", () => {
     );
   });
 });
+
+// header 是槽位解析(RFC 0012 S2,#274)加入的输入源;闭集不含 cookie。
+test("RequestValidationError accepts the header input source", () => {
+  const error = new RequestValidationError({
+    source: "header",
+    issues: [{ message: "x-tenant-id must be present" }],
+  });
+
+  expect(error.source).toBe("header");
+  expect(error.message).toContain("header failed validation");
+});

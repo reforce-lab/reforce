@@ -1,6 +1,6 @@
 import type { PreparedRoute, WebApplication } from "@/adapter";
-import { createRequestInputValidator } from "@/execution/input-validation";
 import { RequestContextState } from "@/execution/request-context";
+import { createSlotExecutor } from "@/execution/slot-execution";
 import type { HttpMethod } from "@/routing/vocabulary";
 
 // 引擎适配器一致性套件（#234）：WebEngineAdapter 的行为契约（见 adapter.ts）在每个引擎上都必须成立。
@@ -55,9 +55,10 @@ function route(method: HttpMethod, path: string, handle: PreparedRoute["handle"]
   return { method, path, handle, meta: () => undefined };
 }
 
-// body 用例走真实的校验管线而不是在 handler 里手搓解析：要证的正是"引擎交出来的标准 Request
-// 能被 reforce 的 body 分派正常消费"。fastify 那条路径会把 req.body 的 Buffer 重建成标准
-// Request，boundary 保不住的话这里立刻炸。
+// JSON body 用例走真实的槽位执行链而不是在 handler 里手搓解析：要证的正是"引擎交出来的
+// 标准 Request 能被 reforce 的严格读体(层①)正常消费"。表单/上传自 RFC 0012 S2(#274)起
+// 不再由框架解析(Body 槽只认 JSON)，对应用例改走标准 request.formData()——引擎契约没变：
+// fastify 那条路径会把 req.body 的 Buffer 重建成标准 Request，boundary 保不住的话立刻炸。
 const passthroughBodySchema = {
   "~standard": {
     version: 1 as const,
@@ -66,7 +67,26 @@ const passthroughBodySchema = {
   },
 };
 
-async function validatedBody(request: Request, params: Readonly<Record<string, string>>) {
+// 全局别名 FormDataEntryValue 只在 DOM lib 里，本包不引 DOM；从 getAll 的返回类型取同一个联合
+type FormValue = ReturnType<FormData["getAll"]>[number];
+
+// FormData → 普通对象：同名多值收成数组，单值不包数组；File 原样保留。用 Object.fromEntries
+// 而不是逐 key 赋值：后者遇到名为 `__proto__` 的表单字段会命中原型 setter 静默丢值。
+function formDataToRecord(form: FormData): Record<string, FormValue | FormValue[]> {
+  return Object.fromEntries(
+    [...new Set(form.keys())].map((name) => {
+      const values = form.getAll(name);
+      const [only] = values;
+      return [name, values.length === 1 && only !== undefined ? only : values] as const;
+    }),
+  );
+}
+
+async function requestBody(request: Request, params: Readonly<Record<string, string>>) {
+  const mediaType = (request.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase();
+  if (mediaType === "multipart/form-data" || mediaType === "application/x-www-form-urlencoded") {
+    return formDataToRecord(await request.formData());
+  }
   const context = new RequestContextState({
     request,
     url: new URL(request.url),
@@ -75,8 +95,10 @@ async function validatedBody(request: Request, params: Readonly<Record<string, s
     params,
     meta: {},
   });
-  await createRequestInputValidator({ body: passthroughBodySchema })(context);
-  return context.body;
+  const [body] = await createSlotExecutor([{ slot: "body", schema: passthroughBodySchema }])(
+    context,
+  );
+  return body;
 }
 
 // File 不能直接 JSON 序列化，压成可断言的摘要
@@ -149,7 +171,7 @@ function fixtures(): ConformanceFixtures {
       ),
       route("GET", "/users/self", () => Promise.resolve(new Response("self"))),
       route("POST", "/echo-body", async (request, params) =>
-        Response.json(await describeBody(await validatedBody(request, params))),
+        Response.json(await describeBody(await requestBody(request, params))),
       ),
       route("GET", "/cookies", () => {
         const headers = new Headers();
@@ -307,9 +329,9 @@ export function adapterConformanceCases(
       }),
     ),
 
-    // 引擎不得把请求体提前消费到不可用。三种 content-type 都要走通 reforce 的 body 分派——
+    // 引擎不得把请求体提前消费到不可用。JSON 走真实槽位读体，表单走标准 formData()——
     // fastify 那条路径要把 Buffer 重建成标准 Request，boundary 丢了这里立刻炸。
-    conformanceCase("a json body reaches the validated body slot", () =>
+    conformanceCase("a json body reaches the body slot through the strict reader", () =>
       withServer(async (base) => {
         const response = await fetch(`${base}/echo-body`, {
           method: "POST",
@@ -321,7 +343,7 @@ export function adapterConformanceCases(
       }),
     ),
 
-    conformanceCase("an urlencoded body reaches the validated body slot", () =>
+    conformanceCase("an urlencoded body reaches the handler through request.formData()", () =>
       withServer(async (base) => {
         const response = await fetch(`${base}/echo-body`, {
           method: "POST",
@@ -333,7 +355,7 @@ export function adapterConformanceCases(
       }),
     ),
 
-    conformanceCase("a multipart body reaches the validated body slot with its file", () =>
+    conformanceCase("a multipart body reaches the handler with its file intact", () =>
       withServer(async (base) => {
         const form = new FormData();
         form.append("name", "amy");

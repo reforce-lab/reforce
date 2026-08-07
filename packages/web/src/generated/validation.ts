@@ -110,14 +110,37 @@ function validateStandardSchema(value: unknown, path: string): void {
   }
 }
 
-function validateSchemas(value: unknown, path: string): void {
-  const schemas = requireObject(value, path);
-  requireExactKeys(schemas, ["params", "query", "body", "response"], path);
-  for (const key of ["params", "query", "body", "response"] as const) {
-    const schema = Reflect.get(schemas, key);
-    if (schema !== undefined) {
-      validateStandardSchema(schema, `${path}.${key}`);
-    }
+// 槽位闭集(RFC 0012 S2,#274),与 GeneratedSlotKind 同步。
+const slotKinds = new Set([
+  "param",
+  "query",
+  "header",
+  "body",
+  "request",
+  "requestContext",
+  "responseHeaders",
+]);
+
+function validateSlot(value: unknown, path: string): void {
+  const slot = requireObject(value, path);
+  requireExactKeys(slot, ["slot", "key", "decode", "schema"], path);
+  if (!slotKinds.has(String(Reflect.get(slot, "slot")))) {
+    fail(`${path}.slot must be a supported slot kind.`);
+  }
+  const key = Reflect.get(slot, "key");
+  if (key !== undefined && typeof key !== "string") {
+    fail(`${path}.key must be a string when provided.`);
+  }
+  const decode = Reflect.get(slot, "decode");
+  const schema = Reflect.get(slot, "schema");
+  if (decode !== undefined && schema !== undefined) {
+    fail(`${path} must not declare both decode and schema.`);
+  }
+  if (decode !== undefined) {
+    validateStandardSchema(decode, `${path}.decode`);
+  }
+  if (schema !== undefined) {
+    validateStandardSchema(schema, `${path}.schema`);
   }
 }
 
@@ -188,7 +211,8 @@ function validateRoute(value: unknown, path: string): void {
       "invoke",
       "middleware",
       "meta",
-      "schemas",
+      "slots",
+      "encode",
     ],
     path,
   );
@@ -208,7 +232,14 @@ function validateRoute(value: unknown, path: string): void {
     validateMiddleware(entry, `${path}.middleware[${index}]`);
   }
   validateMeta(Reflect.get(route, "meta"), `${path}.meta`);
-  validateSchemas(Reflect.get(route, "schemas"), `${path}.schemas`);
+  const slots = requireArray(Reflect.get(route, "slots"), `${path}.slots`);
+  for (const [index, entry] of slots.entries()) {
+    validateSlot(entry, `${path}.slots[${index}]`);
+  }
+  const encode = Reflect.get(route, "encode");
+  if (encode !== undefined) {
+    requireFunction(encode, `${path}.encode`);
+  }
 }
 
 function validateErrorHandler(value: unknown, path: string): void {
@@ -222,8 +253,8 @@ function validateErrorHandler(value: unknown, path: string): void {
 export function validateGeneratedRouteTable(value: unknown): GeneratedRouteTable {
   const table = requireObject(value, "routeTable");
   requireExactKeys(table, ["schemaVersion", "routes", "errorHandlers"], "routeTable");
-  if (Reflect.get(table, "schemaVersion") !== 1) {
-    fail("routeTable.schemaVersion must be 1.");
+  if (Reflect.get(table, "schemaVersion") !== 2) {
+    fail("routeTable.schemaVersion must be 2.");
   }
   const routes = requireArray(Reflect.get(table, "routes"), "routeTable.routes");
   const shapes = new Map<string, string>();
