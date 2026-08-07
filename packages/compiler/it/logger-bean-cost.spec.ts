@@ -121,10 +121,10 @@ describe("the cost of a synthesised logger bean", () => {
     const withLoggers = await compileServices(12, true);
     const withoutLoggers = await compileServices(12, false);
 
-    // 12 个注入者 + reforce.context 那条框架 logger。缓解措施「只为**实际注入了 Logger 的类**
+    // 12 个注入者 + reforce.core 那条框架 logger。缓解措施「只为**实际注入了 Logger 的类**
     // 合成」在这里是可验的：不注入的那一组一条 logger bean 都没有。
     expect(withLoggers.loggerBeanCount).toBe(13);
-    // 不注入的那一组只剩 reforce.context 那一条：缓解措施「只为**实际注入了 Logger 的类**
+    // 不注入的那一组只剩 reforce.core 那一条：缓解措施「只为**实际注入了 Logger 的类**
     // 合成」在这里可验——12 个类一条用户 logger 都没合成。框架那条与用户注入无关，它是
     // L6 的容器面输出，只要图里有绑定就恒在。
     expect(withoutLoggers.loggerBeanCount).toBe(1);
