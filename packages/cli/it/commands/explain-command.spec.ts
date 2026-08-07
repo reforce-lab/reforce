@@ -412,16 +412,28 @@ test("answers that a known code has no long-form article yet", async () => {
 });
 
 // 此前这些码全都落到「没有 bean 叫这个名字，已知的 bean 有 …」——把合法查询呈现成打错名字。
+// 探针从 TRANSACTION_TIMEOUT 换成 REQUEST_CONTEXT_MISSING：前者在 #297 补上长文后不再走这个
+// 出口，这条断言要的是「已知但无长文」这个状态本身，任何仍处于该状态的码都成立。
 test("recognizes a code from another package's table", async () => {
   const project = await createExplainProject({ sources: starterApplicationSources });
 
-  const { exitCode, events } = await explain(project, "TRANSACTION_TIMEOUT");
+  const { exitCode, events } = await explain(project, "REQUEST_CONTEXT_MISSING");
 
   expect(exitCode).toBe(1);
   expect(events[0]).toHaveProperty(
     "message",
-    expect.stringContaining("TRANSACTION_TIMEOUT is a known transaction error code"),
+    expect.stringContaining("REQUEST_CONTEXT_MISSING is a known core error code"),
   );
+});
+
+// #297 第一批：事务护栏七码。真实 CLI 里这条查询必须落在长文分支，而不是「暂无长文」出口。
+test("explains a transaction guard code", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "TRANSACTION_TIMEOUT");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("TRANSACTION_TIMEOUT · ");
 });
 
 // 拼错的码与真实但无长文的码该说的话完全不同：前者不该附上全部 bean 的清单。
