@@ -1,9 +1,12 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type {
+  ContractSourceModel,
+  ResponseContractModel,
   RouteContractModel,
   RouteMetaValueModel,
   RouteModel,
   RouteSlotModel,
+  WebErrorHandlerModel,
   WebExportRefModel,
   WebModel,
 } from "@/analysis/web-model";
@@ -95,50 +98,86 @@ function isBareSlot(
   );
 }
 
-// routes.json 的 contract 节(#274):键名、契约来源(type/schema+vendor)与字段表全量落盘,
-// `reforce explain routes` 的键名打印与后续 OpenAPI 导出都吃这份纯数据。
-function contractManifestOf(
-  contract: RouteContractModel,
+function contractSourceManifestOf(
+  source: ContractSourceModel,
   generatedDirectory: string,
 ): Record<string, unknown> {
+  if (source.source !== "schema") {
+    return { source: "type" };
+  }
+  return {
+    source: "schema",
+    schema: {
+      moduleSpecifier: runtimeSpecifier(generatedDirectory, source.ref.source.absolutePath),
+      exportName: source.ref.exportName,
+    },
+    ...(source.vendor === undefined ? {} : { vendor: source.vendor }),
+  };
+}
+
+// 处理器响应的 manifest 形状(#275):errors 条目与顶层 errorHandlers 共用。passthrough
+// (直返 Response)没有静态可知的状态码与形状,两键都缺席。
+function handlerBodyManifestOf(
+  response: ResponseContractModel,
+): Record<string, unknown> | undefined {
+  if (response.kind === "table") {
+    return { kind: "table", table: response.table };
+  }
+  if (response.kind === "free-form") {
+    return { kind: "free-form" };
+  }
+  return undefined;
+}
+
+// routes.json 的 contract 节(#274/#275):键名、契约来源(type/schema+vendor)、字段表与
+// 响应三变体全量落盘,`reforce explain routes` 与 `reforce openapi` 都吃这份纯数据。
+function contractManifestOf(
+  route: RouteModel,
+  handlersByBeanId: ReadonlyMap<string, WebErrorHandlerModel>,
+  generatedDirectory: string,
+): Record<string, unknown> {
+  const contract = route.contract;
   const slots = contract.slots.map((slot) => {
     if (isBareSlot(slot)) {
       return { slot: slot.kind };
     }
-    const source =
-      slot.contractSource.source === "schema"
-        ? {
-            source: "schema",
-            schema: {
-              moduleSpecifier: runtimeSpecifier(
-                generatedDirectory,
-                slot.contractSource.ref.source.absolutePath,
-              ),
-              exportName: slot.contractSource.ref.exportName,
-            },
-            ...(slot.contractSource.vendor === undefined
-              ? {}
-              : { vendor: slot.contractSource.vendor }),
-          }
-        : { source: "type" };
     return {
       slot: slot.kind,
       ...(slot.key === undefined ? {} : { key: slot.key }),
       ...(slot.kind === "body" ? {} : { form: slot.form }),
-      source,
+      source: contractSourceManifestOf(slot.contractSource, generatedDirectory),
       table: slot.table,
     };
   });
-  // v2 中间态(#275 M2):free-form 暂并入 passthrough——v2 闭集只有 table|passthrough,
-  // 三变体的 manifest 形状随 schemaVersion 3 落地。
-  const response =
-    contract.response.kind === "table"
-      ? { kind: "table", table: contract.response.table }
-      : { kind: "passthrough" };
+  // errors = @Throws 并集(路由 ∪ 挂载中间件,分析层已按类键去重、错误名排序):每条携带
+  // 分派赢家处理器的 beanId 与其声明的状态码/形状(passthrough 处理器两者缺席)。
+  const errors = route.throws.map((thrown) => {
+    const handler = handlersByBeanId.get(thrown.handlerBeanId);
+    const body = handler === undefined ? undefined : handlerBodyManifestOf(handler.response);
+    const status = handler?.response.status;
+    return {
+      error: thrown.errorName,
+      handler: thrown.handlerBeanId,
+      ...(status === undefined ? {} : { status }),
+      ...(body === undefined ? {} : { body }),
+    };
+  });
+  const response = {
+    kind: contract.response.kind,
+    ...(contract.response.status === undefined ? {} : { status: contract.response.status }),
+    ...(contract.response.kind === "table"
+      ? {
+          table: contract.response.table,
+          source: contractSourceManifestOf(contract.response.contractSource, generatedDirectory),
+        }
+      : {}),
+    ...(errors.length === 0 ? {} : { errors }),
+  };
   return { slots, response };
 }
 
 function renderRouteManifest(web: WebModel, generatedDirectory: string): string {
+  const handlersByBeanId = new Map(web.errorHandlers.map((handler) => [handler.beanId, handler]));
   const routes = web.routes.map((route) => ({
     method: route.method,
     path: route.path,
@@ -155,14 +194,31 @@ function renderRouteManifest(web: WebModel, generatedDirectory: string): string 
       mount: middleware.mount,
     })),
     meta: metaRecord(route.meta),
-    contract: contractManifestOf(route.contract, generatedDirectory),
+    contract: contractManifestOf(route, handlersByBeanId, generatedDirectory),
     source: route.source,
   }));
-  const errorHandlers = web.errorHandlers.map((handler) => ({
-    beanId: handler.beanId,
-    order: handler.order,
-  }));
-  return `${json({ schemaVersion: 2, routes, errorHandlers })}\n`;
+  const errorHandlers = web.errorHandlers.map((handler) => {
+    const status = handler.response.status;
+    const body = handlerBodyManifestOf(handler.response);
+    return {
+      beanId: handler.beanId,
+      order: handler.order,
+      ...(handler.accepts === undefined
+        ? {}
+        : {
+            accepts: {
+              name: handler.accepts.name,
+              moduleSpecifier: runtimeSpecifier(
+                generatedDirectory,
+                handler.accepts.ref.source.absolutePath,
+              ),
+            },
+          }),
+      ...(status === undefined ? {} : { status }),
+      ...(body === undefined ? {} : { body }),
+    };
+  });
+  return `${json({ schemaVersion: 3, routes, errorHandlers })}\n`;
 }
 
 const bareSlotArguments = {
@@ -176,7 +232,7 @@ interface SlotRouteRendering {
   readonly declarations: readonly string[];
   readonly slotsBlock: string;
   readonly invoke: string;
-  readonly encode: string | undefined;
+  readonly responseText: string;
 }
 
 // 槽位路由的 invoke(#274 typed-edge):slots 第三参按参数序,数据槽经渲染的契约类型文本
@@ -223,6 +279,25 @@ function slotEntryText(
   return `      { slot: ${JSON.stringify(slot.kind)},${keyField} decode: ${decoderName} },`;
 }
 
+// 响应三变体的表达式文本(#275):table 携带本路由的白名单编码器常量。
+function responseEntryText(
+  response: ResponseContractModel,
+  routeIndex: number,
+  declarations: string[],
+): string {
+  if (response.kind === "table") {
+    const encode = `webEncode${String(routeIndex)}`;
+    declarations.push(renderResponseEncoder(encode, response.table));
+    return `{ kind: "table", status: ${String(response.status)}, encode: ${encode} }`;
+  }
+  if (response.kind === "free-form") {
+    return `{ kind: "free-form", status: ${String(response.status)} }`;
+  }
+  return response.status === undefined
+    ? '{ kind: "passthrough" }'
+    : `{ kind: "passthrough", status: ${String(response.status)} }`;
+}
+
 function renderSlotRoute(
   route: RouteModel,
   contract: RouteContractModel,
@@ -234,11 +309,7 @@ function renderSlotRoute(
   const entries = contract.slots.map((slot, index) =>
     slotEntryText(route, slot, index, schemaImports, routeIndex, declarations),
   );
-  let encode: string | undefined;
-  if (contract.response.kind === "table") {
-    encode = `webEncode${String(routeIndex)}`;
-    declarations.push(renderResponseEncoder(encode, contract.response.table));
-  }
+  const responseText = responseEntryText(contract.response, routeIndex, declarations);
   const usesContext = contract.slots.some(isBareSlot);
   const usesSlots = contract.slots.some((slot) => !isBareSlot(slot));
   const argumentTexts = contract.slots.map((slot, index) => slotArgumentText(slot, index));
@@ -246,7 +317,7 @@ function renderSlotRoute(
   const slotsParameter = usesSlots ? "slots" : "_slots";
   const invoke = `(instance: InstanceType<typeof ${controllerAlias}>, ${contextParameter}: RequestContext, ${slotsParameter}: readonly unknown[]) => instance.${route.handler}(${argumentTexts.join(", ")})`;
   const slotsBlock = entries.length === 0 ? "[]" : `[\n${entries.join("\n")}\n    ]`;
-  return { declarations, slotsBlock, invoke, encode };
+  return { declarations, slotsBlock, invoke, responseText };
 }
 
 function renderRouteEntry(
@@ -287,15 +358,51 @@ function renderRouteEntry(
     `    middleware: ${middlewareBlock},`,
     `    meta: ${inlineJson(metaRecord(route.meta), 4)},`,
     `    slots: ${slotRendering.slotsBlock},`,
-    ...(slotRendering.encode === undefined ? [] : [`    encode: ${slotRendering.encode},`]),
+    `    response: ${slotRendering.responseText},`,
     "  },",
   ].join("\n");
+}
+
+// 类型化错误处理器条目(#275):accepts 类经第三 import 组(webError 前缀)进 instanceof 闸,
+// table 契约的编码器复用路由同款 renderResponseEncoder。
+function renderErrorHandlerEntry(
+  handler: WebErrorHandlerModel,
+  handlerIndex: number,
+  beanImports: ReadonlyMap<string, WebValueImport>,
+  errorImports: ReadonlyMap<string, WebValueImport>,
+  moduleDeclarations: string[],
+): string {
+  const alias = beanImports.get(importKey(handler.ref))?.alias;
+  if (alias === undefined) {
+    throw new Error(`Missing error handler import for ${handler.beanId}`);
+  }
+  const fields = [
+    `bean: ${alias}`,
+    `beanId: ${JSON.stringify(handler.beanId)}`,
+    `order: ${String(handler.order)}`,
+  ];
+  if (handler.accepts !== undefined) {
+    const acceptsAlias = errorImports.get(importKey(handler.accepts.ref))?.alias;
+    if (acceptsAlias === undefined) {
+      throw new Error(`Missing accepts import for ${handler.beanId}`);
+    }
+    fields.push(`accepts: ${acceptsAlias}`);
+  }
+  if (handler.response.status !== undefined) {
+    fields.push(`status: ${String(handler.response.status)}`);
+  }
+  if (handler.response.kind === "table") {
+    const encode = `webErrorEncode${String(handlerIndex)}`;
+    moduleDeclarations.push(renderResponseEncoder(encode, handler.response.table));
+    fields.push(`encode: ${encode}`);
+  }
+  return `  { ${fields.join(", ")} },`;
 }
 
 function renderRouteModule(web: WebModel, generatedDirectory: string): string {
   if (web.routes.length === 0 && web.errorHandlers.length === 0) {
     // 空表不 import：没有 web 内容的应用不需要安装 @reforce/web 也要能编译与 typecheck。
-    return `export const routeTable = {\n  schemaVersion: 2,\n  routes: [],\n  errorHandlers: [],\n} as const;\n`;
+    return `export const routeTable = {\n  schemaVersion: 3,\n  routes: [],\n  errorHandlers: [],\n} as const;\n`;
   }
   const beanImports = collectImports(
     [
@@ -313,9 +420,19 @@ function renderRouteModule(web: WebModel, generatedDirectory: string): string {
     generatedDirectory,
     "webSchema",
   );
+  const errorImports = collectImports(
+    web.errorHandlers.flatMap((handler) =>
+      handler.accepts === undefined ? [] : [handler.accepts.ref],
+    ),
+    generatedDirectory,
+    "webError",
+  );
   const moduleDeclarations: string[] = [];
   const routes = web.routes.map((route, routeIndex) =>
     renderRouteEntry(route, beanImports, schemaImports, routeIndex, moduleDeclarations),
+  );
+  const errorHandlers = web.errorHandlers.map((handler, handlerIndex) =>
+    renderErrorHandlerEntry(handler, handlerIndex, beanImports, errorImports, moduleDeclarations),
   );
   // StandardSchemaV1 只在真的发射了解码器常量(带该标注)时 import:多余的 type import
   // 会撞上用户项目的 noUnusedLocals;纯编码器路由不需要它。
@@ -327,18 +444,11 @@ function renderRouteModule(web: WebModel, generatedDirectory: string): string {
     : "GeneratedRouteTable, RequestContext";
   const imports = [
     `import type { ${runtimeTypes} } from "${webRuntimeModuleSpecifier}";`,
-    ...[...beanImports.values(), ...schemaImports.values()].map(
+    ...[...beanImports.values(), ...schemaImports.values(), ...errorImports.values()].map(
       (entry) =>
         `import { ${entry.ref.exportName} as ${entry.alias} } from ${JSON.stringify(entry.specifier)};`,
     ),
   ];
-  const errorHandlers = web.errorHandlers.map((handler) => {
-    const alias = beanImports.get(importKey(handler.ref))?.alias;
-    if (alias === undefined) {
-      throw new Error(`Missing error handler import for ${handler.beanId}`);
-    }
-    return `  { bean: ${alias}, beanId: ${JSON.stringify(handler.beanId)}, order: ${String(handler.order)} },`;
-  });
   const routesBlock = routes.length === 0 ? "routes: []," : `routes: [\n${routes.join("\n")}\n  ],`;
   const errorHandlersBlock =
     errorHandlers.length === 0
@@ -351,7 +461,7 @@ function renderRouteModule(web: WebModel, generatedDirectory: string): string {
     ...preamble,
     ...moduleDeclarations.flatMap((declaration) => [declaration, ""]),
     "export const routeTable = {",
-    "  schemaVersion: 2,",
+    "  schemaVersion: 3,",
     `  ${routesBlock}`,
     `  ${errorHandlersBlock}`,
     "} as const satisfies GeneratedRouteTable;",

@@ -1,7 +1,8 @@
 import { ResponseSerializationError } from "@/errors";
+import type { GeneratedRouteResponse } from "@/generated/route-table";
 
-// 响应序列化(ADR 0006 W5 → RFC 0012 S2 重铸,#274):响应契约来自返回类型标注,编译器据它
-// 生成白名单投影编码器(GeneratedRoute.encode),运行时只负责"编码产物 → JSON Response"。
+// 响应序列化(ADR 0006 W5 → RFC 0012 S2 → S3 收口,#274/#275):响应声明来自返回类型/
+// @ResponseSchema/推导,编译器据它生成白名单投影编码器与状态码,运行时按三变体分派。
 // bigint 一律序列化为 JSON 字符串(雪花 ID 语义,JSON.stringify 原生对 bigint 抛 TypeError)。
 
 function bigintReplacer(_key: string, value: unknown): unknown {
@@ -32,14 +33,15 @@ const encoder = new TextEncoder();
 // 长度必须是**字节数**而不是字符数：JSON.stringify 不转义非 ASCII，"汉字" 是 2 char / 6 byte。
 // 这里先编码再把字节交给 Response，而不是编码一次只为量长度——Response 内部本来也要编码，
 // 这样反而少一趟。
-function jsonResponse(value: unknown): Response {
+// error-dispatch 的兜底/编码响应共用同一出口:JSON 响应的头与长度语义只此一份。
+export function jsonResponse(status: number, value: unknown): Response {
   const rendered = renderJson(value);
   if (rendered === undefined) {
     throw new ResponseSerializationError("the handler return value is not JSON-serializable.");
   }
   const bytes = encoder.encode(rendered);
   return new Response(bytes, {
-    status: 200,
+    status,
     headers: {
       "content-type": "application/json",
       "content-length": String(bytes.byteLength),
@@ -49,17 +51,27 @@ function jsonResponse(value: unknown): Response {
 
 export type ResponseEncoder = (value: unknown) => unknown;
 
-// handler 返回 Response 是逃生口(#264 决策 7):框架原样透传,不投影、不加头。
-// 无编码器 = 路由没有返回类型标注:S2 中间态下 handler 必须自己返回 Response,普通对象
-// 500;"无标注 → 编译期硬错"归 S3,届时这个分支只剩逃生口透传。
-export function serializeResponse(value: unknown, encode: ResponseEncoder | undefined): Response {
+// 三变体分派(RFC 0012 S3,#275)。handler 返回 Response 在任何 kind 下都是逃生口
+// (#264 决策 7):框架原样透传,不投影、不盖状态码。
+// - table:白名单投影编码器先行,bigint/Date 已在编码产物里归一成串;
+// - free-form:无契约声明且推导失败的降级——返回值原样序列化(bigint 走 replacer 重试、
+//   Date 走 toJSON、NaN/Infinity 落 null),不投影不白名单;
+// - passthrough:undefined ⇒ 空体(status 缺省 204,void 路由的真空响应);其余非 Response
+//   值抛 ResponseSerializationError(500 语义不变)。
+export function serializeResponse(value: unknown, response: GeneratedRouteResponse): Response {
   if (value instanceof Response) {
     return value;
   }
-  if (encode === undefined) {
-    throw new ResponseSerializationError(
-      "the route declares no response contract, so the handler must return a Response.",
-    );
+  if (response.kind === "table") {
+    return jsonResponse(response.status, response.encode(value));
   }
-  return jsonResponse(encode(value));
+  if (response.kind === "free-form") {
+    return jsonResponse(response.status, value);
+  }
+  if (value === undefined) {
+    return new Response(null, { status: response.status ?? 204 });
+  }
+  throw new ResponseSerializationError(
+    "the route passes responses through, so the handler must return a Response or nothing.",
+  );
 }

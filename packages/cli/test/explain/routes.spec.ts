@@ -27,7 +27,7 @@ const manifest: RouteManifest = {
           { slot: "body", source: { kind: "schema", vendor: "zod" } },
           { slot: "requestContext" },
         ],
-        response: "table",
+        response: { kind: "table", status: 200, errors: [] },
       },
     },
     {
@@ -36,7 +36,7 @@ const manifest: RouteManifest = {
       controller: { beanId: "src/users.ts#UsersController", handler: "create" },
       middleware: [],
       meta: {},
-      contract: { slots: [], response: "passthrough" },
+      contract: { slots: [], response: { kind: "passthrough", errors: [] } },
     },
   ],
   errorHandlers: [{ beanId: "src/errors.ts#Teapot", order: 0 }],
@@ -46,7 +46,7 @@ const manifest: RouteManifest = {
 // 输入按它构造;上面的 RouteManifest 是解析后的内存形态。
 function manifestJson(): unknown {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     errorHandlers: manifest.errorHandlers,
     routes: manifest.routes.map((route) => ({
       ...route,
@@ -64,7 +64,12 @@ function manifestJson(): unknown {
                 },
               }),
         })),
-        response: { kind: route.contract.response },
+        response: {
+          kind: route.contract.response.kind,
+          ...(route.contract.response.status === undefined
+            ? {}
+            : { status: route.contract.response.status }),
+        },
       },
     })),
   };
@@ -99,19 +104,22 @@ describe("parseRouteManifestBytes", () => {
     expect(parsed?.errorHandlers).toEqual([{ beanId: "src/errors.ts#Teapot", order: 0 }]);
   });
 
-  // 1 是旧 schemas 表的版本:旧生成物不得被静默解释成槽位表。
+  // 1/2 是旧表的版本:旧生成物不得被静默解释成 v3 表。
   test("a wrong schema version is rejected", () => {
     expect(
       parseRouteManifestBytes(encoded({ schemaVersion: 1, routes: [], errorHandlers: [] })),
     ).toBeUndefined();
     expect(
-      parseRouteManifestBytes(encoded({ schemaVersion: 3, routes: [], errorHandlers: [] })),
+      parseRouteManifestBytes(encoded({ schemaVersion: 2, routes: [], errorHandlers: [] })),
+    ).toBeUndefined();
+    expect(
+      parseRouteManifestBytes(encoded({ schemaVersion: 4, routes: [], errorHandlers: [] })),
     ).toBeUndefined();
   });
 
   test("a malformed route entry is rejected", () => {
     const bytes = encoded({
-      schemaVersion: 2,
+      schemaVersion: 3,
       routes: [{ method: "GET" }],
       errorHandlers: [],
     });

@@ -137,16 +137,13 @@ function requireMiddlewareInstance(instance: object, beanId: string): RouteMiddl
   return instance as RouteMiddleware;
 }
 
-function requireErrorHandlerInstance(
-  instance: object,
-  beanId: string,
-): RouteErrorHandler<unknown, Response> {
+function requireErrorHandlerInstance(instance: object, beanId: string): RouteErrorHandler {
   if (typeof Reflect.get(instance, "handle") !== "function") {
     throw new InvalidRouteTableError(`error handler Bean "${beanId}" does not implement handle().`);
   }
   // 同 requireMiddlewareInstance：存在性已复检，契约形状由生成物类型边背书
   // // justified: 见上一行
-  return instance as RouteErrorHandler<unknown, Response>;
+  return instance as RouteErrorHandler;
 }
 
 interface ChainLink {
@@ -190,9 +187,11 @@ function composeChain(
   };
 }
 
-// 响应头合并范围(RFC 0012 S2,#274 推断口径,PR 描述写明):只合并编码/序列化产出的响应;
-// handler 直接返回的 Response(逃生口)与 400/500 错误响应不碰——前者是用户全权掌控的出口,
-// 后者由错误分派统一负责,handler 半路写下的头不该跟着错误出线。
+// 响应头合并范围(RFC 0012 S2,#274 推断口径;S3 定案维持,#275 拍板 3):只合并编码/序列化
+// 产出的响应;handler 直接返回的 Response(逃生口)与 400/500 错误响应不碰——前者是用户
+// 全权掌控的出口,后者由错误分派统一负责,handler 半路写下的头不该跟着错误出线。错误处理器
+// 的编码响应同样排除在外:处理器要写头就直返 Response。失败路径切新 Headers(B3)记为
+// 升级路径,不在本切片。
 function mergeResponseHeaders(response: Response, headers: Headers): void {
   for (const [name, value] of headers) {
     // Headers 迭代对 set-cookie 逐条产出、其余同名键并成逗号串;set-cookie 必须逐条 append
@@ -224,7 +223,7 @@ function prepareRoute(
     try {
       const slots = await executeSlots(requestContext);
       const result = await route.invoke(controller, requestContext, slots);
-      const response = serializeResponse(result, route.encode);
+      const response = serializeResponse(result, route.response);
       if (!(result instanceof Response)) {
         mergeResponseHeaders(response, requestContext.responseHeaders);
       }
@@ -305,9 +304,12 @@ export interface PreparedWebApplication extends WebApplication {
 export function createWebApplication(options: CreateWebApplicationOptions): PreparedWebApplication {
   const table = validateGeneratedRouteTable(options.table);
   const dispatchError = createErrorDispatcher(
-    table.errorHandlers.map((entry) =>
-      requireErrorHandlerInstance(options.context.get(entry.bean), entry.beanId),
-    ),
+    table.errorHandlers.map((entry) => ({
+      handler: requireErrorHandlerInstance(options.context.get(entry.bean), entry.beanId),
+      ...(entry.accepts === undefined ? {} : { accepts: entry.accepts }),
+      ...(entry.status === undefined ? {} : { status: entry.status }),
+      ...(entry.encode === undefined ? {} : { encode: entry.encode }),
+    })),
     options.logger,
   );
   return {

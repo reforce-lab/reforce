@@ -20,9 +20,23 @@ export interface RouteManifestSlot {
   readonly source?: { readonly kind: string; readonly vendor?: string };
 }
 
+// 响应节(RFC 0012 S3,#275):kind 三变体 + 状态码 + @Throws errors(错误名 → 处理器与其
+// 声明的状态码)。table 字段表 explain 不消费(openapi 走 project/route-manifest 的完整解析)。
+export interface RouteManifestThrownError {
+  readonly error: string;
+  readonly handler: string;
+  readonly status?: number;
+}
+
+export interface RouteManifestResponse {
+  readonly kind: string;
+  readonly status?: number;
+  readonly errors: readonly RouteManifestThrownError[];
+}
+
 export interface RouteManifestContract {
   readonly slots: readonly RouteManifestSlot[];
-  readonly response: string;
+  readonly response: RouteManifestResponse;
 }
 
 export interface RouteManifestEntry {
@@ -81,13 +95,55 @@ function parsedSlot(value: unknown): RouteManifestSlot | undefined {
   };
 }
 
+function parsedThrownError(value: unknown): RouteManifestThrownError | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const error = Reflect.get(value, "error");
+  const handler = Reflect.get(value, "handler");
+  const status = Reflect.get(value, "status");
+  if (typeof error !== "string" || typeof handler !== "string") {
+    return undefined;
+  }
+  return { error, handler, ...(typeof status === "number" ? { status } : {}) };
+}
+
+function parsedResponse(value: unknown): RouteManifestResponse | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const kind = Reflect.get(value, "kind");
+  if (typeof kind !== "string") {
+    return undefined;
+  }
+  const status = Reflect.get(value, "status");
+  const errors = Reflect.get(value, "errors");
+  const parsedErrors: RouteManifestThrownError[] = [];
+  if (errors !== undefined) {
+    if (!Array.isArray(errors)) {
+      return undefined;
+    }
+    for (const entry of errors) {
+      const parsed = parsedThrownError(entry);
+      if (parsed === undefined) {
+        return undefined;
+      }
+      parsedErrors.push(parsed);
+    }
+  }
+  return {
+    kind,
+    ...(typeof status === "number" ? { status } : {}),
+    errors: parsedErrors,
+  };
+}
+
 function parsedContract(value: unknown): RouteManifestContract | undefined {
   if (!isObject(value)) {
     return undefined;
   }
   const slots = Reflect.get(value, "slots");
-  const response = Reflect.get(value, "response");
-  if (!Array.isArray(slots) || !isObject(response)) {
+  if (!Array.isArray(slots)) {
     return undefined;
   }
   const parsedSlots: RouteManifestSlot[] = [];
@@ -98,11 +154,11 @@ function parsedContract(value: unknown): RouteManifestContract | undefined {
     }
     parsedSlots.push(parsed);
   }
-  const responseKind = Reflect.get(response, "kind");
-  if (typeof responseKind !== "string") {
+  const response = parsedResponse(Reflect.get(value, "response"));
+  if (response === undefined) {
     return undefined;
   }
-  return { slots: parsedSlots, response: responseKind };
+  return { slots: parsedSlots, response };
 }
 
 function parsedRoute(value: unknown): RouteManifestEntry | undefined {
@@ -151,8 +207,8 @@ export function parseRouteManifestBytes(bytes: Uint8Array): RouteManifest | unde
   } catch {
     return undefined;
   }
-  // 2 = 槽位路由表(RFC 0012 S2,#274),与生成器/运行时的版本门同步。
-  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 2) {
+  // 3 = 响应侧收口(RFC 0012 S3,#275),与生成器/运行时的版本门同步。
+  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 3) {
     return undefined;
   }
   const routes = Reflect.get(value, "routes");
@@ -286,7 +342,7 @@ export function renderRouteExplanation(
         lines.push(`  ${index + 1}. ${slotLine(slot)}`);
       });
     }
-    if (route.contract.response === "table") {
+    if (route.contract.response.kind === "table") {
       lines.push("  response · whitelisted by the return type contract");
     }
     if (Object.keys(route.meta).length > 0) {

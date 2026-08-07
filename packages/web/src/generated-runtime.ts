@@ -20,6 +20,7 @@ export type {
   GeneratedRoute,
   GeneratedRouteErrorHandler,
   GeneratedRouteMiddleware,
+  GeneratedRouteResponse,
   GeneratedRouteSlot,
   GeneratedRouteTable,
   GeneratedSlotKind,

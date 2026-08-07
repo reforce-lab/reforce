@@ -58,6 +58,7 @@ function routeOf(overrides: Partial<GeneratedRoute>): GeneratedRoute {
     middleware: [],
     meta: {},
     slots: [],
+    response: { kind: "passthrough" },
     ...overrides,
   };
 }
@@ -66,7 +67,7 @@ function tableOf(
   routes: readonly GeneratedRoute[],
   errorHandlers: GeneratedRouteTable["errorHandlers"] = [],
 ): GeneratedRouteTable {
-  return { schemaVersion: 2, routes, errorHandlers };
+  return { schemaVersion: 3, routes, errorHandlers };
 }
 
 function recordingMiddleware(log: string[], label: string): new () => RouteMiddleware {
@@ -525,7 +526,11 @@ describe("createWebApplication response encoding", () => {
 
   test("a plain return value goes through the route encoder before serialization", async () => {
     const route = preparedWith({
-      encode: (value) => ({ id: String(Reflect.get(Object(value), "id")) }),
+      response: {
+        kind: "table",
+        status: 200,
+        encode: (value) => ({ id: String(Reflect.get(Object(value), "id")) }),
+      },
     });
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
@@ -534,13 +539,23 @@ describe("createWebApplication response encoding", () => {
     expect(await response.json()).toEqual({ id: "42" });
   });
 
-  // S2 中间态:无编码器 = 无返回类型标注,handler 必须自己返回 Response;普通对象 500。
-  test("a plain return value without an encoder becomes a 500", async () => {
+  // passthrough 路由(直返 Response 的声明)返回普通对象:500 语义不变(#275)。
+  test("a plain return value on a passthrough route becomes a 500", async () => {
     const route = preparedWith({});
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(500);
+  });
+
+  // 降级路由(#275):free-form 原样序列化,不投影。
+  test("a free-form route serializes the raw value with its declared status", async () => {
+    const route = preparedWith({ response: { kind: "free-form", status: 200 } });
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "42", secret: "drop me" });
   });
 });
 
@@ -573,7 +588,9 @@ describe("createWebApplication response header merging", () => {
           handler,
           invoke: (instance, context) =>
             Reflect.apply(HeaderWriter.prototype[handler], instance, [context]),
-          ...(encode === undefined ? {} : { encode }),
+          ...(encode === undefined
+            ? {}
+            : { response: { kind: "table", status: 200, encode } as const }),
         }),
       ]),
       context: contextOf([[HeaderWriter, new HeaderWriter()]]),
