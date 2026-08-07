@@ -19,20 +19,16 @@ export const paginationQuery = z.object({
 
 export type PaginationQuery = z.infer<typeof paginationQuery>;
 
-// 列表响应的外壳：把「一页数据长什么样」这件事收在一处，各 feature 只提供 item 的形状。
-export function paginated<Item extends z.ZodType>(item: Item) {
-  return z.object({
-    total: z.number().int(),
-    page: z.number().int(),
-    size: z.number().int(),
-    items: z.array(item),
-  });
+// 列表响应的外壳：请求侧需要 schema 做校验，响应侧一个 interface 就是线上契约，
+// 各 feature 只提供 Item 的形状。
+export interface Paginated<Item> {
+  readonly total: number;
+  readonly page: number;
+  readonly size: number;
+  readonly items: readonly Item[];
 }
 
-export function paginate<Item>(
-  items: readonly Item[],
-  query: PaginationQuery,
-): { total: number; page: number; size: number; items: Item[] } {
+export function paginate<Item>(items: readonly Item[], query: PaginationQuery): Paginated<Item> {
   const start = (query.page - 1) * query.size;
   return {
     total: items.length,
