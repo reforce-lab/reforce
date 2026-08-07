@@ -1521,7 +1521,7 @@ describe.sequential("built Reforce CLI", () => {
         const build = await buildProject(project.projectRoot);
         expect(build.exitCode, commandFailure(build)).toBe(0);
 
-        // 台账归 reforce.context：它是容器的事实不是 web 的（RFC 0011 L6【已定】）。debug 档
+        // 台账归 reforce.core：它是容器的事实不是 web 的（RFC 0011 L6【已定】）。debug 档
         // 由 fixture 的 AppLogging.levels 调开——级别走显式 settings，env 通道已撤。
         started = await startApplication(project.projectRoot, "timings-start", false);
         const shutdown = await shutdownWithIpc(started);

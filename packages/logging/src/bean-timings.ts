@@ -67,7 +67,7 @@ export interface ContextStartupFacts {
   readonly contextMs: number;
 }
 
-// context 段（RFC 0011 L6【已定】：容器面的事实归 reforce.context）。此前它住在
+// context 段（RFC 0011 L6【已定】：容器面的事实归 reforce.core）。此前它住在
 // @reforce/web 的 webStartupSections 里，于是没有引擎的应用连「装了多少 bean、起了多久」
 // 都看不到——而那恰恰与 web 无关。
 //

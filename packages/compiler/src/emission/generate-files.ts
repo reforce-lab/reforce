@@ -701,7 +701,7 @@ function contextStartLines(logging: LoggingExports, beanCount: number): readonly
 
 // 框架侧观测的接线（RFC 0011 C2/C3/C6，L6【已定】的两命名空间划分）。
 //
-// 容器面的三件事——崩溃接管、关停日志、启动摘要与 bean 台账——都挂 reforce.context，装没装
+// 容器面的三件事——崩溃接管、关停日志、启动摘要与 bean 台账——都挂 reforce.core，装没装
 // 引擎都要有；web 面的请求日志与 500 兜底挂 reforce.web，装了引擎才有。此前只有后者，
 // 于是 job / CLI / worker 这类应用一条运行期框架输出都拿不到。
 function frameworkLoggingLines(): readonly string[] {
@@ -766,7 +766,7 @@ function startupSummaryLines(): readonly string[] {
   ];
 }
 
-// 容器面可观测 = 有 reforce.context bean + 有 LoggerFactory。两者由同一个条件产生
+// 容器面可观测 = 有 reforce.core bean + 有 LoggerFactory。两者由同一个条件产生
 // （logger-synthesis 的 `provided !== undefined` 分支），分开写只是为了让类型收窄成立。
 function isObserved(logging: LoggingExports): boolean {
   return logging.contextLogger !== undefined && logging.loggerFactory !== undefined;
