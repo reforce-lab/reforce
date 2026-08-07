@@ -747,7 +747,7 @@ function validRouteHandlerMethod(
     method.generator ||
     method.optional ||
     !method.implementation ||
-    method.parameterCount > 1
+    method.parameters.length > 1
   ) {
     report(
       diagnostics,
@@ -1266,7 +1266,7 @@ function collectMethodRoutes(
     basePath,
     claim,
     handlerName,
-    handlerArity: method.parameterCount === 0 ? 0 : 1,
+    handlerArity: method.parameters.length === 0 ? 0 : 1,
     middleware: flattenedChain(inputs.globalMiddleware, controllerUse, routeUse),
     meta: routeMetaOf(scan.source, method, inputs.markers, inputs.linker, diagnostics),
   });

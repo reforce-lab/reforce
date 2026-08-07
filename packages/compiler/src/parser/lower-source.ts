@@ -36,6 +36,7 @@ import {
   functionDescriptorOf,
   identifierTextOf,
   type LoweringContext,
+  methodParametersOf,
   objectLiteralPropertyOf,
   sourceKeywordSpan,
   spanOf,
@@ -315,7 +316,7 @@ function classMethodOf(
     generator: value.generator,
     optional: method.optional ?? false,
     implementation: value.body?.type === "BlockStatement",
-    parameterCount: value.params.length,
+    parameters: methodParametersOf(value, context, methodTypeParameters),
     ...(returnType === undefined
       ? {}
       : { returnType: typeNodeOf(returnType, context, methodTypeParameters) }),
@@ -1010,13 +1011,21 @@ function lowerUnsupported(
   context: LoweringContext,
 ): void {
   const name = declarationNameOf(node);
+  const generic = typeParameterNamesOf(node).size > 0;
+  // 仅非泛型 type-alias 保留右侧（RFC 0012 S2，#274）：schema 追溯要跟"type X = z.infer<typeof s>"
+  // 的别名右侧找 typeof；泛型别名追溯不到，按类型生成解码器是合法降级。
+  const rhs =
+    node.type === "TSTypeAliasDeclaration" && !generic
+      ? typeNodeOf(node.typeAnnotation, context)
+      : undefined;
   collector.unsupportedDeclarations.push({
     kind: "unsupported-named-declaration",
     declarationKind,
     topLevel,
     name,
     export: declarationExportOf(node.id, mode, context),
-    generic: typeParameterNamesOf(node).size > 0,
+    generic,
+    ...(rhs === undefined ? {} : { rhs }),
     span: spanOf(node, context),
   });
 }

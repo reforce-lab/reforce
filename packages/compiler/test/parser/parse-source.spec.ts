@@ -143,10 +143,16 @@ test("lowers standard class decorators and ordinary constructor parameters", () 
     })),
   ).toEqual([
     { type: "reference", decorators: 0, hasInitializer: false },
-    { type: "unsupported", decorators: 0, hasInitializer: true },
+    // number 关键字自 #274 起 lower 成 primitive；DI 链路上它与 unsupported 走同一
+    // UNSUPPORTED_INJECTION_TYPE 分支（resolveType 只认 reference），行为不变。
+    { type: "primitive", decorators: 0, hasInitializer: true },
   ]);
   expect(
-    declaration?.methods.map((method) => [method.name.kind, method.async, method.parameterCount]),
+    declaration?.methods.map((method) => [
+      method.name.kind,
+      method.async,
+      method.parameters.length,
+    ]),
   ).toEqual([["identifier", true, 0]]);
 });
 
@@ -962,4 +968,151 @@ test("keeps a block comment out of the suppression list", () => {
   );
 
   expect(unit.suppressions).toEqual([]);
+});
+
+// —— 方法参数与槽位类型形态（RFC 0012 S2，#274） ——
+
+test("lowers method parameters with names, name spans and type annotations", () => {
+  const sourceText = [
+    "export class Controller {",
+    "  create(body: Body<CreateUser>, id?: string, page = 1, ...rest: string[]) {}",
+    "}",
+  ].join("\n");
+  const unit = parseFile(sourceText);
+  const method = unit.classes[0]?.methods[0];
+
+  expect(
+    method?.parameters.map((parameter) => ({
+      index: parameter.index,
+      name: parameter.name,
+      optional: parameter.optional,
+      rest: parameter.rest,
+      hasInitializer: parameter.hasInitializer,
+      type: parameter.typeAnnotation?.kind,
+    })),
+  ).toEqual([
+    {
+      index: 0,
+      name: "body",
+      optional: false,
+      rest: false,
+      hasInitializer: false,
+      type: "reference",
+    },
+    { index: 1, name: "id", optional: true, rest: false, hasInitializer: false, type: "primitive" },
+    { index: 2, name: "page", optional: false, rest: false, hasInitializer: true, type: undefined },
+    { index: 3, name: "rest", optional: false, rest: true, hasInitializer: false, type: "array" },
+  ]);
+  const nameSpan = method?.parameters[0]?.nameSpan;
+  expect(
+    nameSpan === undefined
+      ? undefined
+      : sourceText.slice(nameSpan.start.offset, nameSpan.end.offset),
+  ).toBe("body");
+});
+
+test("lowers a destructured method parameter without a name", () => {
+  const unit = parseFile("export class C { handle({ page }: Options) {} }");
+  const parameter = unit.classes[0]?.methods[0]?.parameters[0];
+
+  expect(parameter?.name).toBeUndefined();
+  expect(parameter?.nameSpan).toBeUndefined();
+  expect(parameter?.typeAnnotation?.kind).toBe("reference");
+});
+
+test("lowers string-literal, union and primitive slot type arguments", () => {
+  const unit = parseFile(
+    [
+      "export class C {",
+      '  find(id: Param<"id">, tenant: Header<"x-tenant" | undefined>, bad: Query<string>, flag: Query<"on" | "off">) {}',
+      "}",
+    ].join("\n"),
+  );
+  const parameters = unit.classes[0]?.methods[0]?.parameters ?? [];
+  const argumentOf = (index: number) => {
+    const annotation = parameters[index]?.typeAnnotation;
+    return annotation?.kind === "reference" ? annotation.typeArguments[0] : undefined;
+  };
+
+  expect(argumentOf(0)).toMatchObject({ kind: "string-literal", value: "id" });
+  expect(argumentOf(1)).toMatchObject({
+    kind: "union",
+    members: [
+      { kind: "string-literal", value: "x-tenant" },
+      { kind: "primitive", name: "undefined" },
+    ],
+  });
+  expect(argumentOf(2)).toMatchObject({ kind: "primitive", name: "string" });
+  expect(argumentOf(3)).toMatchObject({
+    kind: "union",
+    members: [
+      { kind: "string-literal", value: "on" },
+      { kind: "string-literal", value: "off" },
+    ],
+  });
+});
+
+test("lowers number, bigint and boolean keyword annotations as primitives", () => {
+  const unit = parseFile("export class C { m(a: number, b: bigint, c: boolean) {} }");
+  const kinds = (unit.classes[0]?.methods[0]?.parameters ?? []).map(
+    (parameter) => parameter.typeAnnotation,
+  );
+
+  expect(kinds).toMatchObject([
+    { kind: "primitive", name: "number" },
+    { kind: "primitive", name: "bigint" },
+    { kind: "primitive", name: "boolean" },
+  ]);
+});
+
+test("lowers typeof references as type-query nodes", () => {
+  const unit = parseFile(
+    [
+      "export class C {",
+      "  m(a: Body<typeof schema>, b: Body<z.infer<typeof shapes.user>>) {}",
+      "}",
+    ].join("\n"),
+  );
+  const parameters = unit.classes[0]?.methods[0]?.parameters ?? [];
+  const first = parameters[0]?.typeAnnotation;
+  const second = parameters[1]?.typeAnnotation;
+
+  expect(first?.kind === "reference" ? first.typeArguments[0] : undefined).toMatchObject({
+    kind: "type-query",
+    name: { kind: "identifier", name: "schema" },
+  });
+  const wrapped = second?.kind === "reference" ? second.typeArguments[0] : undefined;
+  expect(wrapped?.kind === "reference" ? wrapped.typeArguments[0] : undefined).toMatchObject({
+    kind: "type-query",
+    name: { kind: "qualified", right: "user" },
+  });
+});
+
+test("lowers a typeof import() query as unsupported", () => {
+  const unit = parseFile('export class C { m(a: Body<typeof import("zod")>) {} }');
+  const annotation = unit.classes[0]?.methods[0]?.parameters[0]?.typeAnnotation;
+
+  expect(annotation?.kind === "reference" ? annotation.typeArguments[0]?.kind : undefined).toBe(
+    "unsupported",
+  );
+});
+
+test("keeps the right-hand side of a non-generic type alias", () => {
+  const unit = parseFile(
+    [
+      "type CreateUser = z.infer<typeof userSchema>;",
+      "type Wrapped<T> = z.infer<T>;",
+      "enum Color { Red }",
+    ].join("\n"),
+  );
+  const byName = new Map(
+    unit.unsupportedDeclarations.map((declaration) => [declaration.name, declaration]),
+  );
+
+  expect(byName.get("CreateUser")?.rhs).toMatchObject({
+    kind: "reference",
+    name: { kind: "qualified", right: "infer" },
+  });
+  expect(byName.get("Wrapped")?.rhs).toBeUndefined();
+  expect(byName.get("Color")?.rhs).toBeUndefined();
 });
