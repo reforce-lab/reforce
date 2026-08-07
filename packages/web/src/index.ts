@@ -2,6 +2,7 @@
 // "./adapter" subpath 暴露（#187）：引擎适配器作者不依赖应用作者入口。RequestSeeder 与其签名
 // 涉及的 RouteMatch 是应用作者面，保留在根入口。
 export type { RequestSeeder, RouteMatch } from "@/adapter";
+export { type WebErrorCode, webErrorCodes } from "@/error-codes";
 export {
   InvalidRouteTableError,
   MiddlewareReenteredError,
@@ -9,7 +10,6 @@ export {
   type RequestInputSource,
   RequestValidationError,
   ResponseSerializationError,
-  type WebErrorCode,
 } from "@/errors";
 export type { RequestContext } from "@/execution/request-context";
 export { type WebRequestFacts, WebRequestFields } from "@/execution/request-fields";

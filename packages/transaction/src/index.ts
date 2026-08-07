@@ -1,3 +1,4 @@
+export { type TransactionErrorCode, transactionErrorCodes } from "@/error-codes";
 export {
   TransactionIsolationOnJoinError,
   TransactionIsolationUnsupportedError,

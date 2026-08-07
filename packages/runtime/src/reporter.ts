@@ -2,6 +2,7 @@ import type { Writable } from "node:stream";
 import { isReforceError } from "@reforce/core";
 import { isObject } from "radashi";
 import { renderDiagnostic } from "@/diagnostic-render";
+import type { CliFailureCode } from "@/error-codes";
 import {
   type RenderAudience,
   type RenderMode,
@@ -27,20 +28,6 @@ export type CliCommandPhase =
   // 崩溃是独立阶段：它既不是 bootstrap 也不是 shutdown，混进任一个都会让按 phase 过滤的
   // 消费者读错现场（RFC 0011 C2，#250）。
   | "crash";
-
-export type CliFailureCode =
-  | "CLI_USAGE_ERROR"
-  | "PACKAGE_EXPORTS_INVALID"
-  | "PROJECT_BUSY"
-  | "GENERATED_TRANSACTION_FAILED"
-  | "DIST_TRANSACTION_FAILED"
-  | "BUILD_FAILED"
-  | "ARTIFACT_INVALID"
-  | "BOOTSTRAP_FAILED"
-  | "HMR_FATAL"
-  | "CHILD_FAILED"
-  | "SHUTDOWN_FAILED"
-  | "UNCAUGHT_EXCEPTION";
 
 interface CliStatusEvent {
   readonly kind: "status";

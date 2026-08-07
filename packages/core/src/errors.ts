@@ -1,23 +1,5 @@
 import type { ContextOperation, ContextState } from "@/public-types";
 
-// 容器自己的错误码闭集。它不是"全框架的码表"——框架包各自持有自己的码（@reforce/transaction
-// 的七个 TRANSACTION_*、@reforce/web 的四个、@reforce/cli 的四个即是），因此 ReforceError 的
-// 类型参数上界只能是 string：闭集留在这里做本包的自证，跨包的码由各自的类字面量声明，CLI 侧
-// 本来就按 string 消费（ADR 0009）。
-export type CoreErrorCode =
-  | "EARLY_BEAN_ACCESS"
-  | "BEAN_CREATION_FAILED"
-  | "BEAN_LIFECYCLE_FAILED"
-  | "BEAN_DISPOSAL_FAILED"
-  | "APPLICATION_START_FAILED"
-  | "APPLICATION_CLEANUP_FAILED"
-  | "CONFIG_BINDING_FAILED"
-  | "REQUEST_CONTEXT_MISSING"
-  | "UNREGISTERED_BEAN_TARGET"
-  | "APPLICATION_CONTEXT_STATE"
-  | "INVALID_GENERATED_DEFINITION"
-  | "INTERCEPTOR_REENTERED";
-
 export interface ReforceErrorOptions {
   readonly cause?: unknown;
   readonly errors?: readonly unknown[];

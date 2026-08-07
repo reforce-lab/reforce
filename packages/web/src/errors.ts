@@ -1,12 +1,7 @@
 import { ReforceError } from "@reforce/core";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { WebErrorCode } from "@/error-codes";
 import type { HttpMethod } from "@/routing/vocabulary";
-
-export type WebErrorCode =
-  | "INVALID_ROUTE_TABLE"
-  | "MIDDLEWARE_REENTERED"
-  | "REQUEST_VALIDATION_FAILED"
-  | "RESPONSE_SERIALIZATION_FAILED";
 
 // web 这一棵子树（ADR 0013 决议 1，#280）。此前它是独立的 `extends Error`，字段只有 code 与
 // cause——reporter 的识别只认 @reforce/core 的基类，web 错误的码拿不到、help 通道对它们完全
