@@ -136,7 +136,7 @@ export interface GeneratedConfigBinding {
 }
 
 export interface GeneratedApplicationDefinition {
-  readonly schemaVersion: 4;
+  readonly schemaVersion: 6;
   readonly configs: readonly GeneratedConfigRegistration[];
   readonly configBinding?: GeneratedConfigBinding;
   readonly registrations: readonly GeneratedBeanRegistration[];

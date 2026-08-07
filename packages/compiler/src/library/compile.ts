@@ -10,7 +10,7 @@ import type {
   CompilerWatchInputs,
   LibraryGeneratedFile,
 } from "@/api";
-import { diagnostic, orderDiagnostics } from "@/diagnostics";
+import { diagnostic, hasErrorDiagnostic, orderDiagnostics } from "@/diagnostics";
 import { createLibrarySurface } from "@/library/dist-surface";
 import { buildLibraryMeta } from "@/library/meta";
 import { readLibraryPackage } from "@/library/package-exports";
@@ -22,6 +22,7 @@ import type { ProjectState } from "@/project/project-config";
 import { snapshotStillMatches } from "@/project/project-snapshot";
 import { type ParsedSource, parseProjectSources } from "@/project/source-files";
 import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
+import { applySuppressions } from "@/suppressions";
 
 // 库模式编译（ADR 0004 决策 1/4，#120/#147）：复用流水线中段——项目解析、源解析、链接与
 // provider 采集与应用编译完全同套；不做 resolveProviders / 执行计划 / beans.ts 生成（库的开放
@@ -362,7 +363,8 @@ export async function compileLibrary(
     diagnostics,
   });
   let files: readonly LibraryGeneratedFile[] = [];
-  if (diagnostics.length === 0 && linker.diagnostics.length === 0) {
+  // 只有 error 才拦住 meta 发射：warning 说明分析结果完整，只是有话要说（RFC 0011 OM2，#242）。
+  if (!hasErrorDiagnostic(diagnostics) && !hasErrorDiagnostic(linker.diagnostics)) {
     files = await buildLibraryMeta({
       packageName: manifest.name,
       projectRoot,
@@ -375,13 +377,19 @@ export async function compileLibrary(
     mergeWatchInputs(parsed.watchInputs, linker.collectWatchInputs()),
     mergeWatchInputs(createWatchInputs(surface.collectWatchDependencies()), packageJsonWatch),
   );
-  const all = [...diagnostics, ...linker.diagnostics];
-  if (all.length > 0) {
-    return failure(all, watchInputs);
+  const reported = applySuppressions(
+    [...diagnostics, ...linker.diagnostics],
+    parsed.sources.map((source) => ({
+      fileId: source.fileId,
+      suppressions: source.unit.suppressions,
+    })),
+  ).diagnostics;
+  if (hasErrorDiagnostic(reported)) {
+    return failure(reported, watchInputs);
   }
   return {
     status: "success",
-    diagnostics: [],
+    diagnostics: orderDiagnostics(reported),
     packageName: manifest.name,
     files,
     watchInputs,

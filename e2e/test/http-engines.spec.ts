@@ -38,8 +38,8 @@ interface EngineCase {
   readonly packageName: string;
   /** settings 契约的导出名，web-config.ts 用它闭合。 */
   readonly settingsType: string;
-  /** 监听日志的前缀，用来等 HTTP 就绪。 */
-  readonly logPrefix: string;
+  /** 引擎适配器的 name，启动摘要拿它当段落标签；用来等 HTTP 就绪。 */
+  readonly engineName: string;
 }
 
 const engines: readonly EngineCase[] = [
@@ -47,19 +47,19 @@ const engines: readonly EngineCase[] = [
     name: "web-node",
     packageName: "@reforce/web-node",
     settingsType: "WebNodeServeSettings",
-    logPrefix: "reforce.web-node",
+    engineName: "node",
   },
   {
     name: "web-hono",
     packageName: "@reforce/web-hono",
     settingsType: "WebHonoServeSettings",
-    logPrefix: "reforce.web-hono",
+    engineName: "hono",
   },
   {
     name: "web-fastify",
     packageName: "@reforce/web-fastify",
     settingsType: "WebFastifyServeSettings",
-    logPrefix: "reforce.web-fastify",
+    engineName: "fastify",
   },
 ];
 
@@ -128,10 +128,9 @@ async function startServer(projectRoot: string, engine: EngineCase): Promise<Sta
   const completion = new Promise<number | null>((resolve) => {
     child.on("exit", (exitCode) => resolve(exitCode));
   });
-  // 就绪信号 = 引擎的监听日志（ready 文件写在 onContextStart，早于 listen，不可用作 HTTP 就绪）
-  const pattern = new RegExp(
-    `\\[${engine.logPrefix.replace(".", "\\.")}\\] listening on (http://[^\\s]+)/`,
-  );
+  // 就绪信号 = 启动摘要里那条监听行（ready 文件写在 onContextStart，早于 listen，不可用作
+  // HTTP 就绪）。摘要按引擎名分段，所以这里按段落标签定位而不是此前的 `[reforce.web-*]` 前缀。
+  const pattern = new RegExp(`"${engine.engineName}"[^\\n]*listening on (http://[^"\\s]+)/`);
   const deadline = Date.now() + 30_000;
   for (;;) {
     const match = stderr.match(pattern);
@@ -224,6 +223,27 @@ describe.sequential("the same application behaves identically across engines", (
 
         // 优雅关闭：排空后正常退出
         expect(await shutdown(server)).toBe(0);
+
+        // 未命中日志三引擎一致（RFC 0011 C7，#250）：404 从不进入引擎无关执行层，所以
+        // 「谁来记、记成什么样」由核心统一决定，三个引擎只负责调它。path 是原始请求目标
+        // 去掉 query，级别是 info（未命中不是应用出错，且级别完全由客户端说了算）。
+        const misses = server
+          .output()
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.message === "route not found");
+        expect(misses).toContainEqual(
+          expect.objectContaining({ level: "info", method: "GET", path: "/nowhere", status: 404 }),
+        );
+        expect(misses).toContainEqual(
+          expect.objectContaining({ level: "info", method: "DELETE", path: "/health" }),
+        );
       },
       commandTimeout,
     );

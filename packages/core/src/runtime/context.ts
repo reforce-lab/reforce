@@ -17,6 +17,7 @@ import type {
   BeanClass,
   BeanDefinition,
   ContextOperation,
+  ContextStartReport,
   RequestScopeSeed,
 } from "@/public-types";
 import { BeanResolver } from "@/runtime/bean-resolver";
@@ -35,7 +36,7 @@ export class RuntimeApplicationContext implements ApplicationContext {
     this.lifecycle = new LifecycleRunner(this.state);
   }
 
-  start(): Promise<void> {
+  start(): Promise<ContextStartReport> {
     if (this.state.contextState !== "created") {
       return Promise.reject(this.stateError("start"));
     }
@@ -123,7 +124,7 @@ export class RuntimeApplicationContext implements ApplicationContext {
     return this.state.closePromise;
   }
 
-  private async runStart(): Promise<void> {
+  private async runStart(): Promise<ContextStartReport> {
     try {
       await this.bindConfigs();
       for (const id of this.state.definition.plans.constructionOrder) {
@@ -133,9 +134,12 @@ export class RuntimeApplicationContext implements ApplicationContext {
       if (this.state.closeRequested) {
         this.state.contextState = "closing";
         this.beginCleanup();
-        return;
+        // 提前收场这条也得给报告：调用方拿到的是同一个 promise，两条路的返回类型必须一致，
+        // 否则 undefined 会漏进启动摘要。
+        return { beanTimings: this.state.timings.snapshot() };
       }
       this.state.contextState = "running";
+      return { beanTimings: this.state.timings.snapshot() };
     } catch (error) {
       const startupError = this.resolver.normalizeStartupError(error);
       this.state.contextState = "failed";

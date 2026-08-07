@@ -136,7 +136,10 @@ export function spawnProductionChild(input: {
   readonly leaseToken: string;
 }): ProductionChild {
   return new NodeProductionChild(
-    spawn(input.executable, [input.entryPath], {
+    // --enable-source-maps 是栈帧重定位的开关（RFC 0011 D6 C2，#242）：产物是打包后的单文件，
+    // 没有它每一帧都指向 main.mjs 的某一行，分不出应用帧与框架帧。Node 的重写住在
+    // Error.prepareStackTrace 的默认实现里，所以运行时侧不得接管那个钩子。
+    spawn(input.executable, ["--enable-source-maps", input.entryPath], {
       cwd: input.projectRoot,
       env: { ...process.env, REFORCE_LEASE_TOKEN: input.leaseToken },
       shell: false,

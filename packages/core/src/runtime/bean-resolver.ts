@@ -59,6 +59,10 @@ export class BeanResolver {
     if (!registration) {
       throw new InvalidGeneratedDefinitionError(`No registration exists for Bean ID "${id}".`);
     }
+    // 计时点在记忆化早返回**之后**：早返回的那次不是一次构造，记进去会把同一条 bean 记两遍
+    // （RFC 0011 C6，#250）。请求作用域的 constructRequest 刻意不记——那是每请求都要付的
+    // 分配，而请求耗时已经由请求日志的 handlerMs 覆盖。
+    const startedAt = this.state.timings.enter();
     this.state.beginConstruction(id);
     try {
       const instance =
@@ -87,6 +91,7 @@ export class BeanResolver {
         cause: error,
       });
     } finally {
+      this.state.timings.exit(id, "construct", startedAt);
       this.state.finishConstructionAttempt();
     }
   }

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@reforce/core": "workspace:*",
+    "@reforce/logging": "workspace:*",
     "@standard-schema/spec": "^1.1.0",
     "@swc/helpers": "catalog:",
     "dotenv": "^17.4.2"

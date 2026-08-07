@@ -6,8 +6,9 @@ import {
   type GeneratedResolver,
   type GeneratedSourceReference,
 } from "@reforce/core/generated-runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
+import type { RequestLogger } from "@/execution/web-application";
 import type { GeneratedRouteTable } from "@/generated-runtime";
 import { createWebApplication, defineRouteMarker, type RequestContext } from "@/index";
 
@@ -60,7 +61,7 @@ class TeapotErrorHandler {
 
 function applicationDefinition(): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 4,
+    schemaVersion: 6,
     configs: [],
     registrations: [
       classBean({
@@ -205,11 +206,17 @@ class FakeAdapter implements WebEngineAdapter {
   }
 }
 
-async function startedApplication() {
+async function startedApplication(
+  logger?: RequestLogger,
+  // 去掉错误处理器就能走到框架默认兜底：/explode 平时被 TeapotErrorHandler 接成 418，
+  // 而 5xx 的分级与 errorId 要的是没人接管的那条路。
+  options: { readonly withoutErrorHandlers?: boolean } = {},
+) {
   const context = createApplicationContext(applicationDefinition());
   await context.start();
+  const table = routeTable();
   const application = createWebApplication({
-    table: routeTable(),
+    table: options.withoutErrorHandlers === true ? { ...table, errorHandlers: [] } : table,
     context,
     requestSeeds: (request) => [
       {
@@ -217,10 +224,11 @@ async function startedApplication() {
         instance: new RequestHolder(request.headers.get("x-request-id") ?? "anonymous"),
       },
     ],
+    ...(logger === undefined ? {} : { logger }),
   });
   const adapter = new FakeAdapter();
   await adapter.start(application);
-  return { context, adapter };
+  return { context, adapter, application };
 }
 
 describe("web application over the real context runtime", () => {
@@ -287,5 +295,246 @@ describe("web application over the real context runtime", () => {
     expect(response.status).toBe(418);
     expect(await response.text()).toBe("teapot");
     await context.close();
+  });
+});
+
+// —— 请求日志由核心统一发（RFC 0011 L6，#250）——
+// 由核心发而不是各引擎各写一遍：三个引擎写出来的字段必然漂移，而请求日志恰恰是最需要跨引擎
+// 可比的一条。
+
+interface CapturedRequestLog {
+  readonly level: "info" | "warn" | "error";
+  readonly fields: Readonly<Record<string, unknown>>;
+  readonly message: string;
+}
+
+function capturingLogger(options: { readonly enabled?: boolean } = {}): {
+  readonly logger: RequestLogger;
+  readonly captured: CapturedRequestLog[];
+  readonly requests: () => CapturedRequestLog[];
+  readonly enabledChecks: () => number;
+} {
+  const captured: CapturedRequestLog[] = [];
+  let enabledChecks = 0;
+  return {
+    captured,
+    // 500 那条路上不止一条记录：error-dispatch 先发带 errorId 的现场，请求日志随后。
+    // 断言请求日志时按 message 挑，否则用例会悄悄验到另一条记录上。
+    requests: () => captured.filter((record) => record.message === "request"),
+    enabledChecks: () => enabledChecks,
+    logger: {
+      isEnabled: () => {
+        enabledChecks += 1;
+        return options.enabled ?? true;
+      },
+      info: (fields, message) => {
+        captured.push({ level: "info", fields: fields ?? {}, message });
+      },
+      warn: (fields, message) => {
+        captured.push({ level: "warn", fields: fields ?? {}, message });
+      },
+      error: (fields, message) => {
+        captured.push({ level: "error", fields: fields ?? {}, message });
+      },
+    },
+  };
+}
+
+// C7（RFC 0011，#250）：未命中从不进入引擎无关执行层——引擎在自己的路由层就答复了——所以
+// 核心交出一个函数，让三个引擎调同一份实现，而不是各自发明一份字段。
+describe("route miss logging", () => {
+  test("hands the engines a miss reporter only when a logging binding is installed", async () => {
+    const withLogger = await startedApplication(capturingLogger().logger);
+    const withoutLogger = await startedApplication();
+
+    expect(withLogger.application.logNotFound).toBeTypeOf("function");
+    expect(withoutLogger.application.logNotFound).toBeUndefined();
+  });
+
+  test("records the miss at info carrying the method, the raw path and 404", async () => {
+    const capture = capturingLogger();
+    const { application } = await startedApplication(capture.logger);
+
+    application.logNotFound?.({ method: "GET", path: "/wp-login.php" });
+
+    expect(capture.captured).toEqual([
+      {
+        level: "info",
+        fields: { method: "GET", path: "/wp-login.php", status: 404 },
+        message: "route not found",
+      },
+    ]);
+  });
+
+  // 与请求日志分开命名：两条记录的 path 基数不同——请求日志的 path 是编译期路由模式
+  // （有界，可安全聚合），这条是客户端完全控制的原始路径（无界）。
+  test("keeps the miss record out of the request stream", async () => {
+    const capture = capturingLogger();
+    const { application } = await startedApplication(capture.logger);
+
+    application.logNotFound?.({ method: "GET", path: "/nowhere" });
+
+    expect(capture.requests()).toEqual([]);
+  });
+
+  // 日志系统自己坏了每个**应用实例**只喊一次：模块级单例会让 dev 重启与 testing 的多
+  // context 并存时，第二个实例的唯一一声被上一个实例吞掉。
+  test("reports a broken miss logger once per application instance", async () => {
+    const throwing: RequestLogger = {
+      isEnabled: () => true,
+      info: () => {
+        throw new Error("miss logger exploded");
+      },
+      warn: () => {},
+      error: () => {},
+    };
+    const first = await startedApplication(throwing);
+    const second = await startedApplication(throwing);
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      first.application.logNotFound?.({ method: "GET", path: "/a" });
+      first.application.logNotFound?.({ method: "GET", path: "/b" });
+      second.application.logNotFound?.({ method: "GET", path: "/c" });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(writes.filter((line) => line.includes("404 logger failed"))).toHaveLength(2);
+  });
+
+  // 不变量 8：判定在字段构造之前。这条路径由客户端触发，扫描器一秒几百下。
+  test("builds no fields when the level is disabled", async () => {
+    const capture = capturingLogger({ enabled: false });
+    const { application } = await startedApplication(capture.logger);
+
+    application.logNotFound?.({ method: "GET", path: "/nowhere" });
+
+    expect(capture.captured).toEqual([]);
+    expect(capture.enabledChecks()).toBe(1);
+  });
+});
+
+describe("request logging", () => {
+  test("writes one record per request carrying method, path and status", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch(
+      "GET",
+      "/greet",
+      new Request("https://reforce.test/greet", { headers: { "x-request-id": "r-1" } }),
+      {},
+    );
+
+    expect(capture.captured).toHaveLength(1);
+    expect(capture.captured[0]?.fields).toMatchObject({
+      method: "GET",
+      path: "/greet",
+      status: 200,
+    });
+  });
+
+  // 诚实边界：这一刻拿到的是「Response 对象已产生」，不是「字节已送出」。字段名如实叫
+  // handlerMs，将来在引擎 finish 上量到真实 duration 时不必改名。
+  test("names the timing field after what it actually measures", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    const fields = capture.captured[0]?.fields ?? {};
+    expect("handlerMs" in fields).toBe(true);
+    expect("durationMs" in fields).toBe(false);
+    expect(typeof fields.handlerMs).toBe("number");
+  });
+
+  // 两条出口都要量到：错误经 dispatchError 变成 Response 之后，那个请求同样结束了。
+  test("logs a request that ended through the error dispatcher", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    expect(capture.captured).toHaveLength(1);
+    expect(capture.captured[0]?.fields).toMatchObject({ path: "/explode", status: 418 });
+  });
+
+  // 不变量 8：字段对象在调用之前就构造好了，判定必须由核心做，不能指望 logger 内部短路。
+  test("builds no fields at all when the level is disabled", async () => {
+    const capture = capturingLogger({ enabled: false });
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    expect(capture.captured).toEqual([]);
+    expect(capture.enabledChecks()).toBe(1);
+  });
+
+  // B1（#250）：此前 5xx 与 200 一律 info——按级别过滤的告警规则对服务端错误完全瞎。
+  // 对位 pino-http 的 customLogLevel 缺省行为。
+  test("logs a server error at error level", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger, { withoutErrorHandlers: true });
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    expect(capture.requests()[0]).toMatchObject({ level: "error", fields: { status: 500 } });
+  });
+
+  test("logs a client error at warn level", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    expect(capture.requests()[0]).toMatchObject({ level: "warn", fields: { status: 418 } });
+  });
+
+  test("logs a successful request at info level", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    expect(capture.requests()[0]).toMatchObject({ level: "info", fields: { status: 200 } });
+  });
+
+  // B2（#250）：handler 抛的错被 dispatchError 换成响应之后，请求日志此前只看得到 status，
+  // 错误对象就此丢失——「500 了」和「为什么 500」不在同一条记录上。
+  test("carries the handler's error into the request record", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger, { withoutErrorHandlers: true });
+
+    await adapter.dispatch("GET", "/explode", new Request("https://reforce.test/explode"), {});
+
+    const err = capture.requests()[0]?.fields.err;
+    expect(err).toBeInstanceOf(Error);
+    expect(err instanceof Error ? err.message : undefined).toBe("handler exploded");
+  });
+
+  test("writes no err field for a request that did not fail", async () => {
+    const capture = capturingLogger();
+    const { adapter } = await startedApplication(capture.logger);
+
+    await adapter.dispatch("GET", "/greet", new Request("https://reforce.test/greet"), {});
+
+    expect("err" in (capture.requests()[0]?.fields ?? {})).toBe(false);
+  });
+
+  test("stays silent when no logger is wired", async () => {
+    const { adapter } = await startedApplication();
+
+    const response = await adapter.dispatch(
+      "GET",
+      "/greet",
+      new Request("https://reforce.test/greet"),
+      {},
+    );
+
+    expect(response.status).toBe(200);
   });
 });

@@ -56,10 +56,16 @@ export class LifecycleRunner {
         `Start action "${id}" has no constructed class hook.`,
       );
     }
+    // 启动期真正会慢的是这一段（RFC 0011 C6，#250）：单例构造被 bean-resolver 强制同步返回，
+    // 构造函数根本 await 不了任何 I/O，连接池握手与 schema 预热全在 onContextStart 里。
+    // 关闭序不记：那不是启动摘要要回答的问题。
+    const startedAt = this.state.timings.enter();
     try {
       await invokeGeneratedInstanceAction(registration.hooks.start, record.instance);
     } catch (cause) {
       throw new BeanLifecycleError({ beanId: id, phase: "start", cause });
+    } finally {
+      this.state.timings.exit(id, "start", startedAt);
     }
   }
 

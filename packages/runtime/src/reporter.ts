@@ -1,6 +1,15 @@
 import type { Writable } from "node:stream";
 import { ReforceRuntimeError } from "@reforce/core";
 import { isObject } from "radashi";
+import { renderDiagnostic } from "@/diagnostic-render";
+import {
+  type RenderAudience,
+  type RenderMode,
+  resolveRenderMode,
+  resolveVerbose,
+} from "@/render-mode";
+import { foldStackFrames, stackOf } from "@/stack-frames";
+import { isInteractive, style } from "@/terminal";
 
 export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain";
 
@@ -14,7 +23,10 @@ export type CliCommandPhase =
   | "bootstrap"
   | "hmr"
   | "child"
-  | "shutdown";
+  | "shutdown"
+  // 崩溃是独立阶段：它既不是 bootstrap 也不是 shutdown，混进任一个都会让按 phase 过滤的
+  // 消费者读错现场（RFC 0011 C2，#250）。
+  | "crash";
 
 export type CliFailureCode =
   | "CLI_USAGE_ERROR"
@@ -27,25 +39,52 @@ export type CliFailureCode =
   | "BOOTSTRAP_FAILED"
   | "HMR_FATAL"
   | "CHILD_FAILED"
-  | "SHUTDOWN_FAILED";
+  | "SHUTDOWN_FAILED"
+  | "UNCAUGHT_EXCEPTION";
 
 interface CliStatusEvent {
   readonly kind: "status";
   readonly command: CliCommandName;
   readonly phase: CliCommandPhase;
   readonly message: string;
+  /**
+   * 「这条会被下一条盖掉」（RFC 0011 D2：dev 的 HMR 重载行原地重写，不滚屏）。
+   *
+   * 只是**渲染提示**，不是新事件类型：human + TTY 下原地重写，其余模式照常一行一条——
+   * 按行读 stderr 的脚本与采集系统一条都不能少（不变量 3：三种模式同一份事件）。
+   */
+  readonly transient?: boolean;
 }
 
-// 诊断 wire shape 由 reporter 侧定义（ADR 0009，#191）：渲染只消费 code/message/sourceSpan，
-// reporter 因此不依赖 @reforce/compiler——这是把 reporter 随运行时拆出 cli 的前置。
-// CompilerDiagnostic 结构性满足本接口，对齐锚点见 compiler-types.ts。
+// 诊断 wire shape 由 reporter 侧定义（ADR 0009，#191）：渲染只消费本接口列出的字段，
+// reporter 因此不依赖上游分析器——这是把 reporter 随运行时拆出 cli 的前置。
+// 上游诊断结构性满足本接口，对齐锚点见 cli 的 compiler-types.ts。
+export interface ReportedSpan {
+  readonly fileId: string;
+  readonly start: { readonly line: number; readonly character: number };
+  // end 是 human 模式画 caret 下划线的唯一来源（RFC 0011 D3，#242）：没有它只能在起点打一个
+  // `^`，标不出「问题横跨哪一段」。
+  readonly end: { readonly line: number; readonly character: number };
+}
+
 export interface ReportedDiagnostic {
   readonly code: string;
+  readonly severity: "error" | "warning";
   readonly message: string;
-  readonly sourceSpan?: {
-    readonly fileId: string;
-    readonly start: { readonly line: number; readonly character: number };
-  };
+  readonly sourceSpan?: ReportedSpan;
+  readonly related: readonly {
+    readonly message: string;
+    readonly sourceSpan?: ReportedSpan;
+  }[];
+  readonly help?: string;
+  // 机器可读的修复建议（RFC 0011 D4，#242）：json 原样输出，human 渲染成一行 note。
+  // 只渲染，不应用——改写用户源码是另一个主题，本波不做 `reforce fix`。
+  readonly suggestions?: readonly {
+    readonly message: string;
+    readonly span: ReportedSpan;
+    readonly replacement: string;
+    readonly applicability: "machine-applicable" | "maybe-incorrect" | "has-placeholders";
+  }[];
 }
 
 interface CliDiagnosticEvent {
@@ -53,6 +92,9 @@ interface CliDiagnosticEvent {
   readonly command: "dev" | "build" | "lib";
   readonly phase: "project" | "compiler";
   readonly diagnostic: ReportedDiagnostic;
+  // 该诊断码有长文时由 CLI 填入完整命令串（`reforce explain <CODE>`）。渲染器只判断有没有，
+  // 不认识 CLI 的长文表——反过来会让 runtime 依赖 cli 的语汇（RFC 0011 D8，#242）。
+  readonly explainCommand?: string;
 }
 
 interface CliSuccessEvent {
@@ -84,11 +126,13 @@ export interface Reporter {
   flush(): Promise<void>;
 }
 
+// 不再看 severity（RFC 0011 OM2，#242）：诊断有了 warning 之后，把 severity === "error" 写进
+// 判别式会让一条 warning 当 cause 时落回 fallbackCode，丢掉它自己的码。kind === "compiler"
+// 加上形态校验已经足够判别。
 function isCompilerFailureCause(value: unknown): value is object {
   return (
     isObject(value) &&
     Reflect.get(value, "kind") === "compiler" &&
-    Reflect.get(value, "severity") === "error" &&
     typeof Reflect.get(value, "message") === "string" &&
     Array.isArray(Reflect.get(value, "related"))
   );
@@ -169,8 +213,16 @@ export async function reportShutdownFailure(input: {
   } catch {}
 }
 
-interface PlainTextReporterOptions {
+export interface PlainTextReporterOptions {
   readonly output?: Writable;
+  /** 显式模式（`--error-format`）；缺席时按 audience/TTY/env 解析一次并定死。 */
+  readonly mode?: RenderMode;
+  readonly audience?: RenderAudience;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** human 模式解析诊断 fileId 用的项目根；缺席即无源码切片。 */
+  readonly sourceRoot?: string;
+  /** 栈帧折叠的展开开关（`--verbose`）；缺席时从 env 解析。 */
+  readonly verbose?: boolean;
 }
 
 const maximumCauseDepth = 5;
@@ -183,7 +235,8 @@ function nextCause(value: unknown): unknown {
   return isObject(value) ? Reflect.get(value, "cause") : undefined;
 }
 
-// 折叠空白：一个事件必须恰好占一行，否则按行读 stderr 的人和断言都会被换行切断。
+// 折叠空白：short 模式的契约是一个事件恰好占一行，否则按行读 stderr 的人和断言都会被换行
+// 切断。human/json 各有自己的分行规则，不走这里。
 function toSingleLine(description: string): string {
   return description.replace(/\s+/g, " ").trim();
 }
@@ -204,7 +257,8 @@ function describeCause(value: unknown): string | undefined {
 
 // 失败必须自我描述：CI 上往往只剩这一行 stderr，丢掉 cause 就无法区分同一个 code 底下的
 // 不同失败原因（Issue #32）。重复文案只出现一次——包装层常把同一句话既当 message 又当 cause。
-function renderFailure(event: CliFailureEvent): string {
+// 段序即包装序：[0] 是最外层，末位是最深的根因。
+function failureSegments(event: CliFailureEvent): readonly string[] {
   const segments = [event.message];
   const rendered = new Set(segments);
   let cause = event.cause;
@@ -216,47 +270,193 @@ function renderFailure(event: CliFailureEvent): string {
     }
     cause = nextCause(cause);
   }
-  return `[${event.code}] ${segments.join(" <- ")}`;
+  return segments;
 }
 
-function renderEvent(event: CliReporterEvent): string {
+// 运行期错误与编译期诊断同框（RFC 0011 D5，#242）：help 挂在 ReforceRuntimeError 上，但抛出点
+// 常被包装若干层，所以整条 cause 链上取第一条 help。
+function failureHelp(event: CliFailureEvent): string | undefined {
+  let cause = event.cause;
+  for (let depth = 0; depth < maximumCauseDepth && cause !== undefined; depth += 1) {
+    if (cause instanceof ReforceRuntimeError && cause.help !== undefined) {
+      return cause.help;
+    }
+    cause = nextCause(cause);
+  }
+  return undefined;
+}
+
+interface RenderContext {
+  readonly mode: RenderMode;
+  readonly output: Writable;
+  readonly sourceRoot?: string;
+  readonly verbose: boolean;
+}
+
+function renderHumanFailure(event: CliFailureEvent, context: RenderContext): string {
+  const segments = failureSegments(event);
+  const [headline, ...causes] = segments;
+  const lines = [
+    `${style(["bold", "red"], `error[${event.code}]`, context.output)}: ${headline ?? event.message}`,
+  ];
+  // 竖排而不是 `a <- b <- c`：JS 的根因在链条最深处，横排时它被挤到行尾最容易被忽略。
+  // 最后一段就是根因，单独高亮。
+  causes.forEach((cause, index) => {
+    const isRootCause = index === causes.length - 1;
+    const text = isRootCause ? style(["bold"], cause, context.output) : cause;
+    lines.push(`  ${style(["cyan"], "caused by", context.output)}: ${text}`);
+  });
+  const help = failureHelp(event);
+  if (help !== undefined) {
+    lines.push(
+      `  ${style(["cyan"], "=", context.output)} ${style(["bold"], "help:", context.output)} ${help}`,
+    );
+  }
+  const stack = rootStack(event.cause, context.verbose);
+  if (stack !== undefined) {
+    lines.push(stack);
+  }
+  return lines.join("\n");
+}
+
+// 栈只在 human 模式打，且只打**根因**那一条（RFC 0011 D5/D6，#242）。
+//
+// 打根因而不是最外层：JS 里包装层的栈截止在包装那一行，真正出事的位置只在最深处那条上。
+// short 保持一行一事件不受影响，json 里的栈由 err 字段完整带出去——折叠是给人看的排版，
+// 不能让采集系统少拿到帧。
+function rootStack(cause: unknown, verbose: boolean): string | undefined {
+  let deepest: Error | undefined;
+  let current = cause;
+  for (let depth = 0; depth < maximumCauseDepth && current !== undefined; depth += 1) {
+    if (current instanceof Error && typeof current.stack === "string") {
+      deepest = current;
+    }
+    current = nextCause(current);
+  }
+  return deepest === undefined ? undefined : foldStackFrames(stackOf(deepest), verbose);
+}
+
+// 诊断的 JSON 形状住在 diagnostic-render（就是 ReportedDiagnostic 全集加一个 kind），这里只管
+// 其余三种事件，避免同一个 wire 形状写在两处。
+function renderJsonEvent(event: Exclude<CliReporterEvent, CliDiagnosticEvent>): string {
+  switch (event.kind) {
+    case "status":
+      return JSON.stringify({
+        kind: "status",
+        command: event.command,
+        phase: event.phase,
+        message: event.message,
+      });
+    case "success":
+      return JSON.stringify({ kind: "success", command: event.command, message: event.message });
+    case "failure": {
+      // cause 本身不进 JSON：它是 unknown，可能带循环引用或不可序列化成员，JSON.stringify 会
+      // 抛在失败上报这条最不能再失败的路径上。已归一成字符串的 causes 是等价且安全的替代。
+      const [, ...causes] = failureSegments(event);
+      const help = failureHelp(event);
+      return JSON.stringify({
+        kind: "failure",
+        command: event.command,
+        phase: event.phase,
+        code: event.code,
+        message: event.message,
+        causes,
+        ...(help === undefined ? {} : { help }),
+      });
+    }
+  }
+}
+
+function renderEvent(event: CliReporterEvent, context: RenderContext): string {
+  if (event.kind === "diagnostic") {
+    return renderDiagnostic(event.diagnostic, context.mode, {
+      stream: context.output,
+      ...(context.sourceRoot === undefined ? {} : { sourceRoot: context.sourceRoot }),
+      ...(event.explainCommand === undefined ? {} : { explainCommand: event.explainCommand }),
+    });
+  }
+  if (context.mode === "json") {
+    return renderJsonEvent(event);
+  }
   switch (event.kind) {
     case "status":
       return `[${event.command}:${event.phase}] ${event.message}`;
-    case "diagnostic": {
-      const { diagnostic } = event;
-      const location = diagnostic.sourceSpan
-        ? ` ${diagnostic.sourceSpan.fileId}:${diagnostic.sourceSpan.start.line + 1}:${diagnostic.sourceSpan.start.character + 1}`
-        : "";
-      return `[${diagnostic.code}]${location} ${diagnostic.message}`;
-    }
     case "success":
       return `[${event.command}] ${event.message}`;
     case "failure":
-      return renderFailure(event);
+      return context.mode === "human"
+        ? renderHumanFailure(event, context)
+        : `[${event.code}] ${failureSegments(event).join(" <- ")}`;
   }
 }
 
+// 擦掉当前行并把光标带回行首。用 ESC[2K 而不是写一串空格：空格数要靠猜终端宽度，猜窄了
+// 残留、猜宽了换行。
+const eraseLine = "\u001B[2K\r";
+
 export class PlainTextReporter implements Reporter {
   private readonly output: Writable;
+  private readonly context: RenderContext;
   private pending = Promise.resolve();
   private firstWriteFailure: unknown;
+  private transientPending = false;
 
   constructor(options: PlainTextReporterOptions = {}) {
     this.output = options.output ?? process.stderr;
+    // 模式在构造时解析一次并定死：同一次运行里换模式会让上下两半输出对不上，按行读的
+    // 消费者无从判断该用哪套解析。
+    this.context = {
+      mode: resolveRenderMode({
+        ...(options.mode === undefined ? {} : { explicit: options.mode }),
+        interactive: isInteractive(this.output),
+        audience: options.audience ?? "tool",
+        env: options.env ?? process.env,
+      }),
+      output: this.output,
+      ...(options.sourceRoot === undefined ? {} : { sourceRoot: options.sourceRoot }),
+      verbose: resolveVerbose({
+        ...(options.verbose === undefined ? {} : { explicit: options.verbose }),
+        env: options.env ?? process.env,
+      }),
+    };
+  }
+
+  get renderMode(): RenderMode {
+    return this.context.mode;
+  }
+
+  // 只有 human + TTY 才原地重写。管道里没有光标可回，转义序列会原样落进日志文件；
+  // json/short 的读者是机器，少一条事件比多滚一行严重得多。
+  private isTransient(event: CliReporterEvent): boolean {
+    return (
+      event.kind === "status" &&
+      event.transient === true &&
+      this.context.mode === "human" &&
+      isInteractive(this.output)
+    );
   }
 
   report(event: CliReporterEvent): void {
-    const line = `${renderEvent(event)}\n`;
-    // 一次写失败不能让 reporter 余生失效：链上不挂 catch 时 pending 会永久 rejected，
-    // 之后每个 report 都被静默丢弃，Node 对这些无 handler 的 rejection 默认按 unhandledRejection 崩进程
-    // （命令本身成功也退出 1）。这里把失败降级为「记录首个错误、继续排队」，首个错误
-    // 由 flush() 交回调用方；catch 挂在链尾也顺带兜住 write 的同步抛出（#25）。
+    const transient = this.isTransient(event);
+    // 上一条是原地行时，先擦掉它——否则新内容短于旧内容会留下尾巴。
+    const line = `${this.transientPending ? eraseLine : ""}${renderEvent(event, this.context)}${transient ? "" : "\n"}`;
+    this.transientPending = transient;
+    this.enqueue(line);
+  }
+
+  // 一次写失败不能让 reporter 余生失效：链上不挂 catch 时 pending 会永久 rejected，
+  // 之后每个 report 都被静默丢弃，Node 对这些无 handler 的 rejection 默认按 unhandledRejection 崩进程
+  // （命令本身成功也退出 1）。这里把失败降级为「记录首个错误、继续排队」，首个错误
+  // 由 flush() 交回调用方；catch 挂在链尾也顺带兜住 write 的同步抛出（#25）。
+  //
+  // 每一次写都必须走这条队列，flush 的收尾换行也不例外：直接写会插到还没轮到的那一批
+  // 前面，收尾换行因此可能落在它要封的那条原地行**之前**。
+  private enqueue(text: string): void {
     this.pending = this.pending
       .then(
         () =>
           new Promise<void>((resolve, reject) => {
-            this.output.write(line, (error) => {
+            this.output.write(text, (error) => {
               if (error) {
                 reject(error);
                 return;
@@ -271,6 +471,12 @@ export class PlainTextReporter implements Reporter {
   }
 
   async flush(): Promise<void> {
+    // 收尾时把悬着的原地行封上：它是没有换行写出去的，不封的话 shell 提示符会贴在它屁股
+    // 后面，看起来像输出被截断了。
+    if (this.transientPending) {
+      this.transientPending = false;
+      this.enqueue("\n");
+    }
     await this.pending;
     // 记录的错误刻意是粘的：后续写成功不代表先前丢掉的输出补回来了，flush 不能改口说成功。
     if (this.firstWriteFailure !== undefined) {

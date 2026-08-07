@@ -4,6 +4,14 @@ import { analyzeConfigProviders } from "@/analysis/config-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
+import {
+  contextFrameworkLoggerName,
+  loggingPackageName,
+  providedLoggerFactorySymbol,
+  spanOfMetaSource,
+  synthesizeLoggerBeans,
+  webFrameworkLoggerName,
+} from "@/analysis/logger-synthesis";
 import { analyzeMethodInterception } from "@/analysis/method-interception";
 import type {
   BeanProviderModel,
@@ -14,17 +22,24 @@ import type {
 } from "@/analysis/model";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
-import { transactionInterceptorDraft } from "@/analysis/transaction-weaving";
+import {
+  transactionFrameworkLoggerName,
+  transactionInterceptorBeanId,
+  transactionInterceptorDraft,
+  frameworkOriginId as transactionOriginId,
+} from "@/analysis/transaction-weaving";
 import { type WebModel, webEngineAdapterName, webPackageName } from "@/analysis/web-model";
 import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic } from "@/diagnostics";
+import { diagnostic, hasErrorDiagnostic, orderDiagnostics } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type { ClassDeclaration } from "@/parser/source-ir";
 import type { ParsedSource } from "@/project/source-files";
 
 interface AnalysisSuccess {
   readonly status: "success";
+  // 分析成功也可能有话要说：这里的诊断全是 warning（RFC 0011 OM2，#242）。
+  readonly diagnostics: readonly CompilerDiagnostic[];
   readonly providers: readonly BeanProviderModel[];
   readonly configs: readonly ConfigProviderModel[];
   readonly plans: ExecutionPlansModel;
@@ -122,12 +137,63 @@ export function analyzeProject(
   );
   // 事务拦截器合成注册（ADR 0008 AM2，#204 定案 6）：检测到 @Transactional 方法使用即入表，
   // 它对 TransactionManager 契约的依赖走下面的正常解析——有使用无实现在编译期就是 MISSING_BEAN。
-  const transactionDraft = transactionInterceptorDraft(sources, linker);
-  const localDrafts = [
+  // 探针集合刻意不含事务 draft 自己：拦截器的 provides 只有 TransactionInterceptor，它永远
+  // 提供不了 LoggerFactory，所以答案与 synthesizeLoggerBeans 过去在内部算的完全一致。
+  // 不写这条注释的话，后来人会以为这是个顺序 bug 而去「修」它。
+  const loggerBinding = providedLoggerFactorySymbol([...configAnalysis.drafts, ...drafts], linker);
+  const transactionDraft = transactionInterceptorDraft(
+    sources,
+    linker,
+    loggerBinding !== undefined,
+  );
+  const applicationDrafts = [
     ...configAnalysis.drafts,
     ...drafts,
     ...(transactionDraft === undefined ? [] : [transactionDraft]),
   ];
+  // logger bean 合成（RFC 0011 L2，#242）：与事务拦截器同一时机——collectProviderDrafts 之后、
+  // resolveProviders 之前。它要看全部 draft 的 pendingDependencies 才知道有哪些 logger 名，
+  // 又必须赶在解析开始前把自己的 draft 放进表里。
+  // 框架自己那条 logger（RFC 0011 L6/L8，#250）：请求日志与引擎监听行都从它出，需求方是生成的
+  // bootstrap，同样不在任何依赖边上。它是本地 draft 而不是 starter bean，所以不走
+  // demandedBeanIds——本地 draft 一律入图。装了引擎但没装任何日志绑定时不合成，见 synthesize。
+  const loggers = synthesizeLoggerBeans({
+    drafts: applicationDrafts,
+    loggerFactory: loggerBinding?.symbol,
+    diagnostics,
+    frameworkLoggers: [
+      // 容器面那条恒在（RFC 0011 L6【已定】）：启动摘要、bean 台账、关停与崩溃都是容器的
+      // 事实，job / CLI / worker 这类没有引擎的应用同样要有。它的「为什么在图里」就是那处
+      // LoggerFactory 绑定——没有绑定时 synthesizeLoggerBeans 整个不合成，见那边的注释。
+      ...(loggerBinding === undefined
+        ? []
+        : [
+            {
+              name: contextFrameworkLoggerName,
+              reason: loggingPackageName,
+              span: loggerBinding.span,
+            },
+          ]),
+      ...engineBeans.slice(0, 1).map((bean) => ({
+        name: webFrameworkLoggerName,
+        reason: webPackageName,
+        span: spanOfMetaSource(bean.metaSource),
+      })),
+      // 事务那条与 web 那条的区别只在消费方式：web 由生成的 bootstrap 直接 get，事务是
+      // 拦截器的第 1 个构造参数，所以要带上 consumer 让重定向表接上那条边。
+      ...(transactionDraft === undefined
+        ? []
+        : [
+            {
+              name: transactionFrameworkLoggerName,
+              reason: transactionOriginId,
+              span: transactionDraft.span,
+              consumer: { beanId: transactionInterceptorBeanId, parameterIndex: 1 },
+            },
+          ]),
+    ],
+  });
+  const localDrafts = [...applicationDrafts, ...loggers.drafts];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
   // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。
   const starterDrafts = resolveProviders(
@@ -135,6 +201,8 @@ export function analyzeProject(
     linker.starterLinkage,
     diagnostics,
     new Set(engineBeans.map((bean) => bean.id)),
+    loggers.redirects,
+    loggers.levelsBeanId,
   );
   // 物化集合即可达子图（ADR 0004 决策 11，#120）：未被需求的 starter bean 从未成为 draft，
   // 执行计划照旧在全量 providers 上排序，确定性排序保证不变。config 不进执行计划——它由
@@ -154,7 +222,9 @@ export function analyzeProject(
   const weaving = analyzeMethodInterception(sources, linker, allProviders, diagnostics);
   diagnostics.push(...linker.diagnostics);
 
-  if (diagnostics.length > 0) {
+  // 闸门只看 error：有 error 说明 provider 表不完整，继续走 emission 会生成实参缺失的构造
+  // 调用；warning 不影响图的完整性，随 success 一起返回（RFC 0011 OM2，#242）。
+  if (hasErrorDiagnostic(diagnostics)) {
     return { status: "failure", diagnostics: nonEmptyDiagnostics(diagnostics) };
   }
   const providers = allProviders.filter(isBeanProvider);
@@ -163,6 +233,7 @@ export function analyzeProject(
   );
   return {
     status: "success",
+    diagnostics: Object.freeze(orderDiagnostics(diagnostics)),
     providers: Object.freeze(providers),
     configs: Object.freeze(configs),
     plans: createExecutionPlans(providers, new Set(configs.map((config) => config.id))),

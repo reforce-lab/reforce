@@ -125,7 +125,7 @@ describe("request scope declarations", () => {
       ].join("\n"),
     );
 
-    expect(manifestOf(result).schemaVersion).toBe(4);
+    expect(manifestOf(result).schemaVersion).toBe(6);
     expect(manifestBean(result, "src/application.ts#Session").scope).toBe("request");
     expect(manifestBean(result, "src/application.ts#requestTrace").scope).toBe("request");
     expect(manifestBean(result, "src/application.ts#Clock").scope).toBe("singleton");
@@ -173,7 +173,7 @@ describe("request scope declarations", () => {
     );
 
     const beans = generatedContent(result, "beans.ts");
-    expect(beans).toContain("schemaVersion: 4,");
+    expect(beans).toContain("schemaVersion: 6,");
     expect(beans).toContain('scope: "request",');
   });
 

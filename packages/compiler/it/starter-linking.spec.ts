@@ -90,7 +90,9 @@ interface ManifestBean {
   };
   readonly dependencies: readonly {
     readonly parameterIndex: number;
-    readonly targetId: string;
+    readonly targetId?: string;
+    readonly mode?: string;
+    readonly members?: readonly { readonly targetId: string }[];
   }[];
 }
 
@@ -398,6 +400,96 @@ describe("starter linking semantics", () => {
     const manifest = manifestOf(result);
     expect(manifestBean(manifest, "@acme/starter-redis#MetricsPusher").origin).toBe(redisOrigin);
     expect(manifest.plans.constructionOrder).toContain("@acme/starter-redis#MetricsPusher");
+  });
+
+  // —— starter meta 的集合边（#228）：0 / 1 / N 个成员都合法，空集合不是 MISSING_BEAN ——
+
+  const collectingPusherBean = {
+    id: "@acme/starter-redis#MetricsPusher",
+    runtimeExport: { module: "@acme/starter-redis", export: "MetricsPusher" },
+    provides: ["@acme/starter-redis#MetricsPusher"],
+    dependencies: [{ contract: "@acme/starter-redis#RedisConfig", open: true, collection: true }],
+    source: starterMetaSpan("src/pusher.ts"),
+  };
+
+  const pusherConsumerSource = [
+    'import { Injectable } from "@reforce/core";',
+    'import { MetricsPusher } from "@acme/starter-redis";',
+    "",
+    "@Injectable()",
+    "export class PusherConsumer {",
+    "  constructor(readonly pusher: MetricsPusher) {}",
+    "}",
+    "",
+  ].join("\n");
+
+  function collectionEdgeOf(manifest: GeneratedManifest): readonly string[] {
+    const dependency = manifestBean(manifest, "@acme/starter-redis#MetricsPusher").dependencies[0];
+    if (dependency?.mode !== "collection" || dependency.members === undefined) {
+      throw new Error("Expected a collection dependency edge on MetricsPusher.");
+    }
+    return dependency.members.map((member) => member.targetId);
+  }
+
+  function localRedisConfigSource(className: string): string {
+    return [
+      'import { Injectable } from "@reforce/core";',
+      'import type { RedisConfig } from "@acme/starter-redis";',
+      "",
+      "@Injectable()",
+      `export class ${className} implements RedisConfig {`,
+      "  url(): string {",
+      `    return "redis://${className}";`,
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+  }
+
+  test("injects an empty collection when no provider fills a starter collection edge", async () => {
+    const result = await compileOrThrow(
+      applicationTree(
+        { "application.ts": registrationSource, "consumer.ts": pusherConsumerSource },
+        { "@acme/starter-redis": redisStarterPackage(redisMeta([collectingPusherBean])) },
+      ),
+    );
+
+    expect(collectionEdgeOf(manifestOf(result))).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("collects a single local provider into a starter collection edge", async () => {
+    const result = await compileOrThrow(
+      applicationTree(
+        {
+          "application.ts": registrationSource,
+          "consumer.ts": pusherConsumerSource,
+          "config-a.ts": localRedisConfigSource("ConfigA"),
+        },
+        { "@acme/starter-redis": redisStarterPackage(redisMeta([collectingPusherBean])) },
+      ),
+    );
+
+    expect(collectionEdgeOf(manifestOf(result))).toEqual(["src/config-a.ts#ConfigA"]);
+  });
+
+  test("collects every provider of a starter collection edge in deterministic order", async () => {
+    const result = await compileOrThrow(
+      applicationTree(
+        {
+          "application.ts": registrationSource,
+          "consumer.ts": pusherConsumerSource,
+          "config-b.ts": localRedisConfigSource("ConfigB"),
+          "config-a.ts": localRedisConfigSource("ConfigA"),
+        },
+        { "@acme/starter-redis": redisStarterPackage(redisMeta([collectingPusherBean])) },
+      ),
+    );
+
+    expect(collectionEdgeOf(manifestOf(result))).toEqual([
+      "src/config-a.ts#ConfigA",
+      "src/config-b.ts#ConfigB",
+    ]);
   });
 
   test("keeps a local provider over a starter candidate", async () => {
@@ -792,6 +884,28 @@ describe("defineApplication reading", () => {
 
     const failure = expectFailure(result);
     expect(failure.diagnostics.map((item) => item.code)).toEqual(["STARTER_META_NOT_FOUND"]);
+  });
+
+  test("names the corrective form in the message rather than only in the help", async () => {
+    const bareSource = [
+      'import { defineApplication } from "@reforce/core";',
+      'import { redisStarter } from "@acme/starter-redis";',
+      "",
+      "defineApplication({ starters: [redisStarter] });",
+      "",
+    ].join("\n");
+    const { result } = await compile(
+      applicationTree(
+        { "application.ts": bareSource },
+        { "@acme/starter-redis": redisStarterPackage() },
+      ),
+    );
+
+    // short 模式会丢掉 help 与 suggestions，所以「怎么改」必须在 message 里。
+    const failure = expectFailure(result);
+    expect(
+      failure.diagnostics.find((item) => item.code === "INVALID_DEFINE_APPLICATION")?.message,
+    ).toContain("export default defineApplication");
   });
 
   test("reports STARTER_META_NOT_FOUND when the package exposes no reforce-meta subpath", async () => {

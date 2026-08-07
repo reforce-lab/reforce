@@ -20,7 +20,7 @@ function workerDefinition(
   registrations: readonly GeneratedBeanRegistration[],
 ): GeneratedApplicationDefinition {
   return {
-    schemaVersion: 4,
+    schemaVersion: 6,
     configs: [],
     registrations,
     plans: {

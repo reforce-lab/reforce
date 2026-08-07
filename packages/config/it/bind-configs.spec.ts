@@ -5,6 +5,8 @@ import type {
   GeneratedConfigRegistration,
   GeneratedSourceReference,
 } from "@reforce/core/generated-runtime";
+import { replayBootstrapLogs } from "@reforce/logging";
+import { resetBootstrapRegistryForTest } from "@reforce/logging/testing";
 import {
   createTemporaryProject,
   resolveNodeExecutable,
@@ -53,19 +55,6 @@ async function withProcessEnv(
         process.env[key] = value;
       }
     }
-  }
-}
-
-async function withCapturedWarnings(run: (messages: string[]) => Promise<void>): Promise<void> {
-  const original = console.warn;
-  const messages: string[] = [];
-  console.warn = (...args: unknown[]) => {
-    messages.push(args.map(String).join(" "));
-  };
-  try {
-    await run(messages);
-  } finally {
-    console.warn = original;
   }
 }
 
@@ -177,20 +166,33 @@ describe("createConfigBinding", () => {
     const schema = objectSchema<{ httpPort: number }>({ httpPort: numberField() });
     class TypoConfig extends ConfigProperties("typo", schema) {}
 
-    await withCapturedWarnings(async (messages) => {
-      const outcome = await createConfigBinding({ root }).bind([
-        registrationOf("typo-config", TypoConfig),
-      ]);
-
-      expect(outcome.status).toBe("bound");
-      const unmatched = messages.filter((message) => message.includes("TYPO_HTTP_PROT"));
-      expect(unmatched).toHaveLength(1);
-      expect(unmatched[0]).toContain("typo-config");
-      expect(unmatched[0]).toContain("did you mean TYPO_HTTP_PORT?");
-      expect(messages.some((message) => message.includes("TYPO_HTTP_PORT does not match"))).toBe(
-        false,
-      );
+    // 绑定 phase 跑在一切 bean 构造之前，警告只能先进引导缓冲；这条用例顺带把整条链路
+    // 走了一遍：写进缓冲 → 重放进真绑定（RFC 0011 L7/L8，#249/#250）。
+    resetBootstrapRegistryForTest();
+    const outcome = await createConfigBinding({ root }).bind([
+      registrationOf("typo-config", TypoConfig),
+    ]);
+    const replayed: { readonly fields: Record<string, unknown>; readonly message: string }[] = [];
+    replayBootstrapLogs({
+      create: () => ({
+        isEnabled: () => true,
+        trace: () => {},
+        debug: () => {},
+        info: () => {},
+        warn: (fields, message) => replayed.push({ fields: { ...fields }, message }),
+        error: () => {},
+        fatal: () => {},
+      }),
     });
+
+    expect(outcome.status).toBe("bound");
+    const unmatched = replayed.filter((entry) => entry.fields.key === "TYPO_HTTP_PROT");
+    expect(unmatched).toHaveLength(1);
+    expect(unmatched[0]?.fields).toMatchObject({
+      configId: "typo-config",
+      suggestion: "TYPO_HTTP_PORT",
+    });
+    expect(replayed.some((entry) => entry.fields.key === "TYPO_HTTP_PORT")).toBe(false);
   });
 
   test("reads env files from the root option instead of the working directory", async () => {

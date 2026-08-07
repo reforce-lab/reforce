@@ -4,8 +4,13 @@
 export {
   type ConnectWebApplicationOptions,
   connectWebApplication,
+  type WebStartupFacts,
 } from "@/execution/connect";
 export type { RequestContext } from "@/execution/request-context";
+export {
+  type StartupSection,
+  webStartupSections,
+} from "@/execution/startup-sections";
 export type {
   GeneratedMiddlewareMount,
   GeneratedRoute,

@@ -7,10 +7,9 @@ function addWatchInputs(compilation: Rspack.Compilation, result: DevCompilerGate
   compilation.missingDependencies.addAll(result.watchInputs.missingDependencies);
 }
 
+// 按 severity 分流（RFC 0011 OM2，#242）：把 warning 推进 compilation.errors 会让 rspack 判定
+// 构建失败，dev 的健康子进程会被无谓地拦下——而 warning 的前提正是图完整、产物可用。
 function addGateErrors(compilation: Rspack.Compilation, result: DevCompilerGateResult): void {
-  if (result.status === "success") {
-    return;
-  }
   if (result.status === "error") {
     compilation.errors.push(
       new rspack.WebpackError("Reforce compiler gate failed", { cause: result.error }),
@@ -18,7 +17,12 @@ function addGateErrors(compilation: Rspack.Compilation, result: DevCompilerGateR
     return;
   }
   for (const diagnostic of result.diagnostics) {
-    compilation.errors.push(new rspack.WebpackError(`[${diagnostic.code}] ${diagnostic.message}`));
+    const rendered = new rspack.WebpackError(`[${diagnostic.code}] ${diagnostic.message}`);
+    if (diagnostic.severity === "error") {
+      compilation.errors.push(rendered);
+      continue;
+    }
+    compilation.warnings.push(rendered);
   }
 }
 

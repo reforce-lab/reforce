@@ -28,6 +28,7 @@ function parsedSource(
   namespaces: readonly NamespaceDeclaration[] = [],
 ): ParsedSource {
   const unit: SourceFileIr = {
+    suppressions: [],
     imports: [],
     exports: [],
     interfaces: [],

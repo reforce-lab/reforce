@@ -2,7 +2,14 @@ import type {
   GeneratedApplicationDefinition,
   GeneratedBeanRegistration,
 } from "@/generated/contracts";
-import type { BeanClass, BeanDefinition, ContextState, Lazy } from "@/public-types";
+import type {
+  BeanClass,
+  BeanDefinition,
+  ContextStartReport,
+  ContextState,
+  Lazy,
+} from "@/public-types";
+import { ConstructionTimings } from "@/runtime/construction-timings";
 import { RequestScope } from "@/runtime/request-scope";
 
 interface ConstructingRecord {
@@ -36,8 +43,11 @@ export class ResolutionState {
   private readonly cleanupLedger = new Map<string, CleanupAction>();
   // 每个 context 一套 ALS：两个 context 的请求上下文互不可见（与实例表同一隔离边界）。
   readonly requestScope = new RequestScope();
+  // 启动台账挂这里，因为 BeanResolver 与 LifecycleRunner 都只拿得到 ResolutionState
+  // （RFC 0011 C6，#250）。
+  readonly timings = new ConstructionTimings();
   contextState: ContextState = "created";
-  startPromise: Promise<void> | undefined;
+  startPromise: Promise<ContextStartReport> | undefined;
   closePromise: Promise<void> | undefined;
   cleanupPromise: Promise<void> | undefined;
   private closeRequestedValue = false;

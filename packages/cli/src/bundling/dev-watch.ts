@@ -146,6 +146,9 @@ export async function startDevWatchBuild(
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
+          // 与 production-dist 同一条理由（RFC 0011 D6 C4，#242）：Node 按生成文件所在目录解析
+          // 相对 source，[relative-resource-path] 会指向 .reforce/dev/src/… 这种不存在的路径。
+          config.output.devtoolModuleFilenameTemplate = "[absolute-resource-path]";
           config.output.publicPath = "./";
           config.output.hotUpdateChunkFilename = hotUpdateChunkFilename;
           config.output.hotUpdateMainFilename = hotUpdateManifestFilename;
@@ -223,6 +226,8 @@ export async function startDevWatchBuild(
     const assets = await collectAssets(devOutputRoot);
     await options.onCompilation({
       status: "success",
+      // gate 成功时带的诊断全是 warning，随成功一起流到 coordinator 去上报（RFC 0011 OM2，#242）。
+      diagnostics: gateResult.diagnostics,
       buildId,
       validateAssets: async () => {
         if (!assets.some((asset) => asset.path === "main.mjs" && asset.role === "entry")) {

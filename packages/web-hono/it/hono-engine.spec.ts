@@ -37,10 +37,14 @@ async function withEngine(
   bridges: {
     readonly configurers?: readonly HonoConfigurer[];
     readonly customizers?: readonly HonoRouteCustomizer[];
+    readonly logNotFound?: WebApplication["logNotFound"];
   } = {},
 ): Promise<void> {
   const engine = new WebEngine({ port: 0 }, bridges.configurers ?? [], bridges.customizers ?? []);
-  const application: WebApplication = { routes };
+  const application: WebApplication = {
+    routes,
+    ...(bridges.logNotFound === undefined ? {} : { logNotFound: bridges.logNotFound }),
+  };
   const handle = await engine.start(application);
   const server = Reflect.get(engine, "server") as Server;
   const address = server.address() as AddressInfo;
@@ -235,6 +239,59 @@ describe("the route-level customizer bridge", () => {
         ],
       },
     );
+  });
+});
+
+// 真未命中语义（RFC 0011 C7 打磨，#242）：与 fastify 的 setNotFoundHandler 对齐——只有
+// 路由器一无所中才是未命中；任何路由（reforce 的或 configurer 的）自己答的 404 已由请求
+// 日志记账，观察者再记一条就是重复且失真。
+describe("the not-found observer", () => {
+  test("reports a request no route matched", async () => {
+    const misses: { readonly method: string; readonly path: string }[] = [];
+    await withEngine(
+      [ping],
+      async (base) => {
+        await fetch(`${base}/nowhere`);
+      },
+      { logNotFound: (miss) => void misses.push(miss) },
+    );
+
+    expect(misses).toEqual([{ method: "GET", path: "/nowhere" }]);
+  });
+
+  test("stays quiet when a reforce handler answers 404 itself", async () => {
+    const misses: unknown[] = [];
+    await withEngine(
+      [route("GET", "/orders/:id", () => Promise.resolve(new Response(null, { status: 404 })))],
+      async (base) => {
+        await fetch(`${base}/orders/42`);
+      },
+      { logNotFound: (miss) => void misses.push(miss) },
+    );
+
+    expect(misses).toEqual([]);
+  });
+
+  test("stays quiet when a configurer's own route answers 404", async () => {
+    const misses: unknown[] = [];
+    await withEngine(
+      [ping],
+      async (base) => {
+        await fetch(`${base}/static/missing.png`);
+      },
+      {
+        configurers: [
+          {
+            configure: (app) => {
+              app.get("/static/:file", (context) => context.body(null, 404));
+            },
+          },
+        ],
+        logNotFound: (miss) => void misses.push(miss),
+      },
+    );
+
+    expect(misses).toEqual([]);
   });
 });
 

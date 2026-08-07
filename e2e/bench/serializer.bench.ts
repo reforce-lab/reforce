@@ -53,7 +53,7 @@ const whitelistSchema = {
 
 // 序列化基准只需要 get 返回 controller 实例；请求作用域直通执行（fixture 不播种）。
 const context: ApplicationContext = {
-  start: () => Promise.resolve(),
+  start: () => Promise.resolve({ beanTimings: [] }),
   get: <T extends object>(_target: BeanClass<T> | BeanDefinition<T>): T =>
     // 表内唯一 controller 即 ProfileController // justified: 基准替身的身份映射
     new ProfileController() as unknown as T,

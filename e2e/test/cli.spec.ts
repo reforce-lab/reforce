@@ -236,6 +236,14 @@ const leafProbeSource = `import { Injectable } from "@reforce/core";
 export class LeafProbe {}
 `;
 
+// 叶子删掉 fixture 的 application.ts（它 re-export 了被删的 greeting/providers），但日志绑定
+// 现在随 logging starter 进图（RFC 0011 勘误，#242），所以要留一个最小的注册入口。
+const leafApplicationSource = `import { defineApplication } from "@reforce/core";
+import { logging } from "@reforce/logging";
+
+export default defineApplication({ starters: [logging] });
+`;
+
 function applicationCompilerOptions() {
   return {
     target: "ESNext",
@@ -299,7 +307,7 @@ async function createMonorepoProject(): Promise<TemporaryProject> {
             leafTsconfig("../../tsconfig.shared.json"),
           ),
           writeFile(join(sourceRoot, probeFile), leafProbeSource),
-          rm(join(sourceRoot, "application.ts")),
+          writeFile(join(sourceRoot, "application.ts"), leafApplicationSource),
           rm(join(sourceRoot, "greeting.ts")),
           rm(join(sourceRoot, "providers.ts")),
           rm(join(sourceRoot, "worker-lifecycle.ts")),
@@ -1234,6 +1242,370 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // 逐 logger 调级的完整链路（RFC 0011 L5 勘误，#242）。级别配置是应用里的显式
+  // LoggingSettings bean（fixture 的 AppLogging 把 LoggingProbe 调开 debug），不再有
+  // `.env` / `LOGGING_LEVEL_*` 通道——生产改级别 = 改代码重部署，是 owner 拍板的代价。
+  //
+  // 断言必须同时看两条 logger：只看被调开的那条，「全局降到 debug」也会绿。
+  test(
+    "lets LoggingSettings.levels open one logger without touching the others",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "logging-start", false);
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const { stderr } = started.output();
+        const messages = stderr
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [String(JSON.parse(line).message)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((message) => message.endsWith("probe debug") || message.endsWith("probe info"));
+        // 调开的那条 logger 两级都在；没调的那条只剩 info——它的 debug 仍被门槛挡住。
+        expect(new Set(messages)).toEqual(
+          new Set(["logging probe debug", "logging probe info", "quiet probe info"]),
+        );
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // A3（RFC 0011 D2，#250）：启动摘要此前只有渲染器没有生产者。非 TTY 下它走 Logger 发结构
+  // 化记录；折叠必带计数与展开命令（不变量 4），所以 routes 段要同时有计数和 explain 出口。
+  test(
+    "emits a folded startup summary with counts and an expand command",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "summary-start");
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const records = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          });
+        const routes = records.find((record) => record.message === "routes");
+        expect(routes).toMatchObject({ expandWith: "reforce explain routes" });
+        expect(String(routes.facts.join(" · "))).toMatch(/\d+ controllers? · \d+ routes?/u);
+        // 引擎段带实际监听地址：端口 0 时这是唯一的实际端口出口。
+        expect(records.find((record) => record.message === "node")?.facts?.[0]).toMatch(
+          /^listening on http:\/\//u,
+        );
+        // context 段带 bean 数与 start 耗时，末尾一条 ready 带总耗时。
+        expect(records.find((record) => record.message === "context")).toBeDefined();
+        expect(records.find((record) => record.message === "ready")).toMatchObject({
+          startupMs: expect.any(Number),
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // 不变量 4 的另一半（RFC 0011 D2，#242）：上一条用例只证明摘要**印出**了展开命令，没证明它
+  // 跑得通。而它此前正是跑不通的——路由面的判据是「查询以 / 开头」，`routes` 这个词落到 bean
+  // 面报「没有 bean 叫 routes」。折叠给了出口、出口是死的，比不给出口更糟。
+  // 这条用例逐字敲摘要印出的那串命令，是这个缺陷唯一的稳定回归证据。
+  test(
+    "the expand command printed by the startup summary actually runs",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        const explain = await runCommand(
+          nodeExecutable,
+          [cliEntry, "explain", "routes", "--project", project.projectRoot],
+          { cwd: project.projectRoot, timeout: commandTimeout },
+        );
+
+        expect(explain.exitCode, commandFailure(explain)).toBe(0);
+        const stdout = String(explain.stdout);
+        expect(stdout).toMatch(/^\d+ routes · \d+ controllers$/mu);
+        expect(stdout).toContain('expand one route · reforce explain "<METHOD> <path>"');
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // C4（RFC 0011，#250）：配置来源。provenance 数据一直都有，只用于报错的 layer 字段，
+  // 启动期一个字不打——「这个值到底是哪一层给的」得靠人去比对四个文件。
+  //
+  // 脱敏铁律（ADR 0005 决策 6.2）：只出键名与层，永不出值。这条用例用一个哨兵值证明否定。
+  test(
+    "reports which layer each config key came from without ever printing a value",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      const secret = "s3cr3t-sentinel-value";
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        // reforce.config 的 debug 档由 fixture 的 AppLogging.levels 调开（RFC 0011 L5 勘误：
+        // 级别走显式 settings，env 通道已撤）。
+        started = await startApplication(project.projectRoot, "provenance-start", false, {
+          FIXTURE_SERVER_HOST: secret,
+        });
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const stderr = started.output().stderr;
+        const records = stderr
+          .split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.name === "reforce.config");
+        expect(records.find((record) => record.message.startsWith("config keys"))).toMatchObject({
+          keyCount: expect.any(Number),
+          layers: expect.any(Array),
+        });
+        // debug 档展开出逐键来源，键名在、层在。
+        const detail = records.find((record) => record.message === "config key provenance");
+        expect(JSON.stringify(detail?.sources)).toContain("FIXTURE_SERVER_HOST");
+        // 而值一次都没出现——整条 stderr 里都没有。
+        expect(stderr).not.toContain(secret);
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // C3（RFC 0011，#250）：关停可观测。此前 ShutdownController 全程静默，只在失败时经
+  // reporter 出声——「停了多久」「为什么停」这两个最常问的问题一个字都没有。
+  test(
+    "logs the drain start with its trigger and the stop with its duration",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "shutdown-start");
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const records = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          });
+        // POSIX 下子进程看到的是信号：CLI 父进程收到 IPC 关停请求后发 SIGTERM 给子进程；
+        // Windows 没有 POSIX 信号，父进程改经 IPC 转发，子进程看到的 trigger 是 ipc。
+        // 信号名此前在 installProcessShutdownHandlers 里被整个丢掉，这条断言钉的就是它
+        // 现在到得了字段。
+        expect(records.find((record) => record.message === "shutting down")).toMatchObject({
+          trigger: process.platform === "win32" ? "ipc" : "SIGTERM",
+        });
+        expect(records.find((record) => record.message === "stopped")).toMatchObject({
+          stopMs: expect.any(Number),
+          exitCode: 0,
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // C2（RFC 0011，#250）：崩溃接管。此前未捕获异常走 Node 默认路径，日志缓冲与 pino
+  // worker thread 的尾部日志全丢。只能在真子进程上验：记录是否完整落地、退出码是否仍是 1。
+  test(
+    "takes over an uncaught exception with a fatal record and still exits nonzero",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "crash-start", false, {
+          REFORCE_E2E_CRASH: "1",
+        });
+        const outcome = await started.completion;
+
+        expect(outcome.exitCode).toBe(1);
+        const fatal = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .find((record) => record.message === "uncaught exception");
+        expect(fatal).toMatchObject({ level: "fatal", origin: "uncaughtException" });
+        // 栈必须完整落进记录里：崩溃现场的全部价值就在这里。
+        expect(String(fatal.err?.stack ?? "")).toContain("deliberate e2e crash");
+      } finally {
+        if (started !== undefined) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // C6（RFC 0011，#250）：逐 bean 台账。断言的是 debug 明细而不是摘要里那条折叠的
+  // slow beans——触发折叠要一条真的跑满 5ms 的 bean，而单例构造被强制同步返回，那意味着
+  // 忙等，正是要避开的时序 flake。折叠规则由 @reforce/logging 的单测确定性覆盖。
+  test(
+    "streams one per-bean timing record when the context logger is opened to debug",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        // 台账归 reforce.context：它是容器的事实不是 web 的（RFC 0011 L6【已定】）。debug 档
+        // 由 fixture 的 AppLogging.levels 调开——级别走显式 settings，env 通道已撤。
+        started = await startApplication(project.projectRoot, "timings-start", false);
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const timings = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.message === "bean timing");
+        expect(timings.length).toBeGreaterThan(0);
+        expect(timings[0]).toMatchObject({
+          bean: expect.any(String),
+          phase: expect.any(String),
+          ms: expect.any(Number),
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // A2（RFC 0011 L7，#250）：引导期缓冲的重放此前是零调用的——@reforce/config 的绑定警告
+  // 只能以进程退出时的裸 stderr 形态出现，进不了用户配置的日志格式与目标。
+  //
+  // 判据是 `bootstrapTime` 字段：它只由 replayInto 补上（缓冲保留原始时间戳，重放时刻是另
+  // 一回事）。exit 兜底的 drainToStderr 不写这个字段，所以它在就证明走的是重放那条路。
+  test(
+    "replays a config binding warning through the real logger instead of the exit drain",
+    async () => {
+      const project = await createApplicationProject();
+      let started: StartedApplication | undefined;
+      let stopped = false;
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        started = await startApplication(project.projectRoot, "replay-start", false, {
+          // 拼错一个键：绑定期 warn「environment key matches no bound property」，带 did-you-mean。
+          FIXTURE_SERVER_HOSTT: "typo",
+        });
+        const shutdown = await shutdownWithIpc(started);
+        stopped = true;
+        expect(shutdown.result.exitCode).toBe(0);
+
+        const replayed = started
+          .output()
+          .stderr.split("\n")
+          .flatMap((line) => {
+            try {
+              return [JSON.parse(line)];
+            } catch {
+              return [];
+            }
+          })
+          .filter((record) => record.name === "reforce.config");
+        expect(replayed.length).toBeGreaterThan(0);
+        // 按级别找而不是按下标：C4 之后同一条 logger 上先有一条来源摘要的 info。这条用例的
+        // 判据本来就是 bootstrapTime（见上面的注释），不是记录在数组里的位置。
+        expect(replayed.find((record) => record.level === "warn")).toMatchObject({
+          level: "warn",
+          bootstrapTime: expect.any(Number),
+        });
+      } finally {
+        if (started !== undefined && !stopped) {
+          await forceCleanup(started);
+        }
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // 配置注入主路径（ADR 0005，#130 / #146）：五层合成经 REFORCE_PROFILE 选层、进程 env 压顶，
   // 绑定实例注入 bean 后经 start 与 production artifact 两条链路取值。
   test(
@@ -1518,9 +1890,10 @@ async function installStarters(appRoot: string, starters: CompiledStarters): Pro
 }
 
 const starterRegistrationSource = `import { defineApplication } from "@reforce/core";
+import { logging } from "@reforce/logging";
 import { cache } from "@acme/starter-cache";
 
-export default defineApplication({ starters: [cache] });
+export default defineApplication({ starters: [logging, cache] });
 `;
 
 const cacheConfigSource = `import { Injectable } from "@reforce/core";
@@ -1816,6 +2189,192 @@ describe.sequential("starter consumption", () => {
         expect(result.exitCode, processFailure(development, result)).toBe(0);
       } finally {
         await forceCleanupProcess(development);
+      }
+    },
+    commandTimeout,
+  );
+});
+
+// D1 的真终端一半（RFC 0011，#242；#247 §3.6 记为「未做」的那条）。
+//
+// 模式表有两个维度——流是不是 TTY、读者是工具还是应用——而在这条用例之前，**没有一个自动化
+// 用例跑在真 TTY 上**：既有断言全在管道下，落的一律是 short。也就是说 human 这一整档、以及
+// 「颜色按流判定」这条，只有人肉核对过。
+//
+// 真 pty 靠 util-linux 的 script(1) 分配。它把 stdout 与 stderr 并进同一个 pty，所以下面读的
+// 是合并输出。非 Linux 跳过：script 的参数形态在 BSD/macOS 上不同，而这条用例要的只是
+// 「存在一个真 TTY」，不值得为它写两套调用。
+const ptyAvailable = process.platform === "linux";
+
+async function runInPty(
+  command: string,
+  options: { readonly cwd: string; readonly env?: Readonly<Record<string, string>> },
+) {
+  return await runCommand("script", ["-qec", command, "/dev/null"], {
+    cwd: options.cwd,
+    timeout: commandTimeout,
+    ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+  });
+}
+
+// 装配不出来的应用：MISSING_BEAN 带 sourceSpan，human 模式因此会画出源码框，
+// 而 short 模式只有一行。两档的区别在这条诊断上最明显。
+const missingBeanProbe = [
+  'import { Injectable } from "@reforce/core";',
+  "",
+  "export interface AbsentGateway {",
+  "  charge(): void;",
+  "}",
+  "",
+  "@Injectable()",
+  "export class PtyProbe {",
+  "  constructor(private readonly gateway: AbsentGateway) {}",
+  "}",
+  "",
+].join("\n");
+
+describe.skipIf(!ptyAvailable).sequential("rendering mode on a real terminal", () => {
+  async function brokenProject(): Promise<TemporaryProject> {
+    const project = await createApplicationProject();
+    await writeFile(join(project.projectRoot, "src", "pty-probe.ts"), missingBeanProbe);
+    return project;
+  }
+
+  test(
+    "a real tty renders diagnostics in human mode, a pipe renders them in short",
+    async () => {
+      const project = await brokenProject();
+      try {
+        const buildCommand = `${nodeExecutable} ${cliEntry} build --project ${project.projectRoot}`;
+        const onTty = await runInPty(buildCommand, { cwd: project.projectRoot });
+        const piped = await buildProject(project.projectRoot);
+
+        expect(piped.exitCode).not.toBe(0);
+        const ttyOutput = `${String(onTty.stdout)}${String(onTty.stderr)}`;
+        const pipedOutput = `${String(piped.stdout)}${String(piped.stderr)}`;
+
+        // human：主 span 的位置行（`-->`）与源码框在，一条诊断占好几行。
+        expect(ttyOutput).toContain("MISSING_BEAN");
+        expect(ttyOutput).toContain("-->");
+        // short：一条诊断恰好一行，位置直接拼在码后面，没有源码框。
+        expect(pipedOutput).toContain("MISSING_BEAN");
+        expect(pipedOutput).not.toContain("-->");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // 颜色不得是级别/严重度的唯一通道，且必须尊重 NO_COLOR（D2）。这两条在管道下永远是绿的
+  // ——管道本来就不上色，只有真 TTY 才验得出「上色了」和「NO_COLOR 关掉了」。
+  test(
+    "a real tty colours the output and NO_COLOR takes it away without losing the words",
+    async () => {
+      const project = await brokenProject();
+      try {
+        const buildCommand = `${nodeExecutable} ${cliEntry} build --project ${project.projectRoot}`;
+        const coloured = await runInPty(buildCommand, { cwd: project.projectRoot });
+        const plain = await runInPty(buildCommand, {
+          cwd: project.projectRoot,
+          env: { NO_COLOR: "1" },
+        });
+
+        const ansiIntroducer = `${String.fromCodePoint(27)}[`;
+        const colouredOutput = `${String(coloured.stdout)}${String(coloured.stderr)}`;
+        const plainOutput = `${String(plain.stdout)}${String(plain.stderr)}`;
+
+        expect(colouredOutput).toContain(ansiIntroducer);
+        expect(plainOutput).not.toContain(ansiIntroducer);
+        // 降级掉的只是颜色：码与严重度词一个字都不能少，否则色觉障碍与管道读者就丢信息了。
+        expect(plainOutput).toContain("MISSING_BEAN");
+        expect(plainOutput).toContain("error");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // 应用日志的 human 档（RFC 0011 D2，#242）：dev TTY 下是对齐行（级别词右对齐 + 名字列
+  // 定宽），不是 JSON。管道那一半由上面 "lets LoggingSettings.levels…" 用例覆盖——它解析的
+  // 正是 JSON 行。
+  test(
+    "application logs render as aligned human lines on a real tty",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        // timeout 到点发 TERM，应用优雅关停后 script 才返回；输出在此之前早已写完。
+        const startCommand = `timeout -s TERM 10 ${nodeExecutable} ${cliEntry} start --project ${project.projectRoot}`;
+        const plain = await runInPty(startCommand, {
+          cwd: project.projectRoot,
+          env: { NO_COLOR: "1" },
+        });
+
+        const output = `${String(plain.stdout)}${String(plain.stderr)}`;
+        // 级别词右对齐、名字列定宽（18 列）：消息的起点不随名字长短漂移。
+        expect(output).toMatch(/ {2}info LoggingProbe {7}logging probe info/u);
+        // 调开 debug 的那条同样以 human 形态出现——settings 在 human 档下照常生效。
+        expect(output).toMatch(/ {1}debug LoggingProbe {7}logging probe debug/u);
+        // human 档下不再是 JSON 行。
+        expect(output).not.toContain('"message":"logging probe info"');
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  test(
+    "application log colour follows the tty and NO_COLOR strips it without losing the level word",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        const startCommand = `timeout -s TERM 10 ${nodeExecutable} ${cliEntry} start --project ${project.projectRoot}`;
+        const coloured = await runInPty(startCommand, { cwd: project.projectRoot });
+        const plain = await runInPty(startCommand, {
+          cwd: project.projectRoot,
+          env: { NO_COLOR: "1" },
+        });
+
+        const ansiIntroducer = `${String.fromCodePoint(27)}[`;
+        const colouredOutput = `${String(coloured.stdout)}${String(coloured.stderr)}`;
+        const plainOutput = `${String(plain.stdout)}${String(plain.stderr)}`;
+        expect(colouredOutput).toContain("logging probe info");
+        expect(colouredOutput).toContain(ansiIntroducer);
+        expect(plainOutput).not.toContain(ansiIntroducer);
+        // 降级掉的只是颜色：级别词与消息一个字都不能少（颜色不是级别的唯一通道，D2）。
+        expect(plainOutput).toContain("info LoggingProbe");
+        expect(plainOutput).toContain("logging probe info");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // banner 同属 human 档：管道下不该出现（它对 grep 和采集系统都是噪音）。
+  test(
+    "the banner appears on a tty and nowhere else",
+    async () => {
+      const project = await brokenProject();
+      try {
+        const buildCommand = `${nodeExecutable} ${cliEntry} build --project ${project.projectRoot}`;
+        const onTty = await runInPty(buildCommand, { cwd: project.projectRoot });
+        const piped = await buildProject(project.projectRoot);
+
+        expect(`${String(onTty.stdout)}${String(onTty.stderr)}`).toMatch(
+          /reforce.*node \d+\.\d+\.\d+ {3}build/u,
+        );
+        expect(`${String(piped.stdout)}${String(piped.stderr)}`).not.toContain("node ");
+      } finally {
+        await project.cleanup();
       }
     },
     commandTimeout,

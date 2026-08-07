@@ -654,6 +654,40 @@ test("records a spread starters element as an unsupported element", () => {
   });
 });
 
+// Issue #261：裸表达式语句此前在这里就被整个丢掉——build 全绿、starter 一个都没注册、
+// 端口永不监听。parser 收下它，标记 discarded，由链接层点名报错。
+test("lowers a bare-expression defineApplication instead of discarding it", () => {
+  const unit = parseFile("defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions).toHaveLength(1);
+});
+
+test("marks a bare-expression defineApplication as discarded", () => {
+  const unit = parseFile("defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions[0]?.discarded).toBe(true);
+});
+
+// discarded 而不是 name/export 才分得出它：`const [app] = defineApplication(...)` 同样是
+// name 缺省 + export none。
+test("distinguishes the bare-expression form from a default export", () => {
+  const unit = parseFile("export default defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions[0]?.discarded).toBe(false);
+});
+
+test("distinguishes the bare-expression form from a named declarator", () => {
+  const unit = parseFile("export const app = defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions[0]?.discarded).toBe(false);
+});
+
+test("still records nothing for a bare-expression call to another function", () => {
+  const unit = parseFile("defineApp({ starters: [a] });");
+
+  expect(unit.applicationDefinitions).toEqual([]);
+});
+
 test("records nothing for a default-exported call to another function", () => {
   const unit = parseFile("export default defineApp({ starters: [a] });");
 
@@ -845,4 +879,87 @@ test("sees an object literal through as / satisfies / parenthesis wrappers", () 
     "object-literal",
     "object-literal",
   ]);
+});
+
+// —— 抑制注释（RFC 0011 D7，#242）——
+
+test("reads a suppression comment as applying to the next line", () => {
+  const unit = parseFile(
+    [
+      "// reforce-ignore UNUSED_SUPPRESSION: kept while the starter lands",
+      "export class A {}",
+      "",
+    ].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([
+    {
+      kind: "suppression",
+      code: "UNUSED_SUPPRESSION",
+      explanation: "kept while the starter lands",
+      span: expect.objectContaining({ start: expect.objectContaining({ line: 0 }) }),
+      targetLine: 1,
+    },
+  ]);
+});
+
+// 抑制注释可堆叠：同一行代码压两个码时各写一行，上面那条的 targetLine 必须跳过下面的
+// 注释行、落在代码上——否则它指着一条注释，永远匹配不到任何诊断。
+test("stacked suppressions all target the first code line below them", () => {
+  const unit = parseFile(
+    [
+      "// reforce-ignore UNUSED_SUPPRESSION: first of the stack",
+      "// reforce-ignore SUPPRESSION_NOT_APPLICABLE: second of the stack",
+      "export class A {}",
+      "",
+    ].join("\n"),
+  );
+
+  expect(unit.suppressions.map((item) => item.targetLine)).toEqual([2, 2]);
+});
+
+// explanation 是语法的一部分（照 Biome）：抑制是长期承诺，写下它的人必须留下为什么。
+test("rejects a suppression that carries no explanation", () => {
+  const unit = parseFile(
+    ["// reforce-ignore UNUSED_SUPPRESSION:", "export class A {}", ""].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});
+
+// 行尾注释属于它所在那一行的代码，读成「抑制下一行」会让作用范围差一行。
+test("ignores a suppression that trails code on its own line", () => {
+  const unit = parseFile(
+    [
+      "export class A {} // reforce-ignore UNUSED_SUPPRESSION: trailing",
+      "export class B {}",
+      "",
+    ].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});
+
+test("does not read suppression-shaped text inside a string literal", () => {
+  const unit = parseFile(
+    ['export const note = "// reforce-ignore UNUSED_SUPPRESSION: not a comment";', ""].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
+});
+
+test("locates the suppressed line the same way under CRLF", () => {
+  const unit = parseFile(
+    ["// reforce-ignore UNUSED_SUPPRESSION: crlf", "export class A {}", ""].join("\r\n"),
+  );
+
+  expect(unit.suppressions.map((item) => item.targetLine)).toEqual([1]);
+});
+
+test("keeps a block comment out of the suppression list", () => {
+  const unit = parseFile(
+    ["/* reforce-ignore UNUSED_SUPPRESSION: block */", "export class A {}", ""].join("\n"),
+  );
+
+  expect(unit.suppressions).toEqual([]);
 });

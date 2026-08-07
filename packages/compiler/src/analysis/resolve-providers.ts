@@ -2,6 +2,11 @@ import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { name as isIdentifierName } from "estree-util-is-identifier-name";
 import { beanRoleSpecOf } from "@/analysis/bean-roles";
 import {
+  isLoggerFactoryContract,
+  isLoggerLevelsContract,
+  redirectKey,
+} from "@/analysis/logger-synthesis";
+import {
   type CollectionDependencyModel,
   type PendingDependency,
   type ProviderDraft,
@@ -303,6 +308,10 @@ function demandRelated(demand: DemandContext): readonly DiagnosticRelatedInforma
 
 interface ResolutionState {
   readonly candidates: CandidateIndex;
+  // logger 依赖重定向表（RFC 0011 L2，#242）：`${consumerId}#${parameterIndex}` → logger bean id。
+  readonly loggerRedirects: ReadonlyMap<string, string>;
+  // 级别快照 bean 的 id（RFC 0011 L5，#249）；图里没有日志时缺席。
+  readonly loggerLevelsBeanId?: string;
   readonly qualifierIndex: ReadonlyMap<string, ProviderModel>;
   readonly drafts: readonly ProviderDraft[];
   readonly linkage: StarterLinkage;
@@ -371,7 +380,16 @@ function otherCopyRelated(
     }));
 }
 
-function missingBeanHelp(demand: DemandContext, injectableMessage: boolean): string {
+function missingBeanHelp(
+  demand: DemandContext,
+  injectableMessage: boolean,
+  symbol: LinkedSymbol,
+): string {
+  // 注入 Logger 却没装任何日志绑定的形状（RFC 0011 L3 勘误，#242）：这条 MISSING_BEAN 的
+  // 修法不是「写一个 LoggerFactory」，而是注册 starter——按 isLoggingContract 同款判据特判。
+  if (isLoggerFactoryContract(symbol)) {
+    return "Register the logging starter from @reforce/logging in defineApplication's starters (or a binding starter such as @reforce/logging-pino).";
+  }
   if (demand.consumer !== undefined) {
     return "Provide the starter's open dependency with a local provider or another registered starter.";
   }
@@ -394,7 +412,7 @@ function reportMissing(
         : `No Bean provides ${symbol.name}.`,
       sourceSpan: demand.span,
       related: [...demandRelated(demand), ...otherCopyRelated(state, symbol)],
-      help: missingBeanHelp(demand, injectableMessage),
+      help: missingBeanHelp(demand, injectableMessage, symbol),
     }),
   );
 }
@@ -663,6 +681,38 @@ function singleDependencyMode(pending: PendingDependency): "eager" | "explicit-l
   return pending.linkedType.lazy ? "explicit-lazy" : "eager";
 }
 
+// 全设计唯一的解析特例（RFC 0011 L2，#242），所以它有名字。合成的 logger bean 刻意不进候选池
+// （provides 为空），消费者那条边由编译器点名指过去——走 selectProvider 的话，N 个 logger 同时
+// 提供 Logger 契约，每条 Logger 边都会是 AMBIGUOUS_BEAN。
+function redirectedLoggerDependency(
+  state: ResolutionState,
+  consumerId: string,
+  pending: PendingDependency,
+): SingleDependencyModel | undefined {
+  const targetId = state.loggerRedirects.get(redirectKey(consumerId, pending.index));
+  if (targetId === undefined) {
+    return undefined;
+  }
+  return {
+    parameterIndex: pending.index,
+    targetId,
+    // 模式必须照抄 pending，不能恒 eager：`Lazy<Logger>` 写成 eager 时 tsc 也拦不住——
+    // `resolve<T>(i): T` 的 T 由构造参数的上下文类型推断成 Lazy<Logger>，编译期一片安静，
+    // 运行期字段拿到的却是 BoundLogger 实例，调 .get() 当场 TypeError。
+    mode: singleDependencyMode(pending),
+    source: sourceReference(pending.sourceSpan),
+    contract: pending.linkedType.symbol,
+  };
+}
+
+// 同一条解析特例的第二个成员（RFC 0011 L5，#249）：级别快照 bean 同样 provides 为空，边由
+// 符号身份点名。与 Logger 的区别是它全图唯一，所以不需要逐消费者的重定向表——两侧（应用里
+// 用户自写的 LoggerFactory、starter meta 里 pino 的那条边）认的是同一个契约，而它们解析出的
+// key 锚点不同，按 key 匹配会漏掉其中一侧。
+function loggerLevelsTargetFor(state: ResolutionState, symbol: LinkedSymbol): string | undefined {
+  return isLoggerLevelsContract(symbol) ? state.loggerLevelsBeanId : undefined;
+}
+
 function resolveLocalDraftDependencies(state: ResolutionState): void {
   for (const draft of state.drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -672,6 +722,22 @@ function resolveLocalDraftDependencies(state: ResolutionState): void {
       };
       if (pending.collection === true) {
         draft.provider.dependencies.push(collectionDependencyFor(state, pending, demand));
+        continue;
+      }
+      const redirected = redirectedLoggerDependency(state, draft.provider.id, pending);
+      if (redirected !== undefined) {
+        draft.provider.dependencies.push(redirected);
+        continue;
+      }
+      const levelsTarget = loggerLevelsTargetFor(state, pending.linkedType.symbol);
+      if (levelsTarget !== undefined) {
+        draft.provider.dependencies.push({
+          parameterIndex: pending.index,
+          targetId: levelsTarget,
+          mode: singleDependencyMode(pending),
+          source: sourceReference(pending.sourceSpan),
+          contract: pending.linkedType.symbol,
+        });
         continue;
       }
       const dependency = singleDependencyFor(state, pending, demand);
@@ -724,13 +790,14 @@ function resolveStarterQueue(state: ResolutionState): void {
         });
         continue;
       }
-      const selected = selectProvider(state, symbol, demand);
-      if (selected === undefined) {
+      const targetId =
+        loggerLevelsTargetFor(state, symbol) ?? selectProvider(state, symbol, demand)?.id;
+      if (targetId === undefined) {
         continue;
       }
       entry.draft.provider.dependencies.push({
         parameterIndex: edge.index,
-        targetId: selected.id,
+        targetId,
         mode: "eager",
         source: entry.bean.metaSource,
         contract: symbol,
@@ -746,12 +813,16 @@ export function resolveProviders(
   // 生成代码的显式需求（ADR 0006 W2 的 #153 接线）：web 引擎 bean 由生成的 bootstrap 经
   // 容器解析，需求方不在 DI 图内，因此在这里显式入根，与 role:"root" 同一物化通道。
   demandedBeanIds: ReadonlySet<string> = new Set(),
+  loggerRedirects: ReadonlyMap<string, string> = new Map(),
+  loggerLevelsBeanId?: string,
 ): readonly ProviderDraft[] {
   const candidates = indexCandidates(drafts, linkage.beans);
   const qualifierIndex = indexQualifiers(drafts, diagnostics);
   validatePrimaryCandidates(candidates, diagnostics);
   const state: ResolutionState = {
     candidates,
+    loggerRedirects,
+    ...(loggerLevelsBeanId === undefined ? {} : { loggerLevelsBeanId }),
     qualifierIndex,
     drafts,
     linkage,

@@ -8,10 +8,14 @@ type DiagnosticRelatedInformation = CompilerDiagnostic["related"][number];
 
 interface DiagnosticInput {
   readonly code: CompilerDiagnosticCode;
+  // 缺省仍是 error：绝大多数诊断意味着图不完整，把 severity 写成必填只会让 59 个构造点各抄
+  // 一遍同一个值（RFC 0011 OM2，#242）。
+  readonly severity?: CompilerDiagnostic["severity"];
   readonly message: string;
   readonly sourceSpan?: SourceSpan;
   readonly related?: readonly DiagnosticRelatedInformation[];
   readonly help?: string;
+  readonly suggestions?: CompilerDiagnostic["suggestions"];
   readonly cause?: unknown;
 }
 
@@ -77,6 +81,9 @@ function compareDiagnostics(left: CompilerDiagnostic, right: CompilerDiagnostic)
     [leftSpan?.fileId ?? "", rightSpan?.fileId ?? ""],
     [leftSpan?.start.offset ?? -1, rightSpan?.start.offset ?? -1],
     [leftSpan?.end.offset ?? -1, rightSpan?.end.offset ?? -1],
+    // severity 排在 code 之前：同一处位置上 error 必须先于 warning 出现，读者先看到拦住编译的
+    // 那一条。"error" < "warning" 在 UTF-16 序下天然成立，不需要额外的权重表。
+    [left.severity, right.severity],
     [left.code, right.code],
     [left.message, right.message],
     [left.help ?? "", right.help ?? ""],
@@ -98,11 +105,12 @@ export function diagnostic(input: DiagnosticInput): CompilerDiagnostic {
   return Object.freeze({
     kind: "compiler",
     code: input.code,
-    severity: "error",
+    severity: input.severity ?? "error",
     message: input.message,
     sourceSpan: input.sourceSpan,
     related: normalizeRelated(input.related ?? []),
     help: input.help,
+    suggestions: input.suggestions,
     cause,
   });
 }
@@ -115,4 +123,21 @@ export function orderDiagnostics(
     unique.set(stableStructuralKey(item), item);
   }
   return Object.freeze([...unique.values()].toSorted(compareDiagnostics));
+}
+
+// status 只看有没有 error：warning 随 success 一起返回，不构成失败（RFC 0011 OM2，#242）。
+export function hasErrorDiagnostic(diagnostics: readonly CompilerDiagnostic[]): boolean {
+  return diagnostics.some((item) => item.severity === "error");
+}
+
+export function errorDiagnostics(
+  diagnostics: readonly CompilerDiagnostic[],
+): readonly CompilerDiagnostic[] {
+  return diagnostics.filter((item) => item.severity === "error");
+}
+
+export function warningDiagnostics(
+  diagnostics: readonly CompilerDiagnostic[],
+): readonly CompilerDiagnostic[] {
+  return diagnostics.filter((item) => item.severity === "warning");
 }

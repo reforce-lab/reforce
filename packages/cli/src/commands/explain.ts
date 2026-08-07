@@ -6,6 +6,12 @@ import {
   type Reporter,
   reportShutdownFailure,
 } from "@reforce/runtime/reporter";
+import {
+  diagnosticArticle,
+  looksLikeDiagnosticCode,
+  renderDiagnosticArticle,
+  unwrittenArticleIssueUrl,
+} from "@/explain/codes";
 import { renderExplanation } from "@/explain/render";
 import {
   isRouteQuery,
@@ -13,7 +19,9 @@ import {
   matchRoutes,
   parseRouteManifestBytes,
   parseRouteQuery,
+  type RouteManifest,
   renderRouteExplanation,
+  renderRouteOverview,
 } from "@/explain/routes";
 import { explainContracts } from "@/explain/selection";
 import { discoverInstalledStarters } from "@/explain/starter-metas";
@@ -136,6 +144,16 @@ function beanLookupProblem(
   beanName: string,
   matches: readonly ManifestBean[],
 ): ExplainOutcome {
+  // 走到这里说明既没命中长文表也没命中 bean。此时（且仅此时）才判断形状：用户多半是在问一个
+  // 还没写长文的诊断码，回答「暂无长文」比列出全部 bean 有用得多。
+  if (matches.length === 0 && looksLikeDiagnosticCode(beanName)) {
+    return {
+      kind: "problem",
+      phase: "argv",
+      code: "CLI_USAGE_ERROR",
+      message: `No long-form article for "${beanName}" yet, and no bean matches that name either. Long-form articles are tracked at ${unwrittenArticleIssueUrl}`,
+    };
+  }
   const candidates = (matches.length === 0 ? manifest.beans : matches)
     .map((bean) => bean.id)
     .join(", ");
@@ -152,10 +170,9 @@ function beanLookupProblem(
 
 // web 面（ADR 0006 W1，#153）：查询以 "/" 开头（可带方法前缀）即路由查询，只读 routes.json
 // 静态回答 路径 → 处理链；与 bean 面互不混淆（bean id/导出名/契约名都不会以 "/" 开头）。
-async function resolveRouteExplanation(
+async function readRouteManifest(
   projectRoot: string,
-  query: string,
-): Promise<ExplainOutcome> {
+): Promise<{ readonly manifest?: RouteManifest; readonly problem?: ExplainOutcome }> {
   const routesPath = join(projectRoot, ".reforce", "generated", "routes.json");
   let bytes: Uint8Array;
   try {
@@ -163,10 +180,12 @@ async function resolveRouteExplanation(
   } catch (error) {
     if (isMissingPathError(error)) {
       return {
-        kind: "problem",
-        phase: "project",
-        code: "ARTIFACT_INVALID",
-        message: `No generated route table at ${routesPath}. Run reforce build or reforce dev first.`,
+        problem: {
+          kind: "problem",
+          phase: "project",
+          code: "ARTIFACT_INVALID",
+          message: `No generated route table at ${routesPath}. Run reforce build or reforce dev first.`,
+        },
       };
     }
     throw error;
@@ -174,11 +193,35 @@ async function resolveRouteExplanation(
   const manifest = parseRouteManifestBytes(bytes);
   if (manifest === undefined) {
     return {
-      kind: "problem",
-      phase: "project",
-      code: "ARTIFACT_INVALID",
-      message: `The generated route table at ${routesPath} is not valid. Rebuild the application.`,
+      problem: {
+        kind: "problem",
+        phase: "project",
+        code: "ARTIFACT_INVALID",
+        message: `The generated route table at ${routesPath} is not valid. Rebuild the application.`,
+      },
     };
+  }
+  return { manifest };
+}
+
+// 启动摘要折叠路由时印出的出口（RFC 0011 D2，#242），必须无条件可用。
+const routeOverviewQuery = "routes";
+
+async function resolveRouteOverview(projectRoot: string): Promise<ExplainOutcome> {
+  const { manifest, problem } = await readRouteManifest(projectRoot);
+  if (manifest === undefined) {
+    return problem ?? { kind: "lines", lines: [] };
+  }
+  return { kind: "lines", lines: renderRouteOverview(manifest) };
+}
+
+async function resolveRouteExplanation(
+  projectRoot: string,
+  query: string,
+): Promise<ExplainOutcome> {
+  const { manifest, problem } = await readRouteManifest(projectRoot);
+  if (manifest === undefined) {
+    return problem ?? { kind: "lines", lines: [] };
   }
   const routeQuery = parseRouteQuery(query);
   if (routeQuery === undefined) {
@@ -198,8 +241,20 @@ async function resolveRouteExplanation(
 
 async function resolveExplanation(options: ExplainCommandOptions): Promise<ExplainOutcome> {
   const projectRoot = resolve(options.cwd, options.projectDirectory);
+  // `routes` 是保留查询词，排在 bean 面之前：启动摘要把这个字面量印给了用户，它必须无条件
+  // 可用。代价是导出名恰好叫 routes 的 bean 在这里被遮住——那个 bean 用完整 id 仍然查得到，
+  // 而反过来「摘要给出的出口跑不通」没有任何补救。
+  if (options.beanName === routeOverviewQuery) {
+    return await resolveRouteOverview(projectRoot);
+  }
   if (isRouteQuery(options.beanName)) {
     return await resolveRouteExplanation(projectRoot, options.beanName);
+  }
+  // 诊断码长文（D8）：只有「命中长文表」才走这条分支，未命中的一律原样落到 bean 面。
+  // 用正则猜「看起来像个码」会把全大写的契约 displayName（URL 之类）从 bean 面抢走。
+  const article = diagnosticArticle(options.beanName);
+  if (article !== undefined) {
+    return { kind: "lines", lines: renderDiagnosticArticle(options.beanName, article) };
   }
   const manifestPath = join(projectRoot, ".reforce", "generated", "manifest.json");
   const { manifest, problem } = await readManifest(manifestPath);

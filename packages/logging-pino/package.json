@@ -1,0 +1,41 @@
+{
+  "name": "@reforce/logging-pino",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./reforce-meta": "./reforce-meta.json"
+  },
+  "files": [
+    "dist",
+    "reforce-meta.json"
+  ],
+  "scripts": {
+    "build": "rslib build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p it/tsconfig.json",
+    "test": "vitest run",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@reforce/core": "workspace:*",
+    "@reforce/logging": "workspace:*",
+    "@swc/helpers": "catalog:",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/bundler-plugin": "workspace:*",
+    "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
+    "@rslib/core": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

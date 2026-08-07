@@ -16,6 +16,11 @@ dist/
 /packages/*/reforce.js
 /packages/*/reforce.d.ts
 
+# @reforce/logging 的 meta 是手写源文件不是构建产物（RFC 0011 勘误，#242）：defaultBean 与
+# 无 @Injectable 的位序包装 bean 是 `reforce lib` 还表达不了的形状，由 it/reforce-meta.spec.ts
+# 回读自检兜底。
+!/packages/logging/reforce-meta.json
+
 # turbo
 .turbo/
 

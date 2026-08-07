@@ -2,7 +2,9 @@ import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { Injectable, type OnContextClose } from "@reforce/core";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
-import { Hono } from "hono";
+import { webEngineAddress } from "@reforce/web/adapter";
+import { type Context, Hono } from "hono";
+import { matchedRoutes } from "hono/route";
 import { TrieRouter } from "hono/router/trie-router";
 import type { HonoConfigurer, HonoRouteCustomizer } from "@/bridges";
 import { honoRequestPath } from "@/path";
@@ -11,8 +13,9 @@ import type { WebHonoServeSettings } from "@/settings";
 
 // hono 引擎适配器（#236）：reforce 的路由处理函数就是一个普通的 hono handler，不绕过 hono 的任何通道。
 //
-//   hono 生态中间件（cors / helmet / compress / rate-limit / static）
-//    └─ hono 路由匹配（未命中 → hono 自己的 404，reforce 不接管）
+//   未命中观察者（RFC 0011 C7，#250：await next() 之后只读一眼 c.res，什么都不改）
+//    └─ hono 生态中间件（cors / helmet / compress / rate-limit / static）
+//        └─ hono 路由匹配（未命中 → hono 自己的 404，reforce 不接管）
 //        └─ reforce handler ── 直接 return 标准 Response（hono 原生用法）
 //
 // 因此外层 `app.use('*')` 的 `await next()` 之后既能改头也能整体替换 c.res，生态中间件按它们
@@ -68,12 +71,15 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     if (address === null || typeof address === "string") {
       throw new Error("The Hono web engine must listen on a TCP address.");
     }
-    // 监听地址走 stderr（同 web-node）：端口 0 时这是唯一的实际端口出口，而 stdout 属于应用
-    // 数据面，生成的 bootstrap 会被当作库嵌入 Worker/管道消费。
-    process.stderr.write(
-      `[reforce.web-hono] listening on http://${this.settings.hostname ?? "localhost"}:${address.port}/\n`,
-    );
-    return { close: () => this.close() };
+    // 地址经 handle 流出，不由引擎自己打（RFC 0011 L6/D2，#250）：三个引擎各写一行会得到
+    // 三个不同前缀、绕过日志门面、也喂不进启动摘要。谁来说、说成什么样归框架统一决定。
+    return {
+      close: () => this.close(),
+      address: webEngineAddress({
+        ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
+        port: address.port,
+      }),
+    };
   }
 
   onContextClose(): Promise<void> {
@@ -84,6 +90,30 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
 
   private async buildApplication(application: WebApplication): Promise<Hono> {
     const app = new Hono({ router: new TrieRouter(), getPath: honoRequestPath });
+    const notFound = application.logNotFound;
+    if (notFound !== undefined) {
+      // 装在 configurer 之前：hono 的 app.use 只对**之后**注册的路由生效（见下），观察者要
+      // 盖住全部路由就必须最先装。
+      //
+      // 不用 app.notFound()：那会换掉响应体（契约里 404 的 body 归引擎），而且是最后写入者
+      // 赢——用户 configurer 再调一次就把日志静默关掉了，hono 内部就是一次赋值，不报错。
+      app.use("*", async (context, next) => {
+        await next();
+        if (context.res.status !== 404) {
+          return;
+        }
+        // 真未命中 = 路由器没匹配到任何**路由**，与 fastify 的 setNotFoundHandler 同一语义。
+        // hono 的 matchedRoutes 把 use 装的中间件也算在内（method 恒为 "ALL"），所以判据是
+        // 「除中间件外一无所中」：reforce 的 handler、configurer 的自有路由，谁匹配上了都
+        // 不是未命中——它们自己答的 404 已由核心的请求日志记账，再记一条就是重复报告。
+        if (matchedRoutes(context).some((route) => route.method !== "ALL")) {
+          return;
+        }
+        // path 取 new URL(...).pathname 而不是 c.req.path：后者被自定义 getPath 解码归一，
+        // 坏转义时还会变成哨兵值，与 logNotFound 契约要的「原始目标去掉 query」不符。
+        notFound({ method: context.req.method, path: new URL(context.req.url).pathname });
+      });
+    }
     // configurer 必须全部跑在 app.on 之前：hono 的 app.use 只对**之后**注册的路由生效，
     // 装晚了静默无效（实测）。
     for (const configurer of this.configurers) {
@@ -100,9 +130,8 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
           app.on(route.method, route.path, middleware);
         }
       }
-      app.on(route.method, route.path, (context) =>
-        route.handle(context.req.raw, context.req.param()),
-      );
+      const handler = (context: Context) => route.handle(context.req.raw, context.req.param());
+      app.on(route.method, route.path, handler);
     }
     return app;
   }

@@ -8,7 +8,7 @@ import {
   defineBean,
 } from "@/index";
 import { applicationCleanupError, applicationStartError, rejection } from "../support/rejection";
-import { testDefinition, testSource } from "../support/test-definition";
+import { testDefinition, testDependency, testSource } from "../support/test-definition";
 
 describe("startup and shutdown coordination", () => {
   test("concurrent shutdown callers share one result and one cleanup", async () => {
@@ -45,7 +45,7 @@ describe("startup and shutdown coordination", () => {
   test("a second start rejects without throwing synchronously", async () => {
     const context = createApplicationContext(testDefinition([]));
     const first = context.start();
-    let second: Promise<void> | undefined;
+    let second: Promise<unknown> | undefined;
 
     expect(() => {
       second = context.start();
@@ -236,5 +236,109 @@ describe("startup and shutdown coordination", () => {
 
     expect(error.cause).toBeInstanceOf(BeanCreationError);
     expect(disposals).toBe(0);
+  });
+});
+
+// 启动台账（RFC 0011 C6，#250）：start() 交出逐 bean 的自身耗时，由生成的 bootstrap 决定
+// 打不打日志——容器本身不认识任何 @reforce 包，也不该认识。
+describe("start report", () => {
+  test("records one construct-phase timing per bean in construction order", async () => {
+    class First {}
+    class Second {}
+    const context = createApplicationContext(
+      testDefinition([
+        classBean({
+          id: "src/first.ts#First",
+          source: testSource("first"),
+          target: First,
+          dependencies: [],
+          create: () => new First(),
+          hooks: {},
+        }),
+        classBean({
+          id: "src/second.ts#Second",
+          source: testSource("second"),
+          target: Second,
+          dependencies: [],
+          create: () => new Second(),
+          hooks: {},
+        }),
+      ]),
+    );
+
+    const report = await context.start();
+
+    expect(
+      report.beanTimings
+        .filter((timing) => timing.phase === "construct")
+        .map((timing) => timing.id),
+    ).toEqual(["src/first.ts#First", "src/second.ts#Second"]);
+    await context.close();
+  });
+
+  test("records an @OnContextStart hook under the start phase", async () => {
+    class DataSource {}
+    const context = createApplicationContext(
+      testDefinition([
+        classBean({
+          id: "src/data-source.ts#DataSource",
+          source: testSource("data-source"),
+          target: DataSource,
+          dependencies: [],
+          create: () => new DataSource(),
+          hooks: {
+            start: async () => {
+              await Promise.resolve();
+            },
+          },
+        }),
+      ]),
+    );
+
+    const report = await context.start();
+
+    expect(report.beanTimings).toContainEqual(
+      expect.objectContaining({ id: "src/data-source.ts#DataSource", phase: "start" }),
+    );
+    await context.close();
+  });
+
+  // 计时点落在记忆化早返回之后的守卫：构造序是依赖优先的，依赖方构造时对依赖的那次
+  // construct 走的是记忆化早返回，不该再记一条。
+  test("does not record a bean twice when a dependent re-resolves it", async () => {
+    class Dependency {}
+    class Consumer {
+      constructor(readonly dependency: Dependency) {}
+    }
+    const dependencyId = "src/dependency.ts#Dependency";
+    const context = createApplicationContext(
+      testDefinition(
+        [
+          classBean({
+            id: "src/consumer.ts#Consumer",
+            source: testSource("consumer"),
+            target: Consumer,
+            dependencies: [testDependency(0, dependencyId, "eager")],
+            create: (resolver) => new Consumer(resolver.resolve<Dependency>(0)),
+            hooks: {},
+          }),
+          classBean({
+            id: dependencyId,
+            source: testSource("dependency"),
+            target: Dependency,
+            dependencies: [],
+            create: () => new Dependency(),
+            hooks: {},
+          }),
+        ],
+        { constructionOrder: [dependencyId, "src/consumer.ts#Consumer"] },
+      ),
+    );
+
+    const report = await context.start();
+
+    const ids = report.beanTimings.map((timing) => timing.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    await context.close();
   });
 });

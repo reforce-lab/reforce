@@ -4,16 +4,38 @@ import type {
   GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
 } from "@reforce/core/generated-runtime";
+import { bootstrapLogger } from "@reforce/logging";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { type EnvironmentSnapshot, loadEnvironmentSnapshot } from "@/binding/env-layers";
 import {
   buildBindingInput,
+  environmentKeyPrefix,
   environmentVariableName,
   expandKeyPaths,
   prefixWordsOf,
   suggestEnvironmentName,
 } from "@/binding/key-mapping";
+import { configProvenanceRecords } from "@/binding/provenance";
 import { readConfigPropertiesMetadata } from "@/config-properties";
+
+// 绑定 phase 跑在**一切 bean 构造之前**（ADR 0005 决策 6.1），所以这里拿不到容器里的
+// LoggerFactory——只能走引导缓冲，等绑定就位后由启动代码重放（RFC 0011 L7/L8，#249/#250）。
+// 惰性取而不是模块作用域取：模块求值时机由打包器决定，惰性取保证第一条记录进缓冲的时刻
+// 就是真正写日志的时刻，时间戳才是准的。
+const configLoggerName = "reforce.config";
+
+function configLogger() {
+  return bootstrapLogger(configLoggerName);
+}
+
+// 只报本应用真的绑了的那些前缀：环境里另外几百个变量与配置无关，全报出来等于没报。
+function boundKeyPrefixes(configs: readonly GeneratedConfigRegistration[]): readonly string[] {
+  return configs.flatMap((registration) => {
+    const metadata = readConfigPropertiesMetadata(registration.target);
+    // 缺元数据是硬错，但那条 TypeError 归校验路径抛（文案更完整），这里只是跳过。
+    return metadata === undefined ? [] : [environmentKeyPrefix(prefixWordsOf(metadata.prefix))];
+  });
+}
 
 export interface CreateConfigBindingOptions {
   readonly root?: string;
@@ -83,7 +105,7 @@ function warnUnmatchedKeys(
   output: object,
   snapshot: EnvironmentSnapshot,
 ): void {
-  const keyPrefix = `${prefixWordsOf(prefix).join("_").toUpperCase()}_`;
+  const keyPrefix = environmentKeyPrefix(prefixWordsOf(prefix));
   const knownNames: string[] = [];
   collectLeafEnvironmentNames(prefix, output, [], knownNames);
   for (const key of [...snapshot.values.keys()].sort()) {
@@ -99,8 +121,10 @@ function warnUnmatchedKeys(
       continue;
     }
     const suggestion = suggestEnvironmentName(key, knownNames);
-    const hint = suggestion === undefined ? "" : `; did you mean ${suggestion}?`;
-    console.warn(`[reforce.config] ${key} does not match any bound property of ${configId}${hint}`);
+    configLogger().warn(
+      { key, configId, ...(suggestion === undefined ? {} : { suggestion }) },
+      "environment key matches no bound property",
+    );
   }
 }
 
@@ -169,7 +193,16 @@ export function createConfigBinding(
         env: process.env,
       });
       for (const warning of snapshot.warnings) {
-        console.warn(`[reforce.config] ${warning}`);
+        configLogger().warn(undefined, warning);
+      }
+      // 排在校验之前：绑定失败时「这个键是哪一层给的」恰恰是最需要的现场，而失败路径下面
+      // 就直接 return 了。
+      const log = configLogger();
+      for (const record of configProvenanceRecords({
+        provenance: snapshot.provenance,
+        keyPrefixes: boundKeyPrefixes(configs),
+      })) {
+        log[record.level](record.fields, record.message);
       }
 
       // 不在第一个失败的 config 停下：跨 config 聚合全部 issue（ADR 0005 决策 6.1）

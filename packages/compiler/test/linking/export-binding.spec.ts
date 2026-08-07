@@ -87,6 +87,7 @@ function localNamedExport(file: string, local: string, exported: string): Export
 
 function parsedSource(file: string, shape: ModuleShape): ParsedSource {
   const unit: SourceFileIr = {
+    suppressions: [],
     imports: shape.imports ?? [],
     exports: shape.exports ?? [],
     interfaces: [],
