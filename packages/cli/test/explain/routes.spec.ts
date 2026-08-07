@@ -27,7 +27,13 @@ const manifest: RouteManifest = {
           { slot: "body", source: { kind: "schema", vendor: "zod" } },
           { slot: "requestContext" },
         ],
-        response: { kind: "table", status: 200, errors: [] },
+        response: {
+          kind: "table",
+          status: 200,
+          errors: [
+            { error: "OrderRejectedError", handler: "src/errors.ts#OrderRejected", status: 409 },
+          ],
+        },
       },
     },
     {
@@ -39,7 +45,15 @@ const manifest: RouteManifest = {
       contract: { slots: [], response: { kind: "passthrough", errors: [] } },
     },
   ],
-  errorHandlers: [{ beanId: "src/errors.ts#Teapot", order: 0 }],
+  errorHandlers: [
+    {
+      beanId: "src/errors.ts#OrderRejected",
+      order: 0,
+      accepts: { name: "OrderRejectedError" },
+      status: 409,
+    },
+    { beanId: "src/errors.ts#Teapot", order: 1 },
+  ],
 };
 
 // 落盘形态的 contract 节(source 是 {source: "..."} 判别对象),parseRouteManifestBytes 的
@@ -69,6 +83,9 @@ function manifestJson(): unknown {
           ...(route.contract.response.status === undefined
             ? {}
             : { status: route.contract.response.status }),
+          ...(route.contract.response.errors.length === 0
+            ? {}
+            : { errors: route.contract.response.errors }),
         },
       },
     })),
@@ -101,7 +118,7 @@ describe("parseRouteManifestBytes", () => {
 
     expect(parsed?.routes).toHaveLength(2);
     expect(parsed?.routes[0]?.contract).toEqual(manifest.routes[0]?.contract);
-    expect(parsed?.errorHandlers).toEqual([{ beanId: "src/errors.ts#Teapot", order: 0 }]);
+    expect(parsed?.errorHandlers).toEqual(manifest.errorHandlers);
   });
 
   // 1/2 是旧表的版本:旧生成物不得被静默解释成 v3 表。
@@ -162,21 +179,25 @@ describe("renderRouteExplanation", () => {
       "  2. query · key page · optional · decoded from the type",
       "  3. body · decoded by schema (zod)",
       "  4. requestContext",
-      "  response · whitelisted by the return type contract",
+      "  response · 200 · whitelisted by the return type contract",
+      "  throws OrderRejectedError → 409 · src/errors.ts#OrderRejected",
       '  meta · {"roles":["admin"]}',
       "error handlers (dispatch order)",
-      "  1. order 0 · src/errors.ts#Teapot",
+      "  1. order 0 · src/errors.ts#OrderRejected · accepts OrderRejectedError · 409",
+      "  2. order 1 · src/errors.ts#Teapot · match-all",
     ]);
   });
 
-  test("a route without data slots prints no inputs section", () => {
+  test("a route without data slots prints the passthrough response line", () => {
     const lines = renderRouteExplanation(
       manifest,
       matchRoutes(manifest, { method: "POST", path: "/users" }),
     );
 
     expect(lines.some((line) => line.includes("inputs"))).toBe(false);
-    expect(lines.some((line) => line.includes("response ·"))).toBe(false);
+    expect(lines).toContain(
+      "  response · passthrough (handler-controlled Response; void answers 204)",
+    );
   });
 });
 
@@ -190,7 +211,8 @@ describe("renderRouteOverview", () => {
       "GET /users/:id · src/users.ts#UsersController · show() · 2 middleware",
       "POST /users · src/users.ts#UsersController · create() · no middleware",
       "error handlers (dispatch order)",
-      "  1. order 0 · src/errors.ts#Teapot",
+      "  1. order 0 · src/errors.ts#OrderRejected · accepts OrderRejectedError · 409",
+      "  2. order 1 · src/errors.ts#Teapot · match-all",
     ]);
   });
 

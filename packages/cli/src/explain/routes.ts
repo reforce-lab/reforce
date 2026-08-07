@@ -48,9 +48,17 @@ export interface RouteManifestEntry {
   readonly contract: RouteManifestContract;
 }
 
+// accepts/status 是 S3(#275)类型化处理器的声明面:accepts 缺席 = match-all。
+export interface RouteManifestErrorHandler {
+  readonly beanId: string;
+  readonly order: number;
+  readonly accepts?: { readonly name: string };
+  readonly status?: number;
+}
+
 export interface RouteManifest {
   readonly routes: readonly RouteManifestEntry[];
-  readonly errorHandlers: readonly { readonly beanId: string; readonly order: number }[];
+  readonly errorHandlers: readonly RouteManifestErrorHandler[];
 }
 
 function parsedMiddleware(value: unknown): RouteManifestMiddleware | undefined {
@@ -224,19 +232,35 @@ export function parseRouteManifestBytes(bytes: Uint8Array): RouteManifest | unde
     }
     parsedRoutes.push(parsed);
   }
-  const parsedHandlers: { beanId: string; order: number }[] = [];
+  const parsedHandlers: RouteManifestErrorHandler[] = [];
   for (const handler of errorHandlers) {
-    if (!isObject(handler)) {
+    const parsed = parsedErrorHandler(handler);
+    if (parsed === undefined) {
       return undefined;
     }
-    const beanId = Reflect.get(handler, "beanId");
-    const order = Reflect.get(handler, "order");
-    if (typeof beanId !== "string" || typeof order !== "number") {
-      return undefined;
-    }
-    parsedHandlers.push({ beanId, order });
+    parsedHandlers.push(parsed);
   }
   return { routes: parsedRoutes, errorHandlers: parsedHandlers };
+}
+
+function parsedErrorHandler(value: unknown): RouteManifestErrorHandler | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const beanId = Reflect.get(value, "beanId");
+  const order = Reflect.get(value, "order");
+  if (typeof beanId !== "string" || typeof order !== "number") {
+    return undefined;
+  }
+  const accepts = Reflect.get(value, "accepts");
+  const acceptsName = isObject(accepts) ? Reflect.get(accepts, "name") : undefined;
+  const status = Reflect.get(value, "status");
+  return {
+    beanId,
+    order,
+    ...(typeof acceptsName === "string" ? { accepts: { name: acceptsName } } : {}),
+    ...(typeof status === "number" ? { status } : {}),
+  };
 }
 
 export interface RouteQuery {
@@ -342,20 +366,52 @@ export function renderRouteExplanation(
         lines.push(`  ${index + 1}. ${slotLine(slot)}`);
       });
     }
-    if (route.contract.response.kind === "table") {
-      lines.push("  response · whitelisted by the return type contract");
+    lines.push(`  ${responseLine(route.contract.response)}`);
+    for (const thrown of route.contract.response.errors) {
+      lines.push(`  ${thrownErrorLine(thrown)}`);
     }
     if (Object.keys(route.meta).length > 0) {
       lines.push(`  meta · ${JSON.stringify(route.meta)}`);
     }
   }
-  if (manifest.errorHandlers.length > 0) {
-    lines.push("error handlers (dispatch order)");
-    manifest.errorHandlers.forEach((handler, index) => {
-      lines.push(`  ${index + 1}. order ${handler.order} · ${handler.beanId}`);
-    });
-  }
+  lines.push(...errorHandlerLines(manifest));
   return lines;
+}
+
+// 响应三变体各一行(S3,#275):table/free-form 的差别是「有没有白名单」——free-form 是
+// 降级形态,序列化原样出线,这行是唯一提醒读者补返回类型标注的出口。
+function responseLine(response: RouteManifestResponse): string {
+  if (response.kind === "table") {
+    return `response · ${String(response.status ?? 200)} · whitelisted by the return type contract`;
+  }
+  if (response.kind === "free-form") {
+    return `response · ${String(response.status ?? 200)} · free-form (serialized as-is, no whitelist)`;
+  }
+  if (response.status !== undefined) {
+    return `response · passthrough (handler-controlled Response; void answers ${String(response.status)})`;
+  }
+  return "response · passthrough (handler-controlled Response; void answers 204)";
+}
+
+function thrownErrorLine(thrown: RouteManifestThrownError): string {
+  const status = thrown.status === undefined ? "" : ` → ${String(thrown.status)}`;
+  return `throws ${thrown.error}${status} · ${thrown.handler}`;
+}
+
+function errorHandlerLine(handler: RouteManifestErrorHandler, index: number): string {
+  const accepts = handler.accepts === undefined ? "match-all" : `accepts ${handler.accepts.name}`;
+  const status = handler.status === undefined ? "" : ` · ${String(handler.status)}`;
+  return `  ${index + 1}. order ${handler.order} · ${handler.beanId} · ${accepts}${status}`;
+}
+
+function errorHandlerLines(manifest: RouteManifest): readonly string[] {
+  if (manifest.errorHandlers.length === 0) {
+    return [];
+  }
+  return [
+    "error handlers (dispatch order)",
+    ...manifest.errorHandlers.map((handler, index) => errorHandlerLine(handler, index)),
+  ];
 }
 
 export function knownRouteList(manifest: RouteManifest): string {
@@ -387,11 +443,6 @@ export function renderRouteOverview(manifest: RouteManifest): readonly string[] 
       `${route.method} ${route.path} · ${route.controller.beanId} · ${route.controller.handler}() · ${chain}`,
     );
   }
-  if (manifest.errorHandlers.length > 0) {
-    lines.push("error handlers (dispatch order)");
-    manifest.errorHandlers.forEach((handler, index) => {
-      lines.push(`  ${index + 1}. order ${handler.order} · ${handler.beanId}`);
-    });
-  }
+  lines.push(...errorHandlerLines(manifest));
   return lines;
 }
