@@ -701,3 +701,74 @@ describe("collection membership", () => {
     ]);
   });
 });
+
+// 同名包两份物理拷贝的撕裂检测（#253）：coordinate 相同、key 不同、且都被实际绑定才报。
+describe("split contract bindings", () => {
+  function copiedContractSymbol(root: string, name: string): LinkedSymbol {
+    return {
+      key: `package:${root}:dist/index.d.ts#interface:${name}`,
+      kind: "interface",
+      name,
+      moduleSpecifier: "shared-contract",
+      generic: false,
+      external: {
+        packageName: "shared-contract",
+        version: "1.0.0",
+        packageRoot: root,
+        coordinate: `shared-contract:dist/index.d.ts#${name}`,
+      },
+    };
+  }
+
+  const leftPort = copiedContractSymbol("/packages/left", "Port");
+  const rightPort = copiedContractSymbol("/packages/right", "Port");
+
+  test("warns once when two copies of one contract both get bound", () => {
+    const drafts = [
+      draft(provider({ file: "src/left/a.ts", exportName: "LeftProvider", provides: [leftPort] })),
+      draft(
+        provider({ file: "src/right/a.ts", exportName: "RightProvider", provides: [rightPort] }),
+      ),
+      draft(provider({ file: "src/left/c.ts", exportName: "LeftConsumer" }), [pending(leftPort)]),
+      draft(provider({ file: "src/right/c.ts", exportName: "RightConsumer" }), [
+        pending(rightPort),
+      ]),
+    ];
+
+    const diagnostics = resolve(drafts);
+
+    expect(diagnostics.map((item) => [item.code, item.severity])).toEqual([
+      ["SPLIT_CONTRACT_BINDING", "warning"],
+    ]);
+    expect(diagnostics[0]?.message).toContain("shared-contract");
+  });
+
+  test("stays silent when only one copy is bound", () => {
+    const drafts = [
+      draft(provider({ file: "src/left/a.ts", exportName: "LeftProvider", provides: [leftPort] })),
+      draft(
+        provider({ file: "src/right/a.ts", exportName: "RightProvider", provides: [rightPort] }),
+      ),
+      draft(provider({ file: "src/left/c.ts", exportName: "LeftConsumer" }), [pending(leftPort)]),
+    ];
+
+    expect(resolve(drafts)).toEqual([]);
+  });
+
+  test("a collection binding counts toward the split", () => {
+    const drafts = [
+      draft(provider({ file: "src/left/a.ts", exportName: "LeftProvider", provides: [leftPort] })),
+      draft(
+        provider({ file: "src/right/a.ts", exportName: "RightProvider", provides: [rightPort] }),
+      ),
+      draft(provider({ file: "src/left/c.ts", exportName: "LeftConsumer" }), [pending(leftPort)]),
+      draft(provider({ file: "src/right/c.ts", exportName: "RightConsumer" }), [
+        collectionPending(rightPort),
+      ]),
+    ];
+
+    const diagnostics = resolve(drafts);
+
+    expect(diagnostics.map((item) => item.code)).toEqual(["SPLIT_CONTRACT_BINDING"]);
+  });
+});
