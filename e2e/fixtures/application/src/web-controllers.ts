@@ -1,4 +1,4 @@
-import type { Current } from "@reforce/context";
+import type { Current } from "@reforce/core";
 import type { Logger } from "@reforce/logging";
 import { Controller, Get, Post, type RequestContext } from "@reforce/web";
 import type { RequestAudit } from "@/http-exchange";

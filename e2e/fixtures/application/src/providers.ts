@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { Injectable, type OnContextStart, Order, Primary, Qualifier } from "@reforce/context";
+import { Injectable, type OnContextStart, Order, Primary, Qualifier } from "@reforce/core";
 
 export interface DefaultPort {
   value(): string;

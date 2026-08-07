@@ -66,7 +66,7 @@ function generatedContent(result: CompileSuccess, filePath: GeneratedFile["path"
 }
 
 const managerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { activeResourceFor } from "@reforce/transaction";',
   'import type { TransactionManager, TransactionOptions } from "@reforce/transaction";',
   "",
@@ -84,7 +84,7 @@ const managerSource = [
 // savepoint 能力表达在契约身份上（ADR 0008 T4 定案）：实现 NestedTransactionManager 的类
 // 同时提供两个契约 key，注入裸 TransactionManager 的地方照旧装得上。
 const nestedManagerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { activeResourceFor } from "@reforce/transaction";',
   'import type { NestedTransactionManager, TransactionOptions } from "@reforce/transaction";',
   "",
@@ -103,7 +103,7 @@ const nestedManagerSource = [
 ].join("\n");
 
 const nestedServiceSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { Transactional } from "@reforce/transaction";',
   "",
   "@Injectable()",
@@ -114,7 +114,7 @@ const nestedServiceSource = [
 ].join("\n");
 
 const serviceSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { Transactional } from "@reforce/transaction";',
   "",
   "@Injectable()",
@@ -205,9 +205,9 @@ describe("transaction interceptor synthesis", () => {
       "manager.ts": managerSource,
       "service.ts": serviceSource,
       "trace.ts": [
-        'import { Injectable, Interceptor } from "@reforce/context";',
+        'import { Injectable, Interceptor } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
-        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
+        'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";',
         "",
         '@Interceptor({ marker: Transactional, phase: "observability" })',
         "export class TransactionTraceInterceptor implements MethodInterceptor {",
@@ -271,7 +271,7 @@ describe("transaction manager contract resolution", () => {
     const result = await compileSourcesOrThrow({
       "manager.ts": nestedManagerSource,
       "consumer.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import type { TransactionManager } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -290,8 +290,8 @@ describe("transaction manager contract resolution", () => {
   test("a Primary implementation resolves the ambiguity", async () => {
     const primaryManager = managerSource
       .replace(
-        'import { Injectable } from "@reforce/context";',
-        'import { Injectable, Primary } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
+        'import { Injectable, Primary } from "@reforce/core";',
       )
       .replace("@Injectable()", "@Injectable()\n@Primary()")
       .replace(/SqlManager/g, "PrimaryManager");
@@ -314,7 +314,7 @@ describe("transactional value schema (compile-time hard errors)", () => {
     compileSources({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -347,7 +347,7 @@ describe("transactional value schema (compile-time hard errors)", () => {
     const result = await compileSourcesOrThrow({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -387,7 +387,7 @@ describe("reserved marker key and misuse", () => {
   test("a user marker cannot claim the reserved transactional key", async () => {
     const result = await compileSources({
       "markers.ts": [
-        'import { defineMethodMarker } from "@reforce/context";',
+        'import { defineMethodMarker } from "@reforce/core";',
         'export const MyTx = defineMethodMarker("transactional");',
       ].join("\n"),
     });
@@ -399,7 +399,7 @@ describe("reserved marker key and misuse", () => {
     const result = await compileSources({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -417,7 +417,7 @@ describe("reserved marker key and misuse", () => {
     const result = await compileSources({
       "manager.ts": managerSource,
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { Transactional } from "@reforce/transaction";',
         "",
         "@Injectable()",
@@ -436,7 +436,7 @@ describe("reserved marker key and misuse", () => {
 // LoggerFactory 时才有——否则每个用 @Transactional 的应用都会被迫装 @reforce/logging。
 describe("transaction logging edge", () => {
   const loggerFactorySource = [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import type { Logger, LoggerFactory } from "@reforce/logging";',
     "",
     "@Injectable()",
@@ -456,7 +456,7 @@ describe("transaction logging edge", () => {
   ].join("\n");
 
   const transactionalService = [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import { Transactional } from "@reforce/transaction";',
     "",
     "@Injectable()",

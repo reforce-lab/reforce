@@ -1,4 +1,4 @@
-import type { RequestScopeSeed } from "@reforce/context";
+import type { RequestScopeSeed } from "@reforce/core";
 import type { RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { Injectable, type OnContextClose } from "@reforce/context";
+import { Injectable, type OnContextClose } from "@reforce/core";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
 import { webEngineAddress } from "@reforce/web/adapter";
 import { createRouter } from "@/router";

@@ -155,7 +155,7 @@ describe("validateGeneratedManifestBytes runtime specifier", () => {
       extraProvides: [
         {
           displayName: "ApplicationContext",
-          moduleSpecifier: "@reforce/context",
+          moduleSpecifier: "@reforce/core",
           exportName: "ApplicationContext",
         },
       ],

@@ -1,4 +1,4 @@
-import { Injectable, type OnContextClose } from "@reforce/context";
+import { Injectable, type OnContextClose } from "@reforce/core";
 import {
   bindLoggerLevels,
   type LogFieldSource,

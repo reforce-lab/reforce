@@ -476,10 +476,11 @@ export type DefineApplicationOptions =
 
 export interface DefineApplicationDeclaration {
   readonly kind: "define-application";
-  // 语句形态必须进 IR（Issue #261）：链接层要按名点出「裸表达式语句」这一种，而 name/export
-  // 分不出它——`const [app] = defineApplication(...)` 同样是 name 缺省 + export none。
-  readonly form: "declarator" | "default-export" | "expression-statement";
   readonly topLevel: boolean;
+  // 调用结果没被绑定到任何地方，即写成了裸表达式语句。这种写法必须照常收进来：过去它在
+  // 这一层就被丢掉，于是 build 成功、starter 一个都没注册、应用起来不监听任何端口，全程
+  // 零诊断（Issue #261）。收进来才轮得到链接层去点名。
+  readonly discarded: boolean;
   readonly name?: string;
   readonly export: DeclarationExport;
   readonly callee: EntityName;

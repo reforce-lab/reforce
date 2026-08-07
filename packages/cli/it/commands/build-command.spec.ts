@@ -143,7 +143,7 @@ async function createWarningApplication(): Promise<TemporaryProject> {
     })}\n`,
   });
   projects.push(project);
-  // 这三条要走完整的生产构建（编译 + 打包），所以项目里必须有真实的 @reforce/context dist；
+  // 这三条要走完整的生产构建（编译 + 打包），所以项目里必须有真实的 @reforce/core dist；
   // 上面那两条只走到事务恢复就返回，用不着。
   await installContextDistribution(project.projectRoot);
   return project;

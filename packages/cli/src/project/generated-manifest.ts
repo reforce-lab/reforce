@@ -872,7 +872,7 @@ function isGeneratedManifest(value: unknown): value is GeneratedManifest {
     return false;
   }
   // bean/config id 同一身份命名空间：除精确唯一外，按 lowerCase 归一后（portable id）也必须
-  // 唯一，与 packages/context 的运行时校验互为双保险。
+  // 唯一，与 packages/core 的运行时校验互为双保险。
   const ids = [...beans.map((bean) => bean.id), ...configs.map((config) => config.id)];
   const portableIds = ids.map((id) => id.toLowerCase());
   const knownIds = new Set(ids);

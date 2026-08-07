@@ -31,7 +31,7 @@ export const positiveApplicationTree = {
       "\n",
     ),
     "greeting.ts": [
-      'import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";',
+      'import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";',
       "export interface GreetingPort { value(): string; }",
       "@Injectable()",
       "export class MessageRepository implements GreetingPort {",
@@ -48,7 +48,7 @@ export const positiveApplicationTree = {
       "",
     ].join("\n"),
     "providers.ts": [
-      'import { Injectable, Primary, Qualifier } from "@reforce/context";',
+      'import { Injectable, Primary, Qualifier } from "@reforce/core";',
       "export interface DefaultPort { value(): string; }",
       '@Injectable() @Qualifier("Fallback")',
       'export class FallbackProvider implements DefaultPort { value(): string { return "fallback"; } }',
@@ -93,7 +93,7 @@ const computedLifecycleMethodRejected = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { Injectable, type OnContextStart } from "@reforce/context";',
+      'import { Injectable, type OnContextStart } from "@reforce/core";',
       "",
       "@Injectable()",
       "export class Service implements OnContextStart {",
@@ -116,7 +116,7 @@ const deterministicCycleGeneration = {
   }),
   src: {
     "alpha.ts": [
-      'import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";',
+      'import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";',
       'import { ZetaService } from "./zeta";',
       "",
       "@Injectable()",
@@ -128,7 +128,7 @@ const deterministicCycleGeneration = {
       "",
     ].join("\n"),
     "zeta.ts": [
-      'import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";',
+      'import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";',
       'import { AlphaService } from "./alpha";',
       "",
       "@Injectable()",
@@ -146,7 +146,7 @@ const duplicateGeneratedQualifierMember = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       "",
       "export interface PaymentPort {}",
       "export namespace PaymentPort {",
@@ -163,7 +163,7 @@ const generatedRuntimeContract = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { defineBean, Injectable, type Lazy, type OnContextClose, type OnContextStart } from "@reforce/context";',
+      'import { defineBean, Injectable, type Lazy, type OnContextClose, type OnContextStart } from "@reforce/core";',
       'import { type AlphaPort, type BetaPort, ManagedResource } from "./contracts";',
       "",
       "@Injectable()",
@@ -197,7 +197,7 @@ const invalidLifecycleReturnRejected = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { Injectable, type OnContextStart } from "@reforce/context";',
+      'import { Injectable, type OnContextStart } from "@reforce/core";',
       "@Injectable()",
       "export class Service implements OnContextStart {",
       '  onContextStart(): string { return "invalid"; }',
@@ -211,7 +211,7 @@ const legacyParameterDecoratorRejected = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { Injectable, Qualifier } from "@reforce/context";',
+      'import { Injectable, Qualifier } from "@reforce/core";',
       "export interface ServicePort {}",
       "@Injectable()",
       "export class Service {",
@@ -237,7 +237,7 @@ const monorepoApplicationSelection = {
       }),
       src: {
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           "@Injectable()",
           "export class AdminService {}",
           "",
@@ -256,7 +256,7 @@ const monorepoApplicationSelection = {
       src: {
         "application.ts": [
           'import type { ImportPort } from "@fixture/shared/import-contract";',
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { ExportPort } from "@fixture/shared";',
           'import type { PathPort } from "@shared/path";',
           '@Injectable() export class ExportAdapter implements ExportPort { read(): string { return "export"; } }',
@@ -288,7 +288,7 @@ const monorepoApplicationSelection = {
       src: {
         "import-contract.ts": "export interface ImportPort { imported(): string; }\n",
         "index.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           "export interface ExportPort { read(): string; }",
           "@Injectable()",
           "export class HiddenSharedBean implements ExportPort {",
@@ -306,7 +306,7 @@ const namespaceExportContract = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import { Ports } from "./barrel";',
       "@Injectable() export class Provider implements Ports.Port {}",
       "@Injectable() export class Consumer { constructor(readonly port: Ports.Port) {} }",
@@ -321,7 +321,7 @@ const nonInlineFactoryDisposerRejected = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { defineBean } from "@reforce/context";',
+      'import { defineBean } from "@reforce/core";',
       "export class Resource {}",
       "function cleanup(resource: Resource): void { void resource; }",
       "export const resource = defineBean<Resource>({",
@@ -337,7 +337,7 @@ const reservedQualifierRejected = {
   "tsconfig.json": applicationConfig(),
   src: {
     "application.ts": [
-      'import { Injectable, Qualifier } from "@reforce/context";',
+      'import { Injectable, Qualifier } from "@reforce/core";',
       "export interface JobPort {}",
       '@Qualifier("enum")',
       "@Injectable()",

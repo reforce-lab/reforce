@@ -129,7 +129,7 @@ const serverConfigSource = [
 ].join("\n");
 
 const consumerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { ServerConfig } from "@/server-config";',
   "",
   "@Injectable()",
@@ -199,7 +199,7 @@ describe("config recognition and generation", () => {
     const result = await compileOrThrow(
       applicationTree({
         "consumer.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           "",
           "@Injectable()",
           "export class Consumer {}",
@@ -413,7 +413,7 @@ describe("config declaration diagnostics", () => {
       {
         "schema.ts": plainSchemaSource,
         "server-config.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { ConfigProperties } from "@reforce/config";',
           'import { serverSchema } from "@/schema";',
           "",
@@ -433,7 +433,7 @@ describe("config declaration diagnostics", () => {
         "schema.ts": plainSchemaSource,
         "server-config.ts": serverConfigSource,
         "consumer.ts": [
-          'import { Injectable, type Lazy } from "@reforce/context";',
+          'import { Injectable, type Lazy } from "@reforce/core";',
           'import { ServerConfig } from "@/server-config";',
           "",
           "@Injectable()",
@@ -516,7 +516,7 @@ function redisStarterPackage(): ProjectTree {
 }
 
 const registrationSource = [
-  'import { defineApplication } from "@reforce/context";',
+  'import { defineApplication } from "@reforce/core";',
   'import { redisStarter } from "@acme/starter-redis";',
   "",
   "export const application = defineApplication({ starters: [redisStarter] });",
@@ -524,7 +524,7 @@ const registrationSource = [
 ].join("\n");
 
 const redisConsumerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { RedisClient } from "@acme/starter-redis";',
   "",
   "@Injectable()",
@@ -613,7 +613,7 @@ const executableConfigSource = [
 ].join("\n");
 
 const executableConsumerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { ServerConfig } from "@/server-config";',
   "",
   "@Injectable()",

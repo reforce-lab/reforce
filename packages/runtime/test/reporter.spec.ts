@@ -1,5 +1,5 @@
 import { Writable } from "node:stream";
-import { UnregisteredBeanTargetError } from "@reforce/context";
+import { UnregisteredBeanTargetError } from "@reforce/core";
 import { normalizeTerminalOutput } from "@reforce/tooling-testing";
 import { describe, expect, test } from "vitest";
 import {

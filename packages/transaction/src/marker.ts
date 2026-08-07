@@ -1,4 +1,4 @@
-import { defineMethodMarker } from "@reforce/context";
+import { defineMethodMarker } from "@reforce/core";
 import type { TransactionIsolation } from "@/manager";
 import { transactionIsolationLevels } from "@/manager";
 

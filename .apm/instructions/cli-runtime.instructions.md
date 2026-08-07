@@ -1,9 +1,0 @@
----
-description: Reforce CLI 对用户 Rsbuild mode、dist 与动态运行时模块的边界
-applyTo: "packages/cli/**"
----
-
-- Rsbuild 的 `development` / `production` 只表示用户应用模式，不表示 Reforce 源码模式；CLI dev/build 始终消费 Reforce dist。
-- 禁止向用户 Rsbuild 手写 `conditionNames`；用户选择的 leaf tsconfig 仍需动态传给 Rsbuild。
-- 动态运行时使用 `reforce:dev-runtime` / `reforce:production-runtime`，通过精确模块 replacement 映射；禁止用宽泛 `resolve.alias` 代替。替换目标一律经 `bundling/runtime-locator.ts` 的 `resolveRuntimeEntryPath`（`import.meta.resolve("@reforce/runtime/…")` + `realpathSync`）定位，禁止相对 dist 的路径拼接（ADR 0009，#191）。
-- 进入用户产物的运行时源码住在 `@reforce/runtime`，其注释与依赖纪律见该包规则；cli 侧的跨包执行器是 `it/integration/production-build.spec.ts`（Issue #22），不得删除或放松断言。

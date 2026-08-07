@@ -2,7 +2,7 @@ import type { Writable } from "node:stream";
 import { styleText } from "node:util";
 
 // 终端原语（RFC 0011 D2/D3，#242）：本仓第一处颜色与宽度计算，只包 node:util，零依赖——
-// @reforce/runtime 的依赖表只允许 @reforce/context / @swc/helpers / radashi。
+// @reforce/runtime 的依赖表只允许 @reforce/core / @swc/helpers / radashi。
 
 // 封闭字面量而不是 string：styleText 对未知格式抛 ERR_INVALID_ARG_VALUE，不静默降级，
 // 所以「级别 → 颜色」的映射必须在类型上就穷举完（Node 26.5.1 实测）。

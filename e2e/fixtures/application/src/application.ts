@@ -1,4 +1,4 @@
-import { defineApplication } from "@reforce/context";
+import { defineApplication } from "@reforce/core";
 import { logging } from "@reforce/logging";
 import type { RequestSeeder } from "@reforce/web";
 import { web } from "@reforce/web-node";

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 // 与纯运行时依赖），模拟用户只拿到发布产物的形态。
 
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
-const contextRoot = join(workspaceRoot, "packages", "context");
+const coreRoot = join(workspaceRoot, "packages", "core");
 const configRoot = join(workspaceRoot, "packages", "config");
 const webRoot = join(workspaceRoot, "packages", "web");
 const webNodeRoot = join(workspaceRoot, "packages", "web-node");
@@ -43,7 +43,7 @@ export async function installApplicationPackages(
 ): Promise<void> {
   const scopeRoot = join(projectRoot, "node_modules", "@reforce");
   const typesScopeRoot = join(projectRoot, "node_modules", "@types");
-  const contextTarget = join(scopeRoot, "context");
+  const coreTarget = join(scopeRoot, "core");
   await Promise.all([
     mkdir(scopeRoot, { recursive: true }),
     mkdir(typesScopeRoot, { recursive: true }),
@@ -75,7 +75,7 @@ export async function installApplicationPackages(
   const runtimeTarget = join(scopeRoot, "runtime");
   if (contextDistribution === "workspace") {
     await Promise.all([
-      link(contextRoot, contextTarget),
+      link(coreRoot, coreTarget),
       link(configRoot, configTarget),
       link(webRoot, webTarget),
       link(webNodeRoot, webNodeTarget),
@@ -92,7 +92,7 @@ export async function installApplicationPackages(
     return;
   }
   await Promise.all([
-    mkdir(contextTarget),
+    mkdir(coreTarget),
     mkdir(configTarget),
     mkdir(webTarget),
     mkdir(webNodeTarget),
@@ -100,8 +100,8 @@ export async function installApplicationPackages(
     mkdir(runtimeTarget),
   ]);
   await Promise.all([
-    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
-    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
+    cp(join(coreRoot, "package.json"), join(coreTarget, "package.json")),
+    cp(join(coreRoot, "dist"), join(coreTarget, "dist"), { recursive: true }),
     cp(join(configRoot, "package.json"), join(configTarget, "package.json")),
     cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
     cp(join(webRoot, "package.json"), join(webTarget, "package.json")),

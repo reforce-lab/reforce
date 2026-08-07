@@ -1,5 +1,5 @@
 import type { Clock } from "@acme/starter-base";
-import { defineStarter, Injectable } from "@reforce/context";
+import { defineStarter, Injectable } from "@reforce/core";
 
 export interface CacheConfig {
   prefix(): string;

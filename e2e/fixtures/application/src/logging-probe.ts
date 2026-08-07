@@ -1,4 +1,4 @@
-import { Injectable, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextStart } from "@reforce/core";
 import type { LogFieldSource, Logger, LoggerLevelMap, LoggingSettings } from "@reforce/logging";
 import { WebRequestFields } from "@reforce/web";
 

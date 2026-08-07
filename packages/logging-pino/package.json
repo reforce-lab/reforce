@@ -22,7 +22,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@reforce/logging": "workspace:*",
     "@swc/helpers": "catalog:",
     "pino": "^10.3.1"

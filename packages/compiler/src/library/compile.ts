@@ -83,7 +83,7 @@ function isMethodMarkerDeclaration(
   }
   const callee = initializer.callee;
   const symbol = linker.resolveEntity(source, callee);
-  return symbol?.kind === "context" && symbol.name === "defineMethodMarker";
+  return symbol?.kind === "core" && symbol.name === "defineMethodMarker";
 }
 
 function rejectMethodWeavingDeclarations(
@@ -123,7 +123,7 @@ function rejectMethodWeavingDeclarations(
 // 任一包里的同名符号误中。
 const rejectedFrameworkWeavingDecorators = new Map([
   [
-    "context\0Interceptor",
+    "core\0Interceptor",
     {
       message:
         "@Interceptor cannot be expressed in starter meta v1; meta v1 only records plain contract edges.",
@@ -224,7 +224,7 @@ function rejectUnsupportedCalls(
 ): void {
   for (const declaration of source.unit.applicationDefinitions) {
     const callee = linker.resolveEntity(source, declaration.callee);
-    if (callee?.kind === "context" && callee.name === "defineApplication") {
+    if (callee?.kind === "core" && callee.name === "defineApplication") {
       diagnostics.push(
         unsupportedDeclaration(
           "defineApplication belongs to applications; a starter library cannot declare one.",
@@ -236,7 +236,7 @@ function rejectUnsupportedCalls(
   }
   for (const declaration of source.unit.beanFactories) {
     const callee = linker.resolveEntity(source, declaration.callee);
-    if (callee?.kind === "context" && callee.name === "defineBean") {
+    if (callee?.kind === "core" && callee.name === "defineBean") {
       diagnostics.push(
         unsupportedDeclaration(
           "defineBean factories cannot be published through starter meta v1; meta beans use class construction only.",
@@ -260,7 +260,7 @@ function rejectUnsupportedDecorators(
       continue;
     }
     const symbol = linker.resolveEntity(source, callee);
-    if (symbol?.kind === "context" && (symbol.name === "Primary" || symbol.name === "Qualifier")) {
+    if (symbol?.kind === "core" && (symbol.name === "Primary" || symbol.name === "Qualifier")) {
       diagnostics.push(
         unsupportedDeclaration(
           `@${symbol.name} cannot be expressed in starter meta v1; starter beans have no primary or qualifier surface.`,
@@ -269,7 +269,7 @@ function rejectUnsupportedDecorators(
         ),
       );
     }
-    if (symbol?.kind === "context" && symbol.name === "RequestScoped") {
+    if (symbol?.kind === "core" && symbol.name === "RequestScoped") {
       diagnostics.push(
         unsupportedDeclaration(
           "@RequestScoped cannot be expressed in starter meta v1; starter beans have no scope surface.",

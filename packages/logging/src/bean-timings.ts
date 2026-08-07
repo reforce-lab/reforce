@@ -3,7 +3,7 @@ import type { StartupSummarySection } from "@/startup-summary";
 
 // 启动台账的折叠规则与展开出口（RFC 0011 C6，#250）。
 //
-// 台账本身由 @reforce/context 的 start() 交出来，它不认识 @reforce/logging（package.json 里
+// 台账本身由 @reforce/core 的 start() 交出来，它不认识 @reforce/logging（package.json 里
 // 零 @reforce 依赖，必须保持）。所以这里按结构声明它的形状，而不是 import 那边的类型——
 // type-only import 会留在生成的 d.ts 里，等于把硬依赖藏在类型层（同 web 侧 RequestLogger 的
 // 理由）。

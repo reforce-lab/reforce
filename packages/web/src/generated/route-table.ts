@@ -1,9 +1,9 @@
-import type { BeanClass } from "@reforce/context";
+import type { BeanClass } from "@reforce/core";
 import type { RequestContext } from "@/execution/request-context";
 import type { RouteErrorHandler, RouteMiddleware } from "@/routing/middleware";
 import type { HttpMethod, RouteMetaValue, RouteSchemas, WebPhase } from "@/routing/vocabulary";
 
-// 路由表生成物契约（ADR 0006 W1/W2，#142 / #152）：与 @reforce/context 的
+// 路由表生成物契约（ADR 0006 W1/W2，#142 / #152）：与 @reforce/core 的
 // GeneratedApplicationDefinition 同等纪律的版本化公开面——编译器 emission、routes.json、
 // 本文件三处共享同一形状，schemaVersion 是硬版本门，演进必须显式升版而非打补丁。
 

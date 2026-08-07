@@ -1,4 +1,4 @@
-import { ApplicationStartError, InvalidGeneratedDefinitionError } from "@reforce/context";
+import { ApplicationStartError, InvalidGeneratedDefinitionError } from "@reforce/core";
 import { describe, expect, test } from "vitest";
 import type { ShutdownAckMessage } from "@/dev-ipc";
 import type { CliReporterEvent, Reporter } from "@/reporter";

@@ -7,6 +7,8 @@ import type {
   Class,
   Comment,
   Declaration,
+  Directive,
+  ExpressionStatement,
   ImportDeclarationSpecifier,
   ModuleDeclaration,
   Node,
@@ -964,8 +966,8 @@ function lowerApplicationDefinition(
   const name = identifierTextOf(declarator.id);
   collector.applicationDefinitions.push({
     kind: "define-application",
-    form: "declarator",
     topLevel,
+    discarded: false,
     name,
     export: declarationExportOf(declarator.id, mode, context),
     callee: matched.callee,
@@ -974,14 +976,13 @@ function lowerApplicationDefinition(
   });
 }
 
-// 裸表达式语句照旧 lower，不丢弃（Issue #261）：丢弃就是 Issue #54 要根除的那类静默失败
-// ——build 全绿，starter 一个都没注册，端口永不监听。形态记进 IR，由链接层点名报错。
-//
-// span 取整条语句而不是那次调用：错误的插入符要落在行首，那才是要改的那一行。
-function lowerApplicationExpressionStatement(
-  node: NodeOfType<"ExpressionStatement">,
+// `defineApplication({...});` 写成裸语句时结果被丢弃，没有 declarator 也没有 export default
+// 可挂。收下它只为让链接层能报错——不收就是静默：build 绿、starter 全丢、应用不监听（Issue #261）。
+// Directive（`"use strict";`）与 ExpressionStatement 共用同一个 AST tag，所以形参要收下两者；
+// Directive 的表达式恒为字符串字面量，calledByTailName 自然不会命中。
+function lowerDiscardedApplicationDefinition(
+  node: Directive | ExpressionStatement,
   topLevel: boolean,
-  mode: ExportMode,
   collector: Collector,
   context: LoweringContext,
 ): void {
@@ -991,9 +992,9 @@ function lowerApplicationExpressionStatement(
   }
   collector.applicationDefinitions.push({
     kind: "define-application",
-    form: "expression-statement",
     topLevel,
-    export: declarationExportOf(undefined, mode, context),
+    discarded: true,
+    export: { kind: "none" },
     callee: matched.callee,
     options: defineApplicationOptionsOf(matched.call, context),
     span: spanOf(node, context),
@@ -1043,8 +1044,8 @@ function visitDefaultDeclaration(
   if (matched !== undefined) {
     collector.applicationDefinitions.push({
       kind: "define-application",
-      form: "default-export",
       topLevel,
+      discarded: false,
       export: declarationExportOf(undefined, mode, context),
       callee: matched.callee,
       options: defineApplicationOptionsOf(matched.call, context),
@@ -1162,7 +1163,8 @@ function visitStatement(
       lowerUnsupported(node, unsupportedKind(node), topLevel, mode, collector, context);
       return;
     case "ExpressionStatement":
-      lowerApplicationExpressionStatement(node, topLevel, mode, collector, context);
+      lowerDiscardedApplicationDefinition(node, topLevel, collector, context);
+      visitNestedStatements(node, collector, context);
       return;
     default:
       visitNestedStatements(node, collector, context);

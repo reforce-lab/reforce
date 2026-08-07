@@ -1,4 +1,4 @@
-import type { ApplicationContext } from "@reforce/context";
+import type { ApplicationContext } from "@reforce/core";
 import { isObject } from "radashi";
 import { installCrashTakeover } from "@/crash-takeover";
 import type { FrameworkLogging } from "@/framework-logging";

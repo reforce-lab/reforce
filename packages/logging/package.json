@@ -34,7 +34,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@reforce/runtime": "workspace:*",
     "@swc/helpers": "catalog:"
   },

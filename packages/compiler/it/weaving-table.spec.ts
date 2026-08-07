@@ -67,14 +67,14 @@ const interceptorClass = (name: string, marker: string, options: string): string
 
 const wovenSources: Record<string, string> = {
   "markers.ts": [
-    'import { defineMethodMarker } from "@reforce/context";',
+    'import { defineMethodMarker } from "@reforce/core";',
     'export const Audited = defineMethodMarker<{ label: string }>("audited");',
     'export const Traced = defineMethodMarker<{ detail: boolean } | undefined>("traced");',
     'export const Bare = defineMethodMarker("bare");',
   ].join("\n"),
   "interceptors.ts": [
-    'import { Injectable, Interceptor } from "@reforce/context";',
-    'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";',
+    'import { Injectable, Interceptor } from "@reforce/core";',
+    'import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";',
     'import { Audited, Traced } from "@/markers";',
     interceptorClass("TraceInterceptor", "Traced", ', phase: "observability"'),
     interceptorClass("CacheInterceptor", "Audited", ', phase: "cache"'),
@@ -82,7 +82,7 @@ const wovenSources: Record<string, string> = {
     interceptorClass("AuditInterceptor", "Audited", ", order: 1"),
   ].join("\n"),
   "clock.ts": [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     "@Injectable()",
     "export class Clock {",
     "  now(): number {",
@@ -91,7 +91,7 @@ const wovenSources: Record<string, string> = {
     "}",
   ].join("\n"),
   "service.ts": [
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import { Audited, Bare, Traced } from "@/markers";',
     'import { Clock } from "@/clock";',
     "@Injectable()",
@@ -223,7 +223,7 @@ describe("weaving table", () => {
   test("emits an empty table without markers", async () => {
     const result = await compileSourcesOrThrow({
       "service.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "@Injectable()",
         "export class Plain {}",
       ].join("\n"),

@@ -3,12 +3,12 @@ import {
   type BeanClass,
   type BeanDefinition,
   UnregisteredBeanTargetError,
-} from "@reforce/context";
+} from "@reforce/core";
 import {
   createApplicationContext,
   type GeneratedApplicationDefinition,
   type GeneratedBeanRegistration,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 
 export interface TestContextOverrides {
   // NoInfer 把 T 的推断钉在 target 上（ADR 0007 T2，#143）：若替身也参与推断，

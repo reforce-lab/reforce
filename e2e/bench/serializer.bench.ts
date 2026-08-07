@@ -5,7 +5,7 @@
 // 字段（secret 被剥除），这正是它的功能；差值 = 投影 + 校验通道的代价减去少序列化一个字段。
 // 复跑：`pnpm --dir e2e run bench:serializer`。
 
-import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
+import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/core";
 import { createWebApplication } from "@reforce/web";
 import type { PreparedRoute } from "@reforce/web/adapter";
 

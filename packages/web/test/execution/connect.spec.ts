@@ -3,7 +3,7 @@ import type {
   BeanClass,
   BeanDefinition,
   ContextStartReport,
-} from "@reforce/context";
+} from "@reforce/core";
 import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle } from "@/adapter";
 import { connectWebApplication } from "@/execution/connect";

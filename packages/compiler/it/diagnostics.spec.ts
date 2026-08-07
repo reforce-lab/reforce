@@ -136,7 +136,7 @@ describe("compiler diagnostics", () => {
   test("reports a factory Bean ID collision at the colliding factory declaration", async () => {
     // Arrange
     const source = [
-      'import { defineBean } from "@reforce/context";',
+      'import { defineBean } from "@reforce/core";',
       "export interface Resource {}",
       "export const ResourceFactory = defineBean<Resource>({ create: (): Resource => ({}) });",
       "export const resourceFactory = defineBean<Resource>({ create: (): Resource => ({}) });",
@@ -157,7 +157,7 @@ describe("compiler diagnostics", () => {
   test("reports a class Bean ID collision at the colliding non-first class declaration", async () => {
     // Arrange
     const source = [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       "@Injectable() export class Unrelated {}",
       "@Injectable() export class Service {}",
       "@Injectable() export class service {}",
@@ -202,7 +202,7 @@ describe("compiler diagnostics", () => {
   test("rejects a defineBean declared inside a function body", async () => {
     // Arrange
     const source = [
-      'import { defineBean } from "@reforce/context";',
+      'import { defineBean } from "@reforce/core";',
       "export class Resource {}",
       "export function setup(): void {",
       "  const resource = defineBean<Resource>({ create: () => new Resource() });",
@@ -221,7 +221,7 @@ describe("compiler diagnostics", () => {
   test("rejects defineBean calls with multiple explicit type arguments", async () => {
     const result = await compileSource(
       [
-        'import { defineBean } from "@reforce/context";',
+        'import { defineBean } from "@reforce/core";',
         "export class Resource {}",
         "export const resource = defineBean<Resource, Resource>({",
         "  create: () => new Resource(),",
@@ -237,7 +237,7 @@ describe("compiler diagnostics", () => {
   test("allows a valid lifecycle method beside an unrelated computed method", async () => {
     const result = await compileSource(
       [
-        'import { Injectable, type OnContextStart } from "@reforce/context";',
+        'import { Injectable, type OnContextStart } from "@reforce/core";',
         "@Injectable()",
         "export class Service implements OnContextStart {",
         '  ["format"](value: string): string { return value; }',
@@ -285,7 +285,7 @@ describe("compiler diagnostics", () => {
   test("does not misreport an unsupported type declaration as a missing Bean", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "export type ServiceContract = { readonly value: string };",
         "@Injectable()",
         "export class Service {",
@@ -345,7 +345,7 @@ describe("warning lifecycle", () => {
   test("keeps a failure's diagnostics non-empty while adding the suppression report", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "interface Absent {}",
         "",
@@ -363,7 +363,7 @@ describe("warning lifecycle", () => {
   test("refuses to suppress an error and says so", async () => {
     const result = await compileSource(
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "interface Absent {}",
         "",

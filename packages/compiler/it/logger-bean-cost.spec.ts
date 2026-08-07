@@ -26,7 +26,7 @@ afterAll(async () => {
 });
 
 const loggerFactorySource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import type { Logger, LoggerFactory } from "@reforce/logging";',
   "",
   "@Injectable()",
@@ -51,7 +51,7 @@ const loggerFactorySource = [
 function servicesSource(count: number, injectsLogger: boolean): string {
   const lines = [
     'export * from "@/logger-factory";',
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     ...(injectsLogger ? ['import type { Logger } from "@reforce/logging";'] : []),
     "",
   ];

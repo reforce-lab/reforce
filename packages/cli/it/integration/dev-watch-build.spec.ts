@@ -38,7 +38,7 @@ async function setupWatch(
   onCompilation: (compilation: DevCompilation) => Promise<void>,
   onInvalidated?: (path: string | null) => void,
   sourceFiles: Readonly<Record<string, string>> = {
-    "application.ts": `import { Injectable } from "@reforce/context";
+    "application.ts": `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {}
@@ -175,7 +175,7 @@ test("every development build identifies itself by the Rspack compilation hash",
 
   await writeFile(
     join(project.projectRoot, "src", "application.ts"),
-    `import { Injectable } from "@reforce/context";
+    `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {
@@ -208,7 +208,7 @@ test("a source edit rebuilds without invalidating generated output", async () =>
 
   await writeFile(
     join(project.projectRoot, "src", "application.ts"),
-    `import { Injectable } from "@reforce/context";
+    `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {
@@ -226,7 +226,7 @@ export class ApplicationService {
   // 到达后再检查列表，等价于证明窗口期已经完整过去，全程没有墙钟。
   await writeFile(
     join(project.projectRoot, "src", "application.ts"),
-    `import { Injectable } from "@reforce/context";
+    `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {
@@ -259,7 +259,7 @@ test("an extended configuration outside projectRoot invalidates the application 
     apps: {
       api: {
         src: {
-          "application.ts": `import { Injectable } from "@reforce/context";
+          "application.ts": `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {}
@@ -309,7 +309,7 @@ export class ApplicationService {}
     compilations,
     invalidations,
     sentinelPath: join(projectRoot, "src", "application.ts"),
-    sentinelBaseContent: `import { Injectable } from "@reforce/context";
+    sentinelBaseContent: `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {}
@@ -339,7 +339,7 @@ test("creating a source file rebuilds and discovers its Bean", async () => {
 
   await writeFile(
     join(project.projectRoot, "src", "created.ts"),
-    `import { Injectable } from "@reforce/context";
+    `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class CreatedService {}
@@ -361,12 +361,12 @@ test("deleting a source file removes its Bean without watching generated output"
     },
     (path) => invalidations.push(path),
     {
-      "application.ts": `import { Injectable } from "@reforce/context";
+      "application.ts": `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {}
 `,
-      "removable.ts": `import { Injectable } from "@reforce/context";
+      "removable.ts": `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class RemovableService {}
@@ -387,7 +387,7 @@ export class RemovableService {}
   const devOutputRoot = join(project.projectRoot, ".reforce", "dev");
   await writeFile(
     join(project.projectRoot, "src", "application.ts"),
-    `import { Injectable } from "@reforce/context";
+    `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class ApplicationService {

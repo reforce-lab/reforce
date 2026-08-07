@@ -18,9 +18,9 @@ const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const cliRoot = join(workspaceRoot, "packages", "cli");
 const cliEntry = join(cliRoot, "dist", "reforce.js");
-// starter lib 编译只需要 @reforce/context 的 dist 类型面（fixture 应用副本的装配在
+// starter lib 编译只需要 @reforce/core 的 dist 类型面（fixture 应用副本的装配在
 // support/application-packages.ts）。
-const contextRoot = join(workspaceRoot, "packages", "context");
+const coreRoot = join(workspaceRoot, "packages", "core");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const windowsSignalFixture = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
@@ -230,7 +230,7 @@ function isShutdownAcknowledgement(
   );
 }
 
-const leafProbeSource = `import { Injectable } from "@reforce/context";
+const leafProbeSource = `import { Injectable } from "@reforce/core";
 
 @Injectable()
 export class LeafProbe {}
@@ -238,7 +238,7 @@ export class LeafProbe {}
 
 // 叶子删掉 fixture 的 application.ts（它 re-export 了被删的 greeting/providers），但日志绑定
 // 现在随 logging starter 进图（RFC 0011 勘误，#242），所以要留一个最小的注册入口。
-const leafApplicationSource = `import { defineApplication } from "@reforce/context";
+const leafApplicationSource = `import { defineApplication } from "@reforce/core";
 import { logging } from "@reforce/logging";
 
 export default defineApplication({ starters: [logging] });
@@ -606,7 +606,7 @@ async function establishWatchDelivery(input: {
     await writeFile(
       sentinelPath,
       [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         `export class WatchDeliveryProbe {} // watch-delivery-${attempt}`,
@@ -810,7 +810,7 @@ describe.sequential("built Reforce CLI", () => {
 
         expect(result.exitCode, commandFailure(result)).toBe(0);
         expect(
-          await pathExists(join(project.projectRoot, "node_modules", "@reforce", "context", "src")),
+          await pathExists(join(project.projectRoot, "node_modules", "@reforce", "core", "src")),
         ).toBe(false);
         expect(await pathExists(join(project.projectRoot, "dist", "main.mjs"))).toBe(true);
       } finally {
@@ -835,7 +835,7 @@ describe.sequential("built Reforce CLI", () => {
 
         expect(await readFile(development.readyPath, "utf8")).toBe("dist-only-dev:ready\n");
         expect(
-          await pathExists(join(project.projectRoot, "node_modules", "@reforce", "context", "src")),
+          await pathExists(join(project.projectRoot, "node_modules", "@reforce", "core", "src")),
         ).toBe(false);
 
         const result = await shutdownWithSignal(
@@ -933,7 +933,7 @@ describe.sequential("built Reforce CLI", () => {
         await writeFile(
           join(projectRoot, "src", "leaf-update.ts"),
           [
-            'import { Injectable } from "@reforce/context";',
+            'import { Injectable } from "@reforce/core";',
             "@Injectable()",
             "export class LeafUpdateProbe {}",
             "",
@@ -1823,13 +1823,13 @@ describe.sequential("built Reforce CLI", () => {
 const starterBaseFixture = join(e2eRoot, "fixtures", "starter-base");
 const starterCacheFixture = join(e2eRoot, "fixtures", "starter-cache");
 
-// lib 编译解析 starter src 的 `@reforce/context` import，只需要 dist 类型面。
+// lib 编译解析 starter src 的 `@reforce/core` import，只需要 dist 类型面。
 async function installStarterCompilePackages(packageRoot: string): Promise<void> {
-  const contextTarget = join(packageRoot, "node_modules", "@reforce", "context");
-  await mkdir(contextTarget, { recursive: true });
+  const coreTarget = join(packageRoot, "node_modules", "@reforce", "core");
+  await mkdir(coreTarget, { recursive: true });
   await Promise.all([
-    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
-    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
+    cp(join(coreRoot, "package.json"), join(coreTarget, "package.json")),
+    cp(join(coreRoot, "dist"), join(coreTarget, "dist"), { recursive: true }),
   ]);
 }
 
@@ -1887,14 +1887,14 @@ async function installStarters(appRoot: string, starters: CompiledStarters): Pro
   await rm(join(scopeRoot, "starter-base", "node_modules"), { recursive: true, force: true });
 }
 
-const starterRegistrationSource = `import { defineApplication } from "@reforce/context";
+const starterRegistrationSource = `import { defineApplication } from "@reforce/core";
 import { logging } from "@reforce/logging";
 import { cache } from "@acme/starter-cache";
 
 export default defineApplication({ starters: [logging, cache] });
 `;
 
-const cacheConfigSource = `import { Injectable } from "@reforce/context";
+const cacheConfigSource = `import { Injectable } from "@reforce/core";
 import type { CacheConfig } from "@acme/starter-cache";
 
 @Injectable()
@@ -1905,7 +1905,7 @@ export class LocalCacheConfig implements CacheConfig {
 }
 `;
 
-const cacheReaderSource = `import { Injectable } from "@reforce/context";
+const cacheReaderSource = `import { Injectable } from "@reforce/core";
 import type { Cache } from "@acme/starter-cache";
 
 @Injectable()
@@ -1918,7 +1918,7 @@ export class CacheReader {
 }
 `;
 
-const localCacheSource = `import { Injectable } from "@reforce/context";
+const localCacheSource = `import { Injectable } from "@reforce/core";
 import type { Cache } from "@acme/starter-cache";
 
 @Injectable()
@@ -1931,7 +1931,7 @@ export class LocalCache implements Cache {
 
 // 覆盖场景仍要消费 starter 的另一个 bean：一个在 manifest 里没有任何 bean 的 starter 对 explain
 // 不可见（最小版声明过的盲点），让位关系要能展示，starter 必须至少留有一席之地。
-const metricsReaderSource = `import { Injectable } from "@reforce/context";
+const metricsReaderSource = `import { Injectable } from "@reforce/core";
 import { CacheMetrics } from "@acme/starter-cache";
 
 @Injectable()
@@ -2218,7 +2218,7 @@ async function runInPty(
 // 装配不出来的应用：MISSING_BEAN 带 sourceSpan，human 模式因此会画出源码框，
 // 而 short 模式只有一行。两档的区别在这条诊断上最明显。
 const missingBeanProbe = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   "",
   "export interface AbsentGateway {",
   "  charge(): void;",

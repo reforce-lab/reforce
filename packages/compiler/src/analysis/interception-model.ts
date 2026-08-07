@@ -1,7 +1,7 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 
 // 方法级织入的分析模型（ADR 0008 AM1，#202）：weaving.json 与 $Woven emission 消费同一份
-// 形状。阶段闭集与 @reforce/context 的运行时词汇同一份字面量联合（两侧封闭，扩展必须同步），
+// 形状。阶段闭集与 @reforce/core 的运行时词汇同一份字面量联合（两侧封闭，扩展必须同步），
 // 独立于 web 三相词汇——cache/transaction 是数据访问面的语义，不与 WebPhase 互认。
 
 // 阶段数组顺序即链上顺序（外→内）；压平排序 = (阶段序, order, beanId)。

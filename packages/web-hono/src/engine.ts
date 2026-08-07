@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
-import { Injectable, type OnContextClose } from "@reforce/context";
+import { Injectable, type OnContextClose } from "@reforce/core";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
 import { webEngineAddress } from "@reforce/web/adapter";
 import { type Context, Hono } from "hono";

@@ -16,7 +16,7 @@ const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workerSupportRoot = join(e2eRoot, "support", "worker");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
-const contextRoot = join(workspaceRoot, "packages", "context");
+const coreRoot = join(workspaceRoot, "packages", "core");
 const configRoot = join(workspaceRoot, "packages", "config");
 const webRoot = join(workspaceRoot, "packages", "web");
 const webNodeRoot = join(workspaceRoot, "packages", "web-node");
@@ -71,14 +71,14 @@ beforeAll(async () => {
   ]);
   const scopeRoot = join(temporaryProject.projectRoot, "node_modules", "@reforce");
   const typesScopeRoot = join(temporaryProject.projectRoot, "node_modules", "@types");
-  const contextTarget = join(scopeRoot, "context");
+  const coreTarget = join(scopeRoot, "core");
   await Promise.all([
-    mkdir(contextTarget, { recursive: true }),
+    mkdir(coreTarget, { recursive: true }),
     mkdir(typesScopeRoot, { recursive: true }),
   ]);
   await Promise.all([
-    cp(join(contextRoot, "package.json"), join(contextTarget, "package.json")),
-    cp(join(contextRoot, "dist"), join(contextTarget, "dist"), { recursive: true }),
+    cp(join(coreRoot, "package.json"), join(coreTarget, "package.json")),
+    cp(join(coreRoot, "dist"), join(coreTarget, "dist"), { recursive: true }),
     cp(radashiRoot, join(temporaryProject.projectRoot, "node_modules", "radashi"), {
       recursive: true,
     }),

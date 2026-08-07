@@ -1,6 +1,6 @@
 import type { IncomingMessage, Server } from "node:http";
 import { Readable } from "node:stream";
-import { Injectable, type OnContextClose } from "@reforce/context";
+import { Injectable, type OnContextClose } from "@reforce/core";
 import type {
   PreparedRoute,
   WebApplication,

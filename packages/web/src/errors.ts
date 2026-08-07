@@ -27,7 +27,7 @@ export class InvalidRouteTableError extends ReforceWebError<"INVALID_ROUTE_TABLE
   }
 }
 
-// 洋葱链重入（ADR 0006 W4，#255）：链不可重入与 @reforce/context 的 InterceptorReenteredError
+// 洋葱链重入（ADR 0006 W4，#255）：链不可重入与 @reforce/core 的 InterceptorReenteredError
 // 同款语义，违约信号因此同样必须是带码的框架错误——用户的 @ErrorHandler 要按 code 分派，
 // 裸 Error 只能匹配 message 字符串。
 //

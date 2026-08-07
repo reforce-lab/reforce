@@ -46,12 +46,12 @@ export function starterPackage(options: StarterPackageOptions): ProjectTree {
 
 /** 注册 handle 的 dist 声明行；starter 包作者手写在主入口，链接期只当普通具名导入解析。 */
 export function starterHandleDeclaration(name: string): string {
-  return `export declare const ${name}: import("@reforce/context").StarterDefinition;`;
+  return `export declare const ${name}: import("@reforce/core").StarterDefinition;`;
 }
 
 // 运行时那一半必须同步存在：应用源码里的 `import { <handle> } from "<pkg>"` 会被打进产物，
 // dist 只有声明没有导出时，执行到 ESM 具名绑定就是 SyntaxError。值等价于 defineStarter()
-// 的返回物（冻结空对象），fixture 不为此依赖 @reforce/context。
+// 的返回物（冻结空对象），fixture 不为此依赖 @reforce/core。
 export function starterHandleRuntime(name: string): string {
   return `export const ${name} = Object.freeze({});`;
 }

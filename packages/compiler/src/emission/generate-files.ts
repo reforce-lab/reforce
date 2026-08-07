@@ -23,8 +23,8 @@ import { compactJson, inlineJson, json, runtimeSpecifier } from "@/emission/rend
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
 
-const contextModuleSpecifier = "@reforce/context";
-const contextRuntimeModuleSpecifier = "@reforce/context/generated-runtime";
+const coreModuleSpecifier = "@reforce/core";
+const coreRuntimeModuleSpecifier = "@reforce/core/generated-runtime";
 const configRuntimeModuleSpecifier = "@reforce/config/generated-runtime";
 const loggingRuntimeModuleSpecifier = "@reforce/logging/generated-runtime";
 
@@ -113,7 +113,7 @@ function contractSpecifierOf(
   generatedDirectory: string,
   typeResolver: EmissionTypeResolver,
 ): string | undefined {
-  if (symbol.kind === "context" || symbol.kind === "transaction") {
+  if (symbol.kind === "core" || symbol.kind === "transaction") {
     return symbol.moduleSpecifier;
   }
   return symbol.source === undefined
@@ -469,8 +469,8 @@ function renderBeans(
     ...(woven.size > 0 ? ["GeneratedMethodChain"] : []),
   ];
   const runtimeImports = [
-    `import { ${runtimeValueImports.join(", ")} } from "${contextRuntimeModuleSpecifier}";`,
-    `import type { ${runtimeTypeImports.join(", ")} } from "${contextRuntimeModuleSpecifier}";`,
+    `import { ${runtimeValueImports.join(", ")} } from "${coreRuntimeModuleSpecifier}";`,
+    `import type { ${runtimeTypeImports.join(", ")} } from "${coreRuntimeModuleSpecifier}";`,
     // 无 config 的应用不引入 @reforce/config：该依赖只在声明了 config class 时才需要安装。
     ...(configs.length > 0
       ? [`import { createConfigBinding } from "${configRuntimeModuleSpecifier}";`]
@@ -617,7 +617,7 @@ function renderQualifiers(providers: readonly ProviderModel[], generatedDirector
     return `declare module ${JSON.stringify(module.specifier)} {\n${namespaces.join("\n\n")}\n}`;
   });
   return `${[
-    `import type { QualifiedBean } from "${contextModuleSpecifier}";`,
+    `import type { QualifiedBean } from "${coreModuleSpecifier}";`,
     ...imports,
     "",
     ...declarations.flatMap((declaration) => [declaration, ""]),
@@ -809,7 +809,7 @@ function webBootstrapImports(
   const seeder = web.requestSeeder;
   const webImportNames = ["connectWebApplication", ...(summarised ? ["webStartupSections"] : [])];
   return [
-    `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
+    `import { createApplicationContext } from "${coreRuntimeModuleSpecifier}";`,
     `import { ${webImportNames.join(", ")} } from "${webRuntimeModuleSpecifier}";`,
     ...loggingImportLines(logging),
     ...web.engines.map(
@@ -831,7 +831,7 @@ function webBootstrapImports(
 function renderPlainBootstrap(logging: LoggingExports, startLines: readonly string[]): string {
   const observed = isObserved(logging);
   return `${[
-    `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
+    `import { createApplicationContext } from "${coreRuntimeModuleSpecifier}";`,
     ...loggingImportLines(logging),
     beansImportLine(logging),
     "",

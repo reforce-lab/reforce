@@ -15,7 +15,7 @@ import {
   type StarterMetaBean,
   starterMetaSubpath,
 } from "@/linking/starter-meta";
-import type { EntityName } from "@/parser/source-ir";
+import type { EntityName, StartersArrayElement } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
@@ -133,7 +133,7 @@ function collectDefineApplicationSites(
     const record = recordFor(source);
     for (const declaration of source.unit.applicationDefinitions) {
       const callee = resolveCallee(record, declaration.callee);
-      if (callee?.kind === "context" && callee.name === "defineApplication") {
+      if (callee?.kind === "core" && callee.name === "defineApplication") {
         sites.push({ source, record, declaration });
       }
     }
@@ -141,41 +141,29 @@ function collectDefineApplicationSites(
   return sites;
 }
 
-// 书写形态的守卫（Issue #261）：与「options 里写了什么」分开，前者说的是这条声明摆在哪、
-// 后者说的是它带了什么，混在一个函数里读起来是两件事。返回诊断而不是直接 push，让调用方
-// 保持「有诊断就返回空」的单一出口。
-function declarationShapeError(
+// 书写形态的校验：从 `defineApplication(...)` 一路收窄到 starters 的数组元素，任何一步不合
+// 规就报错并返回 undefined。与下面按元素解析注册的循环是两个抽象层级，拆开各自才读得下去。
+function readStartersElements(
   declaration: DefineApplicationSite["declaration"],
-): CompilerDiagnostic | undefined {
-  // 裸表达式语句此前在 parser 里就被整个丢掉——build 全绿、starter 一个都没注册、端口永不
-  // 监听，正是不变量 9 要禁的静默降级。parser 现在收下这个形态，只为让错误落在原位置。
-  //
-  // 排在 topLevel 之前：export default 蕴含顶层，函数体里那次裸调用报这一条就够了，
-  // 再报一条「必须在顶层」只会让人先去改错的地方。
-  if (declaration.form === "expression-statement") {
-    return invalidDefineApplication(
-      "defineApplication's result must be exported as the module default: write `export default defineApplication({ starters: [...] })`.",
-      declaration.span,
+  diagnostics: CompilerDiagnostic[],
+): readonly StartersArrayElement[] | undefined {
+  if (declaration.discarded) {
+    diagnostics.push(
+      invalidDefineApplication(
+        "defineApplication's result must be exported as the module default: write `export default defineApplication({ starters: [...] })`.",
+        declaration.span,
+      ),
     );
+    return undefined;
   }
   if (!declaration.topLevel) {
-    return invalidDefineApplication(
-      "defineApplication must be declared at module top level.",
-      declaration.span,
+    diagnostics.push(
+      invalidDefineApplication(
+        "defineApplication must be declared at module top level.",
+        declaration.span,
+      ),
     );
-  }
-  return undefined;
-}
-
-function readSiteRegistrations(
-  site: DefineApplicationSite,
-  diagnostics: CompilerDiagnostic[],
-): readonly StarterRegistrationRead[] {
-  const { source, record, declaration } = site;
-  const shapeError = declarationShapeError(declaration);
-  if (shapeError !== undefined) {
-    diagnostics.push(shapeError);
-    return [];
+    return undefined;
   }
   if (declaration.options.kind !== "object") {
     diagnostics.push(
@@ -184,7 +172,7 @@ function readSiteRegistrations(
         declaration.options.span,
       ),
     );
-    return [];
+    return undefined;
   }
   const unsupported = declaration.options.properties.find(
     (property) => property.kind === "unsupported-property",
@@ -196,7 +184,7 @@ function readSiteRegistrations(
         unsupported.span,
       ),
     );
-    return [];
+    return undefined;
   }
   const starters = declaration.options.properties.find((property) => property.kind === "starters");
   if (starters?.kind !== "starters") {
@@ -206,17 +194,29 @@ function readSiteRegistrations(
         declaration.options.span,
       ),
     );
-    return [];
+    return undefined;
   }
   if (starters.value.kind !== "array") {
     diagnostics.push(
       invalidDefineApplication("starters must be a static array literal.", starters.value.span),
     );
+    return undefined;
+  }
+  return starters.value.elements;
+}
+
+function readSiteRegistrations(
+  site: DefineApplicationSite,
+  diagnostics: CompilerDiagnostic[],
+): readonly StarterRegistrationRead[] {
+  const { source, record, declaration } = site;
+  const elements = readStartersElements(declaration, diagnostics);
+  if (elements === undefined) {
     return [];
   }
   const registrations: StarterRegistrationRead[] = [];
   const byPackageName = new Map<string, StarterRegistrationRead>();
-  for (const element of starters.value.elements) {
+  for (const element of elements) {
     if (element.kind !== "identifier") {
       diagnostics.push(
         invalidDefineApplication(

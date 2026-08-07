@@ -1,4 +1,4 @@
-import { Injectable, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextStart } from "@reforce/core";
 
 // 崩溃接管的完整链路只能在真子进程上验（RFC 0011 C2，#250）：记录是否完整落地、退出码
 // 是否仍是 1，都不是 in-process 测得出来的。

@@ -1,4 +1,4 @@
-import type { ApplicationContext } from "@reforce/context";
+import type { ApplicationContext } from "@reforce/core";
 import type { PreparedRoute, RequestSeeder, WebApplication } from "@/adapter";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";

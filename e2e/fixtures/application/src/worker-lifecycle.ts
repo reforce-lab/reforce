@@ -4,7 +4,7 @@ import {
   type Lazy,
   type OnContextClose,
   type OnContextStart,
-} from "@reforce/context";
+} from "@reforce/core";
 
 let alphaCreations = 0;
 let lifecycleStarts = 0;

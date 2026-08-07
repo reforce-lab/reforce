@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": "//",
+  "root": false,
+  "files": {
+    // templates/ 是交付给用户的源码，不是本包的源码：它 import 的 @reforce/* 在本包里没有装，
+    // 也不参与本包的 tsconfig。Biome 的 types 域会因为解析不到而误报，所以整体挡在检查之外。
+    // 模板自身的风格由 it/ 里的生成物断言守住。
+    "includes": ["**", "!!templates"]
+  }
+}

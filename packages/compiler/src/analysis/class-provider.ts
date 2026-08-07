@@ -34,7 +34,7 @@ function isEntityDecorator(decorator: DecoratorUse): decorator is DecoratorUse &
   return decorator.callee.kind !== "unsupported-expression";
 }
 
-function contextDecorators(
+function coreDecorators(
   source: ParsedSource,
   decorators: readonly DecoratorUse[],
   linker: ProjectLinker,
@@ -45,7 +45,7 @@ function contextDecorators(
       continue;
     }
     const symbol = linker.resolveEntity(source, decorator.callee);
-    if (symbol?.kind !== "context") {
+    if (symbol?.kind !== "core") {
       continue;
     }
     const existing = result.get(symbol.name) ?? [];
@@ -361,7 +361,7 @@ function classDecoratorSelection(
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): ClassDecoratorSelection | undefined {
-  const decorators = contextDecorators(source, declaration.decorators, linker);
+  const decorators = coreDecorators(source, declaration.decorators, linker);
   const injectable = decorators.get("Injectable") ?? [];
   const primaryDecorators = decorators.get("Primary") ?? [];
   const requestScopedDecorators = decorators.get("RequestScoped") ?? [];
@@ -522,7 +522,7 @@ export function linkedClassContracts(
     if (linked === undefined) {
       continue;
     }
-    if (linked.symbol.kind === "context") {
+    if (linked.symbol.kind === "core") {
       startHook ||= linked.symbol.name === "OnContextStart";
       closeHook ||= linked.symbol.name === "OnContextClose";
       // 其余 context 符号不是契约，保持沉默跳过。
@@ -781,13 +781,13 @@ function reportUnresolvedParameterType(
 
 // context 符号不是契约：ApplicationContext 禁注入；Lazy<Current<T>> / Current<Lazy<T>> /
 // Current<Current<T>> 句柄套句柄（ADR 0006 W7 交叉形态从紧）点名拒绝，不落进泛化注入类型错误。
-function reportContextSymbolMisuse(
+function reportCoreSymbolMisuse(
   linked: LinkedType,
   parameter: ClassDeclaration["constructors"][number]["parameters"][number],
   exportName: string,
   diagnostics: CompilerDiagnostic[],
 ): boolean {
-  if (linked.symbol.kind !== "context") {
+  if (linked.symbol.kind !== "core") {
     return false;
   }
   if (linked.symbol.name === "ApplicationContext") {
@@ -865,7 +865,7 @@ function constructorParameterDependency(
     }
     return undefined;
   }
-  if (reportContextSymbolMisuse(linked, parameter, exportName, diagnostics)) {
+  if (reportCoreSymbolMisuse(linked, parameter, exportName, diagnostics)) {
     return undefined;
   }
   if (linked.symbol.kind === "unsupported") {

@@ -93,10 +93,10 @@ function createLinker(diagnostics: readonly CompilerDiagnostic[] = []): ProjectL
         return undefined;
       }
       return {
-        key: "@reforce/context#Injectable",
-        kind: "context",
+        key: "@reforce/core#Injectable",
+        kind: "core",
         name: entity.name,
-        moduleSpecifier: "@reforce/context",
+        moduleSpecifier: "@reforce/core",
         generic: false,
       };
     },

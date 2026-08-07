@@ -33,7 +33,7 @@ afterAll(async () => {
 // 一个最小的 LoggerFactory 绑定：logger bean 对 LoggerFactory 的边走正常解析，图里没有
 // 实现就是 MISSING_BEAN，所以每个正向用例都要有它。
 const loggerFactorySource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import type { Logger, LoggerFactory } from "@reforce/logging";',
   "",
   "@Injectable()",
@@ -91,7 +91,7 @@ function compileApplication(sources: Readonly<Record<string, string>>) {
 const twoConsumers = {
   "application.ts": [
     'export * from "@/logger-factory";',
-    'import { Injectable } from "@reforce/context";',
+    'import { Injectable } from "@reforce/core";',
     'import type { Logger } from "@reforce/logging";',
     "",
     "@Injectable()",
@@ -159,7 +159,7 @@ describe("synthesised logger beans", () => {
     const { manifest } = await compileApplication({
       "application.ts": [
         'export * from "@/logger-factory";',
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         'import { LoggerName, type Logger } from "@reforce/logging";',
         "",
         '@LoggerName("payments")',
@@ -246,7 +246,7 @@ describe("synthesised logger beans", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "logger-factory.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { DefaultLoggerFactory, LoggerLevels } from "@reforce/logging";',
           'import type { Logger, LoggerFactory } from "@reforce/logging";',
           "",
@@ -341,7 +341,7 @@ describe("synthesised logger beans", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { Logger } from "@reforce/logging";',
           "",
           "@Injectable()",
@@ -364,7 +364,7 @@ describe("synthesised logger beans", () => {
       "tsconfig.json": applicationTsconfig(),
       src: {
         "application.ts": [
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import type { Logger } from "@reforce/logging";',
           "",
           "@Injectable()",
@@ -445,7 +445,7 @@ describe("synthesised logger beans", () => {
   }): Readonly<Record<string, string>> {
     return {
       "application.ts": [
-        'import { defineApplication, Injectable } from "@reforce/context";',
+        'import { defineApplication, Injectable } from "@reforce/core";',
         'import { logging, type Logger } from "@reforce/logging";',
         ...(input.extraImports ?? []),
         "",
@@ -532,7 +532,7 @@ describe("synthesised logger beans", () => {
         "logger-factory.ts": loggerFactorySource,
         "application.ts": [
           'export * from "@/logger-factory";',
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { LoggerName, type Logger } from "@reforce/logging";',
           "",
           'const computed = "pay" + "ments";',
@@ -557,7 +557,7 @@ describe("synthesised logger beans", () => {
     const { manifest } = await compileApplication({
       "application.ts": [
         'export * from "@/logger-factory";',
-        'import { Injectable, type Lazy } from "@reforce/context";',
+        'import { Injectable, type Lazy } from "@reforce/core";',
         'import type { Logger } from "@reforce/logging";',
         "",
         "@Injectable()",
@@ -584,7 +584,7 @@ describe("synthesised logger beans", () => {
         "logger-factory.ts": loggerFactorySource,
         "application.ts": [
           'export * from "@/logger-factory";',
-          'import { Injectable } from "@reforce/context";',
+          'import { Injectable } from "@reforce/core";',
           'import { LoggerName, type Logger } from "@reforce/logging";',
           "",
           '@LoggerName("shared")',

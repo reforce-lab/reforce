@@ -1,4 +1,4 @@
-import type { MethodInterceptor, MethodInvocationContext } from "@reforce/context";
+import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import {

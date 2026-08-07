@@ -73,7 +73,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@swc/helpers": "catalog:",
     "radashi": "^12.9.1"
   },

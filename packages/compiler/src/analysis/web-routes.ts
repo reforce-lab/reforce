@@ -76,7 +76,7 @@ function report(
   );
 }
 
-// contextDecorators 的 web 版：按解析后的符号名分组，别名照样命中，非 web 装饰器留给别人。
+// coreDecorators 的 web 版：按解析后的符号名分组，别名照样命中，非 web 装饰器留给别人。
 function webDecoratorsOf(
   source: ParsedSource,
   decorators: readonly DecoratorUse[],

@@ -1,0 +1,13 @@
+node_modules/
+
+# reforce build 的产物
+dist/
+
+# 编译期生成的 bean/路由表，以及 dev 的进程锁
+.reforce/
+
+# 本机配置。可提交的默认值放 .env.example
+.env
+.env.local
+
+*.log
