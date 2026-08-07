@@ -1446,10 +1446,12 @@ describe.sequential("built Reforce CLI", () => {
               return [];
             }
           });
-        // 子进程看到的是信号：CLI 父进程收到 IPC 关停请求后是发信号给子进程的。信号名此前
-        // 在 installProcessShutdownHandlers 里被整个丢掉，这条断言钉的就是它现在到得了字段。
+        // POSIX 下子进程看到的是信号：CLI 父进程收到 IPC 关停请求后发 SIGTERM 给子进程；
+        // Windows 没有 POSIX 信号，父进程改经 IPC 转发，子进程看到的 trigger 是 ipc。
+        // 信号名此前在 installProcessShutdownHandlers 里被整个丢掉，这条断言钉的就是它
+        // 现在到得了字段。
         expect(records.find((record) => record.message === "shutting down")).toMatchObject({
-          trigger: "SIGTERM",
+          trigger: process.platform === "win32" ? "ipc" : "SIGTERM",
         });
         expect(records.find((record) => record.message === "stopped")).toMatchObject({
           stopMs: expect.any(Number),
