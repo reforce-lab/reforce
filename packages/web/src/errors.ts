@@ -34,8 +34,10 @@ export class InvalidRouteTableError extends ReforceWebError<"INVALID_ROUTE_TABLE
 // 点名 beanId 而不是层号：每条路由的链在编译期已按 beanId 去重，beanId 已经唯一定位那一层；
 // 层号是 dispatch 下标不是链下标，读者拿它去数中间件会数错（同 #202 定案 2）。
 //
-// 「下一步怎么办」并进 message，与 InterceptorReenteredError 一致：基类没有 help 字段，
-// 而框架里也没有任何渲染器会读它——加一个没人读的字段是凭空的扩展点。
+// 「下一步怎么办」暂时并进 message：渲染器读 help（reporter 的 failureHelp 沿 cause 链取第一条
+// 渲染成 `= help:`），只是它的识别只认 @reforce/core 的 ReforceRuntimeError，本类不在其中——
+// 断链在识别侧，不在渲染侧。ADR 0013 决议 1（#280）把 ReforceWebError 并入同一谱系后这条通道
+// 打开，届时把后半句拆回 help。
 export class MiddlewareReenteredError extends ReforceWebError<"MIDDLEWARE_REENTERED"> {
   readonly code = "MIDDLEWARE_REENTERED" as const;
   readonly beanId: string;

@@ -218,7 +218,8 @@ describe("invokeIntercepted", () => {
     });
   });
 
-  test("the re-entry failure names the woven method and the retry path that does work", async () => {
+  // 只断言「点名了哪条被织方法」：message/help 的分工归 test/errors.spec.ts（#282）。
+  test("the re-entry failure names the woven method", async () => {
     const doubleNext: MethodInterceptor = {
       async intercept(_context, next) {
         await next();
@@ -235,7 +236,6 @@ describe("invokeIntercepted", () => {
     await expect(result).rejects.toMatchObject({
       message: expect.stringContaining("app#Sample.save"),
     });
-    await expect(result).rejects.toThrow("call site");
   });
 
   // 兜底拦截器吞掉框架护栏是本仓最贵的静默失败（#202 定案 2 配套纪律）：错误归队成
