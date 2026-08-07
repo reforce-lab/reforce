@@ -22,14 +22,45 @@ async function readGenerated(root: string, file: string): Promise<string> {
   return await readFile(join(root, file), "utf8");
 }
 
-// 模板里的 schema 组：`export const showGreeting = { ... } as const;`。先框出组体再取槽位，
-// 不能直接全文扫「槽位: 标识符」——dto 里还有 `query: PaginationQuery` 这类函数形参标注，
-// 长得一模一样但不是路由 schema。
-const SCHEMA_GROUP_BODY = /=\s*\{([^}]*)\}\s*as const/g;
-const SCHEMA_SLOT_REFERENCE = /(?:params|query|body|response):\s*([A-Za-z_$][\w$]*)/g;
+// 槽位标注的契约形态：`Param<GreetingParams, "name">` / `Query<PaginationQuery>` /
+// `Body<CreateGreetingBody>`。首字符限定标识符，单键写法（第一实参是字符串字面量）自然
+// 落不进来——单键不经 schema，不归这条不变量管。
+const SLOT_TYPE_ARGUMENT = /\b(?:Param|Query|Header|Body)<\s*([A-Za-z_$][\w$]*)/g;
+// dto 里把类型别名和 schema 值咬合起来的那一行：`export type X = z.infer<typeof x>`。
+const INFER_ALIAS = /export type ([A-Za-z_$][\w$]*) = z\.infer<typeof ([A-Za-z_$][\w$]*)>/g;
 
 const CONTROLLER = "src/features/greeting/greeting.controller.ts";
 const DTO = "src/features/greeting/greeting.dto.ts";
+
+// dto 侧的一半：每条 `export type X = z.infer<typeof x>` 里的 x 必须是同文件的顶层具名导出，
+// 返回全部别名 X。
+async function schemaBackedAliasesOf(target: string, files: readonly string[]): Promise<string[]> {
+  const aliases: string[] = [];
+  for (const file of files.filter((name) => name.endsWith(".dto.ts"))) {
+    const dto = await readGenerated(target, file);
+    for (const [, alias, schema] of dto.matchAll(INFER_ALIAS)) {
+      if (alias !== undefined && schema !== undefined) {
+        expect(dto).toContain(`export const ${schema} =`);
+        aliases.push(alias);
+      }
+    }
+  }
+  return aliases;
+}
+
+// 控制器侧的一半：槽位标注里契约形态的第一类型实参。
+async function slotTypeArgumentsOf(target: string, files: readonly string[]): Promise<string[]> {
+  const slots: string[] = [];
+  for (const file of files.filter((name) => name.endsWith(".controller.ts"))) {
+    const controller = await readGenerated(target, file);
+    for (const [, alias] of controller.matchAll(SLOT_TYPE_ARGUMENT)) {
+      if (alias !== undefined) {
+        slots.push(alias);
+      }
+    }
+  }
+  return slots;
+}
 
 describe("scaffoldProject", () => {
   test("目标目录不存在时创建它并写出项目", async () => {
@@ -254,28 +285,22 @@ describe("scaffoldProject", () => {
     });
   });
 
-  // 编译器按「模块 + 导出名」把路由 schema 重新 import 进生成的路由表，所以装饰器里引用的
-  // 每个 schema 都必须是具名导出，否则生成的项目 build 报 INVALID_ROUTE_SCHEMA。这条约束
-  // tsc 看不见——模板不导出照样类型正确——只能在这里钉住。
-  test("装饰器引用的每个 schema 都是模板里的具名导出", async () => {
+  // 编译器把槽位标注沿「类型别名 → z.infer<typeof x> → schema 值」追溯回 dto，再按
+  // 「模块 + 导出名」把 schema import 进生成的路由表。链条的每一环都不是 tsc 能看住的：
+  // 别名绕开 z.infer 手写、schema 不是顶层具名导出，模板照样类型正确，坏掉的是用户项目
+  // 的 reforce build——所以整条链只能在这里钉住。
+  test("控制器槽位的契约类型都咬合到 dto 里具名导出的 schema", async () => {
     await withTemporaryDirectory(async (root) => {
       const target = join(root, "my-api");
 
       const result = await scaffoldProject(target, specOf());
 
-      const dtoFiles = result.files.filter((file) => file.endsWith(".dto.ts"));
-      expect(dtoFiles.length).toBeGreaterThan(0);
-      let slots = 0;
-      for (const file of dtoFiles) {
-        const dto = await readGenerated(target, file);
-        for (const [, body] of dto.matchAll(SCHEMA_GROUP_BODY)) {
-          for (const [, name] of (body ?? "").matchAll(SCHEMA_SLOT_REFERENCE)) {
-            slots += 1;
-            expect(dto).toContain(`export const ${name} =`);
-          }
-        }
+      const aliases = await schemaBackedAliasesOf(target, result.files);
+      const slots = await slotTypeArgumentsOf(target, result.files);
+      expect(slots.length).toBeGreaterThan(0);
+      for (const alias of slots) {
+        expect(aliases).toContain(alias);
       }
-      expect(slots).toBeGreaterThan(0);
     });
   });
 

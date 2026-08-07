@@ -7,8 +7,8 @@ import type {
 import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
-import { WebRequestFields } from "@/execution/request-fields";
-import { createWebApplication } from "@/execution/web-application";
+import { currentRequestId, WebRequestFields } from "@/execution/request-fields";
+import { createWebApplication, type RequestLogger } from "@/execution/web-application";
 import type { GeneratedRoute, GeneratedRouteTable } from "@/generated/route-table";
 import type { RouteMiddleware } from "@/routing/middleware";
 import { schemaOf } from "../support/schemas";
@@ -58,6 +58,7 @@ function routeOf(overrides: Partial<GeneratedRoute>): GeneratedRoute {
     middleware: [],
     meta: {},
     slots: [],
+    response: { kind: "passthrough" },
     ...overrides,
   };
 }
@@ -66,7 +67,7 @@ function tableOf(
   routes: readonly GeneratedRoute[],
   errorHandlers: GeneratedRouteTable["errorHandlers"] = [],
 ): GeneratedRouteTable {
-  return { schemaVersion: 2, routes, errorHandlers };
+  return { schemaVersion: 3, routes, errorHandlers };
 }
 
 function recordingMiddleware(log: string[], label: string): new () => RouteMiddleware {
@@ -525,7 +526,11 @@ describe("createWebApplication response encoding", () => {
 
   test("a plain return value goes through the route encoder before serialization", async () => {
     const route = preparedWith({
-      encode: (value) => ({ id: String(Reflect.get(Object(value), "id")) }),
+      response: {
+        kind: "table",
+        status: 200,
+        encode: (value) => ({ id: String(Reflect.get(Object(value), "id")) }),
+      },
     });
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
@@ -534,32 +539,42 @@ describe("createWebApplication response encoding", () => {
     expect(await response.json()).toEqual({ id: "42" });
   });
 
-  // S2 中间态:无编码器 = 无返回类型标注,handler 必须自己返回 Response;普通对象 500。
-  test("a plain return value without an encoder becomes a 500", async () => {
+  // passthrough 路由(直返 Response 的声明)返回普通对象:500 语义不变(#275)。
+  test("a plain return value on a passthrough route becomes a 500", async () => {
     const route = preparedWith({});
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(500);
   });
+
+  // 降级路由(#275):free-form 原样序列化,不投影。
+  test("a free-form route serializes the raw value with its declared status", async () => {
+    const route = preparedWith({ response: { kind: "free-form", status: 200 } });
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "42", secret: "drop me" });
+  });
 });
 
 describe("createWebApplication response header merging", () => {
   class HeaderWriter {
     plain(context: RequestContext): { readonly ok: boolean } {
-      context.responseHeaders.set("x-request-id", "abc");
+      context.responseHeaders.set("x-audit-id", "abc");
       context.responseHeaders.append("set-cookie", "a=1");
       context.responseHeaders.append("set-cookie", "b=2");
       return { ok: true };
     }
 
     raw(context: RequestContext): Response {
-      context.responseHeaders.set("x-request-id", "abc");
+      context.responseHeaders.set("x-audit-id", "abc");
       return new Response("raw");
     }
 
     failing(context: RequestContext): never {
-      context.responseHeaders.set("x-request-id", "abc");
+      context.responseHeaders.set("x-audit-id", "abc");
       throw new Error("boom");
     }
   }
@@ -573,7 +588,9 @@ describe("createWebApplication response header merging", () => {
           handler,
           invoke: (instance, context) =>
             Reflect.apply(HeaderWriter.prototype[handler], instance, [context]),
-          ...(encode === undefined ? {} : { encode }),
+          ...(encode === undefined
+            ? {}
+            : { response: { kind: "table", status: 200, encode } as const }),
         }),
       ]),
       context: contextOf([[HeaderWriter, new HeaderWriter()]]),
@@ -591,7 +608,7 @@ describe("createWebApplication response header merging", () => {
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("x-request-id")).toBe("abc");
+    expect(response.headers.get("x-audit-id")).toBe("abc");
     expect(response.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
     // 序列化默认头不因合并丢失。
     expect(response.headers.get("content-type")).toBe("application/json");
@@ -604,7 +621,7 @@ describe("createWebApplication response header merging", () => {
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(await response.text()).toBe("raw");
-    expect(response.headers.get("x-request-id")).toBeNull();
+    expect(response.headers.get("x-audit-id")).toBeNull();
   });
 
   // 错误响应由错误分派统一负责,handler 半路写下的头不跟着错误出线。
@@ -614,7 +631,7 @@ describe("createWebApplication response header merging", () => {
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(500);
-    expect(response.headers.get("x-request-id")).toBeNull();
+    expect(response.headers.get("x-audit-id")).toBeNull();
   });
 });
 
@@ -656,7 +673,12 @@ describe("WebRequestFields", () => {
     });
 
     // path 是编译期的路由模式而不是 /orders/42：字段要能聚合，具体路径基数无界。
-    expect(seen).toEqual({ method: "POST", path: "/orders/:id" });
+    // requestId 是 #303 的第三元组成员,与响应头同值。
+    expect(seen).toEqual({
+      method: "POST",
+      path: "/orders/:id",
+      requestId: expect.any(String),
+    });
   });
 
   // ALS 只向内传播，所以请求结束后必须什么都读不到——否则串成一条「上一个请求的 path」
@@ -675,5 +697,267 @@ describe("WebRequestFields", () => {
     await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(source.fields()).toBeUndefined();
+  });
+});
+
+// request id 开箱件(#303):零配置内建行为——回显/生成、全部出口盖章、L6 与响应头恒等、
+// seeder 可读、immutable headers 不破 handle 契约。引擎级 404 不进 handle,天然在边界外。
+describe("createWebApplication request id", () => {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  class Outcomes {
+    ok(): Response {
+      return new Response("ok");
+    }
+
+    encoded(): { readonly ok: boolean } {
+      return { ok: true };
+    }
+
+    failing(): never {
+      throw new Error("boom");
+    }
+  }
+
+  function preparedOutcome(
+    overrides: Partial<GeneratedRoute>,
+    options: {
+      readonly middleware?: GeneratedRoute["middleware"];
+      readonly logger?: RequestLogger;
+    } = {},
+  ) {
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: Outcomes,
+          beanId: "src/outcomes.ts#Outcomes",
+          ...(options.middleware === undefined ? {} : { middleware: options.middleware }),
+          ...overrides,
+        }),
+      ]),
+      context: contextOf([
+        [Outcomes, new Outcomes()],
+        ...(options.middleware ?? []).map(
+          (entry) => [entry.bean, new (entry.bean as new () => object)()] as const,
+        ),
+      ]),
+      ...(options.logger === undefined ? {} : { logger: options.logger }),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+    return route;
+  }
+
+  function invokeOf(handler: "ok" | "encoded" | "failing"): Partial<GeneratedRoute> {
+    return {
+      handler,
+      invoke: (instance) => Reflect.apply(Outcomes.prototype[handler], instance, []),
+    };
+  }
+
+  test("echoes a legal client id and regenerates an illegal one", async () => {
+    const route = preparedOutcome(invokeOf("ok"));
+
+    const echoed = await route.handle(
+      new Request("https://reforce.test/probe", { headers: { "x-request-id": "client-1" } }),
+      {},
+    );
+    expect(echoed.headers.get("x-request-id")).toBe("client-1");
+
+    const regenerated = await route.handle(
+      new Request("https://reforce.test/probe", { headers: { "x-request-id": "has space" } }),
+      {},
+    );
+    expect(regenerated.headers.get("x-request-id")).toMatch(uuidPattern);
+  });
+
+  test("stamps every exit: raw Response, encoded response, validation 400 and fallback 500", async () => {
+    const cases: readonly Partial<GeneratedRoute>[] = [
+      invokeOf("ok"),
+      {
+        ...invokeOf("encoded"),
+        response: { kind: "table", status: 200, encode: (value) => value },
+      },
+      {
+        ...invokeOf("encoded"),
+        slots: [
+          {
+            slot: "query",
+            key: "page",
+            decode: schemaOf(() => ({ issues: [{ message: "page must be a number" }] })),
+          },
+        ],
+      },
+      invokeOf("failing"),
+    ];
+    for (const overrides of cases) {
+      const route = preparedOutcome(overrides);
+      const response = await route.handle(
+        new Request("https://reforce.test/probe?page=x", {
+          headers: { "x-request-id": "stamp-me" },
+        }),
+        {},
+      );
+      expect(response.headers.get("x-request-id")).toBe("stamp-me");
+    }
+  });
+
+  // 任何中间件都盖不到这条路径:中间件自身抛错的外层兜底响应,只有统一缝能盖章。
+  test("stamps the outer fallback when a middleware itself throws", async () => {
+    class Exploding {
+      handle(): Promise<Response> {
+        throw new Error("middleware exploded");
+      }
+    }
+    const route = preparedOutcome(invokeOf("ok"), {
+      middleware: [
+        {
+          bean: Exploding,
+          beanId: "src/exploding.ts#Exploding",
+          phase: "observability",
+          order: 0,
+          mount: "global",
+        },
+      ],
+    });
+
+    const response = await route.handle(
+      new Request("https://reforce.test/probe", { headers: { "x-request-id": "outer-path" } }),
+      {},
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-request-id")).toBe("outer-path");
+  });
+
+  test("a user-written x-request-id header is overwritten (client-visible id ≡ log id)", async () => {
+    class Spoofing {
+      spoof(context: RequestContext): { readonly ok: boolean } {
+        context.responseHeaders.set("x-request-id", "spoofed");
+        return { ok: true };
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: Spoofing,
+          beanId: "src/spoofing.ts#Spoofing",
+          handler: "spoof",
+          invoke: (instance, context) =>
+            Reflect.apply(Spoofing.prototype.spoof, instance, [context]),
+          response: { kind: "table", status: 200, encode: (value) => value },
+        }),
+      ]),
+      context: contextOf([[Spoofing, new Spoofing()]]),
+    });
+    const prepared = application.routes[0];
+    if (prepared === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    const response = await prepared.handle(
+      new Request("https://reforce.test/probe", { headers: { "x-request-id": "true-id" } }),
+      {},
+    );
+
+    expect(response.headers.get("x-request-id")).toBe("true-id");
+  });
+
+  test("an immutable-headers Response is sent as-is without rejecting the request", async () => {
+    class ImmutableReturning {
+      immutable(): Response {
+        const response = new Response("proxied");
+        return new Proxy(response, {
+          get(target, property, receiver) {
+            if (property === "headers") {
+              return new Proxy(target.headers, {
+                get(headers, headerProperty) {
+                  if (headerProperty === "set") {
+                    return () => {
+                      throw new TypeError("immutable headers");
+                    };
+                  }
+                  const value = Reflect.get(headers, headerProperty, headers);
+                  return typeof value === "function" ? value.bind(headers) : value;
+                },
+              });
+            }
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: ImmutableReturning,
+          beanId: "src/immutable.ts#ImmutableReturning",
+          handler: "immutable",
+          invoke: (instance) => Reflect.apply(ImmutableReturning.prototype.immutable, instance, []),
+        }),
+      ]),
+      context: contextOf([[ImmutableReturning, new ImmutableReturning()]]),
+    });
+    const prepared = application.routes[0];
+    if (prepared === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    const response = await prepared.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(await response.text()).toBe("proxied");
+    expect(response.headers.get("x-request-id")).toBeNull();
+  });
+
+  test("the L6 request record carries the same id the response header shows", async () => {
+    const records: Readonly<Record<string, unknown>>[] = [];
+    const logger: RequestLogger = {
+      isEnabled: () => true,
+      info: (fields) => {
+        if (fields !== undefined) {
+          records.push(fields);
+        }
+      },
+      warn: () => undefined,
+      error: () => undefined,
+    };
+    const route = preparedOutcome(invokeOf("ok"), { logger });
+
+    const response = await route.handle(
+      new Request("https://reforce.test/probe", { headers: { "x-request-id": "log-me" } }),
+      {},
+    );
+
+    expect(response.headers.get("x-request-id")).toBe("log-me");
+    expect(records).toHaveLength(1);
+    expect(records[0]?.requestId).toBe("log-me");
+  });
+
+  test("a request seeder can read currentRequestId", async () => {
+    let seen: string | undefined;
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({ controller: Outcomes, beanId: "src/outcomes.ts#Outcomes", ...invokeOf("ok") }),
+      ]),
+      context: contextOf([[Outcomes, new Outcomes()]]),
+      requestSeeds: () => {
+        seen = currentRequestId();
+        return [];
+      },
+    });
+    const prepared = application.routes[0];
+    if (prepared === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await prepared.handle(
+      new Request("https://reforce.test/probe", { headers: { "x-request-id": "seeded" } }),
+      {},
+    );
+
+    expect(seen).toBe("seeded");
   });
 });

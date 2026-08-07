@@ -253,6 +253,7 @@ test("explains a route's handling chain from the generated route table", async (
     "  handler src/web.ts#PingController · ping()",
     "  middleware chain (outer → inner) · flattened at compile time by (phase, order, beanId)",
     "  1. admission · order 0 · global · src/web.ts#Gate",
+    "  response · passthrough (handler-controlled Response; void answers 204)",
   ]);
 });
 

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
 import { createErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
+import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError, defineHttpError, HttpError } from "@/http-errors";
 
 function requestContext(): RequestContextState {
@@ -19,10 +20,12 @@ function requestContext(): RequestContextState {
 describe("createErrorDispatcher", () => {
   test("the first handler that returns a Response takes over", async () => {
     const dispatch = createErrorDispatcher([
-      { handle: () => new Response("first", { status: 418 }) },
+      { handler: { handle: () => new Response("first", { status: 418 }) } },
       {
-        handle: () => {
-          throw new Error("second must not run");
+        handler: {
+          handle: () => {
+            throw new Error("second must not run");
+          },
         },
       },
     ]);
@@ -38,15 +41,19 @@ describe("createErrorDispatcher", () => {
     const replaced = new Error("replaced");
     const dispatch = createErrorDispatcher([
       {
-        handle: (error) => {
-          seen.push(error);
-          throw replaced;
+        handler: {
+          handle: (error: unknown) => {
+            seen.push(error);
+            throw replaced;
+          },
         },
       },
       {
-        handle: (error) => {
-          seen.push(error);
-          return new Response(undefined, { status: 502 });
+        handler: {
+          handle: (error: unknown) => {
+            seen.push(error);
+            return new Response(undefined, { status: 502 });
+          },
         },
       },
     ]);
@@ -136,6 +143,28 @@ describe("createErrorDispatcher", () => {
 
     expect(text).not.toContain("boom with a secret");
     expect(text).not.toContain("at ");
+  });
+
+  // #303/#250 拍板:errorId 原样保留,unhandled error 日志同时带 requestId——500 响应头带
+  // requestId、body 带 errorId,这条记录把两串字符自动关联。body 形状零改动。
+  test("the unhandled-error record joins requestId and errorId; the body shape is unchanged", async () => {
+    const records: { fields: Readonly<Record<string, unknown>> | undefined }[] = [];
+    const dispatch = createErrorDispatcher([], {
+      error: (fields) => records.push({ fields }),
+    });
+
+    const response = await runWithRequestFields(
+      { method: "GET", path: "/users", requestId: "rid-1" },
+      () => dispatch(new Error("boom"), requestContext()),
+    );
+
+    expect(records[0]?.fields).toMatchObject({ requestId: "rid-1", errorId: expect.any(String) });
+    expect(await response.json()).toEqual({
+      type: "about:blank",
+      title: "Internal Server Error",
+      status: 500,
+      errorId: expect.any(String),
+    });
   });
 
   test("hands the error object itself to the log under the reserved err field", async () => {
@@ -236,6 +265,122 @@ describe("createErrorDispatcher", () => {
 
     const response = await dispatch(new Error("boom"), requestContext());
 
+    expect(response.status).toBe(500);
+  });
+});
+
+// 类型化处理器(RFC 0012 S3,#275):accepts 是 instanceof 闸,status/encode 是非 Response
+// 返回值的编码出线路径。
+describe("createErrorDispatcher typed entries", () => {
+  class OrderRejected extends Error {}
+  class QuotaExceeded extends Error {}
+
+  test("an accepts gate skips errors that are not instances of the class", async () => {
+    const seen: unknown[] = [];
+    const dispatch = createErrorDispatcher([
+      {
+        handler: {
+          handle: (error: unknown) => {
+            seen.push(error);
+            return new Response("order", { status: 409 });
+          },
+        },
+        accepts: OrderRejected,
+      },
+    ]);
+
+    const missed = await dispatch(new QuotaExceeded("quota"), requestContext());
+    const hit = await dispatch(new OrderRejected("order"), requestContext());
+
+    expect(missed.status).toBe(500);
+    expect(hit.status).toBe(409);
+    expect(seen).toHaveLength(1);
+  });
+
+  test("a subclass instance passes the accepts gate of its base class", async () => {
+    class SpecialOrderRejected extends OrderRejected {}
+    const dispatch = createErrorDispatcher([
+      {
+        handler: { handle: () => new Response("order", { status: 409 }) },
+        accepts: OrderRejected,
+      },
+    ]);
+
+    const response = await dispatch(new SpecialOrderRejected("sub"), requestContext());
+
+    expect(response.status).toBe(409);
+  });
+
+  test("a non-Response return with a declared status is encoded onto the wire", async () => {
+    const dispatch = createErrorDispatcher([
+      {
+        handler: { handle: () => ({ code: "ORDER_REJECTED", orderId: 42n }) },
+        accepts: OrderRejected,
+        status: 409,
+        encode: (value: unknown) => ({
+          code: Reflect.get(Object(value), "code"),
+          orderId: String(Reflect.get(Object(value), "orderId")),
+        }),
+      },
+    ]);
+
+    const response = await dispatch(new OrderRejected("boom"), requestContext());
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(await response.json()).toEqual({ code: "ORDER_REJECTED", orderId: "42" });
+  });
+
+  test("a status without an encoder serializes the raw return value", async () => {
+    const dispatch = createErrorDispatcher([
+      {
+        handler: { handle: () => ({ code: "TEAPOT" }) },
+        status: 418,
+      },
+    ]);
+
+    const response = await dispatch(new Error("boom"), requestContext());
+
+    expect(response.status).toBe(418);
+    expect(await response.json()).toEqual({ code: "TEAPOT" });
+  });
+
+  test("a match-all handler returning a non-Response escalates instead of taking over", async () => {
+    const seen: unknown[] = [];
+    const dispatch = createErrorDispatcher([
+      { handler: { handle: () => ({ leaked: true }) } },
+      {
+        handler: {
+          handle: (error: unknown) => {
+            seen.push(error);
+            throw error;
+          },
+        },
+      },
+    ]);
+
+    const response = await dispatch(new Error("boom"), requestContext());
+
+    // 升级后的错误是 ResponseSerializationError,最终落 500 兜底;原错误不再保留(换错即升级)。
+    expect(response.status).toBe(500);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeInstanceOf(Error);
+    expect(String(Reflect.get(Object(seen[0]), "message"))).toContain("@ResponseStatus");
+  });
+
+  test("an escalated error is re-gated by later typed handlers", async () => {
+    const dispatch = createErrorDispatcher([
+      { handler: { handle: () => ({ leaked: true }) } },
+      {
+        handler: { handle: () => new Response("order-only", { status: 409 }) },
+        accepts: OrderRejected,
+      },
+    ]);
+
+    const response = await dispatch(new OrderRejected("boom"), requestContext());
+
+    // 第一条 match-all 把 OrderRejected 换成了 ResponseSerializationError,第二条 typed
+    // 处理器的 accepts 闸不再放行——最终 500 兜底。
     expect(response.status).toBe(500);
   });
 });

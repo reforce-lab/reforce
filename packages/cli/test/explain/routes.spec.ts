@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 import {
   isRouteQuery,
   matchRoutes,
-  parseRouteManifestBytes,
   parseRouteQuery,
-  type RouteManifest,
   renderRouteExplanation,
   renderRouteOverview,
 } from "@/explain/routes";
+import type { RouteManifest } from "@/project/route-manifest";
+
+// 解析(parseRouteManifestBytes)的测试随解析器迁至 test/project/route-manifest.spec.ts
+// (#306);这里只测 explain 的查询、匹配与渲染面。
 
 const manifest: RouteManifest = {
   routes: [
@@ -27,7 +29,13 @@ const manifest: RouteManifest = {
           { slot: "body", source: { kind: "schema", vendor: "zod" } },
           { slot: "requestContext" },
         ],
-        response: "table",
+        response: {
+          kind: "table",
+          status: 200,
+          errors: [
+            { error: "OrderRejectedError", handler: "src/errors.ts#OrderRejected", status: 409 },
+          ],
+        },
       },
     },
     {
@@ -36,43 +44,19 @@ const manifest: RouteManifest = {
       controller: { beanId: "src/users.ts#UsersController", handler: "create" },
       middleware: [],
       meta: {},
-      contract: { slots: [], response: "passthrough" },
+      contract: { slots: [], response: { kind: "passthrough", errors: [] } },
     },
   ],
-  errorHandlers: [{ beanId: "src/errors.ts#Teapot", order: 0 }],
+  errorHandlers: [
+    {
+      beanId: "src/errors.ts#OrderRejected",
+      order: 0,
+      accepts: { name: "OrderRejectedError" },
+      status: 409,
+    },
+    { beanId: "src/errors.ts#Teapot", order: 1 },
+  ],
 };
-
-// 落盘形态的 contract 节(source 是 {source: "..."} 判别对象),parseRouteManifestBytes 的
-// 输入按它构造;上面的 RouteManifest 是解析后的内存形态。
-function manifestJson(): unknown {
-  return {
-    schemaVersion: 2,
-    errorHandlers: manifest.errorHandlers,
-    routes: manifest.routes.map((route) => ({
-      ...route,
-      contract: {
-        slots: route.contract.slots.map((slot) => ({
-          slot: slot.slot,
-          ...(slot.key === undefined ? {} : { key: slot.key }),
-          ...(slot.form === undefined ? {} : { form: slot.form }),
-          ...(slot.source === undefined
-            ? {}
-            : {
-                source: {
-                  source: slot.source.kind,
-                  ...(slot.source.vendor === undefined ? {} : { vendor: slot.source.vendor }),
-                },
-              }),
-        })),
-        response: { kind: route.contract.response },
-      },
-    })),
-  };
-}
-
-function encoded(value: unknown): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(value));
-}
 
 describe("parseRouteQuery", () => {
   test("a bare path targets every method", () => {
@@ -87,36 +71,6 @@ describe("parseRouteQuery", () => {
     expect(isRouteQuery("src/users.ts#UsersController")).toBe(false);
     expect(isRouteQuery("Cache")).toBe(false);
     expect(parseRouteQuery("GET users")).toBeUndefined();
-  });
-});
-
-describe("parseRouteManifestBytes", () => {
-  test("a valid manifest round-trips into slot lines", () => {
-    const parsed = parseRouteManifestBytes(encoded(manifestJson()));
-
-    expect(parsed?.routes).toHaveLength(2);
-    expect(parsed?.routes[0]?.contract).toEqual(manifest.routes[0]?.contract);
-    expect(parsed?.errorHandlers).toEqual([{ beanId: "src/errors.ts#Teapot", order: 0 }]);
-  });
-
-  // 1 是旧 schemas 表的版本:旧生成物不得被静默解释成槽位表。
-  test("a wrong schema version is rejected", () => {
-    expect(
-      parseRouteManifestBytes(encoded({ schemaVersion: 1, routes: [], errorHandlers: [] })),
-    ).toBeUndefined();
-    expect(
-      parseRouteManifestBytes(encoded({ schemaVersion: 3, routes: [], errorHandlers: [] })),
-    ).toBeUndefined();
-  });
-
-  test("a malformed route entry is rejected", () => {
-    const bytes = encoded({
-      schemaVersion: 2,
-      routes: [{ method: "GET" }],
-      errorHandlers: [],
-    });
-
-    expect(parseRouteManifestBytes(bytes)).toBeUndefined();
   });
 });
 
@@ -154,21 +108,25 @@ describe("renderRouteExplanation", () => {
       "  2. query · key page · optional · decoded from the type",
       "  3. body · decoded by schema (zod)",
       "  4. requestContext",
-      "  response · whitelisted by the return type contract",
+      "  response · 200 · whitelisted by the return type contract",
+      "  throws OrderRejectedError → 409 · src/errors.ts#OrderRejected",
       '  meta · {"roles":["admin"]}',
       "error handlers (dispatch order)",
-      "  1. order 0 · src/errors.ts#Teapot",
+      "  1. order 0 · src/errors.ts#OrderRejected · accepts OrderRejectedError · 409",
+      "  2. order 1 · src/errors.ts#Teapot · match-all",
     ]);
   });
 
-  test("a route without data slots prints no inputs section", () => {
+  test("a route without data slots prints the passthrough response line", () => {
     const lines = renderRouteExplanation(
       manifest,
       matchRoutes(manifest, { method: "POST", path: "/users" }),
     );
 
     expect(lines.some((line) => line.includes("inputs"))).toBe(false);
-    expect(lines.some((line) => line.includes("response ·"))).toBe(false);
+    expect(lines).toContain(
+      "  response · passthrough (handler-controlled Response; void answers 204)",
+    );
   });
 });
 
@@ -182,7 +140,8 @@ describe("renderRouteOverview", () => {
       "GET /users/:id · src/users.ts#UsersController · show() · 2 middleware",
       "POST /users · src/users.ts#UsersController · create() · no middleware",
       "error handlers (dispatch order)",
-      "  1. order 0 · src/errors.ts#Teapot",
+      "  1. order 0 · src/errors.ts#OrderRejected · accepts OrderRejectedError · 409",
+      "  2. order 1 · src/errors.ts#Teapot · match-all",
     ]);
   });
 

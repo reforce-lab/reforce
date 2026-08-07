@@ -18,9 +18,7 @@ import {
   isRouteQuery,
   knownRouteList,
   matchRoutes,
-  parseRouteManifestBytes,
   parseRouteQuery,
-  type RouteManifest,
   renderRouteExplanation,
   renderRouteOverview,
 } from "@/explain/routes";
@@ -38,6 +36,7 @@ import {
   parseGeneratedManifestBytes,
   starterOriginPackageName,
 } from "@/project/generated-manifest";
+import { type RouteManifest, readRouteManifest } from "@/project/route-manifest";
 
 // reforce explain <bean> 最小版（ADR 0004 决策 16，#120/#148）：只读生成物（manifest）与磁盘上
 // 已安装 starter 的 meta，静态输出选择链——谁提供、为何胜出、谁让位、origin，以及决策 10 多版本
@@ -184,34 +183,18 @@ function beanLookupProblem(
 
 // web 面（ADR 0006 W1，#153）：查询以 "/" 开头（可带方法前缀）即路由查询，只读 routes.json
 // 静态回答 路径 → 处理链；与 bean 面互不混淆（bean id/导出名/契约名都不会以 "/" 开头）。
-async function readRouteManifest(
+// 读取与解析在 project/route-manifest.ts（与 `reforce openapi` 共用话术，#306）。
+async function readExplainRouteManifest(
   projectRoot: string,
 ): Promise<{ readonly manifest?: RouteManifest; readonly problem?: ExplainOutcome }> {
-  const routesPath = join(projectRoot, ".reforce", "generated", "routes.json");
-  let bytes: Uint8Array;
-  try {
-    bytes = await readFile(routesPath);
-  } catch (error) {
-    if (isMissingPathError(error)) {
-      return {
-        problem: {
-          kind: "problem",
-          phase: "project",
-          code: "ARTIFACT_INVALID",
-          message: `No generated route table at ${routesPath}. Run reforce build or reforce dev first.`,
-        },
-      };
-    }
-    throw error;
-  }
-  const manifest = parseRouteManifestBytes(bytes);
+  const { manifest, problem } = await readRouteManifest(projectRoot);
   if (manifest === undefined) {
     return {
       problem: {
         kind: "problem",
         phase: "project",
         code: "ARTIFACT_INVALID",
-        message: `The generated route table at ${routesPath} is not valid. Rebuild the application.`,
+        message: problem ?? "The generated route table is not readable.",
       },
     };
   }
@@ -222,7 +205,7 @@ async function readRouteManifest(
 const routeOverviewQuery = "routes";
 
 async function resolveRouteOverview(projectRoot: string): Promise<ExplainOutcome> {
-  const { manifest, problem } = await readRouteManifest(projectRoot);
+  const { manifest, problem } = await readExplainRouteManifest(projectRoot);
   if (manifest === undefined) {
     return problem ?? { kind: "lines", lines: [] };
   }
@@ -233,7 +216,7 @@ async function resolveRouteExplanation(
   projectRoot: string,
   query: string,
 ): Promise<ExplainOutcome> {
-  const { manifest, problem } = await readRouteManifest(projectRoot);
+  const { manifest, problem } = await readExplainRouteManifest(projectRoot);
   if (manifest === undefined) {
     return problem ?? { kind: "lines", lines: [] };
   }

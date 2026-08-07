@@ -198,6 +198,33 @@ function requireUniqueShape(value: unknown, index: number, seen: Map<string, str
   seen.set(key, `${method} ${routePath}`);
 }
 
+// 响应闭集(RFC 0012 S3,#275):kind 三变体,encode 当且仅当 table,status 整数
+// (table/free-form 必带,passthrough 可缺省 = 运行时 204)。
+function validateResponse(value: unknown, path: string): void {
+  const response = requireObject(value, path);
+  const kind = Reflect.get(response, "kind");
+  if (kind === "table") {
+    requireExactKeys(response, ["kind", "status", "encode"], path);
+    requireInteger(Reflect.get(response, "status"), `${path}.status`);
+    requireFunction(Reflect.get(response, "encode"), `${path}.encode`);
+    return;
+  }
+  if (kind === "free-form") {
+    requireExactKeys(response, ["kind", "status"], path);
+    requireInteger(Reflect.get(response, "status"), `${path}.status`);
+    return;
+  }
+  if (kind === "passthrough") {
+    requireExactKeys(response, ["kind", "status"], path);
+    const status = Reflect.get(response, "status");
+    if (status !== undefined) {
+      requireInteger(status, `${path}.status`);
+    }
+    return;
+  }
+  fail(`${path}.kind must be "table", "free-form", or "passthrough".`);
+}
+
 function validateRoute(value: unknown, path: string): void {
   const route = requireObject(value, path);
   requireExactKeys(
@@ -212,7 +239,7 @@ function validateRoute(value: unknown, path: string): void {
       "middleware",
       "meta",
       "slots",
-      "encode",
+      "response",
     ],
     path,
   );
@@ -236,25 +263,34 @@ function validateRoute(value: unknown, path: string): void {
   for (const [index, entry] of slots.entries()) {
     validateSlot(entry, `${path}.slots[${index}]`);
   }
-  const encode = Reflect.get(route, "encode");
+  validateResponse(Reflect.get(route, "response"), `${path}.response`);
+}
+
+function validateErrorHandler(value: unknown, path: string): void {
+  const handler = requireObject(value, path);
+  requireExactKeys(handler, ["bean", "beanId", "order", "accepts", "status", "encode"], path);
+  requireFunction(Reflect.get(handler, "bean"), `${path}.bean`);
+  validateBeanId(Reflect.get(handler, "beanId"), `${path}.beanId`);
+  requireInteger(Reflect.get(handler, "order"), `${path}.order`);
+  const accepts = Reflect.get(handler, "accepts");
+  if (accepts !== undefined) {
+    requireFunction(accepts, `${path}.accepts`);
+  }
+  const status = Reflect.get(handler, "status");
+  if (status !== undefined) {
+    requireInteger(status, `${path}.status`);
+  }
+  const encode = Reflect.get(handler, "encode");
   if (encode !== undefined) {
     requireFunction(encode, `${path}.encode`);
   }
 }
 
-function validateErrorHandler(value: unknown, path: string): void {
-  const handler = requireObject(value, path);
-  requireExactKeys(handler, ["bean", "beanId", "order"], path);
-  requireFunction(Reflect.get(handler, "bean"), `${path}.bean`);
-  validateBeanId(Reflect.get(handler, "beanId"), `${path}.beanId`);
-  requireInteger(Reflect.get(handler, "order"), `${path}.order`);
-}
-
 export function validateGeneratedRouteTable(value: unknown): GeneratedRouteTable {
   const table = requireObject(value, "routeTable");
   requireExactKeys(table, ["schemaVersion", "routes", "errorHandlers"], "routeTable");
-  if (Reflect.get(table, "schemaVersion") !== 2) {
-    fail("routeTable.schemaVersion must be 2.");
+  if (Reflect.get(table, "schemaVersion") !== 3) {
+    fail("routeTable.schemaVersion must be 3.");
   }
   const routes = requireArray(Reflect.get(table, "routes"), "routeTable.routes");
   const shapes = new Map<string, string>();

@@ -301,6 +301,8 @@ export interface ResolveRouteSlotsInputs<TType, TSymbol> {
   readonly method: ClassMethodDeclaration;
   readonly controllerName: string;
   readonly context: SlotResolutionContext<TType, TSymbol>;
+  // @ResponseStatus / @ResponseSchema 的语法层解析产物(web-routes 提供);缺省两者皆无。
+  readonly responseDirectives?: ResponseDirectives;
 }
 
 export function resolveRouteSlots<TType, TSymbol>(
@@ -320,7 +322,14 @@ export function resolveRouteSlots<TType, TSymbol>(
     }
     registerSlot(accumulator, slot, inputs.context.diagnostics);
   }
-  const response = resolveResponseContract(inputs);
+  const response = resolveResponseDeclaration({
+    context: inputs.context,
+    subject: `${inputs.controllerName}#${methodNameOf(inputs.method)}`,
+    annotation: inputs.method.returnType,
+    anchorSpan: inputs.method.returnType?.span ?? inputs.method.span,
+    directives: inputs.responseDirectives ?? {},
+    role: "route",
+  });
   if (accumulator.failed || response === undefined) {
     return undefined;
   }
@@ -645,6 +654,8 @@ function expandContract<TType, TSymbol>(
   type: TType,
   span: SourceSpan,
   allowUndefinedRoot: boolean,
+  // 推导模式(S3,#275)把诊断引流进局部数组:失败即静默降级 free-form,不见诸公开诊断。
+  sink?: CompilerDiagnostic[],
 ): { readonly table?: ContractTable; readonly optional: boolean } {
   const query = context.query;
   if (query === undefined) {
@@ -658,7 +669,7 @@ function expandContract<TType, TSymbol>(
     fileIdOf: context.fileIdOf,
     allowUndefinedRoot,
   });
-  context.diagnostics.push(...result.diagnostics);
+  (sink ?? context.diagnostics).push(...result.diagnostics);
   return { table: result.table, optional: result.rootStrippedUndefined };
 }
 
@@ -922,16 +933,13 @@ function isGlobalReference<TType, TSymbol>(
   return head.kind === "global" && head.name === globalName;
 }
 
-// 响应侧前置裁决(语法层,必须在 expandTypeContract 之前):Response / Promise<Response> 是
-// 逃生口(#264 决策 7,原样透传);void / Promise<void> 无编码器(204 语义);无标注不生成
-// 编码器走现有序列化(硬错归 S3);其余进 checker 展开,Promise 在类型侧拆包。
+// 响应侧语法裁决(必须在 expandTypeContract 之前):Response / Promise<Response> 是逃生口
+// (#264 决策 7,原样透传);void / Promise<void> 无编码器(运行时 204)。S3(#275)起
+// 「无标注」不再归 passthrough——由调用方转推导模式,失败降级 free-form。
 function responseIsPassthrough<TType, TSymbol>(
   context: SlotResolutionContext<TType, TSymbol>,
-  node: TypeNode | undefined,
+  node: TypeNode,
 ): boolean {
-  if (node === undefined) {
-    return true;
-  }
   if (node.kind === "primitive" && node.name === "void") {
     return true;
   }
@@ -956,21 +964,192 @@ function responseIsPassthrough<TType, TSymbol>(
   return false;
 }
 
-function resolveResponseContract<TType, TSymbol>(
-  inputs: ResolveRouteSlotsInputs<TType, TSymbol>,
+// @ResponseStatus 的字面量提取产物(web-routes 语法层解析)。
+export interface ResponseStatusModel {
+  readonly value: number;
+  readonly span: SourceSpan;
+}
+
+// @ResponseSchema 实参(标识符引用),按槽位 schema 同款 schemaTargetOf 追溯。
+export interface ResponseSchemaDirectiveModel {
+  readonly entity: EntityName;
+  readonly span: SourceSpan;
+}
+
+export interface ResponseDirectives {
+  readonly status?: ResponseStatusModel;
+  readonly schema?: ResponseSchemaDirectiveModel;
+}
+
+export interface ResolveResponseInputs<TType, TSymbol> {
+  readonly context: SlotResolutionContext<TType, TSymbol>;
+  // 诊断点名的展示名,如 "Users#show"。
+  readonly subject: string;
+  readonly annotation: TypeNode | undefined;
+  readonly anchorSpan: SourceSpan;
+  readonly directives: ResponseDirectives;
+  // 状态码规则按角色分岔:路由 table/free-form 缺省 200;错误处理器缺 @ResponseStatus 硬错
+  // (ERROR_HANDLER_MISSING_STATUS)、passthrough 上声明硬错(矛盾)。
+  readonly role: "route" | "error-handler";
+}
+
+// 模式裁决前的中间形:状态码由 applyResponseStatus 统一附加与校验。
+type StatuslessResponse =
+  | {
+      readonly kind: "table";
+      readonly table: ContractTable;
+      readonly contractSource: ContractSourceModel;
+    }
+  | { readonly kind: "free-form" }
+  | { readonly kind: "passthrough" };
+
+// 响应声明解析的统一入口(S3,#275),路由与错误处理器共用:
+// - schema 模式(@ResponseSchema):追溯实参值 → ~standard 复检 → input 侧类型展开,失败硬错;
+// - declared 模式(有返回类型标注):语法 passthrough 裁决后走展开管线,诊断照发;
+// - inferred 模式(都没写):同一展开管线,任何失败静默降级 free-form。
+export function resolveResponseDeclaration<TType, TSymbol>(
+  inputs: ResolveResponseInputs<TType, TSymbol>,
 ): ResponseContractModel | undefined {
-  const { context, method } = inputs;
-  const annotation = method.returnType;
-  if (responseIsPassthrough(context, annotation)) {
-    return { kind: "passthrough" };
+  const resolved = resolveStatuslessResponse(inputs);
+  if (resolved === undefined) {
+    return undefined;
   }
-  const span = annotation?.span ?? method.span;
+  return applyResponseStatus(inputs, resolved);
+}
+
+function resolveStatuslessResponse<TType, TSymbol>(
+  inputs: ResolveResponseInputs<TType, TSymbol>,
+): StatuslessResponse | undefined {
+  const schema = inputs.directives.schema;
+  if (schema !== undefined) {
+    return resolveSchemaResponse(inputs, schema);
+  }
+  if (inputs.annotation !== undefined) {
+    if (responseIsPassthrough(inputs.context, inputs.annotation)) {
+      return { kind: "passthrough" };
+    }
+    return resolveAnnotatedResponse(inputs);
+  }
+  return resolveInferredResponse(inputs);
+}
+
+function applyResponseStatus<TType, TSymbol>(
+  inputs: ResolveResponseInputs<TType, TSymbol>,
+  resolved: StatuslessResponse,
+): ResponseContractModel | undefined {
+  const { context, directives } = inputs;
+  if (resolved.kind === "passthrough") {
+    if (inputs.role === "error-handler" && directives.status !== undefined) {
+      return report(
+        context.diagnostics,
+        "INVALID_RESPONSE_STATUS",
+        `${inputs.subject} returns Response directly and controls its own status; @ResponseStatus contradicts that.`,
+        directives.status.span,
+        {
+          help: "Drop @ResponseStatus, or declare a data-shaped return type and let it drive serialization.",
+        },
+      );
+    }
+    return {
+      kind: "passthrough",
+      ...(directives.status === undefined ? {} : { status: directives.status.value }),
+    };
+  }
+  if (directives.status === undefined && inputs.role === "error-handler") {
+    return report(
+      context.diagnostics,
+      "ERROR_HANDLER_MISSING_STATUS",
+      `${inputs.subject} returns a data-shaped response but declares no @ResponseStatus.`,
+      inputs.anchorSpan,
+      {
+        help:
+          "A typed error handler that does not return Response must pin its HTTP status with " +
+          "@ResponseStatus(...) on the @ErrorHandler class.",
+      },
+    );
+  }
+  const status = directives.status?.value ?? 200;
+  if (status === 204 || status === 304) {
+    return report(
+      context.diagnostics,
+      "INVALID_RESPONSE_STATUS",
+      `${inputs.subject} declares status ${String(status)} on a body-producing response; 204/304 responses must not carry a body.`,
+      directives.status?.span ?? inputs.anchorSpan,
+      { help: "Return void for an empty response, or pick a status that allows a body." },
+    );
+  }
+  return resolved.kind === "table" ? { ...resolved, status } : { kind: "free-form", status };
+}
+
+function resolveSchemaResponse<TType, TSymbol>(
+  inputs: ResolveResponseInputs<TType, TSymbol>,
+  schema: ResponseSchemaDirectiveModel,
+): StatuslessResponse | undefined {
+  const { context } = inputs;
+  const invalid = (detail: string, help?: string): undefined =>
+    report(
+      context.diagnostics,
+      "INVALID_RESPONSE_SCHEMA",
+      `@ResponseSchema on ${inputs.subject} ${detail}`,
+      schema.span,
+      { help },
+    );
+  const target = context.schemaTargetOf(schema.entity);
+  if (target === undefined) {
+    return invalid(
+      `cannot statically resolve schema value ${leftmostIdentifier(schema.entity)}.`,
+      "Reference a top-level exported const from an application module; re-export chains are not supported.",
+    );
+  }
+  const valueType = requireType(
+    context,
+    target.type,
+    schema.span,
+    `The @ResponseSchema value on ${inputs.subject}`,
+  );
+  if (valueType === undefined) {
+    return undefined;
+  }
+  const standard = standardSchemaVendorOf(context, valueType);
+  if (!standard.isStandard) {
+    return invalid(
+      `references ${leftmostIdentifier(schema.entity)}, which does not implement Standard Schema (missing ~standard.validate).`,
+      "Use a Standard Schema v1 library export (zod, valibot, arktype, ...).",
+    );
+  }
+  const inputType = standardSchemaInputTypeOf(context, valueType);
+  if (inputType === undefined) {
+    return invalid(
+      "has no computable wire contract: the schema carries no ~standard.types.input type.",
+      "Response schemas must expose their input type through Standard Schema types.",
+    );
+  }
+  const expanded = expandContract(context, inputType, schema.span, false);
+  if (expanded.table === undefined) {
+    return undefined;
+  }
+  return {
+    kind: "table",
+    table: expanded.table,
+    contractSource: {
+      source: "schema",
+      ref: target.ref,
+      ...(standard.vendor === undefined ? {} : { vendor: standard.vendor }),
+    },
+  };
+}
+
+function resolveAnnotatedResponse<TType, TSymbol>(
+  inputs: ResolveResponseInputs<TType, TSymbol>,
+): StatuslessResponse | undefined {
+  const { context } = inputs;
+  const span = inputs.anchorSpan;
   const query = context.query;
   const methodType = requireType(
     context,
     context.typeAtMethodName(),
     span,
-    `The response type of ${inputs.controllerName}#${methodNameOf(method)}`,
+    `The response type of ${inputs.subject}`,
   );
   if (methodType === undefined || query === undefined) {
     return undefined;
@@ -980,7 +1159,7 @@ function resolveResponseContract<TType, TSymbol>(
     return report(
       context.diagnostics,
       "INVALID_SLOT_CONTRACT",
-      `The response type of ${inputs.controllerName}#${methodNameOf(method)} has no computable type; fix TypeScript errors first.`,
+      `The response type of ${inputs.subject} has no computable type; fix TypeScript errors first.`,
       span,
     );
   }
@@ -989,7 +1168,84 @@ function resolveResponseContract<TType, TSymbol>(
   if (expanded.table === undefined) {
     return undefined;
   }
-  return { kind: "table", table: expanded.table };
+  return { kind: "table", table: expanded.table, contractSource: { source: "type" } };
+}
+
+// 推导模式(#275):与 declared 完全同一条展开管线,仅诊断引流与失败语义不同——checker 不可用、
+// 类型不可算、展开出任何诊断,全部静默降级 free-form(序列化原样出线,不投影)。前置类型级
+// 检查不落 free-form:推导出全局 Response ⇒ 逃生口 passthrough(tsgo 实测 namedDeclarationOf
+// 对 ambient Response 答 { name: "Response", declarationPath: <默认库> },非项目类型);
+// 推导 void/undefined ⇒ passthrough(运行时 204)。
+function resolveInferredResponse<TType, TSymbol>(
+  inputs: ResolveResponseInputs<TType, TSymbol>,
+): StatuslessResponse {
+  const { context } = inputs;
+  const query = context.query;
+  if (query === undefined) {
+    return { kind: "free-form" };
+  }
+  const methodType = context.typeAtMethodName();
+  if (methodType === undefined) {
+    return { kind: "free-form" };
+  }
+  const returnType = query.callSignatureReturnTypes(methodType).find((type) => type !== undefined);
+  if (returnType === undefined) {
+    return { kind: "free-form" };
+  }
+  const unwrapped = query.promiseTypeArgument(returnType) ?? returnType;
+  const named = query.namedDeclarationOf(unwrapped);
+  if (named?.name === "Response" && context.fileIdOf(named.declarationPath) === undefined) {
+    return { kind: "passthrough" };
+  }
+  const intrinsic = query.intrinsicOf(unwrapped);
+  if (intrinsic === "void" || intrinsic === "undefined") {
+    return { kind: "passthrough" };
+  }
+  const sink: CompilerDiagnostic[] = [];
+  const expanded = expandContract(context, unwrapped, inputs.anchorSpan, false, sink);
+  if (expanded.table === undefined || sink.length > 0) {
+    return { kind: "free-form" };
+  }
+  return { kind: "table", table: expanded.table, contractSource: { source: "type" } };
+}
+
+// ~standard.types.input 的类型抽取(#275):@ResponseSchema 的线上契约 C。types 在 spec 里
+// 声明为 `Types | undefined`,剥掉 undefined 分量后取 input 属性类型。
+function standardSchemaInputTypeOf<TType, TSymbol>(
+  context: SlotResolutionContext<TType, TSymbol>,
+  valueType: TType,
+): TType | undefined {
+  const query = context.query;
+  if (query === undefined) {
+    return undefined;
+  }
+  const standardType = propertyTypeOf(query, valueType, "~standard");
+  if (standardType === undefined) {
+    return undefined;
+  }
+  let typesType = propertyTypeOf(query, standardType, "types");
+  if (typesType === undefined) {
+    return undefined;
+  }
+  const members = query.unionMembers(typesType);
+  if (members !== undefined) {
+    const rest = members.filter((member) => query.intrinsicOf(member) !== "undefined");
+    const single = rest[0];
+    if (rest.length !== 1 || single === undefined) {
+      return undefined;
+    }
+    typesType = single;
+  }
+  return propertyTypeOf(query, typesType, "input");
+}
+
+function propertyTypeOf<TType, TSymbol>(
+  query: TypeQueryOf<TType, TSymbol>,
+  type: TType,
+  name: string,
+): TType | undefined {
+  const symbol = query.getPropertiesOfType(type).find((item) => query.symbolNameOf(item) === name);
+  return symbol === undefined ? undefined : query.getTypesOfSymbols([symbol])[0];
 }
 
 function methodNameOf(method: ClassMethodDeclaration): string {

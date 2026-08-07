@@ -4,6 +4,7 @@ import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
+import { requestIdHeader, resolveRequestId } from "@/execution/request-id";
 import { serializeResponse } from "@/execution/serialization";
 import { createSlotExecutor } from "@/execution/slot-execution";
 import type { GeneratedRoute } from "@/generated/route-table";
@@ -68,6 +69,7 @@ function logRequest(input: {
   readonly logger: RequestLogger | undefined;
   readonly method: string;
   readonly path: string;
+  readonly requestId: string;
   readonly response: Response;
   readonly startedAt: number;
   /** handler 抛出的错误（B2，#250）；被 dispatchError 换成响应后它就是唯一的线索。 */
@@ -83,6 +85,9 @@ function logRequest(input: {
     {
       method: input.method,
       path: input.path,
+      // 请求日志直写 requestId(#303):没注册 LogFieldSource 的应用也拿得到;注册了的话
+      // 贡献者与这里是同一个值,同键同值无冲突。
+      requestId: input.requestId,
       status: input.response.status,
       handlerMs: Math.round((performance.now() - input.startedAt) * 1000) / 1000,
       // err 是保留字段名：pino/bunyan/OTel 都按它特判 Error 序列化。没有错误时不写这个键，
@@ -187,9 +192,11 @@ function composeChain(
   };
 }
 
-// 响应头合并范围(RFC 0012 S2,#274 推断口径,PR 描述写明):只合并编码/序列化产出的响应;
-// handler 直接返回的 Response(逃生口)与 400/500 错误响应不碰——前者是用户全权掌控的出口,
-// 后者由错误分派统一负责,handler 半路写下的头不该跟着错误出线。
+// 响应头合并范围(RFC 0012 S2,#274 推断口径;S3 定案维持,#275 拍板 3):只合并编码/序列化
+// 产出的响应;handler 直接返回的 Response(逃生口)与 400/500 错误响应不碰——前者是用户
+// 全权掌控的出口,后者由错误分派统一负责,handler 半路写下的头不该跟着错误出线。错误处理器
+// 的编码响应同样排除在外:处理器要写头就直返 Response。失败路径切新 Headers(B3)记为
+// 升级路径,不在本切片。
 function mergeResponseHeaders(response: Response, headers: Headers): void {
   for (const [name, value] of headers) {
     // Headers 迭代对 set-cookie 逐条产出、其余同名键并成逗号串;set-cookie 必须逐条 append
@@ -221,7 +228,7 @@ function prepareRoute(
     try {
       const slots = await executeSlots(requestContext);
       const result = await route.invoke(controller, requestContext, slots);
-      const response = serializeResponse(result, route.encode);
+      const response = serializeResponse(result, route.response);
       if (!(result instanceof Response)) {
         mergeResponseHeaders(response, requestContext.responseHeaders);
       }
@@ -238,6 +245,9 @@ function prepareRoute(
     path: route.path,
     meta: metaLookup(route.meta),
     async handle(request, params) {
+      // request id(#303):回显合法客户端值,否则生成——请求进 handle 的第一件事,
+      // 后面的 seeder、请求 bean、每条应用日志与响应头共享同一个值。
+      const requestId = resolveRequestId(request);
       const requestContext = new RequestContextState({
         request,
         url: new URL(request.url),
@@ -246,47 +256,60 @@ function prepareRoute(
         params,
         meta: route.meta,
       });
-      const seeds =
-        requestSeeds?.(request, {
-          method: route.method,
-          path: route.path,
-          params,
-          meta: route.meta,
-        }) ?? [];
       // 请求字段先入场再开作用域（RFC 0011 L4，#242）：ALS 只向内传播，所以请求 bean 的构造
       // 与整条中间件链都在它里面——这一段里任何一条应用日志都自带 method 与 path。
-      return await runWithRequestFields({ method: route.method, path: route.path }, async () =>
-        // 日志落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
-        // 请求态字段。挪到外面就只剩静态字段了。
-        context.runInRequestScope(seeds, async () => {
-          const startedAt = performance.now();
-          // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
-          // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
-          const response = await (async () => {
-            try {
-              return await chain(requestContext);
-            } catch (error) {
-              requestContext.recordFailure(error);
-              return await dispatchError(error, requestContext);
-            }
-          })();
-          // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
-          // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
-          // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
-          try {
-            logRequest({
-              logger,
+      return await runWithRequestFields(
+        { method: route.method, path: route.path, requestId },
+        async () => {
+          // seeds 在字段作用域内部计算(#303 行为中立挪移):seeder 因此读得到 currentRequestId。
+          const seeds =
+            requestSeeds?.(request, {
               method: route.method,
               path: route.path,
-              response,
-              startedAt,
-              error: requestContext.failure,
-            });
-          } catch {
-            // 记不上就记不上，不值得赔上一个已经成功的响应。
-          }
-          return response;
-        }),
+              params,
+              meta: route.meta,
+            }) ?? [];
+          // 日志落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
+          // 请求态字段。挪到外面就只剩静态字段了。
+          return await context.runInRequestScope(seeds, async () => {
+            const startedAt = performance.now();
+            // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
+            // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
+            const response = await (async () => {
+              try {
+                return await chain(requestContext);
+              } catch (error) {
+                requestContext.recordFailure(error);
+                return await dispatchError(error, requestContext);
+              }
+            })();
+            // 统一缝盖章(#303):编码响应/直返 Response/400/500/中间件抛错的外层兜底,全部
+            // 出口都经过这里。无条件 set——不变量是「客户端可见 id ≡ 日志 id」,覆盖用户手写头。
+            try {
+              response.headers.set(requestIdHeader, requestId);
+            } catch {
+              // fetch 代理 Response 的 immutable headers 守卫会抛;handle 永不 reject 的契约
+              // 优先,盖不上就按原样送出。
+            }
+            // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
+            // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
+            // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
+            try {
+              logRequest({
+                logger,
+                method: route.method,
+                path: route.path,
+                requestId,
+                response,
+                startedAt,
+                error: requestContext.failure,
+              });
+            } catch {
+              // 记不上就记不上，不值得赔上一个已经成功的响应。
+            }
+            return response;
+          });
+        },
       );
     },
   };
@@ -302,9 +325,12 @@ export interface PreparedWebApplication extends WebApplication {
 export function createWebApplication(options: CreateWebApplicationOptions): PreparedWebApplication {
   const table = validateGeneratedRouteTable(options.table);
   const dispatchError = createErrorDispatcher(
-    table.errorHandlers.map((entry) =>
-      requireErrorHandlerInstance(options.context.get(entry.bean), entry.beanId),
-    ),
+    table.errorHandlers.map((entry) => ({
+      handler: requireErrorHandlerInstance(options.context.get(entry.bean), entry.beanId),
+      ...(entry.accepts === undefined ? {} : { accepts: entry.accepts }),
+      ...(entry.status === undefined ? {} : { status: entry.status }),
+      ...(entry.encode === undefined ? {} : { encode: entry.encode }),
+    })),
     options.logger,
   );
   return {

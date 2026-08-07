@@ -43,6 +43,10 @@ interface CompileProjectOptions extends ProjectOptions, DiagnosticOptions {
   readonly tsconfig?: string;
 }
 
+interface OpenapiOptions extends ProjectOptions {
+  readonly output?: string;
+}
+
 type SelectedCommand = Exclude<CliCommandName, "cli">;
 
 function configureProjectOption(command: Command): Command {
@@ -268,6 +272,22 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       cwd,
       projectDirectory: commandOptions.project,
       beanName,
+      reporter: currentReporter(),
+    });
+  });
+
+  configureProjectOption(
+    program
+      .command("openapi")
+      .description("export the generated route table as an OpenAPI 3.2 document (JSON)")
+      .option("--output <file>", "write the document to a file instead of stdout"),
+  ).action(async (commandOptions: OpenapiOptions) => {
+    selectedCommand = "openapi";
+    const { runOpenapiCommand } = await import("@/commands/openapi");
+    result = await runOpenapiCommand({
+      cwd,
+      projectDirectory: commandOptions.project,
+      ...(commandOptions.output === undefined ? {} : { outputPath: commandOptions.output }),
       reporter: currentReporter(),
     });
   });
