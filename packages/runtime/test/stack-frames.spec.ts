@@ -69,6 +69,20 @@ describe("foldStackFrames", () => {
     );
   });
 
+  // 仓内自跑那一半按框架包名单认：用户自己的 monorepo 完全可能叫 packages/orders/dist，
+  // 把用户帧折叠掉正是「第三方帧常常是根因」要防的那种帮倒忙。
+  test("keeps a user monorepo packages/*/dist frame unfolded", () => {
+    const userMonorepoFrame =
+      "    at OrderRepo.save (/srv/app/packages/orders/dist/order-repo.js:12:7)";
+    const stack = ["Error: boom", userMonorepoFrame, nodeFrame].join("\n");
+
+    expect(foldStackFrames(stack)).toBe(
+      ["Error: boom", userMonorepoFrame, "    … 1 frame in node/reforce (--verbose to show)"].join(
+        "\n",
+      ),
+    );
+  });
+
   // 别的 node_modules **不折**。D6 逐字说的是 node 与 reforce 两类，而第三方库的帧常常正是
   // 根因所在（序列化器抛了、驱动抛了）——把它藏起来是在帮倒忙。
   test("keeps third-party frames that are neither node nor reforce", () => {

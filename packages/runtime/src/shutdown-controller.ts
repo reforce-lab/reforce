@@ -7,6 +7,7 @@ import {
   createFailureEvent,
   type Reporter,
 } from "@/reporter";
+import { withTimeout } from "@/with-timeout";
 
 export type ShutdownState = "bootstrapping" | "running" | "shutting-down" | "finished";
 
@@ -41,6 +42,10 @@ export interface ShutdownLogger {
 // 关停的起因（RFC 0011 C3，#250）。只列**能被日志看见**的那几种：bootstrap 失败与 dev 的
 // HMR fatal 发生时 logger 还不存在（容器没起来 / dev 不接 logger），给它们编名字是造死代码。
 export type ShutdownTrigger = NodeJS.Signals | "ipc" | "parent-disconnect";
+
+// 排空预算，与崩溃接管同一个数、同一个理由（crash-takeover.ts）：给死的而不是给旋钮，
+// 超时的后果（记一次关停错误、继续退出）本来就不该由调用方调。
+const flushBudgetMilliseconds = 2_000;
 
 interface ShutdownControllerOptions {
   readonly command: CliCommandName;
@@ -192,7 +197,13 @@ export class ShutdownController {
     }
 
     try {
-      await this.reporter.flush();
+      // 排空自身上预算（RFC 0011 L7 的字面要求）：sink 可能是对端已死的管道，没有预算时
+      // 一次挂起的 flush 会把整个关停吊死——超时算一次关停错误，而不是无限等。
+      await withTimeout(
+        this.reporter.flush(),
+        flushBudgetMilliseconds,
+        "Reporter flush timed out.",
+      );
     } catch (error) {
       primaryError ??= error;
       errors.push(error);

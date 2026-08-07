@@ -151,7 +151,12 @@ class ProcessCrashTakeover implements CrashTakeover {
     } catch {
       // 排空失败不能挡住退出。现场已经交给 logger 了，能不能落盘是次要的。
     }
-    await this.reporter.flush().catch(() => undefined);
+    // reporter 的排空同样上预算：它的 sink 也可能是管道对端已死的流，挂住的是整个退出。
+    await withTimeout(
+      this.reporter.flush(),
+      flushBudgetMilliseconds,
+      "Crash reporter flush timed out.",
+    ).catch(() => undefined);
     this.host.exit(1);
   }
 

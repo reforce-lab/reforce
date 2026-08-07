@@ -14,17 +14,38 @@ const expandHint = "--verbose to show";
 // 函数名可以是用户起的任何东西，位置不会骗人。
 const framePattern = /^\s+at\s/u;
 
+// 仓库内自跑（packages/<name>/dist）那一半按**框架包名单**认，不认任意 `packages/*/dist`：
+// 用户自己的 monorepo 完全可能叫 packages/orders/dist，把用户帧折叠掉正是「第三方帧常常是
+// 根因」要防的那种帮倒忙。名单是本仓运行期会出现在栈上的包的封闭集合；新增运行期包时
+// 补一行，漏补的代价只是那个包的帧不折叠——偏吵，不偏静默。
+const frameworkPackageDirectories = [
+  "cli",
+  "config",
+  "context",
+  "logging",
+  "logging-pino",
+  "primitives",
+  "runtime",
+  "transaction",
+  "web",
+  "web-fastify",
+  "web-hono",
+  "web-node",
+] as const;
+
+const frameworkDistPattern = new RegExp(
+  `[/\\\\]packages[/\\\\](?:${frameworkPackageDirectories.join("|")})[/\\\\]dist[/\\\\]`,
+  "u",
+);
+
 function isInternalFrame(frame: string): boolean {
   // `node:internal/...` / `node:fs` 一类是 Node 自己的模块标识；`(node:` 覆盖带函数名的形态。
   if (frame.includes("(node:") || /\s+at\s+node:/u.test(frame)) {
     return true;
   }
-  // 装出来的 reforce 住在 node_modules/@reforce/*；仓库内自跑时住在 packages/<name>/dist。
+  // 装出来的 reforce 住在 node_modules/@reforce/*；仓库内自跑时住在 packages/<名单>/dist。
   // 两种布局都要认，否则「本地跑不复现折叠」会让人以为它没生效。
-  return (
-    frame.includes("node_modules/@reforce/") ||
-    /[/\\]packages[/\\][^/\\]+[/\\]dist[/\\]/u.test(frame)
-  );
+  return frame.includes("node_modules/@reforce/") || frameworkDistPattern.test(frame);
 }
 
 function foldedLine(count: number): string {
