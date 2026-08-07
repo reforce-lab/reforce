@@ -3,6 +3,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rm,
   symlink,
   truncate,
   unlink,
@@ -530,7 +531,19 @@ describe("directory transactions", () => {
       expectedFiles: ["main.mjs"],
     });
 
-    await expect(commit).rejects.toThrow("outside its required boundary");
+    // 失败后的清理同样撞上边界拒绝：#144 之后它不再裸逃顶替第一现场，而是作为恢复失败进
+    // AggregateError 的第二项。
+    await expect(commit).rejects.toMatchObject({
+      code: "DIST_TRANSACTION_FAILED",
+      cause: expect.objectContaining({
+        errors: [
+          expect.anything(),
+          expect.objectContaining({
+            message: expect.stringContaining("outside its required boundary"),
+          }),
+        ],
+      }),
+    });
     expect(await readdir(project.projectRoot)).toContain(".reforce");
   });
 
@@ -926,7 +939,15 @@ describe("directory transactions", () => {
     test("surfaces the underlying errno instead of a journal mismatch", async () => {
       const { caught } = await publishOverUnreadableActive();
 
-      expect(errorCode(caught)).toBe("EACCES");
+      // 发布后验证和失败后的恢复都撞上 EACCES。#144 之后恢复错误不再裸逃顶替第一现场：两个
+      // errno 都进 AggregateError，谁也没有被压成「journal 不匹配」（Issue #105 的原始诉求）。
+      if (
+        !(caught instanceof DirectoryTransactionError) ||
+        !(caught.cause instanceof AggregateError)
+      ) {
+        throw new Error("Expected a transaction error aggregating both EACCES failures.");
+      }
+      expect(caught.cause.errors.map((error) => errorCode(error))).toEqual(["EACCES", "EACCES"]);
     });
 
     test("keeps the published generation instead of rolling it back", async () => {
@@ -976,6 +997,130 @@ describe("directory transactions", () => {
     });
 
     expect(await activeGeneration(project.projectRoot)).toBe("post");
+  });
+
+  // 断电可以让 journal 的 fsync 先于 rename 落盘(Issue #144):journal 已推进到 verified,而
+  // active→backup、staging→active 两次改名都没保住——active 还是完好的上一代,backup 不存在,
+  // staging 里躺着新一代。进程内故障注入永远造不出这个组合(journal 写在 rename 之前,但进程里
+  // rename 一定紧随其后发生),所以直接手工摆出这份磁盘状态。
+  test("treats an intact previous active as the rollback outcome when publish renames were lost", async () => {
+    const { project, lease, transactions } = await setupWriter();
+    await transactions.commitGenerated(generatedFiles("pre"));
+    const reforceRoot = join(project.projectRoot, ".reforce");
+    const transactionToken = "power-loss-reorder-token";
+    const stagingRoot = join(reforceRoot, `generated.staging-${transactionToken}`);
+    await mkdir(stagingRoot);
+    for (const file of generatedFiles("post")) {
+      await writeFile(join(stagingRoot, file.path), file.content);
+    }
+    const next = await snapshotTree(stagingRoot);
+    const previous = await snapshotTree(join(reforceRoot, "generated"));
+    const journalDirectory = join(reforceRoot, "transactions", "generated", transactionToken);
+    await mkdir(journalDirectory, { recursive: true });
+    await writeFile(
+      join(journalDirectory, "journal.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          transactionToken,
+          leaseOwnerToken: lease.leaseToken,
+          kind: "generated",
+          state: "verified",
+          hadActiveBefore: true,
+          files: next.files,
+          aggregateSha256: next.aggregateSha256,
+          previousFiles: previous.files,
+          previousAggregateSha256: previous.aggregateSha256,
+        },
+        undefined,
+        2,
+      )}\n`,
+    );
+
+    await transactions.recover();
+
+    expect(await activeGeneration(project.projectRoot)).toBe("pre");
+    expect(await readdir(join(reforceRoot, "transactions", "generated"))).toEqual([]);
+    expect(
+      (await readdir(reforceRoot)).filter(
+        (entry) => entry.startsWith("generated.staging-") || entry.startsWith("generated.backup-"),
+      ),
+    ).toEqual([]);
+  });
+
+  // 同一乱序打在 backup-published 状态上:journal 说 active→backup 已完成,磁盘上 active 却还是
+  // 完好的上一代,backup 和 staging 都没保住(Issue #144)。
+  test("treats an intact previous active as rolled back when the backup rename was lost", async () => {
+    const { project, lease, transactions } = await setupWriter();
+    await transactions.commitGenerated(generatedFiles("pre"));
+    const reforceRoot = join(project.projectRoot, ".reforce");
+    const transactionToken = "power-loss-backup-token";
+    const scratchRoot = join(project.projectRoot, "next-generation-scratch");
+    await mkdir(scratchRoot);
+    for (const file of generatedFiles("post")) {
+      await writeFile(join(scratchRoot, file.path), file.content);
+    }
+    const next = await snapshotTree(scratchRoot);
+    await rm(scratchRoot, { recursive: true });
+    const previous = await snapshotTree(join(reforceRoot, "generated"));
+    const journalDirectory = join(reforceRoot, "transactions", "generated", transactionToken);
+    await mkdir(journalDirectory, { recursive: true });
+    await writeFile(
+      join(journalDirectory, "journal.json"),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          transactionToken,
+          leaseOwnerToken: lease.leaseToken,
+          kind: "generated",
+          state: "backup-published",
+          hadActiveBefore: true,
+          files: next.files,
+          aggregateSha256: next.aggregateSha256,
+          previousFiles: previous.files,
+          previousAggregateSha256: previous.aggregateSha256,
+        },
+        undefined,
+        2,
+      )}\n`,
+    );
+
+    await transactions.recover();
+
+    expect(await activeGeneration(project.projectRoot)).toBe("pre");
+    expect(await readdir(join(reforceRoot, "transactions", "generated"))).toEqual([]);
+  });
+
+  test("preserves the original commit failure when post-failure recovery also fails", async () => {
+    const { project, lease } = await setupWriter();
+    const faulty = await DirectoryTransactions.create({
+      projectRoot: project.projectRoot,
+      lease,
+      async faultInjector(point, context) {
+        if (point === "before:verification-read" && context.path !== undefined) {
+          await writeFile(join(context.path, "beans.ts"), "corrupted published bytes\n");
+        }
+      },
+    });
+
+    const caught = await faulty.commitGenerated(generatedFiles("post")).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    if (
+      !(caught instanceof DirectoryTransactionError) ||
+      !(caught.cause instanceof AggregateError)
+    ) {
+      throw new Error(
+        "Expected a transaction error aggregating the original failure and the recovery failure.",
+      );
+    }
+    expect(caught.code).toBe("GENERATED_TRANSACTION_FAILED");
+    expect(caught.cause.errors).toMatchObject([
+      { message: "Published output did not match its transaction journal." },
+      { message: "Recovery found no complete output generation." },
+    ]);
   });
 
   test("recovers a crashed transaction only with the recovered writer token", async () => {
