@@ -80,12 +80,18 @@ export interface TypeContractRequest<TType, TSymbol> {
   readonly query: TypeQueryOf<TType, TSymbol>;
   // 声明文件绝对路径 → 项目内 fileId;项目外(node_modules/lib)返回 undefined,对应类型不提升。
   readonly fileIdOf: (declarationPath: string) => string | undefined;
+  // 槽位可选单键(RFC 0012 S2,#274):`Query<"page", number | undefined>` 的值类型在根位携带
+  // undefined,按属性位口径剥掉并经 rootStrippedUndefined 报告(= 可选);默认保持 S1 的
+  // "根位 undefined 硬错"。
+  readonly allowUndefinedRoot?: boolean;
 }
 
 export interface TypeContractResult {
   // 有 error 则 undefined:error = 图不完整不发射,对齐 RFC 0011 OM2。
   readonly table: ContractTable | undefined;
   readonly diagnostics: readonly CompilerDiagnostic[];
+  // 仅 allowUndefinedRoot 时有意义:根位剥掉了 undefined(→ 槽位可选)。
+  readonly rootStrippedUndefined: boolean;
 }
 
 const allowedShapesHelp =
@@ -618,12 +624,12 @@ export function expandTypeContract<TType, TSymbol>(
     return { shape: expandSingle(type, path), strippedUndefined: false };
   }
 
-  const root = expandAt(request.type, "", false);
+  const root = expandAt(request.type, "", request.allowUndefinedRoot === true);
   if (diagnostics.length > 0 || root.shape === undefined) {
     if (diagnostics.length === 0) {
       reportInvalid("", "cannot be expanded into a contract shape.");
     }
-    return { table: undefined, diagnostics };
+    return { table: undefined, diagnostics, rootStrippedUndefined: root.strippedUndefined };
   }
   const orderedDefinitions: Record<string, ContractDefinition> = {};
   for (const key of [...definitions.keys()].toSorted(compareUtf16CodeUnits)) {
@@ -637,5 +643,6 @@ export function expandTypeContract<TType, TSymbol>(
   return {
     table: { root: root.shape, definitions: Object.freeze(orderedDefinitions) },
     diagnostics,
+    rootStrippedUndefined: root.strippedUndefined,
   };
 }

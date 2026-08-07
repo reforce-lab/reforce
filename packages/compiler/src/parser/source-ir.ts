@@ -256,6 +256,9 @@ export interface InterfaceDeclaration {
   readonly kind: "interface";
   readonly topLevel: boolean;
   readonly name?: string;
+  // 声明名标识符的位置(#274):投影形态槽位(Param<Contract, "key">)要在契约声明的名字位
+  // 查整契约类型,span(关键字位)对 checker 查询恒答 error type。
+  readonly nameSpan?: SourceSpan;
   readonly export: DeclarationExport;
   readonly generic: boolean;
   readonly extends: readonly TypeNode[];
@@ -299,7 +302,9 @@ export interface ConstructorDeclaration {
 }
 
 export type ClassMethodName =
-  | { readonly kind: "identifier"; readonly name: string }
+  // span 指向方法名标识符本身(RFC 0012 S2,#274):响应契约要在方法名位查函数类型——
+  // checker 对关键字/注解位一律答 error type,名字位是唯一可用锚点(与 MethodParameter.nameSpan 同理)。
+  | { readonly kind: "identifier"; readonly name: string; readonly span: SourceSpan }
   | {
       readonly kind: "string-literal";
       readonly value: string;
@@ -576,6 +581,8 @@ export interface UnsupportedNamedDeclaration {
   readonly declarationKind: UnsupportedNamedDeclarationKind;
   readonly topLevel: boolean;
   readonly name?: string;
+  // 同 InterfaceDeclaration.nameSpan(#274):type-alias 作投影契约时在名字位查类型。
+  readonly nameSpan?: SourceSpan;
   readonly export: DeclarationExport;
   readonly generic: boolean;
   // 仅非泛型 type-alias 填（RFC 0012 S2，#274）：schema 追溯要跟"type X = z.infer<typeof s>"

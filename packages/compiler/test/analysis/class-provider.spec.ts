@@ -265,7 +265,7 @@ function methodBody(
 }
 
 function method(name: string, options: MethodOptions = {}): ClassMethodDeclaration {
-  return methodBody({ kind: "identifier", name }, options);
+  return methodBody({ kind: "identifier", name, span: span() }, options);
 }
 
 function computedMethod(options: MethodOptions = {}): ClassMethodDeclaration {

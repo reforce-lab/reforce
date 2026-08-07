@@ -280,7 +280,7 @@ function classMethodNameOf(method: ClassMethod, context: LoweringContext): Class
   }
   const identifier = identifierTextOf(method.key);
   if (identifier !== undefined) {
-    return { kind: "identifier", name: identifier };
+    return { kind: "identifier", name: identifier, span: spanOf(method.key, context) };
   }
   if (method.key.type === "Literal" && typeof method.key.value === "string") {
     return {
@@ -510,6 +510,7 @@ function lowerInterface(
     kind: "interface",
     topLevel,
     name: node.id.name,
+    nameSpan: spanOf(node.id, context),
     export: declarationExportOf(node.id, mode, context),
     generic: typeParameters.size > 0,
     extends: normalizeSpanned(
@@ -1018,11 +1019,13 @@ function lowerUnsupported(
     node.type === "TSTypeAliasDeclaration" && !generic
       ? typeNodeOf(node.typeAnnotation, context)
       : undefined;
+  const nameNode = "id" in node ? node.id : undefined;
   collector.unsupportedDeclarations.push({
     kind: "unsupported-named-declaration",
     declarationKind,
     topLevel,
     name,
+    ...(nameNode?.type === "Identifier" ? { nameSpan: spanOf(nameNode, context) } : {}),
     export: declarationExportOf(node.id, mode, context),
     generic,
     ...(rhs === undefined ? {} : { rhs }),

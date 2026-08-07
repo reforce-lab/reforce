@@ -1,4 +1,6 @@
 import type { GeneratedSourceReferenceModel } from "@/analysis/model";
+import type { ContractTable } from "@/analysis/type-contract";
+import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
 // web 面的分析模型（ADR 0006 W1/W3/W4/W5，#142 / #152）：路由表是编译器的第二种生成物，
@@ -47,6 +49,51 @@ export interface RouteSchemasModel {
   readonly response?: WebExportRefModel;
 }
 
+// 契约来源(RFC 0012 S2,#274):type = 编译器按类型生成解码器;schema = typeof 追溯命中的
+// 用户 Standard Schema,routes.ts 按 ref 重新 import,解码交给它,vendor 落 routes.json。
+export type ContractSourceModel =
+  | { readonly source: "type" }
+  | { readonly source: "schema"; readonly ref: WebExportRefModel; readonly vendor?: string };
+
+// 槽位绑定模型(#274)。三字符串槽的 form:single = Param<"id",bigint> 单键;optional-single =
+// 键名 ∪ undefined 或值类型含 undefined;contract = 对象契约整体解码。key 在单键形态是键名,
+// 在契约形态是第四档投影键(解码仍按整契约跑,invoke 处按键投影)。
+export interface StringRouteSlotModel {
+  readonly kind: "param" | "query" | "header";
+  readonly form: "single" | "optional-single" | "contract";
+  readonly key?: string;
+  readonly table: ContractTable;
+  readonly contractSource: ContractSourceModel;
+  readonly span: SourceSpan;
+}
+
+// Body 第一实参永远是契约(对象/数组/标量三种根,#264「定形」),不参与单键裁决。
+export interface BodyRouteSlotModel {
+  readonly kind: "body";
+  readonly key?: string;
+  readonly table: ContractTable;
+  readonly contractSource: ContractSourceModel;
+  readonly span: SourceSpan;
+}
+
+export interface BareRouteSlotModel {
+  readonly kind: "request" | "requestContext" | "responseHeaders";
+  readonly span: SourceSpan;
+}
+
+export type RouteSlotModel = StringRouteSlotModel | BodyRouteSlotModel | BareRouteSlotModel;
+
+// passthrough = Response 逃生口 / void / 无返回标注:不生成编码器,响应走现有序列化。
+export type ResponseContractModel =
+  | { readonly kind: "table"; readonly table: ContractTable }
+  | { readonly kind: "passthrough" };
+
+export interface RouteContractModel {
+  // 按 handler 参数序。
+  readonly slots: readonly RouteSlotModel[];
+  readonly response: ResponseContractModel;
+}
+
 export interface RouteModel {
   readonly method: HttpMethodModel;
   readonly path: string;
@@ -58,6 +105,8 @@ export interface RouteModel {
   readonly middleware: readonly RouteMiddlewareModel[];
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
   readonly schemas: RouteSchemasModel;
+  // 槽位路由的契约(#274);旧 schemas 路由缺省,旧链路删除后所有路由都携带。
+  readonly contract?: RouteContractModel;
   readonly source: GeneratedSourceReferenceModel;
 }
 

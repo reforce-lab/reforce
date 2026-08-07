@@ -5,6 +5,7 @@ import {
   emptyWebModel,
   type HttpMethodModel,
   type MiddlewareMountModel,
+  type RouteContractModel,
   type RouteMetaValueModel,
   type RouteMiddlewareModel,
   type RouteModel,
@@ -17,6 +18,8 @@ import {
   webPhaseOrder,
   webPhaseRank,
 } from "@/analysis/web-model";
+import { createSlotResolutionContext } from "@/analysis/web-slot-context";
+import { reportUnknownPathParameters, resolveRouteSlots } from "@/analysis/web-slots";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
@@ -31,6 +34,7 @@ import type {
 } from "@/parser/source-ir";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
+import type { TypeQuery } from "@/typescript/type-query";
 
 // web 路由分析（ADR 0006 W1/W3/W4/W5，#142 / #152）：controller/中间件/错误处理器都是 bean，
 // 身份由各自的角色装饰器蕴含（bean-roles.ts）。这里静态提取路由表：路径归并与冲突检测、
@@ -503,6 +507,8 @@ function errorHandlerOrderOf(
 interface RoutePathInfo {
   readonly path: string;
   readonly shapeKey: string;
+  // 路径参数名集合(#274 硬错 6):Param 槽的键名必须都出现在这里。
+  readonly parameters: ReadonlySet<string>;
 }
 
 function normalizedPrefix(
@@ -589,7 +595,7 @@ function routePathOf(
     }
     shapeSegments.push(segment);
   }
-  return { path, shapeKey: shapeSegments.join("/") };
+  return { path, shapeKey: shapeSegments.join("/"), parameters };
 }
 
 const schemaSlots = ["params", "query", "body", "response"] as const;
@@ -734,9 +740,12 @@ function routeSchemasOf(
   return schemas;
 }
 
+// 槽位路由(#274)参数列表放开,逐参数由槽位解析裁决;旧 schemas 路由维持「至多一个
+// RequestContext 参数」。
 function validRouteHandlerMethod(
   method: ClassMethodDeclaration,
   controllerName: string,
+  allowSlotParameters: boolean,
   diagnostics: CompilerDiagnostic[],
 ): string | undefined {
   const name = method.name.kind === "identifier" ? method.name.name : undefined;
@@ -747,12 +756,12 @@ function validRouteHandlerMethod(
     method.generator ||
     method.optional ||
     !method.implementation ||
-    method.parameters.length > 1
+    (!allowSlotParameters && method.parameters.length > 1)
   ) {
     report(
       diagnostics,
       "INVALID_ROUTE_DECLARATION",
-      `Route handler on ${controllerName} must be a public instance method implementation with an identifier name and at most one RequestContext parameter.`,
+      `Route handler on ${controllerName} must be a public instance method implementation with an identifier name.`,
       method.span,
     );
     return undefined;
@@ -1068,12 +1077,19 @@ function webWiring(
   };
 }
 
+// tsgo 返回正斜杠规范路径,Windows 上大小写也要折叠(同 type-query 的 canonicalPathKey 口径)。
+function canonicalPathOf(filePath: string): string {
+  const portable = filePath.replaceAll("\\", "/");
+  return process.platform === "win32" ? portable.toLowerCase() : portable;
+}
+
 export function analyzeWebRoutes(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
   providers: readonly ProviderModel[],
   diagnostics: CompilerDiagnostic[],
   engineBeans: readonly StarterBeanModel[],
+  typeQuery?: TypeQuery,
 ): WebModel {
   const scans = scanWebClasses(sources, linker);
   const markers = collectRouteMarkers(sources, linker, diagnostics);
@@ -1083,6 +1099,11 @@ export function analyzeWebRoutes(
   }
 
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  const fileIdBySourcePath = new Map(
+    sources.map((source) => [canonicalPathOf(source.absolutePath), source.fileId as string]),
+  );
+  const fileIdOf = (declarationPath: string): string | undefined =>
+    fileIdBySourcePath.get(canonicalPathOf(declarationPath));
   const registry = registerWebBeans(scans, providerById, diagnostics);
   const globalMiddleware = [...registry.middlewareById.values()]
     .filter((middleware) => middleware.global)
@@ -1105,6 +1126,8 @@ export function analyzeWebRoutes(
       controllerDecorator: isController ? controllerDecorator : undefined,
       allowRoutes: isController && !isOtherRole,
       linker,
+      typeQuery,
+      fileIdOf,
       providerById,
       middlewareById: registry.middlewareById,
       globalMiddleware,
@@ -1135,6 +1158,8 @@ interface ControllerRouteInputs {
   readonly controllerDecorator: DecoratorUse | undefined;
   readonly allowRoutes: boolean;
   readonly linker: ProjectLinker;
+  readonly typeQuery: TypeQuery | undefined;
+  readonly fileIdOf: (declarationPath: string) => string | undefined;
   readonly providerById: ReadonlyMap<string, ProviderModel>;
   readonly middlewareById: ReadonlyMap<string, MiddlewareInfo>;
   readonly globalMiddleware: readonly MiddlewareInfo[];
@@ -1250,9 +1275,33 @@ function collectMethodRoutes(
   if (claim === undefined || basePath === undefined) {
     return;
   }
-  const handlerName = validRouteHandlerMethod(method, controllerName, diagnostics);
+  // 路径触发判定(#274 过渡态):任一路由装饰器带 schemas 实参 → 整方法走旧分析路径;
+  // 未传 schemas → 槽位解析(零参 = 空槽位;唯一 RequestContext 参数 = requestContext 槽,
+  // 与旧 handlerArity 语义等价)。旧链路删除后 schemas 实参本身转为迁移硬错。
+  const usesSchemas = routeDecorators.some(([, decorators]) =>
+    decorators.some((decorator) => decorator.arguments.length > 1),
+  );
+  const handlerName = validRouteHandlerMethod(method, controllerName, !usesSchemas, diagnostics);
   if (handlerName === undefined) {
     return;
+  }
+  let contract: RouteContractModel | undefined;
+  if (!usesSchemas) {
+    contract = resolveRouteSlots({
+      method,
+      controllerName,
+      context: createSlotResolutionContext({
+        source: scan.source,
+        method,
+        linker: inputs.linker,
+        query: inputs.typeQuery,
+        fileIdOf: inputs.fileIdOf,
+        diagnostics,
+      }),
+    });
+    if (contract === undefined) {
+      return;
+    }
   }
   const routeUse = useTargetsOf(
     scan.source,
@@ -1267,6 +1316,7 @@ function collectMethodRoutes(
     claim,
     handlerName,
     handlerArity: method.parameters.length === 0 ? 0 : 1,
+    contract,
     middleware: flattenedChain(inputs.globalMiddleware, controllerUse, routeUse),
     meta: routeMetaOf(scan.source, method, inputs.markers, inputs.linker, diagnostics),
   });
@@ -1278,6 +1328,7 @@ interface RouteCandidateInputs {
   readonly claim: WebBeanClaim;
   readonly handlerName: string;
   readonly handlerArity: 0 | 1;
+  readonly contract: RouteContractModel | undefined;
   readonly middleware: readonly RouteMiddlewareModel[];
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
 }
@@ -1296,6 +1347,7 @@ function pushRouteCandidates(
         claim: candidateInputs.claim,
         handlerName: candidateInputs.handlerName,
         handlerArity: candidateInputs.handlerArity,
+        contract: candidateInputs.contract,
         middleware: candidateInputs.middleware,
         meta: candidateInputs.meta,
         linker: inputs.linker,
@@ -1316,6 +1368,7 @@ interface RouteOfInputs {
   readonly claim: WebBeanClaim;
   readonly handlerName: string;
   readonly handlerArity: 0 | 1;
+  readonly contract: RouteContractModel | undefined;
   readonly middleware: readonly RouteMiddlewareModel[];
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
   readonly linker: ProjectLinker;
@@ -1358,6 +1411,14 @@ function routeOf(inputs: RouteOfInputs): RouteCandidate | undefined {
   if (pathInfo === undefined) {
     return undefined;
   }
+  // 硬错 6(#274)按路由复裁:同方法多路由装饰器时各自的路径参数集不同,槽位解析本身
+  // per-method 只跑一次。
+  if (
+    inputs.contract !== undefined &&
+    !reportUnknownPathParameters(inputs.contract, pathInfo.path, pathInfo.parameters, diagnostics)
+  ) {
+    return undefined;
+  }
   const schemaArgument = decorator.arguments.at(1);
   const schemas =
     schemaArgument === undefined
@@ -1381,6 +1442,7 @@ function routeOf(inputs: RouteOfInputs): RouteCandidate | undefined {
       middleware: inputs.middleware,
       meta: inputs.meta,
       schemas,
+      ...(inputs.contract === undefined ? {} : { contract: inputs.contract }),
       source: sourceReference(decorator.span),
     },
     shapeKey: pathInfo.shapeKey,
