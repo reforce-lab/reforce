@@ -654,6 +654,40 @@ test("records a spread starters element as an unsupported element", () => {
   });
 });
 
+// Issue #261：裸表达式语句此前在这里就被整个丢掉——build 全绿、starter 一个都没注册、
+// 端口永不监听。parser 收下它，形态记进 IR，由链接层点名报错。
+test("lowers a bare-expression defineApplication instead of discarding it", () => {
+  const unit = parseFile("defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions).toHaveLength(1);
+});
+
+test("marks a bare-expression defineApplication by its statement form", () => {
+  const unit = parseFile("defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions[0]?.form).toBe("expression-statement");
+});
+
+// 形态而不是 name/export 才分得出它：`const [app] = defineApplication(...)` 同样是
+// name 缺省 + export none。
+test("distinguishes the bare-expression form from a default export", () => {
+  const unit = parseFile("export default defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions[0]?.form).toBe("default-export");
+});
+
+test("distinguishes the bare-expression form from a named declarator", () => {
+  const unit = parseFile("export const app = defineApplication({ starters: [a] });");
+
+  expect(unit.applicationDefinitions[0]?.form).toBe("declarator");
+});
+
+test("still records nothing for a bare-expression call to another function", () => {
+  const unit = parseFile("defineApp({ starters: [a] });");
+
+  expect(unit.applicationDefinitions).toEqual([]);
+});
+
 test("records nothing for a default-exported call to another function", () => {
   const unit = parseFile("export default defineApp({ starters: [a] });");
 

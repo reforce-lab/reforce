@@ -738,6 +738,49 @@ describe("defineApplication reading", () => {
     expect(failure.diagnostics.map((item) => item.code)).toEqual(["STARTER_META_NOT_FOUND"]);
   });
 
+  // Issue #261：裸表达式语句此前被 parser 整个丢掉——build 成功、starter 一个都没注册、
+  // 端口永不监听。这是不变量 9 要禁的静默失败，判据必须是 build 真的红。
+  test("fails the build when defineApplication is written as a bare expression statement", async () => {
+    const bareSource = [
+      'import { defineApplication } from "@reforce/context";',
+      'import { redisStarter } from "@acme/starter-redis";',
+      "",
+      "defineApplication({ starters: [redisStarter] });",
+      "",
+    ].join("\n");
+    const { result } = await compile(
+      applicationTree(
+        { "application.ts": bareSource },
+        { "@acme/starter-redis": redisStarterPackage() },
+      ),
+    );
+
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toContain("INVALID_DEFINE_APPLICATION");
+  });
+
+  test("names the corrective form in the message rather than only in the help", async () => {
+    const bareSource = [
+      'import { defineApplication } from "@reforce/context";',
+      'import { redisStarter } from "@acme/starter-redis";',
+      "",
+      "defineApplication({ starters: [redisStarter] });",
+      "",
+    ].join("\n");
+    const { result } = await compile(
+      applicationTree(
+        { "application.ts": bareSource },
+        { "@acme/starter-redis": redisStarterPackage() },
+      ),
+    );
+
+    // short 模式会丢掉 help 与 suggestions，所以「怎么改」必须在 message 里。
+    const failure = expectFailure(result);
+    expect(
+      failure.diagnostics.find((item) => item.code === "INVALID_DEFINE_APPLICATION")?.message,
+    ).toContain("export default defineApplication");
+  });
+
   test("reports STARTER_META_NOT_FOUND when the package exposes no reforce-meta subpath", async () => {
     const bare = starterPackage({
       name: "@acme/starter-redis",

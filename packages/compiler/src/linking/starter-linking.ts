@@ -141,18 +141,40 @@ function collectDefineApplicationSites(
   return sites;
 }
 
+// 书写形态的守卫（Issue #261）：与「options 里写了什么」分开，前者说的是这条声明摆在哪、
+// 后者说的是它带了什么，混在一个函数里读起来是两件事。返回诊断而不是直接 push，让调用方
+// 保持「有诊断就返回空」的单一出口。
+function declarationShapeError(
+  declaration: DefineApplicationSite["declaration"],
+): CompilerDiagnostic | undefined {
+  // 裸表达式语句此前在 parser 里就被整个丢掉——build 全绿、starter 一个都没注册、端口永不
+  // 监听，正是不变量 9 要禁的静默降级。parser 现在收下这个形态，只为让错误落在原位置。
+  //
+  // 排在 topLevel 之前：export default 蕴含顶层，函数体里那次裸调用报这一条就够了，
+  // 再报一条「必须在顶层」只会让人先去改错的地方。
+  if (declaration.form === "expression-statement") {
+    return invalidDefineApplication(
+      "defineApplication's result must be exported as the module default: write `export default defineApplication({ starters: [...] })`.",
+      declaration.span,
+    );
+  }
+  if (!declaration.topLevel) {
+    return invalidDefineApplication(
+      "defineApplication must be declared at module top level.",
+      declaration.span,
+    );
+  }
+  return undefined;
+}
+
 function readSiteRegistrations(
   site: DefineApplicationSite,
   diagnostics: CompilerDiagnostic[],
 ): readonly StarterRegistrationRead[] {
   const { source, record, declaration } = site;
-  if (!declaration.topLevel) {
-    diagnostics.push(
-      invalidDefineApplication(
-        "defineApplication must be declared at module top level.",
-        declaration.span,
-      ),
-    );
+  const shapeError = declarationShapeError(declaration);
+  if (shapeError !== undefined) {
+    diagnostics.push(shapeError);
     return [];
   }
   if (declaration.options.kind !== "object") {
