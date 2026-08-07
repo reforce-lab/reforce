@@ -88,6 +88,13 @@ export const compilerDiagnosticCodes = [
   "DUPLICATE_SLOT_BINDING",
   "UNKNOWN_PATH_PARAMETER",
   "INVALID_SLOT_SCHEMA",
+  // 响应侧收口（RFC 0012 S3，#275）：@ResponseStatus/@ResponseSchema/@Throws 与错误处理器
+  // 类型化的五类硬错。响应侧「都不写」不在此列——无声明走推导 + 降级 free-form，不硬错。
+  "INVALID_RESPONSE_STATUS",
+  "INVALID_RESPONSE_SCHEMA",
+  "THROWS_WITHOUT_HANDLER",
+  "ERROR_HANDLER_MISSING_STATUS",
+  "INVALID_ERROR_HANDLER_SIGNATURE",
 ] as const;
 
 export type CompilerDiagnosticCode = (typeof compilerDiagnosticCodes)[number];

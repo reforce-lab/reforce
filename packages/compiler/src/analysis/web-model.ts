@@ -76,15 +76,34 @@ export interface BareRouteSlotModel {
 
 export type RouteSlotModel = StringRouteSlotModel | BodyRouteSlotModel | BareRouteSlotModel;
 
-// passthrough = Response 逃生口 / void / 无返回标注:不生成编码器,响应走现有序列化。
+// 响应侧三变体(RFC 0012 S3,#275):
+// - table = 声明(返回类型/@ResponseSchema)或推导出的白名单契约,status 缺省 200;
+// - free-form = 无声明且推导失败的降级——不投影不白名单,序列化原样出线;
+// - passthrough = Response 逃生口(#264 决策 7,原样透传)/ void(运行时 204,status 可由
+//   @ResponseStatus 覆盖)。
 export type ResponseContractModel =
-  | { readonly kind: "table"; readonly table: ContractTable }
-  | { readonly kind: "passthrough" };
+  | {
+      readonly kind: "table";
+      readonly table: ContractTable;
+      readonly status: number;
+      readonly contractSource: ContractSourceModel;
+    }
+  | { readonly kind: "free-form"; readonly status: number }
+  | { readonly kind: "passthrough"; readonly status?: number };
 
 export interface RouteContractModel {
   // 按 handler 参数序。
   readonly slots: readonly RouteSlotModel[];
   readonly response: ResponseContractModel;
+}
+
+// @Throws 声明的线上错误(#275):路由方法与挂载中间件类的并集,已按类键去重、errorName 排序。
+// 状态码与 body 形状从 handlerBeanId 指向的类型化处理器读出(manifest 装配时展开)。
+export interface RouteThrownErrorModel {
+  readonly errorName: string;
+  // `${声明文件 fileId}#${类名}`:去重与决定性排序的类身份键。
+  readonly key: string;
+  readonly handlerBeanId: string;
 }
 
 export interface RouteModel {
@@ -97,13 +116,27 @@ export interface RouteModel {
   readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
   // 路由契约(#274):槽位与响应侧的唯一真相,emission 据它渲染 slots/invoke/encode。
   readonly contract: RouteContractModel;
+  readonly throws: readonly RouteThrownErrorModel[];
   readonly source: GeneratedSourceReferenceModel;
+}
+
+// 类型化错误处理器的 accepts(#275):handle 参数 0 标注的项目错误类,运行时 instanceof 闸。
+// ref 供 routes.ts 重新 import 类引用与 manifest 落坐标;key 与 RouteThrownErrorModel.key 同构。
+export interface ErrorAcceptsModel {
+  readonly ref: WebExportRefModel;
+  readonly key: string;
+  readonly name: string;
 }
 
 export interface WebErrorHandlerModel {
   readonly ref: WebExportRefModel;
   readonly beanId: string;
   readonly order: number;
+  // 缺省 = match-all(handle(error: unknown) 或 field-form handle,S2 全部原样落这里)。
+  readonly accepts?: ErrorAcceptsModel;
+  // 处理器响应与路由同一模型:table/free-form 携带 @ResponseStatus 的状态码(缺则
+  // ERROR_HANDLER_MISSING_STATUS 硬错),passthrough = 直返 Response。
+  readonly response: ResponseContractModel;
 }
 
 // 引擎身份的判据（#228）：starter meta 的 provides 里出现 @reforce/web 的 WebEngineAdapter 契约。

@@ -129,6 +129,8 @@ function contractManifestOf(
       table: slot.table,
     };
   });
+  // v2 中间态(#275 M2):free-form 暂并入 passthrough——v2 闭集只有 table|passthrough,
+  // 三变体的 manifest 形状随 schemaVersion 3 落地。
   const response =
     contract.response.kind === "table"
       ? { kind: "table", table: contract.response.table }

@@ -34,8 +34,9 @@ export type TypeNode =
   | {
       // 槽位解析（RFC 0012 S2，#274）要在语法层裁决"裸标量当键名"（Param<string> 硬错）与
       // 可选单键（Header<"x" | undefined>），undefined 因此必须是可表达的 primitive。
+      // unknown 服务错误处理器 accepts 判定（RFC 0012 S3，#275）：match-all 写法。
       readonly kind: "primitive";
-      readonly name: "void" | "string" | "number" | "bigint" | "boolean" | "undefined";
+      readonly name: "void" | "string" | "number" | "bigint" | "boolean" | "undefined" | "unknown";
       readonly span: SourceSpan;
     }
   | {
