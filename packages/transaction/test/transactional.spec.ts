@@ -690,9 +690,6 @@ describe("transaction logging", () => {
         debug: (fields: Readonly<Record<string, unknown>> | undefined, message: string) => {
           records.push({ level: "debug", fields, message });
         },
-        error: (fields: Readonly<Record<string, unknown>> | undefined, message: string) => {
-          records.push({ level: "error", fields, message });
-        },
       },
     };
   }
@@ -765,7 +762,9 @@ describe("transaction logging", () => {
     expect(messages()).toContain("transaction savepoint release");
   });
 
-  test("reports a rollback at error level carrying the escaping error", async () => {
+  // 回滚降 debug（Spring 对位）：异常原样传播，真 500 的 error 已由 error-dispatch 与请求
+  // 日志记账，这里再发一条 error 就是一次失败三条 error。
+  test("reports a rollback at debug level carrying the escaping error", async () => {
     const { manager } = nestedManager();
     const { records, logger } = capturingLogger();
     const interceptor = new TransactionInterceptor(manager, logger);
@@ -778,7 +777,7 @@ describe("transaction logging", () => {
     ).rejects.toBe(failure);
 
     expect(records.at(-1)).toMatchObject({
-      level: "error",
+      level: "debug",
       message: "transaction rollback",
       fields: { err: failure },
     });
@@ -810,7 +809,6 @@ describe("transaction logging", () => {
       debug: () => {
         throw new Error("must not build a record when debug is off");
       },
-      error: () => undefined,
     });
 
     await expect(boundary(interceptor, undefined, async () => "saved")).resolves.toBe("saved");
@@ -821,10 +819,12 @@ describe("transaction logging", () => {
   test("rethrows the original error when the boundary logger itself throws", async () => {
     const { manager } = nestedManager();
     const interceptor = new TransactionInterceptor(manager, {
-      isEnabled: () => false,
-      debug: () => undefined,
-      error: () => {
-        throw new Error("logger exploded");
+      isEnabled: () => true,
+      // 只在回滚记录上爆：begin/commit 走 debugBoundary，不在被测的故障兜底路径上。
+      debug: (_fields, message) => {
+        if (message === "transaction rollback") {
+          throw new Error("logger exploded");
+        }
       },
     });
     const failure = new Error("boom");

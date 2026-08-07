@@ -41,7 +41,6 @@ type LogFields = Readonly<Record<string, unknown>> | undefined;
 export interface TransactionLogger {
   isEnabled(level: "debug"): boolean;
   debug(fields: LogFields, message: string): void;
-  error(fields: LogFields, message: string): void;
 }
 
 // 事务边界的耗时，3 位小数，与请求日志的 handlerMs 同精度。
@@ -49,7 +48,10 @@ function elapsedMs(startedAt: number): number {
   return Math.round((performance.now() - startedAt) * 1000) / 1000;
 }
 
-// 边界失败时**只发一条** error 记录然后原样重抛。error 级不受 isEnabled 门控（不变量 9）。
+// 边界失败降 **debug** 后原样重抛（Spring 对位；RFC 0011 打磨，#242）：异常会一路传播，
+// 真 500 的 error 已由 error-dispatch 与请求日志记账，这里再发一条 error 就是一次失败三条
+// error 的重复报告。debug 档要的是「回滚发生在哪个边界」的排查现场，判定在字段构造之前
+//（不变量 8）。
 //
 // 与 web 侧 500 兜底的关键分歧：那边 logger 抛了就吞掉，因为 dispatchError 永不 reject 是
 // 适配器契约；这边吞掉会让一个坏 logger **顶替**业务错误，所以原错照抛，日志故障单独落
@@ -74,7 +76,10 @@ function reportBoundaryFailure(
   message: string,
 ): void {
   try {
-    logger.error(
+    if (!logger.isEnabled("debug")) {
+      return;
+    }
+    logger.debug(
       {
         beanId: site.beanId,
         method: site.method,
