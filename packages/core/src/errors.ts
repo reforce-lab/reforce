@@ -243,9 +243,6 @@ export class InvalidGeneratedDefinitionError extends ReforceRuntimeError<"INVALI
 // 必须是框架错误词汇而不是裸 Error——它要经得起用户兜底拦截器的 catch（拦截器契约注释里那条
 // instanceof 放行），也要能被 CLI 报出 code。不带 index：那是 dispatch 下标不是 entries 下标，
 // 读者按它去数拦截器会数错。
-//
-// "下一步怎么办"暂时并进 message：基类的 help 字段随 RFC 0011 D5（#242）落地，那条分支合了
-// 之后把后半句拆回 help。
 export class InterceptorReenteredError extends ReforceRuntimeError<"INTERCEPTOR_REENTERED"> {
   readonly code = "INTERCEPTOR_REENTERED" as const;
   readonly beanId: string;
@@ -253,7 +250,10 @@ export class InterceptorReenteredError extends ReforceRuntimeError<"INTERCEPTOR_
 
   constructor(input: { readonly beanId: string; readonly method: string }) {
     super(
-      `An interceptor on "${input.beanId}.${input.method}" called next() more than once; the interception chain is not re-entrant. Retry at the call site: each call opens a fresh chain and a fresh transaction.`,
+      `An interceptor on "${input.beanId}.${input.method}" called next() more than once; the interception chain is not re-entrant.`,
+      {
+        help: "Retry at the call site instead: each call opens a fresh chain and a fresh transaction.",
+      },
     );
     this.beanId = input.beanId;
     this.method = input.method;
