@@ -11,13 +11,27 @@ export interface RouteManifestMiddleware {
   readonly mount: string;
 }
 
+// 槽位契约节(RFC 0012 S2,#274):可选键拼错在运行时是静默的(解码器只认声明键),这里的
+// 键名打印是唯一的排查入口,所以逐槽转述 slot/key/来源,不做汇总折叠。
+export interface RouteManifestSlot {
+  readonly slot: string;
+  readonly key?: string;
+  readonly form?: string;
+  readonly source?: { readonly kind: string; readonly vendor?: string };
+}
+
+export interface RouteManifestContract {
+  readonly slots: readonly RouteManifestSlot[];
+  readonly response: string;
+}
+
 export interface RouteManifestEntry {
   readonly method: string;
   readonly path: string;
   readonly controller: { readonly beanId: string; readonly handler: string };
   readonly middleware: readonly RouteManifestMiddleware[];
   readonly meta: Readonly<Record<string, unknown>>;
-  readonly schemas: Readonly<Record<string, unknown>>;
+  readonly contract: RouteManifestContract;
 }
 
 export interface RouteManifest {
@@ -44,6 +58,53 @@ function parsedMiddleware(value: unknown): RouteManifestMiddleware | undefined {
   return { beanId, phase, order, mount };
 }
 
+function parsedSlot(value: unknown): RouteManifestSlot | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const slot = Reflect.get(value, "slot");
+  if (typeof slot !== "string") {
+    return undefined;
+  }
+  const key = Reflect.get(value, "key");
+  const form = Reflect.get(value, "form");
+  const source = Reflect.get(value, "source");
+  const sourceKind = isObject(source) ? Reflect.get(source, "source") : undefined;
+  const vendor = isObject(source) ? Reflect.get(source, "vendor") : undefined;
+  return {
+    slot,
+    ...(typeof key === "string" ? { key } : {}),
+    ...(typeof form === "string" ? { form } : {}),
+    ...(typeof sourceKind === "string"
+      ? { source: { kind: sourceKind, ...(typeof vendor === "string" ? { vendor } : {}) } }
+      : {}),
+  };
+}
+
+function parsedContract(value: unknown): RouteManifestContract | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const slots = Reflect.get(value, "slots");
+  const response = Reflect.get(value, "response");
+  if (!Array.isArray(slots) || !isObject(response)) {
+    return undefined;
+  }
+  const parsedSlots: RouteManifestSlot[] = [];
+  for (const entry of slots) {
+    const parsed = parsedSlot(entry);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    parsedSlots.push(parsed);
+  }
+  const responseKind = Reflect.get(response, "kind");
+  if (typeof responseKind !== "string") {
+    return undefined;
+  }
+  return { slots: parsedSlots, response: responseKind };
+}
+
 function parsedRoute(value: unknown): RouteManifestEntry | undefined {
   if (!isObject(value)) {
     return undefined;
@@ -53,7 +114,6 @@ function parsedRoute(value: unknown): RouteManifestEntry | undefined {
   const controller = Reflect.get(value, "controller");
   const middleware = Reflect.get(value, "middleware");
   const meta = Reflect.get(value, "meta");
-  const schemas = Reflect.get(value, "schemas");
   if (typeof method !== "string" || typeof path !== "string" || !isObject(controller)) {
     return undefined;
   }
@@ -70,13 +130,17 @@ function parsedRoute(value: unknown): RouteManifestEntry | undefined {
     }
     chain.push(parsed);
   }
+  const contract = parsedContract(Reflect.get(value, "contract"));
+  if (contract === undefined) {
+    return undefined;
+  }
   return {
     method,
     path,
     controller: { beanId, handler },
     middleware: chain,
     meta: isObject(meta) ? (meta as Record<string, unknown>) : {}, // JSON 树，形状由生成器保证
-    schemas: isObject(schemas) ? (schemas as Record<string, unknown>) : {}, // 同上
+    contract,
   };
 }
 
@@ -87,7 +151,8 @@ export function parseRouteManifestBytes(bytes: Uint8Array): RouteManifest | unde
   } catch {
     return undefined;
   }
-  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 1) {
+  // 2 = 槽位路由表(RFC 0012 S2,#274),与生成器/运行时的版本门同步。
+  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 2) {
     return undefined;
   }
   const routes = Reflect.get(value, "routes");
@@ -173,6 +238,28 @@ export function matchRoutes(
   );
 }
 
+// 键名是这行的主角:Query<"pgae"> 这类 typo 在运行时静默(解码器只监听声明键),这里把每个
+// 参数实际监听的键与契约来源(type / schema+vendor)如实印出来。
+function slotLine(slot: RouteManifestSlot): string {
+  const parts = [slot.slot];
+  if (slot.key !== undefined) {
+    parts.push(`key ${slot.key}`);
+  }
+  if (slot.form === "optional-single") {
+    parts.push("optional");
+  }
+  if (slot.source?.kind === "type") {
+    parts.push("decoded from the type");
+  } else if (slot.source?.kind === "schema") {
+    parts.push(
+      slot.source.vendor === undefined
+        ? "decoded by schema"
+        : `decoded by schema (${slot.source.vendor})`,
+    );
+  }
+  return parts.join(" · ");
+}
+
 export function renderRouteExplanation(
   manifest: RouteManifest,
   matches: readonly RouteManifestEntry[],
@@ -193,9 +280,14 @@ export function renderRouteExplanation(
         );
       });
     }
-    const schemaSlots = Object.keys(route.schemas);
-    if (schemaSlots.length > 0) {
-      lines.push(`  schemas · ${schemaSlots.join(", ")}`);
+    if (route.contract.slots.length > 0) {
+      lines.push("  inputs (handler parameter order)");
+      route.contract.slots.forEach((slot, index) => {
+        lines.push(`  ${index + 1}. ${slotLine(slot)}`);
+      });
+    }
+    if (route.contract.response === "table") {
+      lines.push("  response · whitelisted by the return type contract");
     }
     if (Object.keys(route.meta).length > 0) {
       lines.push(`  meta · ${JSON.stringify(route.meta)}`);
