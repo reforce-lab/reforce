@@ -88,6 +88,25 @@ describe("bootstrap log buffer", () => {
     expect(lines).toEqual(["error orders binding failed err=Error: boom"]);
   });
 
+  // isEnabled 同样转发：退场后继续按缓冲阈值答，调用方会在真 logger 已关掉的级别上白构造
+  // 昂贵字段（不变量 8 的另一半）。
+  test("answers isEnabled from the live logger once retired", () => {
+    const buffer = createBootstrapLogBuffer({ threshold: "trace" });
+    const retained = buffer.logger("orders");
+    buffer.replayInto(() => ({
+      isEnabled: (level) => level === "error" || level === "fatal",
+      trace() {},
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+      fatal() {},
+    }));
+
+    expect(retained.isEnabled("debug")).toBe(false);
+    expect(retained.isEnabled("error")).toBe(true);
+  });
+
   // 退场后仍持有旧句柄的调用方不能继续攒：那些记录再也不会被重放。
   test("forwards to the live logger once the bootstrap logger has retired", () => {
     const buffer = createBootstrapLogBuffer();

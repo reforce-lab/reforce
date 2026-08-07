@@ -84,4 +84,15 @@ describe("bootstrap registry", () => {
 
     expect(sink.records).toEqual([]);
   });
+
+  // 测试重置连带 exit 兜底：上一条用例挂上的 handler 会在进程退出时把新缓冲里没人重放的
+  // 记录吐到 stderr，测试输出因此串进别的用例的日志。
+  test("reset removes the exit fallback along with the buffer", () => {
+    const before = process.listenerCount("exit");
+    bootstrapLogger("orders").warn(undefined, "buffered");
+
+    resetBootstrapRegistryForTest();
+
+    expect(process.listenerCount("exit")).toBe(before);
+  });
 });

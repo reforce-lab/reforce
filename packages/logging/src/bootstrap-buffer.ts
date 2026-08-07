@@ -80,7 +80,13 @@ export function createBootstrapLogBuffer(
       push(name, level, fields, message);
     };
     return {
-      isEnabled: (level) => isLevelEnabled(level, threshold),
+      // 退场后转发给真 logger：句柄可以被长期持有（模块作用域取一次、一直用），退场前它
+      // 回答「这条会不会被留给真 logger」，退场后必须回答真 logger 的判定——继续按缓冲
+      // 阈值答，调用方会在真 logger 已关掉的级别上白构造字段（不变量 8 的另一半）。
+      isEnabled: (level) =>
+        retired && live !== undefined
+          ? live(name).isEnabled(level)
+          : isLevelEnabled(level, threshold),
       trace: emit("trace"),
       debug: emit("debug"),
       info: emit("info"),

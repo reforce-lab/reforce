@@ -10,26 +10,32 @@ import type { Logger, LoggerFactory, LogLevel } from "@/contracts";
 // 为什么是进程级单例而不是依赖注入：需要它的代码（配置绑定）正是「容器还不存在」的那段，
 // 拿不到任何注入点。这是单例唯一说得通的场合，不是图省事。
 //
+// 已知限制（有意接受）：同一进程里起多个 context（testing 的并行装配、Worker 之外的多应用
+// 实验）共享这一个缓冲——第一个 replayInto 的 factory 拿走全部记录，其余 context 的引导期
+// 记录会串进它的输出。引导期在容器存在之前，天然没有"这条记录属于哪个 context"的事实可用；
+// 生产形态一进程一应用，这个限制只在测试并行时可见（测试用 resetBootstrapRegistryForTest
+// 隔离）。
+//
 // **绝不静默丢弃**是硬约束：缓冲里的记录在绑定失败时是唯一的现场。所以第一条记录进来时就
 // 惰性挂一个 exit 兜底——没人重放的话，退出前按 short 形态吐 stderr。不写日志的应用一条记录
 // 也不会有，因此这个 handler 永远不会被挂上，零开销。
 
 let buffer: BootstrapLogBuffer | undefined;
-let fallbackInstalled = false;
+let exitFallback: (() => void) | undefined;
 let replayed = false;
 
 function installExitFallback(): void {
-  if (fallbackInstalled) {
+  if (exitFallback !== undefined) {
     return;
   }
-  fallbackInstalled = true;
   // exit 回调里只能同步写，drainToStderr 用的正是同步 write。
-  process.once("exit", () => {
+  exitFallback = () => {
     if (replayed) {
       return;
     }
     buffer?.drainToStderr();
-  });
+  };
+  process.once("exit", exitFallback);
 }
 
 function ensureBuffer(): BootstrapLogBuffer {
@@ -85,7 +91,9 @@ export function droppedBootstrapRecords(): number {
   return buffer?.droppedCount() ?? 0;
 }
 
-// 仅测试用：进程级单例在同一个测试文件里会跨用例串味。
+// 仅测试用：进程级单例在同一个测试文件里会跨用例串味。exit 兜底一并摘掉——上一条用例挂上
+// 的 handler 会在进程退出时把**新缓冲**里没人重放的记录吐到 stderr，测试输出因此串进别的
+// 用例的日志。
 export function resetBootstrapRegistryForTest(
   options: { readonly threshold?: LogLevel } = {},
 ): void {
@@ -93,4 +101,8 @@ export function resetBootstrapRegistryForTest(
     options.threshold === undefined ? {} : { threshold: options.threshold },
   );
   replayed = false;
+  if (exitFallback !== undefined) {
+    process.removeListener("exit", exitFallback);
+    exitFallback = undefined;
+  }
 }
