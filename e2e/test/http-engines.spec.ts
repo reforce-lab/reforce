@@ -198,7 +198,10 @@ describe.sequential("the same application behaves identically across engines", (
         });
         expect(badParams.status).toBe(400);
         expect(await badParams.json()).toEqual({
-          error: "request validation failed",
+          type: "about:blank",
+          title: "Bad Request",
+          status: 400,
+          code: "REQUEST_VALIDATION_FAILED",
           source: "params",
           issues: [{ message: "id must be a numeric string", path: ["id"] }],
         });
@@ -215,6 +218,10 @@ describe.sequential("the same application behaves identically across engines", (
         expect(teapot.status).toBe(418);
         expect(await teapot.text()).toBe("teapot");
         expect((await fetch(`${base}/boom/unhandled`)).status).toBe(500);
+        // HttpError 三引擎同形：状态码与 problem+json 都由框架统一渲染（#294）
+        const conflict = await fetch(`${base}/boom/conflict`);
+        expect(conflict.status).toBe(409);
+        expect(await conflict.json()).toMatchObject({ code: "GREETING_ALREADY_EXISTS" });
 
         // 方法级织入（$Woven 在 dist-only 链路里生效）
         expect(await (await fetch(`${base}/woven`)).json()).toEqual({

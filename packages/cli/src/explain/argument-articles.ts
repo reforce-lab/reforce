@@ -165,7 +165,49 @@ const configBindingFailure = [
   "or fix the value, whichever is actually wrong.",
 ];
 
+const builtInHttpErrors = [
+  "These five are the built-in HTTP exception primitives @reforce/web exports (ADR 0013",
+  "decision 6): BadRequestError 400, UnauthorizedError 401, ForbiddenError 403, NotFoundError 404,",
+  "ConflictError 409. They are thrown by *your* code, not by the framework — seeing one means the",
+  "application decided the request could not be served, and said so in the vocabulary the",
+  "framework understands.",
+  "",
+  "You do not write an error handler for them. The framework renders every one into an RFC 9457",
+  "problem+json document at the status the exception carries:",
+  "",
+  '  { "type": "about:blank", "title": "Not Found", "status": 404,',
+  '    "detail": "…", "code": "WEB_NOT_FOUND" }',
+  "",
+  "The `help` you pass stays out of the response — it is a next step for whoever is reading logs,",
+  "not for the caller.",
+  "",
+  "When the caller needs to branch on *which* business rule failed, these generic codes are too",
+  "coarse. Mint your own with defineHttpError(code, template, status): the code is yours, it is",
+  "not prefixed, and it lands in the same `code` member. Clients should always dispatch on `code`",
+  "and never on `detail` — the code is a stable contract, the prose is not.",
+];
+
 export const argumentArticles: Readonly<Record<string, DiagnosticArticle>> = {
+  WEB_BAD_REQUEST: {
+    summary: "The application rejected the request as malformed (400).",
+    article: builtInHttpErrors,
+  },
+  WEB_UNAUTHORIZED: {
+    summary: "The application required credentials the request did not carry (401).",
+    article: builtInHttpErrors,
+  },
+  WEB_FORBIDDEN: {
+    summary: "The application refused the request for the caller it identified (403).",
+    article: builtInHttpErrors,
+  },
+  WEB_NOT_FOUND: {
+    summary: "The application found no resource at the requested identity (404).",
+    article: builtInHttpErrors,
+  },
+  WEB_CONFLICT: {
+    summary: "The request conflicted with the current state of the resource (409).",
+    article: builtInHttpErrors,
+  },
   CONFIG_BINDING_FAILED: {
     summary: "One or more @ConfigProperties classes could not be bound at startup.",
     article: configBindingFailure,

@@ -1,6 +1,6 @@
 import { Injectable } from "@reforce/core";
-import { GreetingAlreadyExistsException } from "@/features/greeting/greeting.exception";
-import { NotFoundException } from "@/shared/http/not-found.exception";
+import { NotFoundError } from "@reforce/web";
+import { GreetingAlreadyExists } from "@/features/greeting/greeting.exception";
 import type { SortOrder } from "@/shared/pagination/sort-order.enum";
 
 // 领域里的一条记录。internalNote 是内部字段，不该出现在响应里——greeting.dto.ts 的
@@ -34,19 +34,20 @@ export class GreetingService {
     );
   }
 
-  // 抛异常，不碰 HTTP 状态码：翻译成 404 是 infrastructure/web/ 里错误处理器的事。这样同一
-  // 条规则在 HTTP 之外（定时任务、队列消费）复用时也不用改。
+  // 抛框架的 HTTP 异常：它自己带着状态码与码，框架会翻译成 404 的 problem+json，不需要
+  // 你写任何错误处理器。异常在 HTTP 之外（定时任务、队列消费）复用时也照抛不误——那些场景
+  // 里没人读它的状态码，只当普通异常处理。
   find(name: string, times: number): GreetingRecord {
     const record = this.store.find(name);
     if (record === undefined) {
-      throw new NotFoundException(`没有名为 ${name} 的问候语。`);
+      throw new NotFoundError(`没有名为 ${name} 的问候语。`);
     }
     return { ...record, message: Array.from({ length: times }, () => record.message).join(" ") };
   }
 
   create(name: string, message: string): GreetingRecord {
     if (this.store.find(name) !== undefined) {
-      throw new GreetingAlreadyExistsException(name);
+      throw new GreetingAlreadyExists([name]);
     }
     const record = { name, message, internalNote: "created by the API" };
     this.store.save(record);

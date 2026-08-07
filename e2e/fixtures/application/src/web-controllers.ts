@@ -1,6 +1,6 @@
 import type { Current } from "@reforce/core";
 import type { Logger } from "@reforce/logging";
-import { Controller, Get, Post, type RequestContext } from "@reforce/web";
+import { Controller, defineHttpError, Get, Post, type RequestContext } from "@reforce/web";
 import type { RequestAudit } from "@/http-exchange";
 import { Roles } from "@/web-markers";
 import {
@@ -88,6 +88,14 @@ export class FieldSourceController {
   }
 }
 
+// 用户异常原语（ADR 0013 决议 6，#294）：码与状态码写在定义处，抛的时候只填参数。
+// 用户起的码不带框架前缀——那个命名空间是用户的。
+const GreetingAlreadyExists = defineHttpError<[name: string]>(
+  "GREETING_ALREADY_EXISTS",
+  "greeting %s already exists",
+  409,
+);
+
 @Controller("/boom")
 export class BoomController {
   @Get("/teapot")
@@ -98,5 +106,11 @@ export class BoomController {
   @Get("/unhandled")
   unhandled(): Response {
     throw new Error("nobody-knows-this-one");
+  }
+
+  // 不写任何 @ErrorHandler：HttpError 由 error-dispatch 内置识别，直接成为 409 problem+json。
+  @Get("/conflict")
+  conflict(): Response {
+    throw new GreetingAlreadyExists(["Lynch"]);
   }
 }

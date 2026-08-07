@@ -18,6 +18,18 @@ export {
   createWebApplication,
 } from "@/execution/web-application";
 export {
+  BadRequestError,
+  ConflictError,
+  type DefineHttpErrorOptions,
+  defineHttpError,
+  ForbiddenError,
+  HttpError,
+  type HttpErrorInput,
+  type HttpErrorOptions,
+  NotFoundError,
+  UnauthorizedError,
+} from "@/http-errors";
+export {
   Controller,
   Delete,
   ErrorHandler,

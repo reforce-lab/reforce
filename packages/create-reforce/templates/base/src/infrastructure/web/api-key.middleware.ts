@@ -1,6 +1,10 @@
-import { Middleware, type RequestContext, type RouteMiddleware } from "@reforce/web";
+import {
+  Middleware,
+  type RequestContext,
+  type RouteMiddleware,
+  UnauthorizedError,
+} from "@reforce/web";
 import type { AppConfig } from "@/config/app.config";
-import { UnauthorizedException } from "@/shared/http/unauthorized.exception";
 
 // admission 阶段：认证、授权、限流都在这一层，比 application 阶段更靠外，比 observability
 // 更靠内。
@@ -18,9 +22,9 @@ export class ApiKeyMiddleware implements RouteMiddleware {
       return await next();
     }
     if (context.request.headers.get("x-api-key") !== this.config.apiKey) {
-      // 这里也可以直接 return 一个 401 Response——不调 next() 就是短路。抛异常是为了让
-      // 状态码只在 error-handlers/ 里定义一次，中间件不必自己拼响应。
-      throw new UnauthorizedException("缺少或错误的 x-api-key。");
+      // 这里也可以直接 return 一个 401 Response——不调 next() 就是短路。抛异常更省事：
+      // UnauthorizedError 自带 401，框架统一渲染成 problem+json，中间件不必自己拼响应。
+      throw new UnauthorizedError("缺少或错误的 x-api-key。");
     }
     return await next();
   }
