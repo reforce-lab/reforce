@@ -93,13 +93,14 @@ function logRequest(input: {
   );
 }
 
-// 日志系统自己坏了不能连累一次已经答完的 404，但也不许一声不吭（不变量 9）。每进程只喊
-// 一次：这条路径由客户端触发，扫描器一秒几百下，喊多了它自己就成了刷屏源。
-let missLoggerFailureReported = false;
-
+// 日志系统自己坏了不能连累一次已经答完的 404，但也不许一声不吭（不变量 9）。每个应用实例
+// 只喊一次（闭包字段而不是模块级单例：testing 的多 context 并存与 dev 重启会复用同一进程，
+// 上一个实例喊过就把下一个实例的唯一一声吞掉）；这条路径由客户端触发，扫描器一秒几百下，
+// 喊多了它自己就成了刷屏源。
 function createNotFoundLogger(
   logger: RequestLogger,
 ): (miss: { readonly method: string; readonly path: string }) => void {
+  let missLoggerFailureReported = false;
   return (miss) => {
     // 不变量 8：判定在字段构造之前。
     //

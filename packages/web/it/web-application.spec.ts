@@ -6,7 +6,7 @@ import {
   type GeneratedResolver,
   type GeneratedSourceReference,
 } from "@reforce/context/generated-runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
 import type { RequestLogger } from "@/execution/web-application";
 import type { GeneratedRouteTable } from "@/generated-runtime";
@@ -375,6 +375,35 @@ describe("route miss logging", () => {
     application.logNotFound?.({ method: "GET", path: "/nowhere" });
 
     expect(capture.requests()).toEqual([]);
+  });
+
+  // 日志系统自己坏了每个**应用实例**只喊一次：模块级单例会让 dev 重启与 testing 的多
+  // context 并存时，第二个实例的唯一一声被上一个实例吞掉。
+  test("reports a broken miss logger once per application instance", async () => {
+    const throwing: RequestLogger = {
+      isEnabled: () => true,
+      info: () => {
+        throw new Error("miss logger exploded");
+      },
+      warn: () => {},
+      error: () => {},
+    };
+    const first = await startedApplication(throwing);
+    const second = await startedApplication(throwing);
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      first.application.logNotFound?.({ method: "GET", path: "/a" });
+      first.application.logNotFound?.({ method: "GET", path: "/b" });
+      second.application.logNotFound?.({ method: "GET", path: "/c" });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(writes.filter((line) => line.includes("404 logger failed"))).toHaveLength(2);
   });
 
   // 不变量 8：判定在字段构造之前。这条路径由客户端触发，扫描器一秒几百下。

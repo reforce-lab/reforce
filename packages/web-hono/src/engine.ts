@@ -91,10 +91,6 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
   private async buildApplication(application: WebApplication): Promise<Hono> {
     const app = new Hono({ router: new TrieRouter(), getPath: honoRequestPath });
     const notFound = application.logNotFound;
-    // reforce 自己注册的 handler 身份表：判据必须是「reforce 路由表没匹配上」而不只是
-    // status === 404——handler 自己返回的 404 已经由核心的请求日志记过（会重复记两条），
-    // configurer 注册的自有路由与静态资源中间件的短路也都不是未命中。
-    const reforceHandlers = new Set<unknown>();
     if (notFound !== undefined) {
       // 装在 configurer 之前：hono 的 app.use 只对**之后**注册的路由生效（见下），观察者要
       // 盖住全部路由就必须最先装。
@@ -106,7 +102,11 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
         if (context.res.status !== 404) {
           return;
         }
-        if (matchedRoutes(context).some((route) => reforceHandlers.has(route.handler))) {
+        // 真未命中 = 路由器没匹配到任何**路由**，与 fastify 的 setNotFoundHandler 同一语义。
+        // hono 的 matchedRoutes 把 use 装的中间件也算在内（method 恒为 "ALL"），所以判据是
+        // 「除中间件外一无所中」：reforce 的 handler、configurer 的自有路由，谁匹配上了都
+        // 不是未命中——它们自己答的 404 已由核心的请求日志记账，再记一条就是重复报告。
+        if (matchedRoutes(context).some((route) => route.method !== "ALL")) {
           return;
         }
         // path 取 new URL(...).pathname 而不是 c.req.path：后者被自定义 getPath 解码归一，
@@ -131,7 +131,6 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
         }
       }
       const handler = (context: Context) => route.handle(context.req.raw, context.req.param());
-      reforceHandlers.add(handler);
       app.on(route.method, route.path, handler);
     }
     return app;
