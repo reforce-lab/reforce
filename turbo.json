@@ -14,6 +14,11 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    // ^build 只沿 @reforce/e2e 自己的依赖图向上构建（17 个包里的 15 个），而
+    // distribution-tarball 套件断言的是磁盘上**全部**包打出来是什么样——两者范围不一致，
+    // create-reforce 与 @reforce/transaction-testing 不在图内。所以根脚本 test:e2e 先跑
+    // 一次不带 filter 的 turbo run build；直接 `turbo run test:e2e` 会在冷工作区把这两个包
+    // 报成「发布契约坏了」，而真实原因是没人构建它们（Issue #304）。
     "test:e2e": {
       "dependsOn": ["^build"],
       "outputs": []
