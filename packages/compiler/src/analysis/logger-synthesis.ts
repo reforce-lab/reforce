@@ -156,6 +156,7 @@ function loggerNameDecoratorLocals(source: ParsedSource): ReadonlySet<string> {
 function decoratedLoggerName(
   source: ParsedSource,
   decorators: readonly DecoratorUse[],
+  diagnostics: CompilerDiagnostic[],
 ): string | undefined {
   const locals = loggerNameDecoratorLocals(source);
   if (locals.size === 0) {
@@ -165,12 +166,23 @@ function decoratedLoggerName(
     if (use.callee.kind !== "identifier" || !locals.has(use.callee.name)) {
       continue;
     }
-    // 诊断丢弃：@LoggerName 只接一个字符串字面量，取不到就当没写、落回推导名。
+    // markerUseValueOf 自己的诊断丢弃、换成本码：它的文案说的是「method marker」，指不到
+    // @LoggerName 的正确写法。
     const discarded: CompilerDiagnostic[] = [];
     const value = markerUseValueOf(use, discarded);
     if (typeof value === "string" && value.length > 0) {
       return value;
     }
+    // 非字面量/空串是 error 不是静默回退：写了 @LoggerName 就是显式意图，静默落回推导名
+    // 会让调级与告警规则对着一个不存在的名字，而编译期的安静让人以为改名生效了。
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_DECORATOR_USAGE",
+        message: `@${loggerNameDecoratorName} takes exactly one nonempty string literal.`,
+        sourceSpan: use.span,
+        help: `Write the logger name inline, e.g. @${loggerNameDecoratorName}("payments"); a computed name cannot be resolved at compile time.`,
+      }),
+    );
   }
   return undefined;
 }
@@ -212,7 +224,7 @@ interface LoggerDemand {
   readonly contract?: LinkedSymbol;
 }
 
-function loggerNameOf(draft: ProviderDraft): string {
+function loggerNameOf(draft: ProviderDraft, diagnostics: CompilerDiagnostic[]): string {
   const origin = draft.provider.origin;
   if (origin.kind === "application") {
     const declaration = origin.source.unit.classes.find(
@@ -221,7 +233,7 @@ function loggerNameOf(draft: ProviderDraft): string {
     const overridden =
       declaration === undefined
         ? undefined
-        : decoratedLoggerName(origin.source, declaration.decorators);
+        : decoratedLoggerName(origin.source, declaration.decorators, diagnostics);
     if (overridden !== undefined) {
       return overridden;
     }
@@ -231,7 +243,10 @@ function loggerNameOf(draft: ProviderDraft): string {
   return draft.provider.exportName;
 }
 
-function loggerDemandsOf(drafts: readonly ProviderDraft[]): readonly LoggerDemand[] {
+function loggerDemandsOf(
+  drafts: readonly ProviderDraft[],
+  diagnostics: CompilerDiagnostic[],
+): readonly LoggerDemand[] {
   const demands: LoggerDemand[] = [];
   for (const draft of drafts) {
     for (const pending of draft.pendingDependencies) {
@@ -241,7 +256,7 @@ function loggerDemandsOf(drafts: readonly ProviderDraft[]): readonly LoggerDeman
       demands.push({
         consumerId: draft.provider.id,
         parameterIndex: pending.index,
-        loggerName: loggerNameOf(draft),
+        loggerName: loggerNameOf(draft, diagnostics),
         contract: pending.linkedType.symbol,
         span: pending.sourceSpan,
       });
@@ -376,6 +391,12 @@ function collectLoggerDemands(
     const existing = byName.get(demand.loggerName);
     if (existing !== undefined && existing.consumerId !== demand.consumerId) {
       reportDuplicateName(diagnostics, demand.loggerName, existing, demand);
+      // 照设重定向：DUPLICATE_LOGGER_NAME 已经是这次撞名的完整报告，跳过重定向只会让第二
+      // 消费者的 Logger 边悬空、再多一条指向不存在问题的 MISSING_BEAN 噪音。
+      redirects.set(
+        redirectKey(demand.consumerId, demand.parameterIndex),
+        loggerBeanId(demand.loggerName),
+      );
       continue;
     }
     byName.set(demand.loggerName, existing ?? demand);
@@ -395,7 +416,7 @@ export function synthesizeLoggerBeans(input: {
   /** 编译器自己要的 logger（框架输出面）；只有图里真有绑定时才合成。 */
   readonly frameworkLoggers?: readonly FrameworkLoggerRequest[];
 }): LoggerSynthesis {
-  const demands = loggerDemandsOf(input.drafts);
+  const demands = loggerDemandsOf(input.drafts, input.diagnostics);
   const provided = input.loggerFactory;
   const { byName, redirects } = collectLoggerDemands(demands, input.diagnostics);
   // 没有任何绑定时不合成框架 logger：那样等于替一个从没打算写日志的应用凭空造一条

@@ -903,6 +903,21 @@ test("reads a suppression comment as applying to the next line", () => {
   ]);
 });
 
+// 抑制注释可堆叠：同一行代码压两个码时各写一行，上面那条的 targetLine 必须跳过下面的
+// 注释行、落在代码上——否则它指着一条注释，永远匹配不到任何诊断。
+test("stacked suppressions all target the first code line below them", () => {
+  const unit = parseFile(
+    [
+      "// reforce-ignore UNUSED_SUPPRESSION: first of the stack",
+      "// reforce-ignore SUPPRESSION_NOT_APPLICABLE: second of the stack",
+      "export class A {}",
+      "",
+    ].join("\n"),
+  );
+
+  expect(unit.suppressions.map((item) => item.targetLine)).toEqual([2, 2]);
+});
+
 // explanation 是语法的一部分（照 Biome）：抑制是长期承诺，写下它的人必须留下为什么。
 test("rejects a suppression that carries no explanation", () => {
   const unit = parseFile(

@@ -17,7 +17,7 @@ export interface SuppressionComment {
   readonly explanation: string;
   /** 注释自身的位置，UNUSED_SUPPRESSION 靠它定位。 */
   readonly span: SourceSpan;
-  /** 被抑制的那一行（0-based），即注释所在行的下一行。 */
+  /** 被抑制的那一行（0-based）：注释下方第一个非抑制注释行——抑制注释可以堆叠。 */
   readonly targetLine: number;
 }
 
@@ -44,7 +44,7 @@ export function collectSuppressions(input: {
   readonly comments: readonly Comment[];
   readonly mapper: SourceMapper;
 }): readonly SuppressionComment[] {
-  const suppressions: SuppressionComment[] = [];
+  const collected: Omit<SuppressionComment, "targetLine">[] = [];
   for (const comment of input.comments) {
     if (comment.type !== "Line") {
       continue;
@@ -59,13 +59,17 @@ export function collectSuppressions(input: {
       continue;
     }
     const span = input.mapper.span(comment.start, comment.end);
-    suppressions.push({
-      kind: "suppression",
-      code,
-      explanation,
-      span,
-      targetLine: span.start.line + 1,
-    });
+    collected.push({ kind: "suppression", code, explanation, span });
   }
+  // 抑制注释可堆叠：同一行代码要压两个码时各写一行，targetLine 一律跳过连续的抑制注释行、
+  // 落在下方第一行代码上。不做这一步，上面那条会指着下面那条注释，永远匹配不到任何诊断。
+  const commentLines = new Set(collected.map((entry) => entry.span.start.line));
+  const suppressions = collected.map((entry) => {
+    let targetLine = entry.span.start.line + 1;
+    while (commentLines.has(targetLine)) {
+      targetLine += 1;
+    }
+    return { ...entry, targetLine };
+  });
   return normalizeSpanned(suppressions);
 }

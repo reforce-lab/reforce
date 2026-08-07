@@ -523,6 +523,60 @@ describe("synthesised logger beans", () => {
     expect(logger.dependencies[0].targetId).toBe("@acme/fancy-logging#FancyLoggerFactory");
   }, 60_000);
 
+  // 写了 @LoggerName 就是显式意图：非字面量静默落回推导名会让调级与告警规则对着一个
+  // 不存在的名字，而编译期的安静让人以为改名生效了。
+  test("reports a non-literal @LoggerName as an error instead of falling back", async () => {
+    const result = await compileTree({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        "logger-factory.ts": loggerFactorySource,
+        "application.ts": [
+          'export * from "@/logger-factory";',
+          'import { Injectable } from "@reforce/context";',
+          'import { LoggerName, type Logger } from "@reforce/logging";',
+          "",
+          'const computed = "pay" + "ments";',
+          "",
+          "@LoggerName(computed)",
+          "@Injectable()",
+          "export class PaymentService {",
+          "  constructor(private readonly log: Logger) {}",
+          "}",
+          "",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.status).toBe("failure");
+    expect(result.diagnostics.map((item) => item.code)).toContain("INVALID_DECORATOR_USAGE");
+  }, 60_000);
+
+  // 模式必须照抄注入点，不能恒 eager：`Lazy<Logger>` 被写成 eager 时 tsc 拦不住——字段拿到
+  // 的是 BoundLogger 实例，调 .get() 当场 TypeError（resolve-providers 的注释记着这一条）。
+  test("keeps a Lazy<Logger> edge lazy instead of forcing it eager", async () => {
+    const { manifest } = await compileApplication({
+      "application.ts": [
+        'export * from "@/logger-factory";',
+        'import { Injectable, type Lazy } from "@reforce/context";',
+        'import type { Logger } from "@reforce/logging";',
+        "",
+        "@Injectable()",
+        "export class OrderService {",
+        "  constructor(private readonly log: Lazy<Logger>) {}",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    const consumer = manifest.beans.find((bean: { readonly id: string }) =>
+      bean.id.endsWith("#OrderService"),
+    );
+    expect(consumer.dependencies[0]).toMatchObject({
+      targetId: "@reforce/logging#Logger(OrderService)",
+      mode: "explicit-lazy",
+    });
+  }, 60_000);
+
   test("reports two classes that resolve to one logger name", async () => {
     const result = await compileTree({
       "tsconfig.json": applicationTsconfig(),
@@ -554,5 +608,8 @@ describe("synthesised logger beans", () => {
     expect(duplicate).toBeDefined();
     // 双侧定位：读者要能同时看到抢同一个名字的两个类。
     expect(duplicate?.related).toHaveLength(2);
+    // 第二消费者的 Logger 边照设重定向：撞名的完整报告就是上面那条，再落一条指向不存在
+    // 问题的 MISSING_BEAN 只会把读者引开。
+    expect(result.diagnostics.map((item) => item.code)).not.toContain("MISSING_BEAN");
   }, 60_000);
 });
