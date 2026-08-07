@@ -236,6 +236,14 @@ const leafProbeSource = `import { Injectable } from "@reforce/context";
 export class LeafProbe {}
 `;
 
+// 叶子删掉 fixture 的 application.ts（它 re-export 了被删的 greeting/providers），但日志绑定
+// 现在随 logging starter 进图（RFC 0011 勘误，#242），所以要留一个最小的注册入口。
+const leafApplicationSource = `import { defineApplication } from "@reforce/context";
+import { logging } from "@reforce/logging";
+
+export default defineApplication({ starters: [logging] });
+`;
+
 function applicationCompilerOptions() {
   return {
     target: "ESNext",
@@ -299,7 +307,7 @@ async function createMonorepoProject(): Promise<TemporaryProject> {
             leafTsconfig("../../tsconfig.shared.json"),
           ),
           writeFile(join(sourceRoot, probeFile), leafProbeSource),
-          rm(join(sourceRoot, "application.ts")),
+          writeFile(join(sourceRoot, "application.ts"), leafApplicationSource),
           rm(join(sourceRoot, "greeting.ts")),
           rm(join(sourceRoot, "providers.ts")),
           rm(join(sourceRoot, "worker-lifecycle.ts")),
@@ -1234,13 +1242,13 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
-  // 逐 logger 调级的完整链路（RFC 0011 L5，#249）。这条用例存在的理由是它先红过：编译器
-  // 一直在校验 `logging.level.*` 的拼写、给 did-you-mean、把封闭名单写进快照，但运行期没有
-  // 任何代码读那份快照——用户改级别不生效，而编译期的安静让人以为生效了。
+  // 逐 logger 调级的完整链路（RFC 0011 L5 勘误，#242）。级别配置是应用里的显式
+  // LoggingSettings bean（fixture 的 AppLogging 把 LoggingProbe 调开 debug），不再有
+  // `.env` / `LOGGING_LEVEL_*` 通道——生产改级别 = 改代码重部署，是 owner 拍板的代价。
   //
   // 断言必须同时看两条 logger：只看被调开的那条，「全局降到 debug」也会绿。
   test(
-    "lets LOGGING_LEVEL_<NAME> open one logger without touching the others",
+    "lets LoggingSettings.levels open one logger without touching the others",
     async () => {
       const project = await createApplicationProject();
       let started: StartedApplication | undefined;
@@ -1249,9 +1257,7 @@ describe.sequential("built Reforce CLI", () => {
         const build = await buildProject(project.projectRoot);
         expect(build.exitCode, commandFailure(build)).toBe(0);
 
-        started = await startApplication(project.projectRoot, "logging-start", false, {
-          LOGGING_LEVEL_LOGGINGPROBE: "debug",
-        });
+        started = await startApplication(project.projectRoot, "logging-start", false);
         const shutdown = await shutdownWithIpc(started);
         stopped = true;
         expect(shutdown.result.exitCode).toBe(0);
@@ -1882,9 +1888,10 @@ async function installStarters(appRoot: string, starters: CompiledStarters): Pro
 }
 
 const starterRegistrationSource = `import { defineApplication } from "@reforce/context";
+import { logging } from "@reforce/logging";
 import { cache } from "@acme/starter-cache";
 
-export default defineApplication({ starters: [cache] });
+export default defineApplication({ starters: [logging, cache] });
 `;
 
 const cacheConfigSource = `import { Injectable } from "@reforce/context";

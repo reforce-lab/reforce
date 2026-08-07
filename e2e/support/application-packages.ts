@@ -108,6 +108,8 @@ export async function installApplicationPackages(
     cp(join(webRoot, "dist"), join(webTarget, "dist"), { recursive: true }),
     cp(join(loggingRoot, "package.json"), join(loggingTarget, "package.json")),
     cp(join(loggingRoot, "dist"), join(loggingTarget, "dist"), { recursive: true }),
+    // @reforce/logging 升格 starter 后（RFC 0011 勘误，#242）分发面同样带 meta。
+    cp(join(loggingRoot, "reforce-meta.json"), join(loggingTarget, "reforce-meta.json")),
     cp(join(runtimeRoot, "package.json"), join(runtimeTarget, "package.json")),
     cp(join(runtimeRoot, "dist"), join(runtimeTarget, "dist"), { recursive: true }),
     cp(join(webNodeRoot, "package.json"), join(webNodeTarget, "package.json")),
