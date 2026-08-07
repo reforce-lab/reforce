@@ -103,6 +103,13 @@ interface RouteMarkerDeclarationInfo {
   readonly span: SourceSpan;
 }
 
+interface CollectedRouteMarker {
+  readonly registryKey: string;
+  readonly fileId: string;
+  readonly name: string;
+  readonly info: RouteMarkerDeclarationInfo;
+}
+
 function markerRegistryKey(fileId: string, localName: string): string {
   return `${fileId}#${localName}`;
 }
@@ -114,7 +121,7 @@ function routeMarkerDeclarationOf(
   declaration: ValueDeclaration,
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
-): readonly [string, RouteMarkerDeclarationInfo] | undefined {
+): CollectedRouteMarker | undefined {
   const initializer = declaration.initializer;
   if (initializer?.kind !== "call") {
     return undefined;
@@ -152,10 +159,43 @@ function routeMarkerDeclarationOf(
     );
     return undefined;
   }
-  return [
-    markerRegistryKey(source.fileId, declaration.name),
-    { key: argument.value, span: declaration.span },
-  ];
+  return {
+    registryKey: markerRegistryKey(source.fileId, declaration.name),
+    fileId: source.fileId,
+    name: declaration.name,
+    info: { key: argument.value, span: declaration.span },
+  };
+}
+
+// key 空间是全局的（#254）：meta 表按裸字符串 key 存，两个声明撞 key 时互为别名，
+// route.meta(A) 会取到 B 写入的值。排序让首见者与报错顺序确定；报错后注册表保留全部声明，
+// 使用侧不再连带报错。
+function reportDuplicateMarkerKeys(
+  collected: readonly CollectedRouteMarker[],
+  diagnostics: CompilerDiagnostic[],
+): void {
+  const firstByKey = new Map<string, CollectedRouteMarker>();
+  const ordered = collected.toSorted((left, right) => {
+    const file = compareUtf16CodeUnits(left.fileId, right.fileId);
+    return file === 0 ? left.info.span.start.offset - right.info.span.start.offset : file;
+  });
+  for (const marker of ordered) {
+    const first = firstByKey.get(marker.info.key);
+    if (first === undefined) {
+      firstByKey.set(marker.info.key, marker);
+      continue;
+    }
+    report(
+      diagnostics,
+      "DUPLICATE_ROUTE_MARKER",
+      `Route marker key ${JSON.stringify(marker.info.key)} is already declared by ${first.name}.`,
+      marker.info.span,
+      {
+        help: "Give each route marker a globally unique key.",
+        related: [{ message: first.name, sourceSpan: first.info.span }],
+      },
+    );
+  }
 }
 
 function collectRouteMarkers(
@@ -163,7 +203,7 @@ function collectRouteMarkers(
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): ReadonlyMap<string, RouteMarkerDeclarationInfo> {
-  const registry = new Map<string, RouteMarkerDeclarationInfo>();
+  const collected: CollectedRouteMarker[] = [];
   for (const source of sources) {
     if (source.sourceKind.startsWith("d.")) {
       continue;
@@ -171,11 +211,12 @@ function collectRouteMarkers(
     for (const declaration of source.unit.valueDeclarations) {
       const entry = routeMarkerDeclarationOf(source, declaration, linker, diagnostics);
       if (entry !== undefined) {
-        registry.set(entry[0], entry[1]);
+        collected.push(entry);
       }
     }
   }
-  return registry;
+  reportDuplicateMarkerKeys(collected, diagnostics);
+  return new Map(collected.map((marker) => [marker.registryKey, marker.info]));
 }
 
 // marker 值 = JSON 字面量树（ADR 0006 W3 待打磨项定案）：静态可提取是硬边界，任何引用、

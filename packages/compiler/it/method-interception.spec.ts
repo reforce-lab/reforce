@@ -93,6 +93,23 @@ describe("method marker declaration shape (hard error #1)", () => {
 
     expect(failureCodes(result)).toContain("INVALID_METHOD_MARKER");
   });
+
+  // key 空间是全局的（#284，同 #254 的 route marker）：织入表按裸字符串 key 存，撞 key 的
+  // 两个 marker 互为别名，拦截器会对另一个 marker 标记的方法生效。
+  test("two declarations sharing one key across files are rejected with both sites", async () => {
+    const result = await compileSources({
+      "audit-markers.ts": [
+        'import { defineMethodMarker } from "@reforce/core";',
+        'export const AuditTrail = defineMethodMarker<{ label: string }>("audited");',
+      ].join("\n"),
+      "markers.ts": markerSource,
+    });
+
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toEqual(["DUPLICATE_METHOD_MARKER"]);
+    expect(failure.diagnostics[0]?.message).toContain("AuditTrail");
+    expect(failure.diagnostics[0]?.related).toHaveLength(1);
+  });
 });
 
 describe("marked bean shape (hard errors #2-#5)", () => {

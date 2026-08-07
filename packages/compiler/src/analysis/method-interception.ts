@@ -67,6 +67,13 @@ interface MethodMarkerDeclarationInfo {
   readonly span: SourceSpan;
 }
 
+interface CollectedMethodMarker {
+  readonly registryKey: string;
+  readonly fileId: string;
+  readonly name: string;
+  readonly info: MethodMarkerDeclarationInfo;
+}
+
 function markerRegistryKey(fileId: string, localName: string): string {
   return `${fileId}#${localName}`;
 }
@@ -78,7 +85,7 @@ function methodMarkerDeclarationOf(
   declaration: ValueDeclaration,
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
-): readonly [string, MethodMarkerDeclarationInfo] | undefined {
+): CollectedMethodMarker | undefined {
   const initializer = declaration.initializer;
   if (initializer?.kind !== "call") {
     return undefined;
@@ -131,10 +138,43 @@ function methodMarkerDeclarationOf(
     );
     return undefined;
   }
-  return [
-    markerRegistryKey(source.fileId, declaration.name),
-    { key: argument.value, span: declaration.span },
-  ];
+  return {
+    registryKey: markerRegistryKey(source.fileId, declaration.name),
+    fileId: source.fileId,
+    name: declaration.name,
+    info: { key: argument.value, span: declaration.span },
+  };
+}
+
+// key 空间是全局的（#284，同 #254 的 route marker）：织入表按裸字符串 key 存，两个声明撞 key
+// 时互为别名，绑到 A 的拦截器会对 B 标记的方法生效。排序让首见者与报错顺序确定；报错后
+// 注册表保留全部声明，使用侧不再连带报错。
+function reportDuplicateMarkerKeys(
+  collected: readonly CollectedMethodMarker[],
+  diagnostics: CompilerDiagnostic[],
+): void {
+  const firstByKey = new Map<string, CollectedMethodMarker>();
+  const ordered = collected.toSorted((left, right) => {
+    const file = compareUtf16CodeUnits(left.fileId, right.fileId);
+    return file === 0 ? left.info.span.start.offset - right.info.span.start.offset : file;
+  });
+  for (const marker of ordered) {
+    const first = firstByKey.get(marker.info.key);
+    if (first === undefined) {
+      firstByKey.set(marker.info.key, marker);
+      continue;
+    }
+    report(
+      diagnostics,
+      "DUPLICATE_METHOD_MARKER",
+      `Method marker key ${JSON.stringify(marker.info.key)} is already declared by ${first.name}.`,
+      marker.info.span,
+      {
+        help: "Give each method marker a globally unique key.",
+        related: [{ message: first.name, sourceSpan: first.info.span }],
+      },
+    );
+  }
 }
 
 function collectMethodMarkers(
@@ -142,7 +182,7 @@ function collectMethodMarkers(
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): ReadonlyMap<string, MethodMarkerDeclarationInfo> {
-  const registry = new Map<string, MethodMarkerDeclarationInfo>();
+  const collected: CollectedMethodMarker[] = [];
   for (const source of sources) {
     if (source.sourceKind.startsWith("d.")) {
       continue;
@@ -150,11 +190,12 @@ function collectMethodMarkers(
     for (const declaration of source.unit.valueDeclarations) {
       const entry = methodMarkerDeclarationOf(source, declaration, linker, diagnostics);
       if (entry !== undefined) {
-        registry.set(entry[0], entry[1]);
+        collected.push(entry);
       }
     }
   }
-  return registry;
+  reportDuplicateMarkerKeys(collected, diagnostics);
+  return new Map(collected.map((marker) => [marker.registryKey, marker.info]));
 }
 
 // marker 使用识别（markerUseOf 同款）：callee 解析不到已链接符号、却能落到
