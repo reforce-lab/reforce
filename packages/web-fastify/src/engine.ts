@@ -196,6 +196,12 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
         },
       },
       ...(this.settings.bodyLimit === undefined ? {} : { bodyLimit: this.settings.bodyLimit }),
+      // fastify 自带日志，原样递出不做翻译（RFC 0011 L8，#242）。缺省不写这两个键——写
+      // `logger: undefined` 与不写在 fastify 那里不等价，前者会盖掉它自己的缺省判定。
+      ...(this.settings.logger === undefined ? {} : { logger: this.settings.logger }),
+      ...(this.settings.disableRequestLogging === undefined
+        ? {}
+        : { disableRequestLogging: this.settings.disableRequestLogging }),
     });
   }
 

@@ -3,6 +3,7 @@ import {
   parseRenderMode,
   renderModeEnvironmentVariable,
   renderModeNames,
+  verboseEnvironmentVariable,
 } from "@reforce/runtime/render-mode";
 import {
   type CliCommandName,
@@ -53,7 +54,8 @@ function configureProjectOption(command: Command): Command {
         "--error-format <mode>",
         "how diagnostics and failures are rendered; defaults to human on a terminal, short when piped",
       ).choices([...renderModeNames]),
-    );
+    )
+    .option("--verbose", "show the node and reforce stack frames that are folded away by default");
 }
 
 function collectRepeated(value: string, previous: readonly string[]): readonly string[] {
@@ -146,6 +148,12 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     const explicit = parseRenderMode(
       typeof values.errorFormat === "string" ? values.errorFormat : undefined,
     );
+    // 栈帧折叠的展开开关（RFC 0011 D6）：与 --error-format 同一条跨进程通道。只在开启时写
+    // env——不写等同于关闭，而写一个 "0" 反而会盖掉调用方自己设的 REFORCE_VERBOSE。
+    const verbose = values.verbose === true;
+    if (verbose) {
+      process.env[verboseEnvironmentVariable] = "1";
+    }
     if (explicit !== undefined) {
       // 子进程的 stdio 是 inherit fd2，父子各自构造 reporter，IPC 上没有 reporter 事件——
       // 显式模式只能靠 env 传下去。未显式指定时不必传：子进程的 fd2 就是父进程那一个，
@@ -157,6 +165,7 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     }
     reporter = new PlainTextReporter({
       ...(explicit === undefined ? {} : { mode: explicit }),
+      ...(verbose ? { verbose } : {}),
       // human 模式取源码切片的基准。--project 是选择边界，编译器解析出的 projectRoot 在
       // 单应用与 monorepo 子目录两种布局下都与它一致；万一不一致，读文件失败会降级成
       // 只打位置行，不会渲染出错误的代码。

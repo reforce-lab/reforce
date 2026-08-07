@@ -36,6 +36,26 @@ export interface RenderModeInput {
   readonly env: Readonly<Record<string, string | undefined>>;
 }
 
+// 栈帧折叠的展开开关（RFC 0011 D6，#242）。与 --error-format 同一套跨进程办法：写进 env，
+// 子进程各自读——它们的 stdio 是 inherit fd2，IPC 上没有 reporter 事件传得下去。
+export const verboseEnvironmentVariable = "REFORCE_VERBOSE";
+
+export interface VerboseInput {
+  /** --verbose 之类的显式指定，优先于 env。 */
+  readonly explicit?: boolean;
+  readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+// 只认 "1" 与 "true"：env 上的任意字符串（含空串）都不该被当成"开"。同 renderMode，
+// 无法识别的值静默落回关闭，一个手滑的值不该改变整棵进程树的输出详略。
+export function resolveVerbose(input: VerboseInput): boolean {
+  if (input.explicit !== undefined) {
+    return input.explicit;
+  }
+  const value = input.env[verboseEnvironmentVariable];
+  return value === "1" || value === "true";
+}
+
 export function resolveRenderMode(input: RenderModeInput): RenderMode {
   if (input.explicit !== undefined) {
     return input.explicit;

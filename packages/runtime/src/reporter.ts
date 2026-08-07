@@ -2,7 +2,13 @@ import type { Writable } from "node:stream";
 import { ReforceRuntimeError } from "@reforce/context";
 import { isObject } from "radashi";
 import { renderDiagnostic } from "@/diagnostic-render";
-import { type RenderAudience, type RenderMode, resolveRenderMode } from "@/render-mode";
+import {
+  type RenderAudience,
+  type RenderMode,
+  resolveRenderMode,
+  resolveVerbose,
+} from "@/render-mode";
+import { foldStackFrames, stackOf } from "@/stack-frames";
 import { isInteractive, style } from "@/terminal";
 
 export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain";
@@ -208,6 +214,8 @@ export interface PlainTextReporterOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** human 模式解析诊断 fileId 用的项目根；缺席即无源码切片。 */
   readonly sourceRoot?: string;
+  /** 栈帧折叠的展开开关（`--verbose`）；缺席时从 env 解析。 */
+  readonly verbose?: boolean;
 }
 
 const maximumCauseDepth = 5;
@@ -275,6 +283,7 @@ interface RenderContext {
   readonly mode: RenderMode;
   readonly output: Writable;
   readonly sourceRoot?: string;
+  readonly verbose: boolean;
 }
 
 function renderHumanFailure(event: CliFailureEvent, context: RenderContext): string {
@@ -296,7 +305,28 @@ function renderHumanFailure(event: CliFailureEvent, context: RenderContext): str
       `  ${style(["cyan"], "=", context.output)} ${style(["bold"], "help:", context.output)} ${help}`,
     );
   }
+  const stack = rootStack(event.cause, context.verbose);
+  if (stack !== undefined) {
+    lines.push(stack);
+  }
   return lines.join("\n");
+}
+
+// 栈只在 human 模式打，且只打**根因**那一条（RFC 0011 D5/D6，#242）。
+//
+// 打根因而不是最外层：JS 里包装层的栈截止在包装那一行，真正出事的位置只在最深处那条上。
+// short 保持一行一事件不受影响，json 里的栈由 err 字段完整带出去——折叠是给人看的排版，
+// 不能让采集系统少拿到帧。
+function rootStack(cause: unknown, verbose: boolean): string | undefined {
+  let deepest: Error | undefined;
+  let current = cause;
+  for (let depth = 0; depth < maximumCauseDepth && current !== undefined; depth += 1) {
+    if (current instanceof Error && typeof current.stack === "string") {
+      deepest = current;
+    }
+    current = nextCause(current);
+  }
+  return deepest === undefined ? undefined : foldStackFrames(stackOf(deepest), verbose);
 }
 
 // 诊断的 JSON 形状住在 diagnostic-render（就是 ReportedDiagnostic 全集加一个 kind），这里只管
@@ -372,6 +402,10 @@ export class PlainTextReporter implements Reporter {
       }),
       output: this.output,
       ...(options.sourceRoot === undefined ? {} : { sourceRoot: options.sourceRoot }),
+      verbose: resolveVerbose({
+        ...(options.verbose === undefined ? {} : { explicit: options.verbose }),
+        env: options.env ?? process.env,
+      }),
     };
   }
 

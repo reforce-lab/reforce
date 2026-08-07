@@ -1,4 +1,6 @@
+import { resolveVerbose } from "@/render-mode";
 import { type CliCommandName, createFailureEvent, type Reporter } from "@/reporter";
+import { foldStackFrames, stackOf } from "@/stack-frames";
 import { withTimeout } from "@/with-timeout";
 
 // 崩溃接管（RFC 0011 C2，#250）。装了 uncaughtException handler 就等于接管了 Node 的默认
@@ -55,6 +57,8 @@ export interface CrashTakeoverOptions {
   readonly command: CliCommandName;
   readonly reporter: Reporter;
   readonly process?: CrashProcess;
+  /** 栈帧折叠的展开开关；缺席时从 env 解析（--verbose 经 REFORCE_VERBOSE 传进子进程）。 */
+  readonly verbose?: boolean;
 }
 
 export interface CrashTakeover {
@@ -83,16 +87,11 @@ function nodeProcess(): CrashProcess {
   };
 }
 
-function stackOf(error: unknown): string {
-  // 栈整条打出去，不做栈帧过滤：这个仓里没有任何栈帧过滤设施，为崩溃路径单造一套等于把
-  // 一个新机制塞进错误的包（它同样得服务 renderHumanFailure）。
-  return error instanceof Error && typeof error.stack === "string" ? error.stack : String(error);
-}
-
 class ProcessCrashTakeover implements CrashTakeover {
   private readonly command: CliCommandName;
   private readonly reporter: Reporter;
   private readonly host: CrashProcess;
+  private readonly verbose: boolean;
   private readonly handler: CrashHandler;
   private logging: CrashLogTarget | undefined;
   private crashing = false;
@@ -101,6 +100,10 @@ class ProcessCrashTakeover implements CrashTakeover {
     this.command = options.command;
     this.reporter = options.reporter;
     this.host = options.process ?? nodeProcess();
+    this.verbose = resolveVerbose({
+      ...(options.verbose === undefined ? {} : { explicit: options.verbose }),
+      env: process.env,
+    });
     this.handler = (error, origin) => this.onCrash(error, origin);
     // 只装 uncaughtException：没有 unhandledRejection 监听器时，未处理的 rejection 会以
     // origin === "unhandledRejection" 送到这里。两个都装反而要多一套去重。
@@ -124,7 +127,7 @@ class ProcessCrashTakeover implements CrashTakeover {
     if (this.crashing) {
       // 第二次崩溃不重启排空、也不 exit——那会把第一现场截断。但也不能静默（不变量 9）。
       this.host.stderr.write(
-        `[reforce] a second crash arrived while the first was still being flushed: ${stackOf(error)}\n`,
+        `[reforce] a second crash arrived while the first was still being flushed: ${this.renderStack(error)}\n`,
       );
       return;
     }
@@ -166,6 +169,12 @@ class ProcessCrashTakeover implements CrashTakeover {
     }
   }
 
+  // 与 reporter 读的是同一个 env 键，所以同一次运行里两处输出的详略一致——不然 --verbose
+  // 看起来只对一半生效。
+  private renderStack(error: unknown): string {
+    return foldStackFrames(stackOf(error), this.verbose);
+  }
+
   private reportFallback(
     error: unknown,
     origin: NodeJS.UncaughtExceptionOrigin,
@@ -186,8 +195,9 @@ class ProcessCrashTakeover implements CrashTakeover {
       }),
     );
     // 人读渲染只打消息与 cause 链，不打栈。裸 stderr 把栈补回来——装 handler 之前 Node 打的
-    // 就是它，接管了就得还回去。
-    this.host.stderr.write(`${stackOf(error)}\n`);
+    // 就是它，接管了就得还回去。还的是**过滤过**的那条（D6）：Node 打的整条里 node 与
+    // reforce 的帧是噪音，折叠行带计数与 --verbose 出口，一帧都没丢。
+    this.host.stderr.write(`${this.renderStack(error)}\n`);
   }
 }
 

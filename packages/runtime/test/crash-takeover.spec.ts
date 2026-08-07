@@ -236,3 +236,41 @@ describe("installCrashTakeover", () => {
     expect(host.handlers).toEqual([]);
   });
 });
+
+// D6（RFC 0011，#242）：接管 Node 的默认行为就得把它打的那条栈还回去，但还的是**过滤过**的。
+// 未过滤时用户看到的是 40 帧里 35 帧噪音——RFC 的原话是「再好的排版也救不回来」。
+describe("the crash stack is folded on the bare-stderr path", () => {
+  function crashWithStack(overrides: Partial<CrashTakeoverOptions> = {}) {
+    // 只要 host：installCrashTakeover 装 handler 是构造期副作用，句柄本身这条路径用不到。
+    const { host } = takeoverOf(overrides);
+    const error = new Error("boom");
+    error.stack = [
+      "Error: boom",
+      "    at OrderService.place (/srv/app/src/order.service.ts:14:11)",
+      "    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+      "    at node:internal/main/run_main_module:36:49",
+    ].join("\n");
+    // 不 attach logging：没有 logger 时走的正是裸 stderr 那条兜底路径。
+    host.crash(error);
+    return host;
+  }
+
+  test("folds the node frames and says how to get them back", async () => {
+    const host = crashWithStack();
+    await vi.waitFor(() => expect(host.exits).toEqual([1]));
+
+    const written = host.stderr.join("");
+    expect(written).toContain("at OrderService.place");
+    expect(written).toContain("… 2 frames in node/reforce (--verbose to show)");
+    expect(written).not.toContain("processTicksAndRejections");
+  });
+
+  test("verbose keeps every frame", async () => {
+    const host = crashWithStack({ verbose: true });
+    await vi.waitFor(() => expect(host.exits).toEqual([1]));
+
+    const written = host.stderr.join("");
+    expect(written).toContain("processTicksAndRejections");
+    expect(written).not.toContain("frames in node/reforce");
+  });
+});
