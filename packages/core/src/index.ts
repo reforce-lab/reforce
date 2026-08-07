@@ -13,6 +13,7 @@ export {
   Qualifier,
   RequestScoped,
 } from "@/bean-declaration";
+export { type CoreErrorCode, coreErrorCodes } from "@/error-codes";
 export {
   ApplicationCleanupError,
   ApplicationContextStateError,
@@ -22,7 +23,6 @@ export {
   BeanLifecycleError,
   ConfigBindingError,
   type ConfigBindingIssue,
-  type CoreErrorCode,
   EarlyBeanAccessError,
   InterceptorReenteredError,
   InvalidGeneratedDefinitionError,

@@ -15,10 +15,12 @@ async function standaloneApplication(): Promise<TemporaryProject> {
   return project;
 }
 
-test("the root entry exposes only the Compiler factory at runtime", async () => {
+// 运行期值只有工厂与诊断码表（后者随 ADR 0013 决议 2 加入，#289：码表以数组为真相，
+// 而 @reforce/cli 的 code-registry 要在运行期读到它）；其余公开面全是类型。
+test("the root entry exposes only the Compiler factory and the diagnostic code table", async () => {
   const publicApi = await import("@/index");
 
-  expect(Object.keys(publicApi)).toEqual(["createCompiler"]);
+  expect(Object.keys(publicApi).sort()).toEqual(["compilerDiagnosticCodes", "createCompiler"]);
 });
 
 test("resolves and compiles an application through the public two-stage API", async () => {

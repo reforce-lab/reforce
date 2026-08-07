@@ -4,11 +4,10 @@ export type {
   CompileRequest,
   CompileResult,
   CompilerDiagnostic,
-  CompilerDiagnosticCode,
   GeneratedFile,
   LibraryGeneratedFile,
   ProjectResolutionResult,
   ResolveProjectRequest,
 } from "@/api";
-
 export { createCompiler } from "@/create-compiler";
+export { type CompilerDiagnosticCode, compilerDiagnosticCodes } from "@/error-codes";

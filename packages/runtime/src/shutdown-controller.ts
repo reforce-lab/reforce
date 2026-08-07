@@ -1,9 +1,9 @@
 import { isShutdownRequestMessage, type ShutdownAckMessage } from "@/dev-ipc";
+import type { CliFailureCode } from "@/error-codes";
 import { installTerminationSignalHandlers } from "@/process-signals";
 import {
   type CliCommandName,
   type CliCommandPhase,
-  type CliFailureCode,
   createFailureEvent,
   type Reporter,
 } from "@/reporter";

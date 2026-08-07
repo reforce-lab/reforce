@@ -185,6 +185,12 @@ importers:
       '@reforce/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@reforce/transaction':
+        specifier: workspace:*
+        version: link:../transaction
+      '@reforce/web':
+        specifier: workspace:*
+        version: link:../web
       '@rsbuild/core':
         specifier: ^2.1.9
         version: 2.1.9

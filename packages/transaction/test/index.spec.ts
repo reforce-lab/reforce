@@ -15,6 +15,7 @@ test("the root entry exposes only the public transaction contract", () => {
     "activeResourceFor",
     "isNestedTransactionManager",
     "runTransactional",
+    "transactionErrorCodes",
     "transactionIsolationLevels",
   ]);
 });

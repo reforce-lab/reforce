@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
-import type { CompilerDiagnostic, CompilerDiagnosticCode } from "@/api";
+import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
+import type { CompilerDiagnosticCode } from "@/error-codes";
 import type { CanonicalFileId, SourceSpan } from "@/parser/source-location";
 import type { SuppressionComment } from "@/parser/suppressions";
 import { applySuppressions } from "@/suppressions";
