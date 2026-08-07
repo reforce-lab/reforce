@@ -191,11 +191,13 @@ function decoratedLoggerName(
 export const webFrameworkLoggerName = "reforce.web";
 
 /**
- * 容器面那条 logger（RFC 0011 L6【已定】：运行期框架输出走 `reforce.context` / `reforce.web`
- * 两个命名空间）。启动摘要、bean 台账、关停与崩溃都归它——它们是容器的事实，不是 web 的，
+ * 容器面那条 logger（RFC 0011 L6【已定】的两命名空间划分之一，另一条是 `reforce.web`）。
+ * L6 的原词汇是 `reforce.context`；主包更名 @reforce/core 后命名空间随包名对齐为
+ * `reforce.core`——破坏性改名，levels 里写旧名会被封闭名单当成未知名 warn 掉。
+ * 启动摘要、bean 台账、关停与崩溃都归它——它们是容器的事实，不是 web 的，
  * 而且**非 web 应用（job / CLI / worker）同样要有**。有日志绑定就合成，与装没装引擎无关。
  */
-export const contextFrameworkLoggerName = "reforce.context";
+export const contextFrameworkLoggerName = "reforce.core";
 
 export const webFrameworkLoggerBeanId = loggerBeanId(webFrameworkLoggerName);
 

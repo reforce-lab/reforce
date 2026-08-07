@@ -1306,7 +1306,7 @@ describe("web engine wiring", () => {
     }
 
     expect(generatedContent(result, "bootstrap.ts")).toContain(
-      '...beanTimingSections(startReport.beanTimings, "reforce.context"),',
+      '...beanTimingSections(startReport.beanTimings, "reforce.core"),',
     );
   });
 

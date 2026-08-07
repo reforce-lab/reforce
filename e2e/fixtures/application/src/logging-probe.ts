@@ -15,14 +15,14 @@ export class RequestFields extends WebRequestFields implements LogFieldSource {}
 
 // 逐 logger 调级（RFC 0011 L5 勘误）：级别词拼错是 tsc 编译错误（LogThreshold 封闭 union），
 // logger 名拼错是启动期对封闭名单的确定性 warn。LoggingProbe 调开 debug、QuietProbe 不动，
-// e2e 断言的正是「一条被调开、另一条不受影响」。reforce.config / reforce.context 两条框架
+// e2e 断言的正是「一条被调开、另一条不受影响」。reforce.config / reforce.core 两条框架
 // logger 同样从这里调开——配置来源明细与逐 bean 台账都是 debug 档的内容（C4/C6）。
 @Injectable()
 export class AppLogging implements LoggingSettings {
   readonly levels = {
     LoggingProbe: "debug",
     "reforce.config": "debug",
-    "reforce.context": "debug",
+    "reforce.core": "debug",
   } satisfies LoggerLevelMap;
 }
 
