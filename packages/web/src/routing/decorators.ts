@@ -1,4 +1,5 @@
 import type { BeanClass } from "@reforce/core";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type {
   ErrorHandlerOptions,
   MiddlewareOptions,
@@ -107,6 +108,64 @@ export function ErrorHandler(options: ErrorHandlerOptions = {}): ErrorHandlerCla
     throw new TypeError("ErrorHandler options must be an object when provided.");
   }
   requireOptionalOrder("ErrorHandler", options.order);
+  return () => undefined;
+}
+
+// 响应侧声明（RFC 0012 S3，#275）：三个装饰器与路由装饰器同款纪律——编译期静态读取、
+// 运行时 no-op。@ResponseStatus 在路由方法上定成功状态码、在 @ErrorHandler 类上定该处理器
+// 的错误状态码；@ResponseSchema 用 ~standard schema 的 input 侧声明线上响应契约；@Throws
+// 在路由方法或 @Middleware 类上声明可抛错误集合，编译器据此核查已注册的错误处理器。
+
+export function ResponseStatus(
+  status: number,
+): (value: unknown, context: ClassDecoratorContext | ClassMethodDecoratorContext) => void {
+  if (typeof status !== "number" || !Number.isInteger(status) || status < 100 || status > 599) {
+    throw new TypeError("ResponseStatus must be an integer between 100 and 599.");
+  }
+  return () => undefined;
+}
+
+// 线上契约 C 与 handler 返回域 R 的放宽（#275）：string 叶接受 bigint/Date（编码器把它们
+// 归一成串），字面量叶不参与放宽——`string extends "a"` 为假，字面量契约仍要求逐字相等。
+type CoercibleLeaf<T> = string extends T ? T | bigint | Date : T;
+
+// @ResponseSchema 的返回位约束：C = InferInput<S>（codec 场景线上侧即解码方向的 input，
+// 纯 schema input≡output），R 允许在 string 叶上放宽为域类型；形状偏差由 tsc 在套用处硬错。
+export type ResponseDomain<C> = C extends readonly (infer E)[]
+  ? readonly ResponseDomain<E>[]
+  : C extends object
+    ? { [K in keyof C]: ResponseDomain<C[K]> }
+    : CoercibleLeaf<C>;
+
+// 形参上界必须复刻 lib.decorators 的 `(this, ...args: any) => any`（TS2344 陷阱，同
+// RouteHandlerDecorator 注释）；返回位收紧到 R | Promise<R> 承载响应契约的编译期背书。
+type ResponseSchemaDecorator<R> = <
+  This,
+  // biome-ignore lint/suspicious/noExplicitAny: lib.decorators 的 ClassMethodDecoratorContext 上界即为 any,复刻之
+  Value extends (this: This, ...args: any) => R | Promise<R>,
+>(
+  value: Value,
+  context: ClassMethodDecoratorContext<This, Value>,
+) => void;
+
+export function ResponseSchema<S extends StandardSchemaV1>(
+  schema: S,
+): ResponseSchemaDecorator<ResponseDomain<StandardSchemaV1.InferInput<S>>> {
+  const standard = schema !== null && typeof schema === "object" ? schema["~standard"] : undefined;
+  if (standard === null || typeof standard !== "object") {
+    throw new TypeError("ResponseSchema only accepts a Standard Schema (~standard) object.");
+  }
+  return () => undefined;
+}
+
+export function Throws(
+  ...errors: readonly BeanClass[]
+): (value: unknown, context: ClassDecoratorContext | ClassMethodDecoratorContext) => void {
+  for (const error of errors) {
+    if (typeof error !== "function") {
+      throw new TypeError("Throws only accepts error classes.");
+    }
+  }
   return () => undefined;
 }
 

@@ -41,6 +41,10 @@ export {
   Patch,
   Post,
   Put,
+  type ResponseDomain,
+  ResponseSchema,
+  ResponseStatus,
+  Throws,
   Use,
 } from "@/routing/decorators";
 export type {

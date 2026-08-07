@@ -137,13 +137,16 @@ function requireMiddlewareInstance(instance: object, beanId: string): RouteMiddl
   return instance as RouteMiddleware;
 }
 
-function requireErrorHandlerInstance(instance: object, beanId: string): RouteErrorHandler {
+function requireErrorHandlerInstance(
+  instance: object,
+  beanId: string,
+): RouteErrorHandler<unknown, Response> {
   if (typeof Reflect.get(instance, "handle") !== "function") {
     throw new InvalidRouteTableError(`error handler Bean "${beanId}" does not implement handle().`);
   }
   // 同 requireMiddlewareInstance：存在性已复检，契约形状由生成物类型边背书
   // // justified: 见上一行
-  return instance as RouteErrorHandler;
+  return instance as RouteErrorHandler<unknown, Response>;
 }
 
 interface ChainLink {

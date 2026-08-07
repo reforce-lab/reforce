@@ -16,16 +16,18 @@ export type MiddlewareHandle = (
   next: () => Promise<Response>,
 ) => Response | Promise<Response>;
 
-export type ErrorHandlerHandle = (
-  error: unknown,
+export type ErrorHandlerHandle<E = unknown, R = unknown> = (
+  error: E,
   context: RequestContext,
-) => Response | Promise<Response>;
+) => R | Promise<R>;
 
 // 错误处理器是唯一单列的概念（ADR 0006 W4 待打磨项定案，#152）：handler 侧内层边界与
 // 适配器侧外层兜底共用同一分派——按 (order, beanId) 逐个尝试，返回 Response 即接管，
 // (重新)throw 交给下一个，全部放弃后框架默认兜底。它只改写错误出口，摸不到成功响应。
-export interface RouteErrorHandler {
-  handle(error: unknown, context: RequestContext): Response | Promise<Response>;
+// S3（#275）起处理器可类型化：E 收窄成项目错误类即 instanceof 闸，R 收窄成响应契约配合
+// 类上 @ResponseStatus 走编码序列化。方法语法双变，S2 的 Response 实现者全部原样兼容。
+export interface RouteErrorHandler<E = unknown, R = unknown> {
+  handle(error: E, context: RequestContext): R | Promise<R>;
 }
 
 export interface MiddlewareOptions {

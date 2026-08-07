@@ -78,7 +78,9 @@ function fallbackResponse(error: unknown, logger: ErrorLogger | undefined): Resp
 export type ErrorDispatcher = (error: unknown, context: RequestContext) => Promise<Response>;
 
 export function createErrorDispatcher(
-  handlers: readonly RouteErrorHandler[],
+  // RouteErrorHandler 的 R 已放宽（S3，#275），本分派仍按 S2 语义只吃返回 Response 的
+  // 处理器；非 Response 返回的编码路径随 v3 路由表落地。
+  handlers: readonly RouteErrorHandler<unknown, Response>[],
   logger?: ErrorLogger,
 ): ErrorDispatcher {
   return async (error, context) => {
