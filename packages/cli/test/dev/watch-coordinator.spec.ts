@@ -70,7 +70,36 @@ describe("development watch coordination", () => {
     expect(coordinator.healthyBuildId).toBe("rspack:healthy");
     expect(supervisor.hasLiveChild).toBe(true);
     expect(spawnCount).toBe(1);
-    expect(reporter.events.map((event) => event.kind)).toEqual(["diagnostic", "status"]);
+    // 第一条是成功重建的重载行（RFC 0011 D2），后两条是这次失败的诊断与「保留上一份健康
+    // 应用」的状态。
+    expect(reporter.events.map((event) => event.kind)).toEqual(["status", "diagnostic", "status"]);
+    await supervisor.shutdown();
+  });
+
+  // 在这条用例之前，成功重建这条路径**一句话都不说**：改一行代码，终端上什么都没发生，
+  // 用户分不清是没触发还是编译还没完。transient 是渲染提示——TTY 上原地重写不滚屏，管道与
+  // json 里它仍是一条完整事件（不变量 3）。
+  test("a successful build reports a reload line marked for in-place rewrite", async () => {
+    const reporter = new RecordingReporter();
+    const supervisor = new DevChildSupervisor({ spawn: async () => runningChild() });
+    const coordinator = new DevWatchCoordinator({ reporter, supervisor });
+
+    await coordinator.acceptCompilation({
+      status: "success",
+      diagnostics: [],
+      buildId: "rspack:healthy",
+      validateAssets: async () => undefined,
+    });
+
+    expect(reporter.events).toEqual([
+      {
+        kind: "status",
+        command: "dev",
+        phase: "hmr",
+        message: "Reloaded the development application (build rspack:healthy).",
+        transient: true,
+      },
+    ]);
     await supervisor.shutdown();
   });
 

@@ -1,8 +1,10 @@
 import { resolve } from "node:path";
 import {
   parseRenderMode,
+  type RenderMode,
   renderModeEnvironmentVariable,
   renderModeNames,
+  resolveRenderMode,
   verboseEnvironmentVariable,
 } from "@reforce/runtime/render-mode";
 import {
@@ -11,7 +13,9 @@ import {
   PlainTextReporter,
   type Reporter,
 } from "@reforce/runtime/reporter";
+import { isInteractive } from "@reforce/runtime/terminal";
 import { Command, CommanderError, Option } from "commander";
+import { renderBanner } from "@/banner";
 import {
   type DiagnosticPolicy,
   diagnosticLevelNames,
@@ -22,6 +26,8 @@ export interface RunCliOptions {
   readonly argv?: readonly string[];
   readonly cwd?: string;
   readonly reporter?: Reporter;
+  /** CLI 自己的版本，由入口读出来传进来（banner 用）。取不到时缺席，不打假版本。 */
+  readonly version?: string;
 }
 
 interface ProjectOptions {
@@ -89,6 +95,33 @@ function diagnosticPolicyOf(commandOptions: DiagnosticOptions): DiagnosticPolicy
     denyWarnings: commandOptions.denyWarnings === true,
     levels: parseDiagnosticLevels(commandOptions.diagnosticLevel ?? []),
   };
+}
+
+// banner 只给产生启动输出的命令（RFC 0011 D2）。explain 的产出是 stdout 上的查询结果，
+// 给它加一条招牌行只是噪音。
+const bannerCommandNames = new Set(["dev", "build", "start"]);
+
+// human 模式才打：short 给按行 grep 的脚本，json 给采集系统，两边都不需要招牌行。
+function writeBanner(
+  command: string,
+  explicit: RenderMode | undefined,
+  version: string | undefined,
+): void {
+  if (!bannerCommandNames.has(command)) {
+    return;
+  }
+  const mode = resolveRenderMode({
+    ...(explicit === undefined ? {} : { explicit }),
+    interactive: isInteractive(process.stderr),
+    audience: "tool",
+    env: process.env,
+  });
+  if (mode !== "human") {
+    return;
+  }
+  process.stderr.write(
+    `${renderBanner({ command, ...(version === undefined ? {} : { version }) }, process.stderr)}\n`,
+  );
 }
 
 async function reportCliFailure(
@@ -163,6 +196,9 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
     if (options.reporter !== undefined) {
       return;
     }
+    // banner 与 reporter 同一个流、同一次模式判定：注入了 reporter 的调用方（测试）拿到的是
+    // 自己的流，往真 stderr 上打一条招牌行会污染它们的断言。
+    writeBanner(actionCommand.name(), explicit, options.version);
     reporter = new PlainTextReporter({
       ...(explicit === undefined ? {} : { mode: explicit }),
       ...(verbose ? { verbose } : {}),

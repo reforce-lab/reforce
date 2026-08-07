@@ -95,6 +95,16 @@ export class DevWatchCoordinator {
       return;
     }
     this.healthyBuildIdValue = compilation.buildId;
+    // 重载行（RFC 0011 D2，#242）：此前成功重建这条路径**一句话都不说**——改一行代码，
+    // 终端上什么都没发生，用户分不清是没触发还是编译还没完。transient 让它在 TTY 上原地
+    // 重写，改一百次也只占一行；管道与 json 里它是普通的一条事件，一条不少。
+    this.reporter.report({
+      kind: "status",
+      command: "dev",
+      phase: "hmr",
+      message: `Reloaded the development application (build ${compilation.buildId}).`,
+      transient: true,
+    });
     await this.supervisor.acceptSuccessfulBuild(compilation.buildId);
   }
 }

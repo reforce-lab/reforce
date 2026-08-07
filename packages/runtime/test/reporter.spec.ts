@@ -254,3 +254,61 @@ describe("failure rendering across modes", () => {
     });
   });
 });
+
+// D2（RFC 0011，#242）：dev 的 HMR 重载行原地重写，不滚屏。改一百次代码，终端上只占一行。
+class InteractiveWritable extends RecordingWritable {
+  readonly isTTY = true;
+}
+
+describe("transient status rendering", () => {
+  async function collectInteractive(report: (reporter: Reporter) => void): Promise<string> {
+    const output = new InteractiveWritable();
+    const reporter = new PlainTextReporter({ mode: "human", output });
+    report(reporter);
+    await reporter.flush();
+    return output.chunks.join("");
+  }
+
+  const reload = (message: string) =>
+    ({
+      kind: "status",
+      command: "dev",
+      phase: "hmr",
+      message,
+      transient: true,
+    }) as const;
+
+  const eraseLine = `${String.fromCodePoint(27)}[2K\r`;
+
+  test("a second transient line erases the first instead of scrolling", async () => {
+    const written = await collectInteractive((reporter) => {
+      reporter.report(reload("first"));
+      reporter.report(reload("second"));
+    });
+
+    // 两条之间恰好一个「擦掉本行并回到行首」，中间没有换行——换行就是滚屏。
+    expect(written).toContain(eraseLine);
+    expect(written.split("\n")).toHaveLength(2); // 内容行 + flush 收尾那个换行
+  });
+
+  // 悬着的原地行没有换行；不封上的话 shell 提示符会贴在它屁股后面，看起来像输出被截断。
+  test("flush terminates a pending transient line", async () => {
+    const written = await collectInteractive((reporter) => {
+      reporter.report(reload("only"));
+    });
+
+    expect(written.endsWith("\n")).toBe(true);
+  });
+
+  // 不变量 3：三种模式同一份事件。管道里没有光标可回，转义序列会原样落进日志文件；
+  // 按行读 stderr 的脚本一条都不能少。
+  test("a piped run writes it as an ordinary line with no escape sequence", async () => {
+    const written = await collect({ mode: "short" }, (reporter) => {
+      reporter.report(reload("first"));
+      reporter.report(reload("second"));
+    });
+
+    expect(written).not.toContain(eraseLine);
+    expect(written.trimEnd().split("\n")).toHaveLength(2);
+  });
+});
