@@ -33,16 +33,52 @@ export abstract class ReforceError<Code extends string = string> extends Error {
   }
 }
 
+// 码 → 实例类型（ADR 0013 决议 8，#296）。由下面 12 个类的联合机械派生，不是手抄——加一个类
+// 只要进联合，映射自己跟上。
+//
+// 只覆盖本包的**类式**错误：defineError 造出的那批参数守卫错误（CORE_* / CONFIG_*）除了 code
+// 与 help 没有任何额外字段，收窄到「具体子类」与收窄到 ReforceError<Code> 拿到的东西完全一样，
+// 为它们维护映射是纯成本。也不做跨包的全局注册表（interface merging 那套）：那要求每个包去合并
+// 一个全局接口，读者要追三跳才知道 err 是什么类型，收益只是 web/transaction 十来个类的额外字段。
+type CoreErrorInstance =
+  | ApplicationCleanupError
+  | ApplicationContextStateError
+  | ApplicationStartError
+  | BeanCreationError
+  | BeanDisposalError
+  | BeanLifecycleError
+  | ConfigBindingError
+  | EarlyBeanAccessError
+  | InterceptorReenteredError
+  | InvalidGeneratedDefinitionError
+  | RequestContextMissingError
+  | UnregisteredBeanTargetError;
+
+type CoreErrorByCode = { [Instance in CoreErrorInstance as Instance["code"]]: Instance };
+
 // 不写 `value instanceof Error`：dev HMR 的 Worker 边界会把错误结构化克隆，克隆件既丢原型也
 // 丢 own symbol 属性——那种情况两种判据都救不回来；而 vm/realm 边界下 instanceof Error 会平白
 // 判否。只看标记与 code 形态，判据与 realm 无关。
-export function isReforceError(value: unknown): value is ReforceError {
-  return (
+//
+// 双参形态按 code 字面量收窄（Effect 的 catchTag 式分派 DX，靠现有 code 字面量类型免费获得）：
+// 本包的码收窄到具体子类（于是 err.beanId 直接可读），其余的码收窄到 ReforceError<Code>——
+// code 仍是字面量类型，分派照样成立。
+export function isReforceError(value: unknown): value is ReforceError;
+export function isReforceError<Code extends keyof CoreErrorByCode>(
+  value: unknown,
+  code: Code,
+): value is CoreErrorByCode[Code];
+export function isReforceError<Code extends string>(
+  value: unknown,
+  code: Code,
+): value is ReforceError<Code>;
+export function isReforceError(value: unknown, code?: string): boolean {
+  const matches =
     typeof value === "object" &&
     value !== null &&
     Reflect.get(value, reforceErrorMarker) === true &&
-    typeof Reflect.get(value, "code") === "string"
-  );
+    typeof Reflect.get(value, "code") === "string";
+  return matches && (code === undefined || Reflect.get(value, "code") === code);
 }
 
 export class EarlyBeanAccessError extends ReforceError<"EARLY_BEAN_ACCESS"> {

@@ -29,7 +29,7 @@ src/
       greeting.controller.ts              路由：路径、方法、schema
       greeting.service.ts                 业务规则 + 它需要的端口（GreetingStore 接口）
       greeting.dto.ts                     进出的形状：请求校验 + 响应白名单
-      greeting.exception.ts               只有这个模块会抛的异常
+      greeting.exception.ts               只有这个模块会抛的业务异常（一行一个）
     health/
       health.controller.ts                健康检查（没有业务规则，就不必造 service）
       health.dto.ts
@@ -37,14 +37,9 @@ src/
     web/                                  HTTP 这一面
       request.fields.ts                    请求期间的日志自动带上 method 和 path
       api-key.middleware.ts                写接口的准入检查（admission）
-      http-error.handler.ts                异常 → 状态码的翻译层
-      fallback-error.handler.ts            兜底 500，日志留全、响应不泄漏
     persistence/                           存储这一面
       in-memory-greeting.store.ts          换数据库时只改这里
   shared/                               跨模块的公共词汇
-    http/
-      not-found.exception.ts               通用异常，不带 HTTP 状态码
-      unauthorized.exception.ts
     pagination/
       pagination.dto.ts                    请求形状、响应外壳、切片函数
       sort-order.enum.ts                   同一个概念的另一块，所以挨着放
@@ -72,10 +67,9 @@ src/
 目录。** 那等于把「按技术类型分」那套毛病换个地方再犯一遍——真正一起改的文件被拆散了，
 而凑在一起的只是「碰巧都叫 dto」。
 
-异常放哪儿同理：只有 greeting 会抛的 `GreetingAlreadyExistsException` 住在
-`features/greeting/`；谁都可能抛的 `NotFoundException` 才进 `shared/http/`。而把异常翻译成
-HTTP 状态码的 `http-error.handler.ts` 在 `infrastructure/web/`——它管的是**所有**异常，跟某
-一个异常不构成一一对应，跟它绑死的是 HTTP 这个外部协议。
+异常放哪儿同理：只有 greeting 会抛的 `GreetingAlreadyExists` 住在 `features/greeting/`。
+通用的 404 / 401 / 403 / 409 不用你定义，`@reforce/web` 直接导出 `NotFoundError` 等五个，
+`import` 就能抛。
 
 `shared/` 还有个坑要避开：**「A 模块的 DTO 被 B 模块用到了，所以挪进 shared」不算公用。**
 那是耦合，挪进 shared 只是把它藏起来，A 改字段照样打到 B。正确做法是让 B 走 A 的 service
@@ -150,18 +144,28 @@ export class AppLogging implements LoggingSettings {
 }
 ```
 
-**错误处理**：两级。service 只抛异常，不认识 HTTP；`http-error.handler.ts` 按表把已知异常翻译
-成状态码，不认识的重新 throw；`fallback-error.handler.ts` 用更大的 `order` 排在后面兜底，把
-堆栈打进日志、只回一句固定文案。
+**错误处理**：**你什么都不用写。** 异常自己带着状态码与码（`NotFoundError` 带 404，
+`defineHttpError(..., 409)` 带 409），框架把它渲染成 [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)
+的 `application/problem+json`。没人认领的错误一律 500，堆栈只进日志，响应里只给一个
+`errorId` 供你在日志里 grep——消息、堆栈、内部字段都不会漏出去。
 
 ```bash
 curl -i http://localhost:3000/greetings/nobody
-# 404 {"error":"没有名为 nobody 的问候语。"}
+# 404 application/problem+json
+# {"type":"about:blank","title":"Not Found","status":404,
+#  "detail":"没有名为 nobody 的问候语。","code":"WEB_NOT_FOUND"}
 
 curl -i -X POST http://localhost:3000/greetings \
   -H 'content-type: application/json' -d '{"name":"world","message":"再来一次"}'
-# 409 {"error":"已经有名为 world 的问候语了。"}
+# 409 {"type":"about:blank","title":"Conflict","status":409,
+#      "detail":"已经有名为 world 的问候语了。","code":"GREETING_ALREADY_EXISTS"}
 ```
+
+客户端按 `code` 分派，不要匹配 `detail`：码是稳定契约，文案随时会改。
+
+真要接管某一类错误（换个响应体、加个 header、上报到监控），写一个 `@ErrorHandler()` bean：
+返回 `Response` 就算接管，重新 `throw` 就交给下一个，全都放弃了框架才兜底。**别写
+catch-all**——那会把框架的校验 400 也变成 500，用户就再也看不到「哪个字段不合法」。
 
 **配置**：`config/` 下每个类一个前缀，字段名转成大写下划线就是环境变量名——`webServer` +
 `port` → `WEB_SERVER_PORT`，`app` + `apiKey` → `APP_API_KEY`。
@@ -176,8 +180,10 @@ curl -i -X POST http://localhost:3000/greetings \
 
 **加一个模块**：照 `features/greeting/` 复制一份，改名就行。不用在任何地方注册。
 
-**加一种异常**：只有一个模块会抛就放进那个模块目录（`greeting.exception.ts`），谁都可能抛
-才进 `shared/http/`；两种都要往 `infrastructure/web/http-error.handler.ts` 的表里加一行。
+**加一种异常**：通用的直接用 `@reforce/web` 的 `NotFoundError` / `UnauthorizedError` /
+`ForbiddenError` / `ConflictError` / `BadRequestError`。要带自己的码（让调用方能按程序分派）
+就 `defineHttpError("YOUR_CODE", "文案 %s。", 409)`，放进那个模块的 `*.exception.ts`。
+**没有表要维护**——状态码写在异常自己身上。
 
 不确定某个 bean 是从哪来的、某条路由怎么匹配的，问编译器：
 

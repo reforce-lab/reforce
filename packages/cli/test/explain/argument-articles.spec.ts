@@ -8,7 +8,9 @@ import { diagnosticArticle, explainCommandFor } from "@/explain/codes";
 describe("argument guard articles", () => {
   const guardCodes = errorCodeTables
     .flatMap((table) => table.codes)
-    .filter((code) => code.startsWith("CORE_") || code.startsWith("CONFIG_"));
+    .filter(
+      (code) => code.startsWith("CORE_") || code.startsWith("CONFIG_") || code.startsWith("WEB_"),
+    );
 
   test("cover every prefixed framework code", () => {
     expect(guardCodes.filter((code) => diagnosticArticle(code) === undefined)).toEqual([]);

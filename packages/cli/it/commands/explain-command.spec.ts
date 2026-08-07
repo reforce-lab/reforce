@@ -397,7 +397,8 @@ test("explains a diagnostic code without reading any generated artifact", async 
   expect(events.filter((event) => event.kind === "failure")).toEqual([]);
 });
 
-test("answers that a code has no long-form article yet", async () => {
+// 决议 5（#296）：判据是码表而不是正则，因此「已知码但没长文」能点名它属于哪个域。
+test("answers that a known code has no long-form article yet", async () => {
   const project = await createExplainProject({ sources: starterApplicationSources });
 
   const { exitCode, events } = await explain(project, "TYPE_LINK_FAILED");
@@ -406,8 +407,56 @@ test("answers that a code has no long-form article yet", async () => {
   expect(events[0]).toMatchObject({ kind: "failure", code: "CLI_USAGE_ERROR" });
   expect(events[0]).toHaveProperty(
     "message",
-    expect.stringContaining('No long-form article for "TYPE_LINK_FAILED" yet'),
+    expect.stringContaining("TYPE_LINK_FAILED is a known compiler error code"),
   );
+});
+
+// 此前这些码全都落到「没有 bean 叫这个名字，已知的 bean 有 …」——把合法查询呈现成打错名字。
+// 探针从 TRANSACTION_TIMEOUT 换成 REQUEST_CONTEXT_MISSING：前者在 #297 补上长文后不再走这个
+// 出口，这条断言要的是「已知但无长文」这个状态本身，任何仍处于该状态的码都成立。
+test("recognizes a code from another package's table", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, events } = await explain(project, "REQUEST_CONTEXT_MISSING");
+
+  expect(exitCode).toBe(1);
+  expect(events[0]).toHaveProperty(
+    "message",
+    expect.stringContaining("REQUEST_CONTEXT_MISSING is a known core error code"),
+  );
+});
+
+// #297 第一批：事务护栏七码。真实 CLI 里这条查询必须落在长文分支，而不是「暂无长文」出口。
+test("explains a transaction guard code", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "TRANSACTION_TIMEOUT");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("TRANSACTION_TIMEOUT · ");
+});
+
+// 拼错的码与真实但无长文的码该说的话完全不同：前者不该附上全部 bean 的清单。
+test("separates a misspelt code from a real one", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, events } = await explain(project, "MISSNG_BEAN");
+
+  expect(exitCode).toBe(1);
+  expect(events[0]).toHaveProperty(
+    "message",
+    expect.stringContaining('No error code named "MISSNG_BEAN" exists'),
+  );
+});
+
+// 决议 3/6 的新码当下就可查：长文与码同 PR（#293 / #295）。
+test("explains a framework error code that is not a compiler diagnostic", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "WEB_NOT_FOUND");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("WEB_NOT_FOUND · ");
 });
 
 // 歧义消解靠「命中长文表」而不是正则猜形状：全大写的契约 displayName 不能被 CODE 分支抢走。

@@ -5,17 +5,21 @@
 // 纪律：新增任何错误码，长文与码同 PR（CONTRIBUTING）。没有长文的码不是错误——诊断行不会打出
 // `= 详解:`，`reforce explain <CODE>` 会明确回答「暂无长文」；那是给**存量**码的过渡答案。
 //
-// 本表是 compiler 诊断长文；参数守卫码的长文在 @/explain/argument-articles，两者的读者场景
-// 不同（一个是「编译不过」，一个是「运行时被自己写的调用参数拦住」），合成一个对象没人读得动。
+// 本表是 compiler 诊断长文；参数守卫码的长文在 @/explain/argument-articles，事务护栏码的在
+// @/explain/transaction-articles（#297）。三者的读者场景不同（依次是「编译不过」「运行时被
+// 自己写的调用参数拦住」「运行时被事务护栏拦住」），合成一个对象没人读得动。
 
 import { argumentArticles } from "@/explain/argument-articles";
+import { transactionArticles } from "@/explain/transaction-articles";
 
 export interface DiagnosticArticle {
   readonly summary: string;
   readonly article: readonly string[];
 }
 
-export const unwrittenArticleIssueUrl = "https://github.com/reforce-lab/reforce/issues/242";
+// 长文缺口的跟踪 issue（ADR 0013 决议 5，#296 从 explain 的「暂无长文」出口指向它）。
+// 此前指向 #242（RFC 0011 观测性波）——长文缺口挂在那里已经名不副实。
+export const unwrittenArticleIssueUrl = "https://github.com/reforce-lab/reforce/issues/297";
 
 // 覆盖依赖图、路由与日志/抑制三条最常撞墙的路径。其余码走「暂无长文」。
 const articles: Readonly<Record<string, DiagnosticArticle>> = {
@@ -417,13 +421,23 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
   },
 };
 
+// 按读者场景分的三张表（见文件头）。码在全仓唯一（code-registry.spec 断言），所以扫描顺序
+// 不参与决策，只是把三次查表写成一处。
+const articleTables: readonly Readonly<Record<string, DiagnosticArticle>>[] = [
+  articles,
+  argumentArticles,
+  transactionArticles,
+];
+
 export function diagnosticArticle(code: string): DiagnosticArticle | undefined {
   // Object.hasOwn 而不是直接索引：query 是用户输入，"constructor" / "toString" 会在原型链上
   // 命中函数，索引出来的东西不是 DiagnosticArticle。
-  if (Object.hasOwn(articles, code)) {
-    return articles[code];
+  for (const table of articleTables) {
+    if (Object.hasOwn(table, code)) {
+      return table[code];
+    }
   }
-  return Object.hasOwn(argumentArticles, code) ? argumentArticles[code] : undefined;
+  return undefined;
 }
 
 // 诊断行尾的 `= 详解:` 只在长文存在时打印，否则是一条走不通的指路。

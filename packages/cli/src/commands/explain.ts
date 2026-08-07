@@ -6,6 +6,7 @@ import {
   type Reporter,
   reportShutdownFailure,
 } from "@reforce/runtime/reporter";
+import { errorCodeDomain, isKnownErrorCode } from "@/explain/code-registry";
 import {
   diagnosticArticle,
   looksLikeDiagnosticCode,
@@ -144,14 +145,27 @@ function beanLookupProblem(
   beanName: string,
   matches: readonly ManifestBean[],
 ): ExplainOutcome {
-  // 走到这里说明既没命中长文表也没命中 bean。此时（且仅此时）才判断形状：用户多半是在问一个
-  // 还没写长文的诊断码，回答「暂无长文」比列出全部 bean 有用得多。
+  // 走到这里说明既没命中长文表也没命中 bean。此时（且仅此时）才回答「是不是在问一个码」。
+  //
+  // 判据是**码表**而不是正则（ADR 0013 决议 5，#296）：全仓约 137 个码里 45 个有长文，其余
+  // 的此前一律得到「没有 bean 叫这个名字，已知的 bean 有 …」——把一个合法查询呈现成打错了
+  // 名字。而正则既漏又误：拼错的码与真实但无长文的码得到同一句话，可它们该说的完全不同。
+  if (matches.length === 0 && isKnownErrorCode(beanName)) {
+    return {
+      kind: "problem",
+      phase: "argv",
+      code: "CLI_USAGE_ERROR",
+      message: `${beanName} is a known ${errorCodeDomain(beanName)} error code, but no long-form article is written for it yet. Article gaps are tracked at ${unwrittenArticleIssueUrl}`,
+    };
+  }
+  // 形状像码但不在任何码表里：多半是拼错了。留着正则这一层是为了不把它和「没有 bean 叫这个
+  // 名字」混成一句——后者会附上全部 bean 的清单，对着一个拼错的码列出几十个 bean 只是噪音。
   if (matches.length === 0 && looksLikeDiagnosticCode(beanName)) {
     return {
       kind: "problem",
       phase: "argv",
       code: "CLI_USAGE_ERROR",
-      message: `No long-form article for "${beanName}" yet, and no bean matches that name either. Long-form articles are tracked at ${unwrittenArticleIssueUrl}`,
+      message: `No error code named "${beanName}" exists, and no bean matches that name either. Run reforce explain with an exact code, or check the spelling.`,
     };
   }
   const candidates = (matches.length === 0 ? manifest.beans : matches)
