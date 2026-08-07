@@ -35,6 +35,7 @@ import { diagnostic, hasErrorDiagnostic, orderDiagnostics } from "@/diagnostics"
 import type { ProjectLinker } from "@/linking/project-linker";
 import type { ClassDeclaration } from "@/parser/source-ir";
 import type { ParsedSource } from "@/project/source-files";
+import type { TypeQuery } from "@/typescript/type-query";
 
 interface AnalysisSuccess {
   readonly status: "success";
@@ -117,9 +118,12 @@ function isBeanProvider(provider: ProviderModel): provider is BeanProviderModel 
   return provider.kind !== "config";
 }
 
+// _typeQuery 在 S1 只入参不消费(RFC 0012 S1,#273):checker 门面沿管线时序在
+// createProjectLinker 之后就位,S2(#274)的 web 槽位解析从这里接手消费。
 export function analyzeProject(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
+  _typeQuery?: TypeQuery,
 ): AnalysisResult {
   const diagnostics: CompilerDiagnostic[] = [];
   validateModuleSyntax(sources, diagnostics);
