@@ -34,11 +34,12 @@ function validRoute(): GeneratedRoute {
     ],
     meta: { roles: ["admin"], limit: 3 },
     slots: [],
+    response: { kind: "passthrough" },
   };
 }
 
 function tableWith(overrides: Record<string, unknown>): unknown {
-  return { schemaVersion: 2, routes: [], errorHandlers: [], ...overrides };
+  return { schemaVersion: 3, routes: [], errorHandlers: [], ...overrides };
 }
 
 describe("validateGeneratedRouteTable", () => {
@@ -51,13 +52,16 @@ describe("validateGeneratedRouteTable", () => {
     expect(validateGeneratedRouteTable(table) === table).toBe(true);
   });
 
-  // 版本门是硬门(#264 决策 11):1 是旧 schemas 表的版本,旧生成物必须在启动时被拒绝,
+  // 版本门是硬门(#264 决策 11):1/2 是旧表的版本,旧生成物必须在启动时被拒绝,
   // 而不是带着已删除的字段静默跑进槽位执行链。
-  test("rejects the retired schema version 1 and any unknown version", () => {
+  test("rejects the retired schema versions and any unknown version", () => {
     expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 1 }))).toThrow(
       InvalidRouteTableError,
     );
-    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 3 }))).toThrow(
+    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 2 }))).toThrow(
+      InvalidRouteTableError,
+    );
+    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 4 }))).toThrow(
       InvalidRouteTableError,
     );
   });
@@ -159,14 +163,14 @@ describe("validateGeneratedRouteTable", () => {
   });
 });
 
-// —— 槽位与编码器字段(RFC 0012 S2,#274) ——
+// —— 槽位与响应字段(RFC 0012 S2/S3,#274/#275) ——
 
-describe("validateGeneratedRouteTable slots and encode", () => {
+describe("validateGeneratedRouteTable slots and response", () => {
   function routeWithSlots(slots: unknown): unknown {
     return { ...validRoute(), slots };
   }
 
-  test("accepts a route with slot bindings and an encoder", () => {
+  test("accepts a route with slot bindings and a table response", () => {
     const table = tableWith({
       routes: [
         {
@@ -176,8 +180,19 @@ describe("validateGeneratedRouteTable slots and encode", () => {
             { slot: "body", schema: passthroughSchema() },
             { slot: "requestContext" },
           ],
-          encode: (value: unknown) => value,
+          response: { kind: "table", status: 201, encode: (value: unknown) => value },
         },
+      ],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
+
+  test("accepts free-form and status-carrying passthrough responses", () => {
+    const table = tableWith({
+      routes: [
+        { ...validRoute(), response: { kind: "free-form", status: 200 } },
+        { ...validRoute(), path: "/other", response: { kind: "passthrough", status: 202 } },
       ],
     });
 
@@ -216,9 +231,70 @@ describe("validateGeneratedRouteTable slots and encode", () => {
     expect(() => validateGeneratedRouteTable(table)).toThrow(/key must be a string/);
   });
 
-  test("rejects a non-function encode", () => {
-    const table = tableWith({ routes: [{ ...validRoute(), encode: "not a function" }] });
+  test("rejects an unknown response kind", () => {
+    const table = tableWith({ routes: [{ ...validRoute(), response: { kind: "stream" } }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/kind must be/);
+  });
+
+  test("rejects a table response without an encode function", () => {
+    const table = tableWith({
+      routes: [{ ...validRoute(), response: { kind: "table", status: 200 } }],
+    });
 
     expect(() => validateGeneratedRouteTable(table)).toThrow(/encode must be a function/);
+  });
+
+  test("rejects a free-form response without an integer status", () => {
+    const table = tableWith({
+      routes: [{ ...validRoute(), response: { kind: "free-form" } }],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/status must be an integer/);
+  });
+
+  test("rejects the retired top-level encode as an unknown key", () => {
+    const table = tableWith({
+      routes: [{ ...validRoute(), encode: (value: unknown) => value }],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/unknown field "encode"/);
+  });
+});
+
+// —— 错误处理器条目(RFC 0012 S3,#275) ——
+
+describe("validateGeneratedRouteTable error handlers", () => {
+  test("accepts a typed handler carrying accepts, status and encode", () => {
+    const table = tableWith({
+      errorHandlers: [
+        {
+          bean: Probe,
+          beanId: "src/probe.ts#Probe",
+          order: 0,
+          accepts: Probe,
+          status: 409,
+          encode: (value: unknown) => value,
+        },
+      ],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
+
+  test("rejects a non-function accepts", () => {
+    const table = tableWith({
+      errorHandlers: [{ bean: Probe, beanId: "src/probe.ts#Probe", order: 0, accepts: "X" }],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/accepts must be a function/);
+  });
+
+  test("rejects a non-integer handler status", () => {
+    const table = tableWith({
+      errorHandlers: [{ bean: Probe, beanId: "src/probe.ts#Probe", order: 0, status: "409" }],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/status must be an integer/);
   });
 });

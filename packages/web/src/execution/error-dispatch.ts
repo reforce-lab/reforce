@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
-import { RequestValidationError } from "@/errors";
+import { RequestValidationError, ResponseSerializationError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
+import { currentRequestId } from "@/execution/request-fields";
+import { jsonResponse } from "@/execution/serialization";
 import type { ErrorLogger } from "@/execution/web-application";
 import { HttpError } from "@/http-errors";
 import type { RouteErrorHandler } from "@/routing/middleware";
 
-// 错误分派（ADR 0006 W4 待打磨项定案，#152）：按路由表写死的顺序逐个尝试注册的错误处理
-// bean——返回 Response 即接管；(重新)throw 则把抛出的错误交给下一个（换错即升级，原错不再
-// 保留）；全部放弃后进框架默认兜底。分派器对调用方的保证：永不 reject。
+// 错误分派（ADR 0006 W4 待打磨项定案，#152 / RFC 0012 S3，#275）：按路由表写死的顺序逐条
+// 尝试——accepts 存在时先过 instanceof 闸;handle 返回 Response 即接管(S2 win 条件);返回
+// 非 Response 且该条声明了 status,按编码路径出线;否则换成 ResponseSerializationError 继续
+// 升级。(重新)throw 把抛出的错误交给下一条(换错即升级,原错不再保留;升级错误会被后续
+// typed 处理器重新过闸)。全部放弃后进框架默认兜底。分派器对调用方的保证:永不 reject。
 //
 // 兜底闭集（ADR 0013 决议 7，#294）：HttpError → 它自己的 status + code + detail；校验失败
 // → 400 + 脱敏 issues；其余 → 500 + errorId。三者都是 RFC 9457 problem+json。
@@ -68,7 +72,13 @@ function fallbackResponse(error: unknown, logger: ErrorLogger | undefined): Resp
   // 日志失败不得把响应带下去：dispatchError 永不 reject 是适配器契约的一部分（#226），
   // 而 logger 是用户的——serializer 与 LogFieldSource.fields() 都可能抛。
   try {
-    logger?.error({ errorId, err: error }, "unhandled error");
+    // requestId 与 errorId 并存自动关联(#303/#250):500 响应头带 requestId、body 带 errorId,
+    // 这条记录把两串字符对上。请求作用域外(理论不可达)不写空键。
+    const requestId = currentRequestId();
+    logger?.error(
+      { errorId, ...(requestId === undefined ? {} : { requestId }), err: error },
+      "unhandled error",
+    );
   } catch {
     // 记不上就记不上，客户端仍拿到 errorId，只是这次日志里没有对应现场。
   }
@@ -77,15 +87,46 @@ function fallbackResponse(error: unknown, logger: ErrorLogger | undefined): Resp
 
 export type ErrorDispatcher = (error: unknown, context: RequestContext) => Promise<Response>;
 
+// v3 表的分派条目(#275):accepts/status/encode 从 GeneratedRouteErrorHandler 原样带入,
+// handler 是容器解析出的 bean 实例。
+export interface ErrorDispatchEntry {
+  readonly handler: RouteErrorHandler;
+  readonly accepts?: abstract new (...args: never[]) => object;
+  readonly status?: number;
+  readonly encode?: (value: unknown) => unknown;
+}
+
+function encodedHandlerResponse(
+  entry: ErrorDispatchEntry,
+  status: number,
+  result: unknown,
+): Response {
+  return jsonResponse(status, entry.encode === undefined ? result : entry.encode(result));
+}
+
 export function createErrorDispatcher(
-  handlers: readonly RouteErrorHandler[],
+  entries: readonly ErrorDispatchEntry[],
   logger?: ErrorLogger,
 ): ErrorDispatcher {
   return async (error, context) => {
     let current = error;
-    for (const handler of handlers) {
+    for (const entry of entries) {
+      if (entry.accepts !== undefined && !(current instanceof entry.accepts)) {
+        continue;
+      }
       try {
-        return await handler.handle(current, context);
+        const result = await entry.handler.handle(current, context);
+        if (result instanceof Response) {
+          return result;
+        }
+        if (entry.status !== undefined) {
+          return encodedHandlerResponse(entry, entry.status, result);
+        }
+        // match-all/passthrough 处理器返回了非 Response 值:没有声明的状态码与形状,无法
+        // 编码出线——换成 ResponseSerializationError 继续升级(#275)。
+        current = new ResponseSerializationError(
+          "an error handler returned a non-Response value without a declared @ResponseStatus.",
+        );
       } catch (next) {
         current = next;
       }

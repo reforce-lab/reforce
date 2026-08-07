@@ -12,7 +12,7 @@ import {
 import { foldStackFrames, stackOf } from "@/stack-frames";
 import { isInteractive, style } from "@/terminal";
 
-export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain";
+export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain" | "openapi";
 
 export type CliCommandPhase =
   | "argv"

@@ -26,16 +26,15 @@ src/
     app.config.ts                         应用自己的配置
   features/                             业务：一个模块一个目录，模块自己的一切都在里面
     greeting/
-      greeting.controller.ts              路由：路径、方法、schema
+      greeting.controller.ts              路由：路径、方法，契约都在参数和返回类型的标注上
       greeting.service.ts                 业务规则 + 它需要的端口（GreetingStore 接口）
-      greeting.dto.ts                     进出的形状：请求校验 + 响应白名单
+      greeting.dto.ts                     进出的形状：请求 schema + 响应 interface
       greeting.exception.ts               只有这个模块会抛的业务异常（一行一个）
     health/
-      health.controller.ts                健康检查（没有业务规则，就不必造 service）
-      health.dto.ts
+      health.controller.ts                健康检查（没有业务规则，就不必造 service 和 dto）
   infrastructure/                       和外部世界、和框架接壤的适配件
     web/                                  HTTP 这一面
-      request.fields.ts                    请求期间的日志自动带上 method 和 path
+      request.fields.ts                    请求期间的日志自动带上 method、path、requestId
       api-key.middleware.ts                写接口的准入检查（admission）
     persistence/                           存储这一面
       in-memory-greeting.store.ts          换数据库时只改这里
@@ -87,19 +86,26 @@ src/
 `GreetingStore` 的）。同一个类型有多个实现时用 `@Primary` 或 `@Qualifier` 挑一个。新建一个类
 打上 `@Injectable()` 就完事——编译期扫描整个 `src/`，不用登记，也不用从入口导出。
 
-**请求校验**：`greeting.dto.ts` 里的 `params` / `query` / `body` 三个槽位。不合规的请求根本进不到
-handler，直接 400 并带上出错的字段：
+**请求校验**：handler 参数的类型标注就是输入契约。`Body<CreateGreetingBody>` 表示「请求体按
+这个契约校验后整体给我」，`Param<GreetingParams, "name">` 是投影写法——校验仍按整个契约跑，
+参数值只取 `name` 这一个字段。类型别名经 `z.infer<typeof x>` 追溯到 dto 里的 zod schema，
+校验就交给它。不合规的请求根本进不到 handler，直接 400 并带上出错的字段：
 
 ```bash
 curl -i 'http://localhost:3000/greetings/world?times=99'
-# 400 {"error":"request validation failed","source":"query","issues":[...]}
+# 400 application/problem+json
+# {"type":"about:blank","title":"Bad Request","status":400,
+#  "code":"REQUEST_VALIDATION_FAILED","source":"query","issues":[...]}
 ```
 
-`z.coerce.number()` 顺手做了转换：查询串里是字符串 `"3"`，handler 里 `context.query.times`
-已经是 number 了。
+`z.coerce.number()` 顺手做了转换：查询串里是字符串 `"3"`，handler 拿到的 `times` 已经是
+number 了。schema 不是必须的：参数直接标 `Query<"page", number>` 这种单键写法，编译器会按
+类型生成解码器，字符串转数字、非法值 400 都一样有——schema 的价值在 min/max 这类值域规则。
 
-**响应白名单**：出参 schema 声明过的字段才会出线。`GreetingRecord` 上有个 `internalNote`，
-handler 把整条记录原样返回，响应里也没有它——不靠人记得剥字段。
+**响应契约**：handler 的**返回类型**就是线上形状，声明过的字段才会出线。`GreetingRecord` 上
+有个 `internalNote`，handler 把整条记录原样返回，响应里也没有它——不靠人记得剥字段。响应侧
+不需要 schema，一个 interface（如 `GreetingView`）就够；连返回类型都不标时，编译器按推导
+结果给同样的白名单。`@ResponseStatus(201)` 改掉成功状态码（见 `create`），缺省 200。
 
 **分页**：形状收在 `shared/pagination/`，各 feature 只提供 item 的样子。
 
@@ -128,8 +134,11 @@ error handler 换成了响应，外层中间件的 `await next()` 拿到的是�
 **日志**：`application.ts` 里注册的 `logging` starter 包办两件事。启动时打一份摘要——bean 数、
 路由数、**监听地址**、ready 耗时；运行期每个请求记一条访问日志（2xx/3xx 是 info、4xx 是 warn、
 5xx 是 error，带 method / path / status / handlerMs），admission 挡下的 401 和中间件抛的异常也在
-里面，不会有请求消失。`request.fields.ts` 再补一块：请求期间你自己打的日志自动带上 method 和
-path。输出形态自适应——终端里给人读，重定向到文件或容器采集时自动换成 JSON 行。
+里面，不会有请求消失。`request.fields.ts` 再补一块：请求期间你自己打的日志自动带上 method、
+path 和 requestId。输出形态自适应——终端里给人读，重定向到文件或容器采集时自动换成 JSON 行。
+
+request id 是内建的，不用配：每个响应都带 `x-request-id` 头（客户端带了合法值就回显，否则
+生成一个），日志里的 `requestId` 和它是同一个值——用户报一个 id，日志里一次 grep 就到现场。
 
 默认级别是 info。调级别不用环境变量，写一个普通 bean（级别拼错是编译错误，logger 名拼错
 启动时会得到告警）：
@@ -174,9 +183,10 @@ catch-all**——那会把框架的校验 400 也变成 500，用户就再也看
 
 ## 加东西的时候
 
-**加一条路由**：controller 里加个方法，装饰器写 `@Get` / `@Post` 这些。schema 是可选的，但写了
-就有两个好处——请求自动校验，`context.params` / `context.query` / `context.body` 也直接带上类型。
-注意 schema 必须是 dto 文件里的**顶层具名导出**，写成内联字面量编译期找不到它。
+**加一条路由**：controller 里加个方法，装饰器写 `@Get` / `@Post` 这些；输入写成参数标注
+（`Param<...>` / `Query<...>` / `Body<...>`），输出写返回类型，契约就齐了。要值域校验就在 dto
+里建 zod schema 加 `z.infer` 别名——注意 schema 必须是**顶层具名导出**，写成内联字面量
+编译期找不到它；不需要值域校验就直接标类型，编译器生成解码器。
 
 **加一个模块**：照 `features/greeting/` 复制一份，改名就行。不用在任何地方注册。
 

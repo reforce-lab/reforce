@@ -41,22 +41,53 @@ export const snowflakeParamsSchema = {
 export type SnowflakeParams = SchemaOutput<typeof snowflakeParamsSchema>;
 
 type CreateUserResult =
-  | { readonly value: { readonly name: string }; readonly issues?: undefined }
+  | {
+      readonly value: { readonly name: string; readonly age: number };
+      readonly issues?: undefined;
+    }
   | { readonly issues: readonly SchemaIssue[] };
 
+// 多字段契约(S3 验收清单,#275):缺字段/坏字段一次收齐全部 issues,声明外的多余字段
+// 不进输出(schema 输出即白名单)。
 export const createUserBodySchema = {
   "~standard": {
     version: 1 as const,
     vendor: "reforce-fixture",
-    types: schemaTypes<{ readonly name: string }>(),
+    types: schemaTypes<{ readonly name: string; readonly age: number }>(),
     validate: (value: unknown): CreateUserResult => {
       const record = (value ?? {}) as Record<string, unknown>; // 夹具 schema 自行窄化未知输入
-      if (typeof record.name !== "string" || record.name.length === 0) {
-        return { issues: [{ message: "name must be a non-empty string", path: ["name"] }] };
+      const name =
+        typeof record.name === "string" && record.name.length > 0 ? record.name : undefined;
+      const age =
+        typeof record.age === "number" && Number.isInteger(record.age) ? record.age : undefined;
+      const issues: SchemaIssue[] = [];
+      if (name === undefined) {
+        issues.push({ message: "name must be a non-empty string", path: ["name"] });
       }
-      return { value: { name: record.name } };
+      if (age === undefined) {
+        issues.push({ message: "age must be an integer", path: ["age"] });
+      }
+      if (name === undefined || age === undefined) {
+        return { issues };
+      }
+      return { value: { name, age } };
     },
   },
 };
 
 export type CreateUserBody = SchemaOutput<typeof createUserBodySchema>;
+
+// @ResponseSchema 的线上响应 schema(#275):编译器读 ~standard.types 的 **input** 侧作为
+// 线上契约;出方向不调用 validate,这里只是占位实现。
+function wireSchemaTypes<Wire>(): { readonly input: Wire; readonly output: Wire } | undefined {
+  return undefined;
+}
+
+export const orderWireSchema = {
+  "~standard": {
+    version: 1 as const,
+    vendor: "reforce-fixture",
+    types: wireSchemaTypes<{ readonly id: string; readonly total: number }>(),
+    validate: (value: unknown): { readonly value: unknown } => ({ value }),
+  },
+};

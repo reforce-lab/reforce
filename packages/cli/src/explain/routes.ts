@@ -1,187 +1,17 @@
-import { isObject } from "radashi";
+import type {
+  RouteManifest,
+  RouteManifestEntry,
+  RouteManifestErrorHandler,
+  RouteManifestResponse,
+  RouteManifestSlot,
+  RouteManifestThrownError,
+} from "@/project/route-manifest";
 
 // reforce explain 的 web 面（ADR 0006 W1，#153）：只读生成的 routes.json，静态回答
 // "这个路径谁在处理、过哪些中间件、为什么是这个顺序"。与 bean 面同一输出契约：一行一个
 // 事实、字段用 " · " 分隔。链在编译期按 (阶段, order, beanId) 压平写死，这里只转述表内容。
-
-export interface RouteManifestMiddleware {
-  readonly beanId: string;
-  readonly phase: string;
-  readonly order: number;
-  readonly mount: string;
-}
-
-// 槽位契约节(RFC 0012 S2,#274):可选键拼错在运行时是静默的(解码器只认声明键),这里的
-// 键名打印是唯一的排查入口,所以逐槽转述 slot/key/来源,不做汇总折叠。
-export interface RouteManifestSlot {
-  readonly slot: string;
-  readonly key?: string;
-  readonly form?: string;
-  readonly source?: { readonly kind: string; readonly vendor?: string };
-}
-
-export interface RouteManifestContract {
-  readonly slots: readonly RouteManifestSlot[];
-  readonly response: string;
-}
-
-export interface RouteManifestEntry {
-  readonly method: string;
-  readonly path: string;
-  readonly controller: { readonly beanId: string; readonly handler: string };
-  readonly middleware: readonly RouteManifestMiddleware[];
-  readonly meta: Readonly<Record<string, unknown>>;
-  readonly contract: RouteManifestContract;
-}
-
-export interface RouteManifest {
-  readonly routes: readonly RouteManifestEntry[];
-  readonly errorHandlers: readonly { readonly beanId: string; readonly order: number }[];
-}
-
-function parsedMiddleware(value: unknown): RouteManifestMiddleware | undefined {
-  if (!isObject(value)) {
-    return undefined;
-  }
-  const beanId = Reflect.get(value, "beanId");
-  const phase = Reflect.get(value, "phase");
-  const order = Reflect.get(value, "order");
-  const mount = Reflect.get(value, "mount");
-  if (
-    typeof beanId !== "string" ||
-    typeof phase !== "string" ||
-    typeof order !== "number" ||
-    typeof mount !== "string"
-  ) {
-    return undefined;
-  }
-  return { beanId, phase, order, mount };
-}
-
-function parsedSlot(value: unknown): RouteManifestSlot | undefined {
-  if (!isObject(value)) {
-    return undefined;
-  }
-  const slot = Reflect.get(value, "slot");
-  if (typeof slot !== "string") {
-    return undefined;
-  }
-  const key = Reflect.get(value, "key");
-  const form = Reflect.get(value, "form");
-  const source = Reflect.get(value, "source");
-  const sourceKind = isObject(source) ? Reflect.get(source, "source") : undefined;
-  const vendor = isObject(source) ? Reflect.get(source, "vendor") : undefined;
-  return {
-    slot,
-    ...(typeof key === "string" ? { key } : {}),
-    ...(typeof form === "string" ? { form } : {}),
-    ...(typeof sourceKind === "string"
-      ? { source: { kind: sourceKind, ...(typeof vendor === "string" ? { vendor } : {}) } }
-      : {}),
-  };
-}
-
-function parsedContract(value: unknown): RouteManifestContract | undefined {
-  if (!isObject(value)) {
-    return undefined;
-  }
-  const slots = Reflect.get(value, "slots");
-  const response = Reflect.get(value, "response");
-  if (!Array.isArray(slots) || !isObject(response)) {
-    return undefined;
-  }
-  const parsedSlots: RouteManifestSlot[] = [];
-  for (const entry of slots) {
-    const parsed = parsedSlot(entry);
-    if (parsed === undefined) {
-      return undefined;
-    }
-    parsedSlots.push(parsed);
-  }
-  const responseKind = Reflect.get(response, "kind");
-  if (typeof responseKind !== "string") {
-    return undefined;
-  }
-  return { slots: parsedSlots, response: responseKind };
-}
-
-function parsedRoute(value: unknown): RouteManifestEntry | undefined {
-  if (!isObject(value)) {
-    return undefined;
-  }
-  const method = Reflect.get(value, "method");
-  const path = Reflect.get(value, "path");
-  const controller = Reflect.get(value, "controller");
-  const middleware = Reflect.get(value, "middleware");
-  const meta = Reflect.get(value, "meta");
-  if (typeof method !== "string" || typeof path !== "string" || !isObject(controller)) {
-    return undefined;
-  }
-  const beanId = Reflect.get(controller, "beanId");
-  const handler = Reflect.get(controller, "handler");
-  if (typeof beanId !== "string" || typeof handler !== "string" || !Array.isArray(middleware)) {
-    return undefined;
-  }
-  const chain: RouteManifestMiddleware[] = [];
-  for (const entry of middleware) {
-    const parsed = parsedMiddleware(entry);
-    if (parsed === undefined) {
-      return undefined;
-    }
-    chain.push(parsed);
-  }
-  const contract = parsedContract(Reflect.get(value, "contract"));
-  if (contract === undefined) {
-    return undefined;
-  }
-  return {
-    method,
-    path,
-    controller: { beanId, handler },
-    middleware: chain,
-    meta: isObject(meta) ? (meta as Record<string, unknown>) : {}, // JSON 树，形状由生成器保证
-    contract,
-  };
-}
-
-export function parseRouteManifestBytes(bytes: Uint8Array): RouteManifest | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  } catch {
-    return undefined;
-  }
-  // 2 = 槽位路由表(RFC 0012 S2,#274),与生成器/运行时的版本门同步。
-  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 2) {
-    return undefined;
-  }
-  const routes = Reflect.get(value, "routes");
-  const errorHandlers = Reflect.get(value, "errorHandlers");
-  if (!Array.isArray(routes) || !Array.isArray(errorHandlers)) {
-    return undefined;
-  }
-  const parsedRoutes: RouteManifestEntry[] = [];
-  for (const route of routes) {
-    const parsed = parsedRoute(route);
-    if (parsed === undefined) {
-      return undefined;
-    }
-    parsedRoutes.push(parsed);
-  }
-  const parsedHandlers: { beanId: string; order: number }[] = [];
-  for (const handler of errorHandlers) {
-    if (!isObject(handler)) {
-      return undefined;
-    }
-    const beanId = Reflect.get(handler, "beanId");
-    const order = Reflect.get(handler, "order");
-    if (typeof beanId !== "string" || typeof order !== "number") {
-      return undefined;
-    }
-    parsedHandlers.push({ beanId, order });
-  }
-  return { routes: parsedRoutes, errorHandlers: parsedHandlers };
-}
+// 解析器在 project/route-manifest.ts（与 `reforce openapi` 共用，#306）；explain 只消费
+// 概要面，字段表 table 在渲染里不出现。
 
 export interface RouteQuery {
   readonly method?: string;
@@ -286,20 +116,52 @@ export function renderRouteExplanation(
         lines.push(`  ${index + 1}. ${slotLine(slot)}`);
       });
     }
-    if (route.contract.response === "table") {
-      lines.push("  response · whitelisted by the return type contract");
+    lines.push(`  ${responseLine(route.contract.response)}`);
+    for (const thrown of route.contract.response.errors) {
+      lines.push(`  ${thrownErrorLine(thrown)}`);
     }
     if (Object.keys(route.meta).length > 0) {
       lines.push(`  meta · ${JSON.stringify(route.meta)}`);
     }
   }
-  if (manifest.errorHandlers.length > 0) {
-    lines.push("error handlers (dispatch order)");
-    manifest.errorHandlers.forEach((handler, index) => {
-      lines.push(`  ${index + 1}. order ${handler.order} · ${handler.beanId}`);
-    });
-  }
+  lines.push(...errorHandlerLines(manifest));
   return lines;
+}
+
+// 响应三变体各一行(S3,#275):table/free-form 的差别是「有没有白名单」——free-form 是
+// 降级形态,序列化原样出线,这行是唯一提醒读者补返回类型标注的出口。
+function responseLine(response: RouteManifestResponse): string {
+  if (response.kind === "table") {
+    return `response · ${String(response.status ?? 200)} · whitelisted by the return type contract`;
+  }
+  if (response.kind === "free-form") {
+    return `response · ${String(response.status ?? 200)} · free-form (serialized as-is, no whitelist)`;
+  }
+  if (response.status !== undefined) {
+    return `response · passthrough (handler-controlled Response; void answers ${String(response.status)})`;
+  }
+  return "response · passthrough (handler-controlled Response; void answers 204)";
+}
+
+function thrownErrorLine(thrown: RouteManifestThrownError): string {
+  const status = thrown.status === undefined ? "" : ` → ${String(thrown.status)}`;
+  return `throws ${thrown.error}${status} · ${thrown.handler}`;
+}
+
+function errorHandlerLine(handler: RouteManifestErrorHandler, index: number): string {
+  const accepts = handler.accepts === undefined ? "match-all" : `accepts ${handler.accepts.name}`;
+  const status = handler.status === undefined ? "" : ` · ${String(handler.status)}`;
+  return `  ${index + 1}. order ${handler.order} · ${handler.beanId} · ${accepts}${status}`;
+}
+
+function errorHandlerLines(manifest: RouteManifest): readonly string[] {
+  if (manifest.errorHandlers.length === 0) {
+    return [];
+  }
+  return [
+    "error handlers (dispatch order)",
+    ...manifest.errorHandlers.map((handler, index) => errorHandlerLine(handler, index)),
+  ];
 }
 
 export function knownRouteList(manifest: RouteManifest): string {
@@ -331,11 +193,6 @@ export function renderRouteOverview(manifest: RouteManifest): readonly string[] 
       `${route.method} ${route.path} · ${route.controller.beanId} · ${route.controller.handler}() · ${chain}`,
     );
   }
-  if (manifest.errorHandlers.length > 0) {
-    lines.push("error handlers (dispatch order)");
-    manifest.errorHandlers.forEach((handler, index) => {
-      lines.push(`  ${index + 1}. order ${handler.order} · ${handler.beanId}`);
-    });
-  }
+  lines.push(...errorHandlerLines(manifest));
   return lines;
 }

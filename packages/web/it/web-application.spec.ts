@@ -120,7 +120,7 @@ function applicationDefinition(): GeneratedApplicationDefinition {
 
 function routeTable(): GeneratedRouteTable {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     routes: [
       {
         method: "GET",
@@ -141,7 +141,7 @@ function routeTable(): GeneratedRouteTable {
         meta: { rateLimit: { max: 5 } },
         slots: [{ slot: "requestContext" }],
         // 返回类型契约的白名单投影编码器(#274),这里用恒等替身:IT 关注执行链接线。
-        encode: (value) => value,
+        response: { kind: "table", status: 200, encode: (value: unknown) => value },
       },
       {
         method: "GET",
@@ -154,6 +154,7 @@ function routeTable(): GeneratedRouteTable {
         middleware: [],
         meta: {},
         slots: [],
+        response: { kind: "passthrough" },
       },
     ],
     errorHandlers: [

@@ -3,7 +3,9 @@ import type { RouteContractModel, StringRouteSlotModel } from "@/analysis/web-mo
 import {
   type AnnotationHeadSymbol,
   findSchemaTypeQuery,
+  type ResponseDirectives,
   reportUnknownPathParameters,
+  resolveResponseDeclaration,
   resolveRouteSlots,
   type SchemaTraceScope,
   type SlotResolutionContext,
@@ -25,6 +27,7 @@ import {
   intrinsic,
   literal,
   namedObject,
+  projectNamed,
   property,
   type StubProperty,
   type StubType,
@@ -232,6 +235,7 @@ function resolveWith(
   parameters: readonly MethodParameter[],
   options: HarnessOptions = {},
   returnType?: TypeNode,
+  responseDirectives?: ResponseDirectives,
 ): {
   readonly contract: RouteContractModel | undefined;
   readonly diagnostics: CompilerDiagnostic[];
@@ -241,6 +245,7 @@ function resolveWith(
     method: methodOf(parameters, returnType),
     controllerName: "Users",
     context,
+    ...(responseDirectives === undefined ? {} : { responseDirectives }),
   });
   return { contract, diagnostics };
 }
@@ -473,7 +478,8 @@ describe("resolveRouteSlots forms", () => {
 
     expect(diagnostics).toEqual([]);
     expect(contract?.slots).toEqual([]);
-    expect(contract?.response).toEqual({ kind: "passthrough" });
+    // 无标注 + 无 checker:推导模式静默降级 free-form(#275)。
+    expect(contract?.response).toEqual({ kind: "free-form", status: 200 });
   });
 });
 
@@ -883,12 +889,11 @@ describe("resolveRouteSlots schema tracing", () => {
   });
 });
 
-// ———— 响应侧 ————
+// ———— 响应侧:declared 模式(有返回类型标注) ————
 
-describe("resolveRouteSlots response side", () => {
-  test("treats no annotation, Response, void and Promise<void|Response> as passthrough", () => {
-    const annotations: readonly (TypeNode | undefined)[] = [
-      undefined,
+describe("resolveRouteSlots response side (declared)", () => {
+  test("treats Response, void and Promise<void|Response> annotations as passthrough", () => {
+    const annotations: readonly TypeNode[] = [
       ref("Response"),
       prim("void"),
       ref("Promise", [prim("void")]),
@@ -915,6 +920,8 @@ describe("resolveRouteSlots response side", () => {
     expect(diagnostics).toEqual([]);
     expect(contract?.response).toMatchObject({
       kind: "table",
+      status: 200,
+      contractSource: { source: "type" },
       table: { root: { kind: "reference", target: "src/contracts.ts#UserView" } },
     });
   });
@@ -945,6 +952,270 @@ describe("resolveRouteSlots response side", () => {
     const { diagnostics } = resolveWith([], {}, ref("UserView"));
 
     expect(codesOf(diagnostics)).toEqual(["INVALID_SLOT_CONTRACT"]);
+  });
+});
+
+// ———— 响应侧:inferred 模式(无标注,#275)——干净推导与显式一致,失败静默降级 free-form ————
+
+describe("resolveRouteSlots response side (inferred)", () => {
+  test("a cleanly inferred DTO yields the same table as an explicit annotation", () => {
+    const userView = namedObject("UserView", [property("id", intrinsic("bigint"))]);
+    const inferred = resolveWith([], {
+      methodType: { kind: "function", returnType: { kind: "promise", argument: userView } },
+    });
+    const declared = resolveWith(
+      [],
+      { methodType: { kind: "function", returnType: { kind: "promise", argument: userView } } },
+      ref("Promise", [ref("UserView")]),
+    );
+
+    expect(inferred.diagnostics).toEqual([]);
+    expect(inferred.contract?.response).toEqual(declared.contract?.response);
+  });
+
+  test("an inferred global Response becomes passthrough, not free-form", () => {
+    const responseType: StubType = {
+      kind: "object",
+      properties: [],
+      named: { name: "Response", declarationPath: "/lib/lib.dom.d.ts" },
+      defaultLib: true,
+    };
+    const direct = resolveWith([], { methodType: { kind: "function", returnType: responseType } });
+    const wrapped = resolveWith([], {
+      methodType: { kind: "function", returnType: { kind: "promise", argument: responseType } },
+    });
+
+    expect(direct.diagnostics).toEqual([]);
+    expect(direct.contract?.response).toEqual({ kind: "passthrough" });
+    expect(wrapped.contract?.response).toEqual({ kind: "passthrough" });
+  });
+
+  test("a project class named Response is not the escape hatch", () => {
+    const projectResponse = namedObject("Response", [property("body", intrinsic("string"))]);
+    const { contract, diagnostics } = resolveWith([], {
+      methodType: { kind: "function", returnType: projectResponse },
+    });
+
+    expect(diagnostics).toEqual([]);
+    expect(contract?.response).toMatchObject({ kind: "table" });
+  });
+
+  test("inferred void and undefined become passthrough (204 semantics)", () => {
+    for (const returnType of [intrinsic("void"), intrinsic("undefined")]) {
+      const { contract, diagnostics } = resolveWith([], {
+        methodType: { kind: "function", returnType },
+      });
+      expect(diagnostics).toEqual([]);
+      expect(contract?.response).toEqual({ kind: "passthrough" });
+    }
+  });
+
+  test("expansion failures degrade to free-form without publishing any diagnostic", () => {
+    const undiscriminated = union([
+      anonymousObject([property("a", intrinsic("string"))]),
+      anonymousObject([property("b", intrinsic("string"))]),
+    ]);
+    const failures: readonly StubType[] = [
+      intrinsic("any"),
+      intrinsic("unknown"),
+      { kind: "object", properties: [], named: projectNamed("Row"), isClass: true },
+      {
+        kind: "object",
+        properties: [],
+        named: { name: "Map", declarationPath: "/lib/lib.es5.d.ts" },
+        defaultLib: true,
+      },
+      undiscriminated,
+      { kind: "tuple" },
+    ];
+    for (const returnType of failures) {
+      const { contract, diagnostics } = resolveWith([], {
+        methodType: { kind: "function", returnType },
+      });
+      expect(diagnostics).toEqual([]);
+      expect(contract?.response).toEqual({ kind: "free-form", status: 200 });
+    }
+  });
+
+  test("an unavailable checker or uncomputable method type degrades to free-form", () => {
+    const noQuery = resolveWith([], { withQuery: false });
+    const noMethodType = resolveWith([], {});
+
+    expect(noQuery.diagnostics).toEqual([]);
+    expect(noQuery.contract?.response).toEqual({ kind: "free-form", status: 200 });
+    expect(noMethodType.contract?.response).toEqual({ kind: "free-form", status: 200 });
+  });
+});
+
+// ———— 响应侧:@ResponseSchema(schema 模式)与 @ResponseStatus(状态码规则) ————
+
+const wireContract = namedObject("OrderWire", [
+  property("id", intrinsic("string")),
+  property("total", intrinsic("number")),
+]);
+
+// ~standard.types.input 抽取链的完整替身:types 按 spec 声明为 `Types | undefined`。
+const responseSchemaValue = (input: StubType, vendor = "zod"): StubType =>
+  anonymousObject([
+    property(
+      "~standard",
+      anonymousObject([
+        property("version", literal({ kind: "number", value: 1 })),
+        property("vendor", stringLiteral(vendor)),
+        property("validate", { kind: "function" }),
+        property(
+          "types",
+          union([
+            anonymousObject([property("input", input), property("output", input)]),
+            intrinsic("undefined"),
+          ]),
+        ),
+      ]),
+    ),
+  ]);
+
+describe("resolveRouteSlots response side (schema and status)", () => {
+  const schemaDirective = { entity: ident("orderWireSchema"), span: sp(40) };
+
+  test("ResponseSchema expands the ~standard input side into a schema-sourced table", () => {
+    const { contract, diagnostics } = resolveWith(
+      [],
+      { schemaValues: { orderWireSchema: responseSchemaValue(wireContract) } },
+      undefined,
+      { schema: schemaDirective },
+    );
+
+    expect(diagnostics).toEqual([]);
+    expect(contract?.response).toMatchObject({
+      kind: "table",
+      status: 200,
+      contractSource: {
+        source: "schema",
+        ref: { exportName: "orderWireSchema" },
+        vendor: "zod",
+      },
+      table: { root: { kind: "reference", target: "src/contracts.ts#OrderWire" } },
+    });
+  });
+
+  test("ResponseSchema hard-errors when the value cannot be resolved", () => {
+    const { contract, diagnostics } = resolveWith([], {}, undefined, {
+      schema: schemaDirective,
+    });
+
+    expect(contract).toBeUndefined();
+    expect(codesOf(diagnostics)).toEqual(["INVALID_RESPONSE_SCHEMA"]);
+  });
+
+  test("ResponseSchema hard-errors when the value is not a Standard Schema", () => {
+    const { diagnostics } = resolveWith(
+      [],
+      { schemaValues: { orderWireSchema: anonymousObject([]) } },
+      undefined,
+      { schema: schemaDirective },
+    );
+
+    expect(codesOf(diagnostics)).toEqual(["INVALID_RESPONSE_SCHEMA"]);
+  });
+
+  test("ResponseSchema hard-errors when the schema carries no types.input", () => {
+    const { diagnostics } = resolveWith(
+      [],
+      { schemaValues: { orderWireSchema: standardSchemaValue() } },
+      undefined,
+      { schema: schemaDirective },
+    );
+
+    expect(codesOf(diagnostics)).toEqual(["INVALID_RESPONSE_SCHEMA"]);
+  });
+
+  test("ResponseStatus lands on table, free-form and void-passthrough responses", () => {
+    const status = { value: 201, span: sp(41) };
+    const table = resolveWith(
+      [],
+      { methodType: { kind: "function", returnType: wireContract } },
+      undefined,
+      { status },
+    );
+    const freeForm = resolveWith([], { withQuery: false }, undefined, { status });
+    const voidRoute = resolveWith([], { withQuery: false }, prim("void"), {
+      status: { value: 202, span: sp(41) },
+    });
+
+    expect(table.contract?.response).toMatchObject({ kind: "table", status: 201 });
+    expect(freeForm.contract?.response).toEqual({ kind: "free-form", status: 201 });
+    expect(voidRoute.contract?.response).toEqual({ kind: "passthrough", status: 202 });
+  });
+
+  test("204 and 304 are rejected on body-producing responses", () => {
+    for (const value of [204, 304]) {
+      const { contract, diagnostics } = resolveWith([], { withQuery: false }, undefined, {
+        status: { value, span: sp(41) },
+      });
+      expect(contract).toBeUndefined();
+      expect(codesOf(diagnostics)).toEqual(["INVALID_RESPONSE_STATUS"]);
+    }
+  });
+});
+
+// ———— 响应侧:错误处理器角色的状态码规则(resolveResponseDeclaration 直调) ————
+
+describe("resolveResponseDeclaration for error handlers", () => {
+  function resolveHandlerResponse(options: {
+    readonly annotation?: TypeNode;
+    readonly methodType?: StubType;
+    readonly directives?: ResponseDirectives;
+  }) {
+    const { context, diagnostics } = contextOf(
+      options.methodType === undefined ? {} : { methodType: options.methodType },
+    );
+    const response = resolveResponseDeclaration({
+      context,
+      subject: "OrderErrors#handle",
+      annotation: options.annotation,
+      anchorSpan: sp(50),
+      directives: options.directives ?? {},
+      role: "error-handler",
+    });
+    return { response, diagnostics };
+  }
+
+  test("a data-shaped response without ResponseStatus is ERROR_HANDLER_MISSING_STATUS", () => {
+    const { response, diagnostics } = resolveHandlerResponse({
+      annotation: ref("OrderRejectedView"),
+      methodType: { kind: "function", returnType: wireContract },
+    });
+
+    expect(response).toBeUndefined();
+    expect(codesOf(diagnostics)).toEqual(["ERROR_HANDLER_MISSING_STATUS"]);
+  });
+
+  test("a typed handler with ResponseStatus resolves to a status-carrying table", () => {
+    const { response, diagnostics } = resolveHandlerResponse({
+      annotation: ref("OrderRejectedView"),
+      methodType: { kind: "function", returnType: wireContract },
+      directives: { status: { value: 409, span: sp(51) } },
+    });
+
+    expect(diagnostics).toEqual([]);
+    expect(response).toMatchObject({ kind: "table", status: 409 });
+  });
+
+  test("ResponseStatus on a Response-returning handler is a contradiction", () => {
+    const { response, diagnostics } = resolveHandlerResponse({
+      annotation: ref("Response"),
+      directives: { status: { value: 409, span: sp(51) } },
+    });
+
+    expect(response).toBeUndefined();
+    expect(codesOf(diagnostics)).toEqual(["INVALID_RESPONSE_STATUS"]);
+  });
+
+  test("a Response-returning handler stays plain passthrough", () => {
+    const { response, diagnostics } = resolveHandlerResponse({ annotation: ref("Response") });
+
+    expect(diagnostics).toEqual([]);
+    expect(response).toEqual({ kind: "passthrough" });
   });
 });
 

@@ -85,6 +85,16 @@ function encoderShapeBody(shape: ContractShape, context: EncoderGenContext): rea
     if (shape.scalar === "date") {
       return ["return webEncodeDate(value);"];
     }
+    if (shape.scalar === "string") {
+      // string 叶归一(#275):@ResponseSchema 的 R≠C 放宽允许域值带 bigint/Date,编码器把
+      // 「精确 schema」落到字面,不再依赖 renderJson 慢路径的 replacer 重试。
+      return [
+        'if (typeof value === "bigint") {',
+        "  return String(value);",
+        "}",
+        "return value instanceof Date ? webEncodeDate(value) : value;",
+      ];
+    }
     return ["return value;"];
   }
   if (shape.kind === "literal") {

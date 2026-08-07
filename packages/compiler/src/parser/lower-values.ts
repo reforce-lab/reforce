@@ -162,10 +162,12 @@ function typeArgumentsOf(
 }
 
 // 槽位解析（RFC 0012 S2，#274）在语法层裁决"裸标量当键名"，这 6 个关键字都要可表达；
-// undefined 服务可选单键（Header<"x" | undefined>）。
+// undefined 服务可选单键（Header<"x" | undefined>）。unknown 服务错误处理器 accepts 判定
+// （RFC 0012 S3，#275）：handle(error: unknown) 是 match-all，必须与其他 unsupported 形态
+// 区分开。
 const PRIMITIVE_KEYWORD_TYPES = new Map<
   Node["type"],
-  "void" | "string" | "number" | "bigint" | "boolean" | "undefined"
+  "void" | "string" | "number" | "bigint" | "boolean" | "undefined" | "unknown"
 >([
   ["TSVoidKeyword", "void"],
   ["TSStringKeyword", "string"],
@@ -173,6 +175,7 @@ const PRIMITIVE_KEYWORD_TYPES = new Map<
   ["TSBigIntKeyword", "bigint"],
   ["TSBooleanKeyword", "boolean"],
   ["TSUndefinedKeyword", "undefined"],
+  ["TSUnknownKeyword", "unknown"],
 ]);
 
 // 只有字符串字面量参与槽位形态裁决（Param<"id">，#274）；数字/模板等字面量类型照旧 unsupported。

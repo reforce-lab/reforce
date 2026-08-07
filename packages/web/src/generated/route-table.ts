@@ -41,6 +41,17 @@ export interface GeneratedRouteSlot {
   readonly schema?: StandardSchemaV1;
 }
 
+// 响应三变体(RFC 0012 S3,#275):table = 白名单投影编码器 + 状态码;free-form = 无契约声明
+// 且推导失败的降级,返回值原样序列化;passthrough = Response 逃生口 / void(status 缺省 204)。
+export type GeneratedRouteResponse =
+  | {
+      readonly kind: "table";
+      readonly status: number;
+      readonly encode: (value: unknown) => unknown;
+    }
+  | { readonly kind: "free-form"; readonly status: number }
+  | { readonly kind: "passthrough"; readonly status?: number };
+
 export interface GeneratedRoute<T extends object = object> {
   readonly method: HttpMethod;
   readonly path: string;
@@ -58,21 +69,28 @@ export interface GeneratedRoute<T extends object = object> {
   readonly meta: Readonly<Record<string, RouteMetaValue>>;
   // 槽位路由的参数绑定(#274),按 handler 参数序;零参 handler 是空数组。
   readonly slots: readonly GeneratedRouteSlot[];
-  // 响应白名单投影编码器(#274):存在时 handler 返回值先经它投影再序列化;
-  // 缺省走既有序列化路径。
-  readonly encode?: (value: unknown) => unknown;
+  // 响应侧声明(#275):S2 的顶层 encode 并入 response 分组。
+  readonly response: GeneratedRouteResponse;
 }
 
 export interface GeneratedRouteErrorHandler {
   readonly bean: BeanClass<RouteErrorHandler>;
   readonly beanId: string;
   readonly order: number;
+  // 类型化处理器(#275)的 instanceof 闸;缺省 = match-all。
+  readonly accepts?: abstract new (
+    ...args: never[]
+  ) => object;
+  // handle 返回非 Response 值时的编码路径:status 必与数据形响应同现(编译器保证),
+  // encode 仅 table 契约存在。
+  readonly status?: number;
+  readonly encode?: (value: unknown) => unknown;
 }
 
 export interface GeneratedRouteTable {
-  // 2 = 槽位路由表(RFC 0012 S2,#274):schemas 字段删除、invoke 增槽位第三参、slots/encode
-  // 进表。版本门跟着破坏性表变更走(#264 决策 11)。
-  readonly schemaVersion: 2;
+  // 3 = 响应侧收口(RFC 0012 S3,#275):route.encode 并入 response 三变体、errorHandlers
+  // 携带 accepts/status/encode。版本门跟着破坏性表变更走(#264 决策 11)。
+  readonly schemaVersion: 3;
   readonly routes: readonly GeneratedRoute[];
   // 全局错误处理器，数组顺序即分派顺序（(order, beanId) 决胜后写死）。
   readonly errorHandlers: readonly GeneratedRouteErrorHandler[];

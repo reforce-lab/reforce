@@ -18,12 +18,20 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export type WebRequestFacts = {
   readonly method: string;
   readonly path: string;
+  // request id 开箱件(#303):请求期间每条应用日志自带,与响应头 x-request-id 恒等。
+  readonly requestId: string;
 };
 
 const storage = new AsyncLocalStorage<WebRequestFacts>();
 
 export function runWithRequestFields<T>(facts: WebRequestFacts, callback: () => T): T {
   return storage.run(facts, callback);
+}
+
+// 请求期间任何位置读当前 request id(#303):handler、seeder、错误分派的 500 日志都用它;
+// 请求作用域之外(引擎级 404、启动期)是 undefined。
+export function currentRequestId(): string | undefined {
+  return storage.getStore()?.requestId;
 }
 
 /**
