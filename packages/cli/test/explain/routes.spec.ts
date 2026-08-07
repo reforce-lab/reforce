@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 import {
   isRouteQuery,
   matchRoutes,
-  parseRouteManifestBytes,
   parseRouteQuery,
-  type RouteManifest,
   renderRouteExplanation,
   renderRouteOverview,
 } from "@/explain/routes";
+import type { RouteManifest } from "@/project/route-manifest";
+
+// 解析(parseRouteManifestBytes)的测试随解析器迁至 test/project/route-manifest.spec.ts
+// (#306);这里只测 explain 的查询、匹配与渲染面。
 
 const manifest: RouteManifest = {
   routes: [
@@ -56,46 +58,6 @@ const manifest: RouteManifest = {
   ],
 };
 
-// 落盘形态的 contract 节(source 是 {source: "..."} 判别对象),parseRouteManifestBytes 的
-// 输入按它构造;上面的 RouteManifest 是解析后的内存形态。
-function manifestJson(): unknown {
-  return {
-    schemaVersion: 3,
-    errorHandlers: manifest.errorHandlers,
-    routes: manifest.routes.map((route) => ({
-      ...route,
-      contract: {
-        slots: route.contract.slots.map((slot) => ({
-          slot: slot.slot,
-          ...(slot.key === undefined ? {} : { key: slot.key }),
-          ...(slot.form === undefined ? {} : { form: slot.form }),
-          ...(slot.source === undefined
-            ? {}
-            : {
-                source: {
-                  source: slot.source.kind,
-                  ...(slot.source.vendor === undefined ? {} : { vendor: slot.source.vendor }),
-                },
-              }),
-        })),
-        response: {
-          kind: route.contract.response.kind,
-          ...(route.contract.response.status === undefined
-            ? {}
-            : { status: route.contract.response.status }),
-          ...(route.contract.response.errors.length === 0
-            ? {}
-            : { errors: route.contract.response.errors }),
-        },
-      },
-    })),
-  };
-}
-
-function encoded(value: unknown): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(value));
-}
-
 describe("parseRouteQuery", () => {
   test("a bare path targets every method", () => {
     expect(parseRouteQuery("/users/:id")).toEqual({ path: "/users/:id" });
@@ -109,39 +71,6 @@ describe("parseRouteQuery", () => {
     expect(isRouteQuery("src/users.ts#UsersController")).toBe(false);
     expect(isRouteQuery("Cache")).toBe(false);
     expect(parseRouteQuery("GET users")).toBeUndefined();
-  });
-});
-
-describe("parseRouteManifestBytes", () => {
-  test("a valid manifest round-trips into slot lines", () => {
-    const parsed = parseRouteManifestBytes(encoded(manifestJson()));
-
-    expect(parsed?.routes).toHaveLength(2);
-    expect(parsed?.routes[0]?.contract).toEqual(manifest.routes[0]?.contract);
-    expect(parsed?.errorHandlers).toEqual(manifest.errorHandlers);
-  });
-
-  // 1/2 是旧表的版本:旧生成物不得被静默解释成 v3 表。
-  test("a wrong schema version is rejected", () => {
-    expect(
-      parseRouteManifestBytes(encoded({ schemaVersion: 1, routes: [], errorHandlers: [] })),
-    ).toBeUndefined();
-    expect(
-      parseRouteManifestBytes(encoded({ schemaVersion: 2, routes: [], errorHandlers: [] })),
-    ).toBeUndefined();
-    expect(
-      parseRouteManifestBytes(encoded({ schemaVersion: 4, routes: [], errorHandlers: [] })),
-    ).toBeUndefined();
-  });
-
-  test("a malformed route entry is rejected", () => {
-    const bytes = encoded({
-      schemaVersion: 3,
-      routes: [{ method: "GET" }],
-      errorHandlers: [],
-    });
-
-    expect(parseRouteManifestBytes(bytes)).toBeUndefined();
   });
 });
 

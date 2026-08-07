@@ -206,6 +206,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      json-stable-stringify:
+        specifier: ^1.3.0
+        version: 1.3.0
       radashi:
         specifier: ^12.9.1
         version: 12.9.1

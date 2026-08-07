@@ -1365,6 +1365,96 @@ describe.sequential("built Reforce CLI", () => {
     commandTimeout,
   );
 
+  // reforce openapi(#306):读 routes.json 导出 OpenAPI 3.2.0。结构断言而非整文档快照
+  // (CONTRIBUTING 禁快照):路径模板、bigint 参数、@Throws 响应、auto-400、free-form、
+  // passthrough 与字节确定性各钉一处。
+  test(
+    "openapi exports an OpenAPI 3.2 document mirroring the generated route table",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        const exported = await runCommand(
+          nodeExecutable,
+          [cliEntry, "openapi", "--project", project.projectRoot],
+          { cwd: project.projectRoot, timeout: commandTimeout },
+        );
+        expect(exported.exitCode, commandFailure(exported)).toBe(0);
+
+        interface OpenApiProbe {
+          readonly openapi: string;
+          readonly paths: Record<
+            string,
+            Record<
+              string,
+              {
+                readonly parameters?: readonly Record<string, unknown>[];
+                readonly requestBody?: unknown;
+                readonly responses: Record<string, { readonly content?: Record<string, unknown> }>;
+              }
+            >
+          >;
+          readonly components?: { readonly schemas?: Record<string, unknown> };
+        }
+        // 结构由上面的断言逐处验证,cast 只为省去逐层手写窄化。
+        const document = JSON.parse(String(exported.stdout)) as OpenApiProbe;
+
+        expect(document.openapi).toBe("3.2.0");
+        // `:id` → `{id}`;Param<SnowflakeParams, "id"> 的 bigint 在线上是十进制字符串。
+        const showUser = document.paths["/users/{id}"]?.get;
+        expect(showUser?.parameters?.[0]).toMatchObject({
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "int64" },
+        });
+        // body 槽 → requestBody;有数据槽的路由自动挂 400(共享 problem+json 组件)。
+        const createUser = document.paths["/users"]?.post;
+        expect(createUser?.requestBody).toBeDefined();
+        expect(createUser?.responses["400"]?.content).toHaveProperty("application/problem+json");
+        expect(document.components?.schemas).toHaveProperty("ReforceValidationProblem");
+        // @Throws 集合:每个声明状态一条响应。
+        const checkout = document.paths["/orders/checkout"]?.get;
+        expect(Object.keys(checkout?.responses ?? {})).toEqual(
+          expect.arrayContaining(["200", "409", "429"]),
+        );
+        // free-form 降级:文档如实标 open object,不猜形状。
+        const loose = document.paths["/orders/loose"]?.get;
+        expect(loose?.responses["200"]?.content).toMatchObject({
+          "application/json": { schema: { type: "object" } },
+        });
+        // passthrough 直返 Response:无状态码无形状,落 default。
+        expect(Object.keys(document.paths["/health"]?.get?.responses ?? {})).toEqual(["default"]);
+
+        // 字节确定性:同一份表两次导出逐字相同(stable stringify 定键序)。
+        const again = await runCommand(
+          nodeExecutable,
+          [cliEntry, "openapi", "--project", project.projectRoot],
+          { cwd: project.projectRoot, timeout: commandTimeout },
+        );
+        expect(again.exitCode, commandFailure(again)).toBe(0);
+        expect(String(again.stdout)).toBe(String(exported.stdout));
+
+        // --output 写文件,内容与 stdout 完全一致。
+        const outputPath = join(project.projectRoot, "openapi.json");
+        const toFile = await runCommand(
+          nodeExecutable,
+          [cliEntry, "openapi", "--project", project.projectRoot, "--output", outputPath],
+          { cwd: project.projectRoot, timeout: commandTimeout },
+        );
+        expect(toFile.exitCode, commandFailure(toFile)).toBe(0);
+        expect(String(toFile.stdout)).toBe("");
+        // execa 剥掉了捕获 stdout 的末尾换行,文件里的是完整产物。
+        await expect(readFile(outputPath, "utf8")).resolves.toBe(`${String(exported.stdout)}\n`);
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // C4（RFC 0011，#250）：配置来源。provenance 数据一直都有，只用于报错的 layer 字段，
   // 启动期一个字不打——「这个值到底是哪一层给的」得靠人去比对四个文件。
   //
