@@ -6,6 +6,8 @@ import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
 import {
   type CompileTimeLoggerLevels,
+  contextFrameworkLoggerName,
+  loggingPackageName,
   providedLoggerFactorySymbol,
   spanOfMetaSource,
   synthesizeLoggerBeans,
@@ -144,11 +146,11 @@ export function analyzeProject(
   // 探针集合刻意不含事务 draft 自己：拦截器的 provides 只有 TransactionInterceptor，它永远
   // 提供不了 LoggerFactory，所以答案与 synthesizeLoggerBeans 过去在内部算的完全一致。
   // 不写这条注释的话，后来人会以为这是个顺序 bug 而去「修」它。
-  const loggerFactory = providedLoggerFactorySymbol([...configAnalysis.drafts, ...drafts], linker);
+  const loggerBinding = providedLoggerFactorySymbol([...configAnalysis.drafts, ...drafts], linker);
   const transactionDraft = transactionInterceptorDraft(
     sources,
     linker,
-    loggerFactory !== undefined,
+    loggerBinding !== undefined,
   );
   const applicationDrafts = [
     ...configAnalysis.drafts,
@@ -163,9 +165,21 @@ export function analyzeProject(
   // demandedBeanIds——本地 draft 一律入图。装了引擎但没装任何日志绑定时不合成，见 synthesize。
   const loggers = synthesizeLoggerBeans({
     drafts: applicationDrafts,
-    loggerFactory,
+    loggerFactory: loggerBinding?.symbol,
     diagnostics,
     frameworkLoggers: [
+      // 容器面那条恒在（RFC 0011 L6【已定】）：启动摘要、bean 台账、关停与崩溃都是容器的
+      // 事实，job / CLI / worker 这类没有引擎的应用同样要有。它的「为什么在图里」就是那处
+      // LoggerFactory 绑定——没有绑定时 synthesizeLoggerBeans 整个不合成，见那边的注释。
+      ...(loggerBinding === undefined
+        ? []
+        : [
+            {
+              name: contextFrameworkLoggerName,
+              reason: loggingPackageName,
+              span: loggerBinding.span,
+            },
+          ]),
       ...engineBeans.slice(0, 1).map((bean) => ({
         name: webFrameworkLoggerName,
         reason: webPackageName,

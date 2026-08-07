@@ -1,19 +1,11 @@
 import type { ApplicationContext } from "@reforce/context";
 import { isObject } from "radashi";
-import {
-  type CrashLogTarget,
-  type FatalLogger,
-  type FlushableLoggerFactory,
-  installCrashTakeover,
-} from "@/crash-takeover";
+import { installCrashTakeover } from "@/crash-takeover";
+import type { FrameworkLogging } from "@/framework-logging";
 import { createChildLeaseParticipant } from "@/lease-endpoint";
 import { requireNodeExecutable } from "@/node-runtime";
 import { PlainTextReporter, type Reporter, reportShutdownFailure } from "@/reporter";
-import {
-  installProcessShutdownHandlers,
-  ShutdownController,
-  type ShutdownLogger,
-} from "@/shutdown-controller";
+import { installProcessShutdownHandlers, ShutdownController } from "@/shutdown-controller";
 
 // Receiver half of the production-wire acknowledgement sent by start-command.ts. The dev wire's
 // `DevChildLeaseParticipantAcknowledgement` (dev-ipc.ts) looks similar but carries an `ok` field;
@@ -55,13 +47,6 @@ async function waitForParticipantAck(participantToken: string): Promise<void> {
 }
 
 type ChildLeaseParticipant = Awaited<ReturnType<typeof createChildLeaseParticipant>>;
-
-// 两个消费者各自声明的最小形状在这里合流（RFC 0011 C2/C3，#250）：交叉类型让崩溃接管与
-// 关停日志共用一个交接口，而两个模块谁也不必知道对方存在。
-export interface FrameworkLogging extends CrashLogTarget {
-  readonly logger: FatalLogger & ShutdownLogger;
-  readonly factory: FlushableLoggerFactory;
-}
 
 export interface ProductionApplicationDependencies {
   readonly reporter?: Reporter;

@@ -1,6 +1,8 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import type { WeavingModel, WovenBeanModel, WovenMethodModel } from "@/analysis/interception-model";
 import {
+  contextFrameworkLoggerBeanId,
+  contextFrameworkLoggerName,
   loggerBeanIdPrefix,
   webFrameworkLoggerBeanId,
   webFrameworkLoggerName,
@@ -299,10 +301,13 @@ function literalArgumentAlias(index: number): string {
 // 框架 logger 的 target 类要能被 bootstrap 按类取到（RFC 0011 L6，#250）：它的需求方是生成的
 // bootstrap，不在 DI 图内，而 logger 的运行导出 BoundLogger 承载 N 个 bean 身份、按类取会撞。
 // 导出的是那个逐 logger 子类，`context.get` 因此落在唯一一条 registration 上。
-function frameworkLoggerAlias(providers: readonly BeanProviderModel[]): string | undefined {
+function frameworkLoggerAlias(
+  providers: readonly BeanProviderModel[],
+  beanId: string,
+): string | undefined {
   return providers
     .flatMap((provider, index) =>
-      provider.id === webFrameworkLoggerBeanId ? [literalArgumentTarget(provider, index)] : [],
+      provider.id === beanId ? [literalArgumentTarget(provider, index)] : [],
     )
     .find((alias) => alias !== undefined);
 }
@@ -333,14 +338,19 @@ function loggerFactoryAlias(providers: readonly BeanProviderModel[]): string | u
 }
 
 interface LoggingExports {
+  /** 容器面那条（RFC 0011 L6【已定】）：摘要、台账、关停与崩溃归它，有绑定就恒在。 */
+  readonly contextLogger?: string;
+  /** web 面那条：请求日志、未命中与监听行归它，装了引擎才有。 */
   readonly frameworkLogger?: string;
   readonly loggerFactory?: string;
 }
 
 function loggingExports(providers: readonly BeanProviderModel[]): LoggingExports {
-  const logger = frameworkLoggerAlias(providers);
+  const contextLogger = frameworkLoggerAlias(providers, contextFrameworkLoggerBeanId);
+  const logger = frameworkLoggerAlias(providers, webFrameworkLoggerBeanId);
   const factory = loggerFactoryAlias(providers);
   return {
+    ...(contextLogger === undefined ? {} : { contextLogger }),
     ...(logger === undefined ? {} : { frameworkLogger: logger }),
     ...(factory === undefined ? {} : { loggerFactory: factory }),
   };
@@ -349,6 +359,7 @@ function loggingExports(providers: readonly BeanProviderModel[]): LoggingExports
 function frameworkLoggerExport(providers: readonly BeanProviderModel[]): readonly string[] {
   const exports = loggingExports(providers);
   const names = [
+    ...(exports.contextLogger === undefined ? [] : [`${exports.contextLogger} as contextLogger`]),
     ...(exports.frameworkLogger === undefined
       ? []
       : [`${exports.frameworkLogger} as frameworkLogger`]),
@@ -689,9 +700,11 @@ function contextStartLines(logging: LoggingExports, beanCount: number): readonly
   ];
 }
 
-// 框架侧观测的接线（RFC 0011 C2/C3/C6，#250），三段都只在装了日志绑定时存在：
-// 崩溃接管与关停日志要一个「容器起来之后才有值」的取值函数；台账进 debug 流；请求日志与
-// 500 兜底拿同一条框架 logger。
+// 框架侧观测的接线（RFC 0011 C2/C3/C6，L6【已定】的两命名空间划分）。
+//
+// 容器面的三件事——崩溃接管、关停日志、启动摘要与 bean 台账——都挂 reforce.context，装没装
+// 引擎都要有；web 面的请求日志与 500 兜底挂 reforce.web，装了引擎才有。此前只有后者，
+// 于是 job / CLI / worker 这类应用一条运行期框架输出都拿不到。
 function frameworkLoggingLines(): readonly string[] {
   return [
     "let frameworkLoggingValue;",
@@ -705,27 +718,47 @@ function frameworkLoggingLines(): readonly string[] {
   ];
 }
 
-function frameworkLogWiringLines(): readonly string[] {
+function contextLogWiringLines(): readonly string[] {
   return [
-    "  const frameworkLog = application.get(frameworkLogger);",
-    "  frameworkLoggingValue = { logger: frameworkLog, factory: application.get(loggerFactory) };",
+    "  const contextLog = application.get(contextLogger);",
+    "  frameworkLoggingValue = { logger: contextLog, factory: application.get(loggerFactory) };",
     // 逐 bean 台账走 debug，与摘要里那条折叠的 slow beans 分开：一个是「哪几条慢」的结论，
     // 一个是要它时才付钱的全量明细。
-    "  emitBeanTimings({ logger: frameworkLog, timings: startReport.beanTimings });",
+    "  emitBeanTimings({ logger: contextLog, timings: startReport.beanTimings });",
+  ];
+}
+
+// 无引擎应用的摘要：只有 context 与 slow beans 两节，ready 由 emitStartupSummary 自己补。
+// 没有 onReady 回调可挂，所以就地发——容器 start 完成即"装配好了"。
+function plainSummaryLines(): readonly string[] {
+  return [
+    "  emitStartupSummary({",
+    "    logger: contextLog,",
+    "    summary: {",
+    "      sections: [",
+    `        ...contextStartupSections({ beanCount, contextMs }, ${JSON.stringify(contextFrameworkLoggerName)}),`,
+    `        ...beanTimingSections(startReport.beanTimings, ${JSON.stringify(contextFrameworkLoggerName)}),`,
+    "      ],",
+    "      startedAt,",
+    "      readyAt: Date.now(),",
+    "    },",
+    "  });",
   ];
 }
 
 function startupSummaryLines(): readonly string[] {
   return [
     // 启动摘要的生产者（RFC 0011 D2）：web 侧事实由 connectWebApplication 回调交出，
-    // bean 数与 context 耗时只有这里知道，两半在这一处合成。
+    // bean 数与 context 耗时只有这里知道，两半在这一处合成。摘要整体归 context logger——
+    // 里面只有 routes/engines 两节是 web 的事实，容器与台账都不是。
     "    onReady: (facts) =>",
     "      emitStartupSummary({",
-    "        logger: frameworkLog,",
+    "        logger: contextLog,",
     "        summary: {",
     "          sections: [",
-    "            ...webStartupSections(facts, { beanCount, contextMs }),",
-    `            ...beanTimingSections(startReport.beanTimings, ${JSON.stringify(webFrameworkLoggerName)}),`,
+    `            ...contextStartupSections({ beanCount, contextMs }, ${JSON.stringify(contextFrameworkLoggerName)}),`,
+    "            ...webStartupSections(facts),",
+    `            ...beanTimingSections(startReport.beanTimings, ${JSON.stringify(contextFrameworkLoggerName)}),`,
     "          ],",
     "          startedAt,",
     "          readyAt: Date.now(),",
@@ -734,22 +767,23 @@ function startupSummaryLines(): readonly string[] {
   ];
 }
 
-// 摘要可发 = 有框架 logger。一个条件而不是两个：框架 logger bean 只在有 LoggerFactory 绑定
-// 时才被合成（logger-synthesis 的 `provided !== undefined` 分支），两个名字只会让改这几十行
-// 的人以为它们能分开。
-function isSummarised(web: WebModel, logging: LoggingExports): boolean {
-  return (
-    web.engines.length > 0 &&
-    logging.frameworkLogger !== undefined &&
-    logging.loggerFactory !== undefined
-  );
+// 容器面可观测 = 有 reforce.context bean + 有 LoggerFactory。两者由同一个条件产生
+// （logger-synthesis 的 `provided !== undefined` 分支），分开写只是为了让类型收窄成立。
+function isObserved(logging: LoggingExports): boolean {
+  return logging.contextLogger !== undefined && logging.loggerFactory !== undefined;
 }
 
-function loggingImportLines(logging: LoggingExports, summarised: boolean): readonly string[] {
+// web 面可观测：在容器面之上再要一条 reforce.web bean，也就是真装了引擎。
+function isSummarised(web: WebModel, logging: LoggingExports): boolean {
+  return web.engines.length > 0 && isObserved(logging) && logging.frameworkLogger !== undefined;
+}
+
+function loggingImportLines(logging: LoggingExports): readonly string[] {
+  const observed = isObserved(logging);
   const names = [
-    ...(summarised ? ["beanTimingSections"] : []),
+    ...(observed ? ["beanTimingSections", "contextStartupSections"] : []),
     ...(logging.loggerFactory === undefined ? [] : ["drainBootstrapLogs"]),
-    ...(summarised ? ["emitBeanTimings"] : []),
+    ...(observed ? ["emitBeanTimings"] : []),
     ...(logging.loggerFactory === undefined ? [] : ["emitStartupSummary", "replayBootstrapLogs"]),
   ];
   return names.length === 0
@@ -760,6 +794,7 @@ function loggingImportLines(logging: LoggingExports, summarised: boolean): reado
 function beansImportLine(logging: LoggingExports): string {
   const names = [
     "applicationDefinition",
+    ...(logging.contextLogger === undefined ? [] : ["contextLogger"]),
     ...(logging.frameworkLogger === undefined ? [] : ["frameworkLogger"]),
     ...(logging.loggerFactory === undefined ? [] : ["loggerFactory"]),
   ];
@@ -777,7 +812,7 @@ function webBootstrapImports(
   return [
     `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
     `import { ${webImportNames.join(", ")} } from "${webRuntimeModuleSpecifier}";`,
-    ...loggingImportLines(logging, summarised),
+    ...loggingImportLines(logging),
     ...web.engines.map(
       (engine, index) =>
         `import { ${engine.exportName} as webEngine${index} } from ${JSON.stringify(engine.moduleSpecifier)};`,
@@ -792,15 +827,20 @@ function webBootstrapImports(
   ];
 }
 
-// 无引擎的应用保持零 web import 的哑 bootstrap，逐字节不变。
+// 无引擎的应用：没装日志绑定时仍是零 import 的哑 bootstrap，逐字节不变；装了绑定就与 web
+// 分支拿到同一套容器面观测（RFC 0011 L6【已定】），只是没有 routes/engines 两节。
 function renderPlainBootstrap(logging: LoggingExports, startLines: readonly string[]): string {
+  const observed = isObserved(logging);
   return `${[
     `import { createApplicationContext } from "${contextRuntimeModuleSpecifier}";`,
-    ...loggingImportLines(logging, false),
+    ...loggingImportLines(logging),
     beansImportLine(logging),
     "",
+    ...(observed ? frameworkLoggingLines() : []),
     "export async function bootstrap() {",
     ...startLines,
+    ...(observed ? contextLogWiringLines() : []),
+    ...(observed ? plainSummaryLines() : []),
     "  return application;",
     "}",
   ].join("\n")}\n`;
@@ -825,7 +865,8 @@ function renderBootstrap(
     ...(summarised ? frameworkLoggingLines() : []),
     "export async function bootstrap() {",
     ...startLines,
-    ...(summarised ? frameworkLogWiringLines() : []),
+    ...(summarised ? contextLogWiringLines() : []),
+    ...(summarised ? ["  const frameworkLog = application.get(frameworkLogger);"] : []),
     "  return await connectWebApplication({",
     "    context: application,",
     "    table: routeTable,",

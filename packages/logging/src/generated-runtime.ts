@@ -2,7 +2,7 @@ import type { LogFields, Logger, LoggerFactory, LogLevel } from "@/contracts";
 
 // 生成的 bootstrap 的消费面（RFC 0011 L7/D2，#250）：容器 start 之后重放引导期缓冲、
 // 绑定构造失败时把缓冲吐到 stderr、以及发出启动摘要。
-export { beanTimingSections, emitBeanTimings } from "@/bean-timings";
+export { beanTimingSections, contextStartupSections, emitBeanTimings } from "@/bean-timings";
 export { drainBootstrapLogs, replayBootstrapLogs } from "@/bootstrap-registry";
 export { LoggerLevels, type LoggerLevelsSnapshot } from "@/levels";
 export { emitStartupSummary } from "@/startup-summary";

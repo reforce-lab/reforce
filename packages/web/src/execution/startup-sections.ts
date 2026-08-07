@@ -12,26 +12,15 @@ export interface StartupSection {
   readonly expandWith?: string;
 }
 
-export interface RuntimeStartupFacts {
-  /** 生成物已知的 bean 条数。 */
-  readonly beanCount: number;
-  /** 容器 start 的耗时，毫秒。 */
-  readonly contextMs: number;
-}
-
 // 折叠必带计数与展开命令（不变量 4）：`4 controllers · 37 routes` 后面明写
 // `reforce explain routes`。只折叠不给出口，读者只能去翻源码——那等于把信息藏起来还假装
 // 简洁了。
-export function webStartupSections(
-  web: WebStartupFacts,
-  runtime: RuntimeStartupFacts,
-): readonly StartupSection[] {
+//
+// context 段不在这里：bean 数与容器耗时是容器的事实不是 web 的，它归 @reforce/logging 的
+// contextStartupSections（RFC 0011 L6【已定】的两命名空间划分）。放在这边的后果是没有引擎的
+// 应用连这一节都看不到。
+export function webStartupSections(web: WebStartupFacts): readonly StartupSection[] {
   return [
-    {
-      label: "context",
-      facts: [`${runtime.beanCount} beans`, `${runtime.contextMs}ms`],
-      expandWith: "reforce explain beans",
-    },
     {
       label: "routes",
       facts: [

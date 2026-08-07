@@ -1295,7 +1295,7 @@ describe("web engine wiring", () => {
     }
 
     expect(generatedContent(result, "bootstrap.ts")).toContain(
-      "emitBeanTimings({ logger: frameworkLog, timings: startReport.beanTimings });",
+      "emitBeanTimings({ logger: contextLog, timings: startReport.beanTimings });",
     );
   });
 
@@ -1306,7 +1306,7 @@ describe("web engine wiring", () => {
     }
 
     expect(generatedContent(result, "bootstrap.ts")).toContain(
-      '...beanTimingSections(startReport.beanTimings, "reforce.web"),',
+      '...beanTimingSections(startReport.beanTimings, "reforce.context"),',
     );
   });
 

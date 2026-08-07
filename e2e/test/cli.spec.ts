@@ -1474,7 +1474,7 @@ describe.sequential("built Reforce CLI", () => {
   // slow beans——触发折叠要一条真的跑满 5ms 的 bean，而单例构造被强制同步返回，那意味着
   // 忙等，正是要避开的时序 flake。折叠规则由 @reforce/logging 的单测确定性覆盖。
   test(
-    "streams one per-bean timing record when the framework logger is opened to debug",
+    "streams one per-bean timing record when the context logger is opened to debug",
     async () => {
       const project = await createApplicationProject();
       let started: StartedApplication | undefined;
@@ -1484,7 +1484,8 @@ describe.sequential("built Reforce CLI", () => {
         expect(build.exitCode, commandFailure(build)).toBe(0);
 
         started = await startApplication(project.projectRoot, "timings-start", false, {
-          LOGGING_LEVEL_REFORCE_WEB: "debug",
+          // 台账归 reforce.context：它是容器的事实不是 web 的（RFC 0011 L6【已定】）。
+          LOGGING_LEVEL_REFORCE_CONTEXT: "debug",
         });
         const shutdown = await shutdownWithIpc(started);
         stopped = true;

@@ -78,20 +78,26 @@ export function isLoggerLevelsContract(symbol: LinkedSymbol): boolean {
 // 优先取图里真实存在的那个 LoggerFactory 契约符号——绑定 bean（starter 的 PinoLoggerFactory、
 // 或用户自己 implements 的类）的 provides 里就有。这比从 Logger 边推导可靠：多副本安装下
 // external 归属必须与提供方逐字一致，否则合成的依赖边指向另一份包实例，落成 MISSING_BEAN。
+/** 绑定的契约符号，外加「它在哪」——框架 logger 的 span 就是这处绑定。 */
+export interface ProvidedLoggerFactory {
+  readonly symbol: LinkedSymbol;
+  readonly span: SourceSpan;
+}
+
 export function providedLoggerFactorySymbol(
   drafts: readonly ProviderDraft[],
   linker: ProjectLinker,
-): LinkedSymbol | undefined {
+): ProvidedLoggerFactory | undefined {
   for (const draft of drafts) {
     const local = draft.provider.provides.find(isLoggerFactoryContract);
     if (local !== undefined) {
-      return local;
+      return { symbol: local, span: spanOfMetaSource(draft.provider.declarationSource) };
     }
   }
   for (const bean of linker.starterLinkage.beans) {
     const provided = bean.provides.find(isLoggerFactoryContract);
     if (provided !== undefined) {
-      return provided;
+      return { symbol: provided, span: spanOfMetaSource(bean.metaSource) };
     }
   }
   return undefined;
@@ -150,10 +156,19 @@ function decoratedLoggerName(
   return undefined;
 }
 
-/** 框架自己那条 logger：请求日志与引擎监听行都从它出（RFC 0011 L6/L8，#250）。 */
+/** web 面那条 logger：请求日志、未命中与引擎监听行从它出（RFC 0011 L6/L8，#250）。 */
 export const webFrameworkLoggerName = "reforce.web";
 
+/**
+ * 容器面那条 logger（RFC 0011 L6【已定】：运行期框架输出走 `reforce.context` / `reforce.web`
+ * 两个命名空间）。启动摘要、bean 台账、关停与崩溃都归它——它们是容器的事实，不是 web 的，
+ * 而且**非 web 应用（job / CLI / worker）同样要有**。有日志绑定就合成，与装没装引擎无关。
+ */
+export const contextFrameworkLoggerName = "reforce.context";
+
 export const webFrameworkLoggerBeanId = loggerBeanId(webFrameworkLoggerName);
+
+export const contextFrameworkLoggerBeanId = loggerBeanId(contextFrameworkLoggerName);
 
 // 引导期 logger 不是 bean（bootstrapLogger 在运行时直接造），但对它调级是合法的：级别名单
 // 与快照必须收它，否则编译期的 UNKNOWN_LOGGER_NAME 与运行期的未知名告警都会把

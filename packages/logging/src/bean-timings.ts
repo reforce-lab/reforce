@@ -60,6 +60,32 @@ function slowestOf(timings: readonly BeanTimingRecord[]): BeanTimingRecord | und
   }, undefined);
 }
 
+export interface ContextStartupFacts {
+  /** 生成物已知的 bean 条数。 */
+  readonly beanCount: number;
+  /** 容器 start 的耗时，毫秒。 */
+  readonly contextMs: number;
+}
+
+// context 段（RFC 0011 L6【已定】：容器面的事实归 reforce.context）。此前它住在
+// @reforce/web 的 webStartupSections 里，于是没有引擎的应用连「装了多少 bean、起了多久」
+// 都看不到——而那恰恰与 web 无关。
+//
+// 出口用调级别而不是 `reforce explain beans`：后者跑不通（explain 只认 bean id 与以 / 开头
+// 的路由查询），而逐 bean 明细本来就是把这一节展开的东西。
+export function contextStartupSections(
+  facts: ContextStartupFacts,
+  loggerName: string,
+): readonly StartupSummarySection[] {
+  return [
+    {
+      label: "context",
+      facts: [`${facts.beanCount} beans`, `${facts.contextMs}ms`],
+      expandWith: `${environmentKeyForLogger(loggerName)}=debug reforce start`,
+    },
+  ];
+}
+
 export function emitBeanTimings(options: {
   readonly logger: BeanTimingLogger;
   readonly timings: readonly BeanTimingRecord[];

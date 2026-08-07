@@ -107,9 +107,12 @@ describe("synthesised logger beans", () => {
     const loggerIds = manifest.beans
       .map((bean: { readonly id: string }) => bean.id)
       .filter((id: string) => id.startsWith("@reforce/logging#Logger("));
+    // reforce.context 恒在：容器面的运行期框架输出（摘要、台账、关停、崩溃）归它，装没装
+    // 引擎都要有（RFC 0011 L6【已定】）。
     expect(loggerIds).toEqual([
       "@reforce/logging#Logger(OrderService)",
       "@reforce/logging#Logger(PaymentService)",
+      "@reforce/logging#Logger(reforce.context)",
     ]);
   }, 60_000);
 
@@ -118,12 +121,13 @@ describe("synthesised logger beans", () => {
   test("emits a distinct subclass per logger so the class targets stay unique", async () => {
     const { beans } = await compileApplication(twoConsumers);
 
-    // 三条：两个 logger 各一条，加上级别快照 bean——它同样靠字面量实参构造。
+    // 四条：两个用户 logger、框架的 reforce.context，加上级别快照 bean——它同样靠字面量
+    // 实参构造。
     const subclasses = [...beans.matchAll(/class (beanTarget\d+\$Literal) extends/gu)].map(
       (match) => match[1],
     );
-    expect(subclasses).toHaveLength(3);
-    expect(new Set(subclasses).size).toBe(3);
+    expect(subclasses).toHaveLength(4);
+    expect(new Set(subclasses).size).toBe(4);
   }, 60_000);
 
   test("inlines the logger name as a literal constructor argument", async () => {
@@ -164,7 +168,7 @@ describe("synthesised logger beans", () => {
       manifest.beans
         .map((bean: { readonly id: string }) => bean.id)
         .filter((id: string) => id.startsWith("@reforce/logging#Logger(")),
-    ).toEqual(["@reforce/logging#Logger(payments)"]);
+    ).toEqual(["@reforce/logging#Logger(payments)", "@reforce/logging#Logger(reforce.context)"]);
   }, 60_000);
 
   // 这条用例的存在理由：本文件其余用例全是对 beans.ts **文本**做匹配，而文本匹配对
@@ -212,7 +216,9 @@ describe("synthesised logger beans", () => {
     expect(levels).toBeDefined();
     // reforce.config 在名单里但不是 bean：引导期 logger 由 bootstrapLogger 直接造，收进
     // 名单只是为了让 LOGGING_LEVEL_REFORCE_CONFIG 不被当成拼错（RFC 0011 C4，#250）。
-    expect(beans).toContain('"names":["OrderService","PaymentService","reforce.config"]');
+    expect(beans).toContain(
+      '"names":["OrderService","PaymentService","reforce.config","reforce.context"]',
+    );
   }, 60_000);
 
   test("inlines the level a .env layer sets for a named logger", async () => {
@@ -321,6 +327,40 @@ describe("synthesised logger beans", () => {
 
     expect(bootstrap).toContain("drainBootstrapLogs();");
     expect(bootstrap).toContain("throw error;");
+  }, 60_000);
+
+  // RFC #242 L6【已定】：运行期框架输出走 reforce.context / reforce.web 两个命名空间。
+  // 此前只合成了后者，于是 job / CLI / worker 这类没有引擎的应用一条都拿不到——没有启动
+  // 摘要、没有 bean 台账，崩溃与关停也接不上（那两条要 bootstrap 交出 frameworkLogging）。
+  // 这一组用的 compileApplication 正是「有 LoggerFactory、无引擎」那个形状。
+  test("hands a non-web application the same container-side logging seam", async () => {
+    const { bootstrap } = await compileApplication(twoConsumers);
+
+    expect(bootstrap).toContain("export function frameworkLogging() {");
+  }, 60_000);
+
+  test("emits the per-bean timing stream for a non-web application", async () => {
+    const { bootstrap } = await compileApplication(twoConsumers);
+
+    expect(bootstrap).toContain(
+      "emitBeanTimings({ logger: contextLog, timings: startReport.beanTimings });",
+    );
+  }, 60_000);
+
+  test("emits a startup summary for a non-web application", async () => {
+    const { bootstrap } = await compileApplication(twoConsumers);
+
+    expect(bootstrap).toContain(
+      '...contextStartupSections({ beanCount, contextMs }, "reforce.context"),',
+    );
+  }, 60_000);
+
+  // 摘要里不能有 web 的段落：那个包根本没装。
+  test("keeps web sections out of a non-web startup summary", async () => {
+    const { bootstrap } = await compileApplication(twoConsumers);
+
+    expect(bootstrap).not.toContain("webStartupSections");
+    expect(bootstrap).not.toContain("@reforce/web");
   }, 60_000);
 
   test("reports a missing LoggerFactory as an ordinary compile error", async () => {
