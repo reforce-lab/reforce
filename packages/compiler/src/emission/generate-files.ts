@@ -5,7 +5,6 @@ import {
   contextFrameworkLoggerName,
   loggerBeanIdPrefix,
   webFrameworkLoggerBeanId,
-  webFrameworkLoggerName,
 } from "@/analysis/logger-synthesis";
 import {
   type BeanProviderModel,
