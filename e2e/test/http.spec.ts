@@ -157,8 +157,12 @@ describe.sequential("HTTP application over the built artifact", () => {
         headers: { "x-user": "amy" },
       });
       expect(badParams.status).toBe(400);
+      expect(badParams.headers.get("content-type")).toContain("application/problem+json");
       expect(await badParams.json()).toEqual({
-        error: "request validation failed",
+        type: "about:blank",
+        title: "Bad Request",
+        status: 400,
+        code: "REQUEST_VALIDATION_FAILED",
         source: "params",
         issues: [{ message: "id must be a numeric string", path: ["id"] }],
       });
@@ -171,7 +175,10 @@ describe.sequential("HTTP application over the built artifact", () => {
       });
       expect(badBody.status).toBe(400);
       expect(await badBody.json()).toEqual({
-        error: "request validation failed",
+        type: "about:blank",
+        title: "Bad Request",
+        status: 400,
+        code: "REQUEST_VALIDATION_FAILED",
         source: "body",
         issues: [{ message: "name must be a non-empty string", path: ["name"] }],
       });
@@ -209,8 +216,23 @@ describe.sequential("HTTP application over the built artifact", () => {
       const unhandled = await fetch(`${base}/boom/unhandled`);
       expect(unhandled.status).toBe(500);
       expect(await unhandled.json()).toEqual({
-        error: "internal",
+        type: "about:blank",
+        title: "Internal Server Error",
+        status: 500,
         errorId: expect.any(String),
+      });
+
+      // 决议 6/7（#294）：用户抛的 HttpError 不经任何 handler，直接成为它自己状态码的
+      // problem+json；用户自己起的 code 原样进扩展成员。dist-only 链路的证据。
+      const conflict = await fetch(`${base}/boom/conflict`);
+      expect(conflict.status).toBe(409);
+      expect(conflict.headers.get("content-type")).toContain("application/problem+json");
+      expect(await conflict.json()).toEqual({
+        type: "about:blank",
+        title: "Conflict",
+        status: 409,
+        detail: "greeting Lynch already exists",
+        code: "GREETING_ALREADY_EXISTS",
       });
     });
   });
