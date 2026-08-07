@@ -76,19 +76,16 @@ describe("bootstrap log buffer", () => {
   });
 
   // 绑定构造失败时缓冲是唯一的现场，绝不静默丢弃。
-  test("drains to stderr when the binding never arrives", () => {
+  // short 单行文本（RFC 0011 L7）：这条路只在绑定构造失败/退出兜底时走，读者是正在看启动
+  // 失败输出的人——一行 JSON 不合格，err 只留 name: message。
+  test("drains to stderr as short single-line text when the binding never arrives", () => {
     const buffer = createBootstrapLogBuffer();
     buffer.logger("orders").error({ err: new Error("boom") }, "binding failed");
     const lines: string[] = [];
 
     buffer.drainToStderr((line) => lines.push(line));
 
-    expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({
-      name: "orders",
-      level: "error",
-      message: "binding failed",
-    });
+    expect(lines).toEqual(["error orders binding failed err=Error: boom"]);
   });
 
   // 退场后仍持有旧句柄的调用方不能继续攒：那些记录再也不会被重放。

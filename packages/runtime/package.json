@@ -25,6 +25,10 @@
       "types": "./dist/terminal.d.ts",
       "default": "./dist/terminal.js"
     },
+    "./stack-frames": {
+      "types": "./dist/stack-frames.d.ts",
+      "default": "./dist/stack-frames.js"
+    },
     "./diagnostic-render": {
       "types": "./dist/diagnostic-render.d.ts",
       "default": "./dist/diagnostic-render.js"

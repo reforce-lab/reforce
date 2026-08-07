@@ -696,11 +696,12 @@ describe("config generation execution", () => {
       [path.join(projectRoot, "dist", "integration.js")],
       { cwd: projectRoot, env: { ...process.env, REFORCE_PROFILE: undefined } },
     );
-    // 绑定期现在会打一条来源摘要（RFC 0011 C4，#250）。断言收紧成「除了它没有别的输出」，
-    // 而不是放宽成不看 stderr。
+    // 绑定期现在会打来源摘要与逐键明细（RFC 0011 C4，#250）。这个最小应用没有日志绑定，
+    // 记录由退出兜底按 short 单行文本吐出（L7），所以按 logger 名过滤而不是按 JSON 形状。
+    // 断言收紧成「除了它没有别的输出」，而不是放宽成不看 stderr。
     const unexpected = String(execution.stderr)
       .split("\n")
-      .filter((line) => line.trim().length > 0 && !line.includes('"name":"reforce.config"'));
+      .filter((line) => line.trim().length > 0 && !line.includes("reforce.config"));
     expect(unexpected).toEqual([]);
     // .env.local 的 SERVER_PORT=4000 覆盖 .env 的 3000；host 来自 .env（五层语义的执行证据）。
     expect(String(execution.stdout).trim()).toBe(JSON.stringify("base-host:4000"));

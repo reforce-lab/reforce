@@ -5,7 +5,7 @@ import {
   type LogLevel,
   type LogRecord,
 } from "@/contracts";
-import { renderRecord } from "@/render-record";
+import { renderShortRecord } from "@/render-record";
 
 // 引导期缓冲（RFC 0011 L7，#242）。
 //
@@ -115,8 +115,10 @@ export function createBootstrapLogBuffer(
       }
     },
     drainToStderr(write = (line) => void process.stderr.write(`${line}\n`)) {
+      // short 单行文本而不是 JSON：这条路只在绑定构造失败/退出兜底时走，读者是正在看启动
+      // 失败输出的人，用户配置的格式与目标此刻都不存在（不变量 9：现场必须先出来）。
       for (const record of records.splice(0)) {
-        write(JSON.stringify(renderRecord(record)));
+        write(renderShortRecord(record));
       }
       if (dropped > 0) {
         write(`[reforce.bootstrap] ${dropped} buffered record(s) were dropped before this drain.`);

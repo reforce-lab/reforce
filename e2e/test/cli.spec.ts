@@ -2294,6 +2294,69 @@ describe.skipIf(!ptyAvailable).sequential("rendering mode on a real terminal", (
     commandTimeout,
   );
 
+  // 应用日志的 human 档（RFC 0011 D2，#242）：dev TTY 下是对齐行（级别词右对齐 + 名字列
+  // 定宽），不是 JSON。管道那一半由上面 "lets LoggingSettings.levels…" 用例覆盖——它解析的
+  // 正是 JSON 行。
+  test(
+    "application logs render as aligned human lines on a real tty",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        // timeout 到点发 TERM，应用优雅关停后 script 才返回；输出在此之前早已写完。
+        const startCommand = `timeout -s TERM 10 ${nodeExecutable} ${cliEntry} start --project ${project.projectRoot}`;
+        const plain = await runInPty(startCommand, {
+          cwd: project.projectRoot,
+          env: { NO_COLOR: "1" },
+        });
+
+        const output = `${String(plain.stdout)}${String(plain.stderr)}`;
+        // 级别词右对齐、名字列定宽（18 列）：消息的起点不随名字长短漂移。
+        expect(output).toMatch(/ {2}info LoggingProbe {7}logging probe info/u);
+        // 调开 debug 的那条同样以 human 形态出现——settings 在 human 档下照常生效。
+        expect(output).toMatch(/ {1}debug LoggingProbe {7}logging probe debug/u);
+        // human 档下不再是 JSON 行。
+        expect(output).not.toContain('"message":"logging probe info"');
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  test(
+    "application log colour follows the tty and NO_COLOR strips it without losing the level word",
+    async () => {
+      const project = await createApplicationProject();
+      try {
+        const build = await buildProject(project.projectRoot);
+        expect(build.exitCode, commandFailure(build)).toBe(0);
+
+        const startCommand = `timeout -s TERM 10 ${nodeExecutable} ${cliEntry} start --project ${project.projectRoot}`;
+        const coloured = await runInPty(startCommand, { cwd: project.projectRoot });
+        const plain = await runInPty(startCommand, {
+          cwd: project.projectRoot,
+          env: { NO_COLOR: "1" },
+        });
+
+        const ansiIntroducer = `${String.fromCodePoint(27)}[`;
+        const colouredOutput = `${String(coloured.stdout)}${String(coloured.stderr)}`;
+        const plainOutput = `${String(plain.stdout)}${String(plain.stderr)}`;
+        expect(colouredOutput).toContain("logging probe info");
+        expect(colouredOutput).toContain(ansiIntroducer);
+        expect(plainOutput).not.toContain(ansiIntroducer);
+        // 降级掉的只是颜色：级别词与消息一个字都不能少（颜色不是级别的唯一通道，D2）。
+        expect(plainOutput).toContain("info LoggingProbe");
+        expect(plainOutput).toContain("logging probe info");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
   // banner 同属 human 档：管道下不该出现（它对 grep 和采集系统都是噪音）。
   test(
     "the banner appears on a tty and nowhere else",

@@ -1,3 +1,6 @@
+import type { Writable } from "node:stream";
+import { resolveRenderMode } from "@reforce/runtime/render-mode";
+import { isInteractive } from "@reforce/runtime/terminal";
 import {
   isLevelEnabled,
   type LogFieldSource,
@@ -10,6 +13,7 @@ import {
 } from "@/contracts";
 import { bindLoggerLevels } from "@/level-binding";
 import type { LoggerLevels } from "@/levels";
+import { createHumanRenderer } from "@/render-human";
 import { renderRecord } from "@/render-record";
 import type { LoggingSettings } from "@/settings";
 
@@ -32,6 +36,8 @@ export interface DefaultLoggerFactoryOptions {
   /** 集合注入的字段贡献者（ADR 0006 W6）。 */
   readonly fieldSources?: readonly LogFieldSource[];
   readonly write?: (line: string) => void;
+  /** 输出流：human/json 的 TTY 判定与颜色都按它算，缺省 process.stderr。 */
+  readonly stream?: Writable;
   readonly now?: () => number;
 }
 
@@ -39,9 +45,22 @@ export interface DefaultLoggerFactoryOptions {
 // 生成的 bootstrap 会被当作库嵌进 Worker/管道消费，stdout 属于应用数据面必须保持纯净，所以
 // 三个引擎的监听行、@reforce/config 的绑定警告、reporter 的诊断，现有运行期输出全在 stderr。
 // 框架自己的日志一旦改走这个门面（RFC 0011 L8），缺省写 stdout 就等于把那条不变量悄悄破掉。
-// 要 stdout 的应用显式传 write。
-function defaultWrite(line: string): void {
-  process.stderr.write(`${line}\n`);
+// 要 stdout 的应用显式传 stream 或 write。
+
+// 模式解析（RFC 0011 D1 的应用侧默认表）：settings.render 是应用侧的显式覆盖，"auto"/缺席时
+// 走与 CLI 同一套 resolveRenderMode——audience 是 "application"（非 TTY 缺省 json，读者是
+// 日志系统），TTY 下是 human。short 对结构化应用日志没有意义，env 强设它时落回 json。
+function resolveRender(settings: LoggingSettings | undefined, stream: Writable): "human" | "json" {
+  const explicit = settings?.render;
+  if (explicit === "human" || explicit === "json") {
+    return explicit;
+  }
+  const mode = resolveRenderMode({
+    interactive: isInteractive(stream),
+    audience: "application",
+    env: process.env,
+  });
+  return mode === "human" ? "human" : "json";
 }
 
 // 不变量 8 是实现约束，不是优化（L1）：级别关闭时不合并字段、不遍历 LogFieldSource、
@@ -52,6 +71,7 @@ class DefaultLogger implements Logger {
   private readonly threshold: LogThreshold;
   private readonly fieldSources: readonly LogFieldSource[];
   private readonly write: (line: string) => void;
+  private readonly render: (record: LogRecord) => string;
   private readonly now: () => number;
 
   constructor(input: {
@@ -59,12 +79,14 @@ class DefaultLogger implements Logger {
     readonly threshold: LogThreshold;
     readonly fieldSources: readonly LogFieldSource[];
     readonly write: (line: string) => void;
+    readonly render: (record: LogRecord) => string;
     readonly now: () => number;
   }) {
     this.name = input.name;
     this.threshold = input.threshold;
     this.fieldSources = input.fieldSources;
     this.write = input.write;
+    this.render = input.render;
     this.now = input.now;
   }
 
@@ -100,7 +122,7 @@ class DefaultLogger implements Logger {
     if (!isLevelEnabled(level, this.threshold)) {
       return;
     }
-    this.write(JSON.stringify(renderRecord(this.record(level, fields, message))));
+    this.write(this.render(this.record(level, fields, message)));
   }
 
   private record(level: LogLevel, fields: LogFields | undefined, message: string): LogRecord {
@@ -126,6 +148,8 @@ class DefaultLogger implements Logger {
 export class DefaultLoggerFactory implements LoggerFactory {
   private readonly options: DefaultLoggerFactoryOptions;
   private readonly levelFor: (name: string) => LogThreshold | undefined;
+  private readonly write: (line: string) => void;
+  private readonly render: (record: LogRecord) => string;
 
   constructor(options: DefaultLoggerFactoryOptions = {}) {
     this.options = options;
@@ -135,6 +159,14 @@ export class DefaultLoggerFactory implements LoggerFactory {
       options.settings === undefined && options.levels === undefined
         ? (options.levelFor ?? (() => undefined))
         : bindLoggerLevels({ settings: options.settings, levels: options.levels });
+    const stream = options.stream ?? process.stderr;
+    this.write = options.write ?? ((line) => void stream.write(`${line}\n`));
+    // human 渲染器整个 factory 共享一个：相对时间戳（+12ms）算的是相邻两条记录的间隔，
+    // 逐 logger 各起一个时钟会让间隔失真。
+    this.render =
+      resolveRender(options.settings, stream) === "human"
+        ? createHumanRenderer({ stream })
+        : (record) => JSON.stringify(renderRecord(record));
   }
 
   create(name: string): Logger {
@@ -146,7 +178,8 @@ export class DefaultLoggerFactory implements LoggerFactory {
         this.options.defaultLevel ??
         "info",
       fieldSources: this.options.fieldSources ?? [],
-      write: this.options.write ?? defaultWrite,
+      write: this.write,
+      render: this.render,
       now: this.options.now ?? (() => Date.now()),
     });
   }
