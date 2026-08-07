@@ -64,6 +64,9 @@ export type CompilerDiagnosticCode =
   | "DUPLICATE_BEAN_QUALIFIER"
   | "INVALID_BEAN_QUALIFIER"
   | "BEAN_ID_COLLISION"
+  // 同名包多份物理拷贝各自被绑定的撕裂检测（ADR 0004 决策 10 配套，#253）。
+  // warning：多版本共存有合法场景（互不相干的子系统各用各的拷贝）。
+  | "SPLIT_CONTRACT_BINDING"
   // 抑制注释（RFC 0011 D7，#242）。两者都是 warning：抑制机制本身出问题不该拦住编译。
   | "UNUSED_SUPPRESSION"
   | "SUPPRESSION_NOT_APPLICABLE"

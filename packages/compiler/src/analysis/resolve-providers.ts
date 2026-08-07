@@ -318,6 +318,38 @@ interface ResolutionState {
   readonly diagnostics: CompilerDiagnostic[];
   readonly materialized: Map<string, MaterializedStarter>;
   readonly queue: MaterializedStarter[];
+  // 被实际绑定的外部契约（#253）：契约 key → 绑定记录。只记绑定成功的边——只装不绑没有
+  // 行为风险，dangling 一侧由 MISSING_BEAN + otherCopyRelated 负责。
+  readonly boundContracts: Map<string, ContractBinding[]>;
+}
+
+interface ContractBinding {
+  readonly providerId: string;
+  readonly packageName: string;
+  readonly copyRoot: string;
+  readonly contractName: string;
+  readonly span?: SourceSpan;
+}
+
+function recordContractBinding(
+  state: ResolutionState,
+  symbol: LinkedSymbol,
+  providerId: string,
+  span: SourceSpan | undefined,
+): void {
+  const external = symbol.external;
+  if (external === undefined) {
+    return;
+  }
+  const bindings = state.boundContracts.get(symbol.key) ?? [];
+  bindings.push({
+    providerId,
+    packageName: external.packageName,
+    copyRoot: external.packageRoot,
+    contractName: symbol.name,
+    ...(span === undefined ? {} : { span }),
+  });
+  state.boundContracts.set(symbol.key, bindings);
 }
 
 interface MaterializedStarter {
@@ -634,7 +666,11 @@ function collectionMemberIds(
     ...locals.map((provider) => ({ id: provider.id, order: provider.order })),
     ...pool.map((bean) => ({ id: materializeStarter(state, bean, demand).id })),
   ];
-  return members.toSorted(compareCollectionMembers).map((member) => member.id);
+  const memberIds = members.toSorted(compareCollectionMembers).map((member) => member.id);
+  for (const memberId of memberIds) {
+    recordContractBinding(state, symbol, memberId, demand.span);
+  }
+  return memberIds;
 }
 
 function collectionDependencyFor(
@@ -665,6 +701,7 @@ function singleDependencyFor(
   if (selected === undefined || rejectLazyConfigInjection(state, pending, selected)) {
     return undefined;
   }
+  recordContractBinding(state, pending.linkedType.symbol, selected.id, pending.linkedType.span);
   return {
     parameterIndex: pending.index,
     targetId: selected.id,
@@ -795,6 +832,7 @@ function resolveStarterQueue(state: ResolutionState): void {
       if (targetId === undefined) {
         continue;
       }
+      recordContractBinding(state, symbol, targetId, demand.span);
       entry.draft.provider.dependencies.push({
         parameterIndex: edge.index,
         targetId,
@@ -803,6 +841,47 @@ function resolveStarterQueue(state: ResolutionState): void {
         contract: symbol,
       });
     }
+  }
+}
+
+// 解析完成后的撕裂扫描（#253 设计定案）：coordinate（包名+包内路径+导出名，不含物理路径）
+// 是跨拷贝归一键——同 coordinate 存在 ≥2 个被绑定的 key，说明多个消费者各自绑到了同名包
+// 不同物理拷贝的实现。这不构成 AMBIGUOUS_BEAN（key 不同、各解析各的），症状（方法找不到、
+// 行为不一致）发生在运行期且远离原因，所以主动报出来；anchor 取最早的带 span 绑定点，
+// 让 reforce-ignore 抑制注释有处可放。
+function reportSplitContractBindings(state: ResolutionState): void {
+  for (const entries of state.candidates.byCoordinate.values()) {
+    const boundKeys = [...new Set(entries.map((entry) => entry.key))]
+      .filter((key) => state.boundContracts.has(key))
+      .toSorted(compareUtf16CodeUnits);
+    if (boundKeys.length < 2) {
+      continue;
+    }
+    const bindings = boundKeys.flatMap((key) => state.boundContracts.get(key) ?? []);
+    const first = bindings[0];
+    if (first === undefined) {
+      continue;
+    }
+    const anchor = bindings
+      .flatMap((binding) => (binding.span === undefined ? [] : [binding.span]))
+      .toSorted((left, right) => {
+        const file = compareUtf16CodeUnits(left.fileId, right.fileId);
+        return file === 0 ? left.start.offset - right.start.offset : file;
+      })
+      .at(0);
+    state.diagnostics.push(
+      diagnostic({
+        code: "SPLIT_CONTRACT_BINDING",
+        severity: "warning",
+        message: `${first.contractName} is bound through ${boundKeys.length} different installed copies of ${first.packageName}.`,
+        ...(anchor === undefined ? {} : { sourceSpan: anchor }),
+        related: bindings.map((binding) => ({
+          message: `bound to ${binding.providerId} (copy at ${binding.copyRoot})`,
+          ...(binding.span === undefined ? {} : { sourceSpan: binding.span }),
+        })),
+        help: `Run "reforce explain ${first.contractName}" to see each copy's introduction chain, or align versions so one copy serves every consumer.`,
+      }),
+    );
   }
 }
 
@@ -829,6 +908,7 @@ export function resolveProviders(
     diagnostics,
     materialized: new Map(),
     queue: [],
+    boundContracts: new Map(),
   };
   // 可达性即成员资格（决策 11）：应用本地 bean 都是根，role:"root" 的 starter bean 显式入根；
   // 其余 starter bean 只有被某条已解析边选中才物化——不入名单的连坏引用都不报错。
@@ -843,5 +923,6 @@ export function resolveProviders(
   resolveStarterQueue(state);
   const starterDrafts = [...state.materialized.values()].map((entry) => entry.draft);
   validateBeanIdentities([...drafts, ...starterDrafts], diagnostics);
+  reportSplitContractBindings(state);
   return starterDrafts;
 }

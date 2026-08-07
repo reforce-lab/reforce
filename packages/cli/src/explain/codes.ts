@@ -160,6 +160,22 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
       "which shows who pulled in which version.",
     ],
   },
+  SPLIT_CONTRACT_BINDING: {
+    summary: "Consumers of one contract are bound through different installed copies of a package.",
+    article: [
+      "The same package is installed more than once, and consumers resolved the 'same' contract",
+      "through different physical copies. Each copy is its own type identity (copies are never",
+      "merged), so every consumer quietly got the provider living in its own copy. The graph is",
+      "complete and the build succeeds — which is exactly why this is reported: the symptom (a",
+      "method missing, two subsystems disagreeing about state) shows up at runtime, far from here.",
+      "",
+      "The report lists every binding with the copy it went through. `reforce explain <contract>`",
+      "prints each installed copy and who introduced it. When the split is unintentional, align",
+      "the package versions so one copy serves every consumer. When two independent subsystems",
+      "really do want their own copies, suppress the report with '// reforce-ignore",
+      "SPLIT_CONTRACT_BINDING: <why>' above the anchored line.",
+    ],
+  },
   DUPLICATE_LOGGER_NAME: {
     summary: "Two classes resolve to the same logger name.",
     article: [

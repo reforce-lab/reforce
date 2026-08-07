@@ -598,7 +598,158 @@ describe("project linking", () => {
       },
     });
 
+    // 只有 right 侧的 Port 被注入：单份拷贝被绑定没有行为风险，保持沉默（#253）。
     expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.diagnostics).toEqual([]);
+    }
+  });
+
+  // #253：决策 10 保持两份拷贝的类型身份分开，但两份都被实际绑定时不再沉默——每个消费者
+  // 静默绑到自己那份拷贝的实现，症状（行为不一致）离原因很远，报 warning 双侧点名。
+  test("warns when both physical copies of one package get bound", async () => {
+    const packageManifest = `${JSON.stringify({
+      name: "shared-contract",
+      version: "1.0.0",
+      type: "module",
+      exports: { ".": { types: "./index.d.ts", default: "./index.js" } },
+    })}\n`;
+    const contractPackage = {
+      "package.json": packageManifest,
+      "index.d.ts": "export interface Port { readonly value: string }\n",
+    };
+    const { result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        left: {
+          node_modules: { "shared-contract": contractPackage },
+          "provider.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import type { Port } from "shared-contract";',
+            "@Injectable()",
+            'export class LeftProvider implements Port { readonly value = "left"; }',
+            "@Injectable()",
+            "export class LeftConsumer { constructor(readonly port: Port) {} }",
+            "",
+          ].join("\n"),
+        },
+        right: {
+          node_modules: { "shared-contract": contractPackage },
+          "application.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import type { Port } from "shared-contract";',
+            "@Injectable()",
+            'export class RightProvider implements Port { readonly value = "right"; }',
+            "@Injectable()",
+            "export class RightConsumer { constructor(readonly port: Port) {} }",
+            "",
+          ].join("\n"),
+        },
+      },
+    });
+
+    if (result.status !== "success") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+    expect(result.diagnostics.map((item) => [item.code, item.severity])).toEqual([
+      ["SPLIT_CONTRACT_BINDING", "warning"],
+    ]);
+    expect(result.diagnostics[0]?.message).toContain("shared-contract");
+    const serialized = JSON.stringify(result.diagnostics);
+    expect(serialized).toContain("LeftProvider");
+    expect(serialized).toContain("RightProvider");
+  });
+
+  test("a suppression comment on the anchored binding silences the split warning", async () => {
+    const packageManifest = `${JSON.stringify({
+      name: "shared-contract",
+      version: "1.0.0",
+      type: "module",
+      exports: { ".": { types: "./index.d.ts", default: "./index.js" } },
+    })}\n`;
+    const contractPackage = {
+      "package.json": packageManifest,
+      "index.d.ts": "export interface Port { readonly value: string }\n",
+    };
+    const { result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      src: {
+        left: {
+          node_modules: { "shared-contract": contractPackage },
+          "provider.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import type { Port } from "shared-contract";',
+            "@Injectable()",
+            'export class LeftProvider implements Port { readonly value = "left"; }',
+            "@Injectable()",
+            "// reforce-ignore SPLIT_CONTRACT_BINDING: the two subsystems intentionally keep their own copies",
+            "export class LeftConsumer { constructor(readonly port: Port) {} }",
+            "",
+          ].join("\n"),
+        },
+        right: {
+          node_modules: { "shared-contract": contractPackage },
+          "application.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import type { Port } from "shared-contract";',
+            "@Injectable()",
+            'export class RightProvider implements Port { readonly value = "right"; }',
+            "@Injectable()",
+            "export class RightConsumer { constructor(readonly port: Port) {} }",
+            "",
+          ].join("\n"),
+        },
+      },
+    });
+
+    if (result.status !== "success") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("stays silent when two different packages export a same-named contract", async () => {
+    const contractPackageNamed = (name: string) => ({
+      "package.json": `${JSON.stringify({
+        name,
+        version: "1.0.0",
+        type: "module",
+        exports: { ".": { types: "./index.d.ts", default: "./index.js" } },
+      })}\n`,
+      "index.d.ts": "export interface Port { readonly value: string }\n",
+    });
+    const { result } = await compile({
+      "tsconfig.json": applicationTsconfig(),
+      node_modules: {
+        "alpha-contract": contractPackageNamed("alpha-contract"),
+        "beta-contract": contractPackageNamed("beta-contract"),
+      },
+      src: {
+        "alpha.ts": [
+          'import { Injectable } from "@reforce/core";',
+          'import type { Port } from "alpha-contract";',
+          "@Injectable()",
+          'export class AlphaProvider implements Port { readonly value = "alpha"; }',
+          "@Injectable()",
+          "export class AlphaConsumer { constructor(readonly port: Port) {} }",
+          "",
+        ].join("\n"),
+        "beta.ts": [
+          'import { Injectable } from "@reforce/core";',
+          'import type { Port } from "beta-contract";',
+          "@Injectable()",
+          'export class BetaProvider implements Port { readonly value = "beta"; }',
+          "@Injectable()",
+          "export class BetaConsumer { constructor(readonly port: Port) {} }",
+          "",
+        ].join("\n"),
+      },
+    });
+
+    if (result.status !== "success") {
+      throw new Error(JSON.stringify(result.diagnostics));
+    }
+    expect(result.diagnostics).toEqual([]);
   });
 
   test("rejects a package without a public type declaration endpoint", async () => {
