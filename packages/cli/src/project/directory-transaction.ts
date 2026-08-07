@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
 import {
   compareUtf16CodeUnits,
@@ -159,6 +159,24 @@ async function readdirIfExists(directory: string): Promise<readonly string[]> {
       return [];
     }
     throw error;
+  }
+}
+
+// 威胁模型（Issue #144 决议）：目录事务的原子性保障覆盖进程崩溃（kill -9/OOM）与断电。文件内容靠
+// handle.sync() 落盘；rename 与目录删除改动的是父目录条目，内容落盘不等于条目落盘，所以这类条目
+// 变更之后要 fsync 父目录。两个平台局限只能尽力而为，恢复矩阵因此必须继续容忍「journal 领先于
+// rename 落盘」的乱序组合（见 recoverPublished / recoverBackupPublished）：
+// - Windows 打不开目录句柄，目录 fsync 整体跳过，依赖 NTFS 元数据日志；
+// - macOS 上 Node 的 fsync 不发 F_FULLFSYNC，不构成完整写屏障。
+async function syncDirectory(path: string): Promise<void> {
+  if (process.platform === "win32") {
+    return;
+  }
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
 }
 
@@ -513,6 +531,12 @@ export class DirectoryTransactions {
     const canonicalDistTransactionRoot = await realpath(distTransactionRoot);
     assertContained(canonicalReforceRoot, canonicalGeneratedTransactionRoot);
     assertContained(canonicalReforceRoot, canonicalDistTransactionRoot);
+    // 首次运行时 .reforce/transactions/<kind> 链上的目录可能都是刚建的：条目不落盘，断电后 journal
+    // 链条整体消失，而 dist 侧（activeParent 是项目根）可能已留下 backup/staging——无 journal 归属
+    // 的孤儿会永久卡住 findIncompleteDistTransaction 的启动闸门，所以逐层 fsync 一次（Issue #144）。
+    await syncDirectory(projectRoot);
+    await syncDirectory(canonicalReforceRoot);
+    await syncDirectory(join(canonicalReforceRoot, "transactions"));
     return new DirectoryTransactions({
       projectRoot,
       reforceRoot: canonicalReforceRoot,
@@ -569,12 +593,7 @@ export class DirectoryTransactions {
         }
         await this.commitPrepared("generated", transactionToken, paths, generatedFilePaths);
       } catch (error) {
-        await this.recoverTokenIfJournalExists("generated", transactionToken, paths);
-        throw error instanceof DirectoryTransactionError
-          ? error
-          : new DirectoryTransactionError("generated", "Generated output transaction failed.", {
-              cause: error,
-            });
+        throw await this.recoverAfterCommitFailure("generated", transactionToken, paths, error);
       }
     });
   }
@@ -601,14 +620,35 @@ export class DirectoryTransactions {
       try {
         await this.commitPrepared("dist", options.transactionToken, paths, expectedFiles);
       } catch (error) {
-        await this.recoverTokenIfJournalExists("dist", options.transactionToken, paths);
-        throw error instanceof DirectoryTransactionError
-          ? error
-          : new DirectoryTransactionError("dist", "Production output transaction failed.", {
-              cause: error,
-            });
+        throw await this.recoverAfterCommitFailure("dist", options.transactionToken, paths, error);
       }
     });
+  }
+
+  // 恢复自身也可能失败，但它不得顶替第一现场：AggregateError 把两个错误都保住（照调用方 build.ts
+  // 处理同型失败的做法，Issue #144），外层仍是带 kind 的 DirectoryTransactionError，维持 commit
+  // 的错误归类（Issue #105）。返回而不是抛出：调用方 `throw await` 后 TS 才能证明 catch 已终结。
+  private async recoverAfterCommitFailure(
+    kind: TransactionKind,
+    transactionToken: string,
+    paths: TransactionPaths,
+    error: unknown,
+  ): Promise<DirectoryTransactionError> {
+    const outputLabel = kind === "generated" ? "Generated" : "Production";
+    try {
+      await this.recoverTokenIfJournalExists(kind, transactionToken, paths);
+    } catch (recoveryError) {
+      return new DirectoryTransactionError(
+        kind,
+        `${outputLabel} output transaction and its post-failure recovery both failed.`,
+        { cause: new AggregateError([error, recoveryError]) },
+      );
+    }
+    return error instanceof DirectoryTransactionError
+      ? error
+      : new DirectoryTransactionError(kind, `${outputLabel} output transaction failed.`, {
+          cause: error,
+        });
   }
 
   async recover(): Promise<void> {
@@ -736,6 +776,17 @@ export class DirectoryTransactions {
     if (hadActiveBefore) {
       await this.removeTree(paths.backup, kind, transactionToken);
     }
+    await this.removeJournalDirectory(kind, transactionToken, paths);
+  }
+
+  // 删除 journal 前先把 activeParent 里 backup/staging 的删除落盘：顺序在断电下颠倒时，磁盘上会
+  // 剩下无 journal 归属的 backup，恢复扫描对它无从下手，dist 的启动闸门则永久报警（Issue #144）。
+  private async removeJournalDirectory(
+    kind: TransactionKind,
+    transactionToken: string,
+    paths: TransactionPaths,
+  ): Promise<void> {
+    await syncDirectory(this.layoutFor(kind).activeParent);
     await this.removeTree(paths.journalDirectory, kind, transactionToken);
   }
 
@@ -849,6 +900,7 @@ export class DirectoryTransactions {
     validation: {
       readonly activeMatches: boolean;
       readonly stagingMatches: boolean;
+      readonly activeMatchesPrevious: boolean;
       readonly backupMatchesPrevious: boolean;
     },
   ): Promise<void> {
@@ -860,6 +912,11 @@ export class DirectoryTransactions {
     }
     if (validation.stagingMatches) {
       await this.replaceActive(paths.staging, journal, paths, "recovery-staging-to-active");
+      return;
+    }
+    // active→backup 的 rename 没落盘而 journal 已推进（Issue #144）：active 还是完好的上一代，
+    // 等同于交换尚未开始，视为已回滚。排在 stagingMatches 之后：新一代仍完整时维持前滚语义。
+    if (validation.activeMatchesPrevious) {
       return;
     }
     if (validation.backupMatchesPrevious) {
@@ -875,9 +932,19 @@ export class DirectoryTransactions {
   private async recoverPublished(
     journal: TransactionJournal,
     paths: TransactionPaths,
-    validation: { readonly activeMatches: boolean; readonly backupMatchesPrevious: boolean },
+    validation: {
+      readonly activeMatches: boolean;
+      readonly activeMatchesPrevious: boolean;
+      readonly backupMatchesPrevious: boolean;
+    },
   ): Promise<void> {
     if (validation.activeMatches) {
+      return;
+    }
+    // 断电乱序的产物（Issue #144）：journal 已推进到发布后状态，但 staging→active 的 rename 没
+    // 落盘，active 仍是完好的上一代，backup 可能不存在。终验 validateRecoveredActive 本就接受
+    // 上一代为合法结局，这里视为已回滚，残留的 staging/backup 交给 cleanupRecoveredTransaction。
+    if (validation.activeMatchesPrevious) {
       return;
     }
     if (!validation.backupMatchesPrevious) {
@@ -943,7 +1010,7 @@ export class DirectoryTransactions {
         await this.removeTree(leftover, journal.kind, journal.transactionToken);
       }
     }
-    await this.removeTree(paths.journalDirectory, journal.kind, journal.transactionToken);
+    await this.removeJournalDirectory(journal.kind, journal.transactionToken, paths);
   }
 
   private async recoverJournalOrphan(
@@ -962,7 +1029,7 @@ export class DirectoryTransactions {
       await this.removeTree(paths.staging, kind, transactionToken);
     }
     if (await pathExists(paths.journalDirectory)) {
-      await this.removeTree(paths.journalDirectory, kind, transactionToken);
+      await this.removeJournalDirectory(kind, transactionToken, paths);
     }
   }
 
@@ -1001,6 +1068,9 @@ export class DirectoryTransactions {
       paths.journalDirectory,
     );
     await mkdir(paths.journalDirectory, { recursive: true });
+    // journal 目录本身是 transactionRoot 里的新条目：不 fsync 其父目录，断电就可能丢掉整个
+    // journal，而 activeParent 侧已落盘的 rename 会变成无记录可循的孤儿（Issue #144）。
+    await syncDirectory(dirname(paths.journalDirectory));
     await this.hit(
       "after:mkdir:journal",
       journal.kind,
@@ -1106,6 +1176,9 @@ export class DirectoryTransactions {
     await this.lease.assertCurrentWriter();
     await this.hit(`before:${label}-rename`, kind, transactionToken, source);
     await renameWithWindowsRetry(source, destination);
+    // 本模块所有 rename 的源和目标都在同一父目录（staging/active/backup 同层，journal 临时文件与
+    // 正式文件同目录），同步目标的父目录一次即可（Issue #144，威胁模型见 syncDirectory）。
+    await syncDirectory(dirname(destination));
     await this.hit(`after:${label}-rename`, kind, transactionToken, destination);
   }
 
