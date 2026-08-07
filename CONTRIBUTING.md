@@ -94,7 +94,7 @@ Compiler 内置唯一的 Yuku parser。Parser-to-IR 测试只断言 Source IR、
 ```
 
 ```ts
-import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";
 
 @Injectable()
 export class Application implements OnContextStart, OnContextClose {

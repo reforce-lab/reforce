@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@reforce/web": "workspace:*",
     "@swc/helpers": "catalog:",
     "hono": "^4.13.0"

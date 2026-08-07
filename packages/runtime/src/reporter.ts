@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { ReforceRuntimeError } from "@reforce/context";
+import { ReforceRuntimeError } from "@reforce/core";
 import { isObject } from "radashi";
 
 export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain";

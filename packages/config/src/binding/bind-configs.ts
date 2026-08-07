@@ -1,9 +1,9 @@
-import type { ConfigBindingIssue } from "@reforce/context";
+import type { ConfigBindingIssue } from "@reforce/core";
 import type {
   GeneratedConfigBinding,
   GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
-} from "@reforce/context/generated-runtime";
+} from "@reforce/core/generated-runtime";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { type EnvironmentSnapshot, loadEnvironmentSnapshot } from "@/binding/env-layers";
 import {

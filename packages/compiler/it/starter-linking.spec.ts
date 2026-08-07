@@ -204,7 +204,7 @@ function redisStarterPackage(
 }
 
 const registrationSource = [
-  'import { defineApplication } from "@reforce/context";',
+  'import { defineApplication } from "@reforce/core";',
   'import { redisStarter } from "@acme/starter-redis";',
   "",
   "export default defineApplication({ starters: [redisStarter] });",
@@ -212,7 +212,7 @@ const registrationSource = [
 ].join("\n");
 
 const cacheConsumerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import type { Cache } from "@acme/starter-redis";',
   "",
   "@Injectable()",
@@ -227,7 +227,7 @@ const cacheConsumerSource = [
 ].join("\n");
 
 const localConfigSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import type { RedisConfig } from "@acme/starter-redis";',
   "",
   "@Injectable()",
@@ -236,6 +236,19 @@ const localConfigSource = [
   '    return "redis://local";',
   "  }",
   "}",
+  "",
+].join("\n");
+
+// 同一条开放边的工厂写法。create-reforce 模板 README 的「配置的逃生舱」承诺 starter 的开放边
+// 不必由 ConfigProperties 或 @Injectable 类闭合，一个显式类型参数的 defineBean 就够——这里钉住
+// 那个承诺，免得日后收紧了闭合形态而没人发现文档已经说谎。
+const factoryConfigSource = [
+  'import { defineBean } from "@reforce/core";',
+  'import type { RedisConfig } from "@acme/starter-redis";',
+  "",
+  "export const redisConfig = defineBean<RedisConfig>({",
+  '  create: (): RedisConfig => ({ url: () => "redis://local" }),',
+  "});",
   "",
 ].join("\n");
 
@@ -302,7 +315,7 @@ function competingStarter(options: {
 }
 
 const sharedCacheConsumerSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import type { Cache } from "@acme/cache-api";',
   "",
   "@Injectable()",
@@ -314,7 +327,7 @@ const sharedCacheConsumerSource = [
 
 function competingRegistrationSource(packageNames: readonly string[]): string {
   return [
-    'import { defineApplication } from "@reforce/context";',
+    'import { defineApplication } from "@reforce/core";',
     ...packageNames.map(
       (name, index) => `import { starter as starter${index} } from ${JSON.stringify(name)};`,
     ),
@@ -389,7 +402,7 @@ describe("starter linking semantics", () => {
 
   test("keeps a local provider over a starter candidate", async () => {
     const localCacheSource = [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import type { Cache } from "@acme/starter-redis";',
       "",
       "@Injectable()",
@@ -553,6 +566,28 @@ describe("starter linking semantics", () => {
     expect(order.indexOf("src/config.ts#LocalConfig")).toBeLessThan(order.indexOf(redisClientId));
   });
 
+  test("satisfies a starter open edge with a defineBean factory", async () => {
+    const result = await compileOrThrow(
+      applicationTree(
+        {
+          "application.ts": registrationSource,
+          "config.ts": factoryConfigSource,
+          "consumer.ts": cacheConsumerSource,
+        },
+        {
+          "@acme/starter-redis": redisStarterPackage(
+            redisMeta([redisClientBean({ dependencies: [redisConfigEdge] })]),
+          ),
+        },
+      ),
+    );
+
+    const manifest = manifestOf(result);
+    expect(manifestBean(manifest, redisClientId).dependencies.map((item) => item.targetId)).toEqual(
+      ["src/config.ts#redisConfig"],
+    );
+  });
+
   test("pulls transitive starters through starterDeps", async () => {
     const facadeStarter = starterPackage({
       name: "@acme/starter-cache",
@@ -598,7 +633,7 @@ describe("starter linking semantics", () => {
       },
     });
     const facadeConsumerSource = [
-      'import { Injectable } from "@reforce/context";',
+      'import { Injectable } from "@reforce/core";',
       'import type { CacheFacade } from "@acme/starter-cache";',
       "",
       "@Injectable()",
@@ -667,7 +702,7 @@ describe("starter linking semantics", () => {
 describe("defineApplication reading", () => {
   test("rejects a non-literal starters option", async () => {
     const source = [
-      'import { defineApplication } from "@reforce/context";',
+      'import { defineApplication } from "@reforce/core";',
       'import { redisStarter } from "@acme/starter-redis";',
       "",
       "const starters = [redisStarter];",
@@ -685,9 +720,30 @@ describe("defineApplication reading", () => {
     expect(failure.diagnostics.map((item) => item.code)).toEqual(["INVALID_DEFINE_APPLICATION"]);
   });
 
+  // 回归（Issue #261）：这种写法过去在 parser 就被丢掉，build 照常成功、starter 一个都没注册、
+  // 应用起来不监听任何端口，全程零诊断。`export default` 是唯一约定的写法。
+  test("rejects defineApplication written as a bare expression statement", async () => {
+    const source = [
+      'import { defineApplication } from "@reforce/core";',
+      'import { redisStarter } from "@acme/starter-redis";',
+      "",
+      "defineApplication({ starters: [redisStarter] });",
+      "",
+    ].join("\n");
+    const { result } = await compile(
+      applicationTree(
+        { "application.ts": source },
+        { "@acme/starter-redis": redisStarterPackage() },
+      ),
+    );
+
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toEqual(["INVALID_DEFINE_APPLICATION"]);
+  });
+
   test("rejects duplicate starter registration", async () => {
     const source = [
-      'import { defineApplication } from "@reforce/context";',
+      'import { defineApplication } from "@reforce/core";',
       'import { redisStarter, redisStarter as redisAgain } from "@acme/starter-redis";',
       "",
       "export default defineApplication({ starters: [redisStarter, redisAgain] });",
@@ -708,7 +764,7 @@ describe("defineApplication reading", () => {
 
   test("rejects a second defineApplication declaration", async () => {
     const emptyRegistration = [
-      'import { defineApplication } from "@reforce/context";',
+      'import { defineApplication } from "@reforce/core";',
       "",
       "export default defineApplication({ starters: [] });",
       "",
@@ -726,7 +782,7 @@ describe("defineApplication reading", () => {
 
   test("reports STARTER_META_NOT_FOUND for an unresolvable starter package", async () => {
     const source = [
-      'import { defineApplication } from "@reforce/context";',
+      'import { defineApplication } from "@reforce/core";',
       'import { missingStarter } from "@acme/missing";',
       "",
       "export default defineApplication({ starters: [missingStarter] });",

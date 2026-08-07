@@ -1,4 +1,4 @@
-import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";
 
 export interface GreetingPort {
   value(): string;

@@ -44,7 +44,7 @@ async function createLibrary(
     })}\n`,
     src: options.sources ?? {
       "index.ts": [
-        'import { Injectable } from "@reforce/context";',
+        'import { Injectable } from "@reforce/core";',
         "",
         "@Injectable()",
         "export class Widget {}",
@@ -113,7 +113,7 @@ test("lib reports compiler diagnostics for unsupported library declarations", as
   const project = await createLibrary({
     sources: {
       "index.ts": [
-        'import { defineBean } from "@reforce/context";',
+        'import { defineBean } from "@reforce/core";',
         "",
         "export const clock = defineBean({",
         "  create: () => ({ now: () => 0 }),",

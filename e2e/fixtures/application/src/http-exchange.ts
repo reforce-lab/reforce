@@ -1,4 +1,4 @@
-import { defineBean, Injectable, RequestScoped } from "@reforce/context";
+import { defineBean, Injectable, RequestScoped } from "@reforce/core";
 import type { RouteMatch } from "@reforce/web";
 
 // 根请求 bean（ADR 0006 W7）：值 = 标准 Request + 路由匹配结果，由 webRequestSeeder（见

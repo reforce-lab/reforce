@@ -1,5 +1,5 @@
 import { appendFileSync, writeFileSync } from "node:fs";
-import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";
 
 @Injectable()
 export class ApplicationDependencyProbe {}

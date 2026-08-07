@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { GeneratedApplicationDefinition } from "@reforce/context/generated-runtime";
+import type { GeneratedApplicationDefinition } from "@reforce/core/generated-runtime";
 import { createTestContext } from "@reforce/testing";
 import {
   bundleEntry,

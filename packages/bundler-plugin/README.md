@@ -7,7 +7,7 @@ Starter 库作者的构建收尾插件（ADR 0004，[#120](https://github.com/re
 - `reforce-meta.json` —— 预编译 bean 注册表，应用编译器在链接期归并（subpath `./reforce-meta`）。
 
 `defineApplication({ starters: [...] })` 用的注册 handle 不是产物：包作者在主入口手写
-`export const <槽名> = defineStarter()`（`@reforce/context`），使用者具名 import 它。
+`export const <槽名> = defineStarter()`（`@reforce/core`），使用者具名 import 它。
 
 收尾最后用 [publint](https://publint.dev) 校验发布产物（`pack: false`，纯文件系统校验，
 不拉起包管理器），error 级问题直接判失败，兜住 exports/main 指向缺失文件这类事故；

@@ -22,7 +22,7 @@
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@reforce/context": "workspace:*",
+    "@reforce/core": "workspace:*",
     "@reforce/web": "workspace:*",
     "@swc/helpers": "catalog:",
     "find-my-way": "^9.7.0"

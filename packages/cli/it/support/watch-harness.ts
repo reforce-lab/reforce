@@ -8,15 +8,15 @@ function sleep(milliseconds: number): Promise<void> {
 }
 
 const workspaceRoot = resolve("../..");
-const contextRoot = join(workspaceRoot, "packages", "context");
+const coreRoot = join(workspaceRoot, "packages", "core");
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 
 export async function installContextDistribution(projectRoot: string): Promise<void> {
-  const target = join(projectRoot, "node_modules", "@reforce", "context");
+  const target = join(projectRoot, "node_modules", "@reforce", "core");
   await mkdir(target, { recursive: true });
   await Promise.all([
-    cp(join(contextRoot, "package.json"), join(target, "package.json")),
-    cp(join(contextRoot, "dist"), join(target, "dist"), { recursive: true }),
+    cp(join(coreRoot, "package.json"), join(target, "package.json")),
+    cp(join(coreRoot, "dist"), join(target, "dist"), { recursive: true }),
     cp(radashiRoot, join(projectRoot, "node_modules", "radashi"), { recursive: true }),
   ]);
 }

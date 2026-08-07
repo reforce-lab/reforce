@@ -1,11 +1,11 @@
-import { ReforceRuntimeError } from "@reforce/context";
+import { ReforceRuntimeError } from "@reforce/core";
 import type { TransactionIsolation } from "@/manager";
 
 // 事务运行时错误（ADR 0008 T3/T4，#204 定案 5）：共同原则是消灭静默降级——savepoint 缺失
 // 不退化为 REQUIRED，加入事务时的 isolation 声明不静默忽略（Spring 默认静默、要开
 // validateExistingTransaction 才拒绝；我们默认即拒绝）。
 //
-// 全部继续继承 @reforce/context 的 ReforceRuntimeError：拦截器契约里那条「兜底拦截器要
+// 全部继续继承 @reforce/core 的 ReforceRuntimeError：拦截器契约里那条「兜底拦截器要
 // `if (error instanceof ReforceRuntimeError) throw error`」的放行纪律必须同时覆盖这四个护栏
 // 错误，否则拆包就等于把它们从护栏名单里划掉。
 

@@ -1,4 +1,4 @@
-import type { BeanClass } from "@reforce/context";
+import type { BeanClass } from "@reforce/core";
 import type { InferSchemaOutput, RequestContext } from "@/execution/request-context";
 import type {
   ErrorHandlerOptions,

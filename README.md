@@ -39,7 +39,7 @@ reforce/
 ├── packages/
 │   ├── cli/               # @reforce/cli —— 命令行工具
 │   ├── compiler/          # @reforce/compiler —— 内置 Yuku parser、项目解析、链接、分析与生成
-│   ├── context/           # @reforce/context —— IoC 容器 / ApplicationContext
+│   ├── core/              # @reforce/core —— IoC 容器 / ApplicationContext
 │   ├── primitives/        # @reforce/primitives —— 跨包共享的排序与路径原语
 │   ├── testing/           # @reforce/testing —— 框架测试支持
 │   └── web/               # @reforce/web —— Web 抽象
@@ -89,7 +89,7 @@ package exports 只公开 `dist`。仓库内跨 package import、CLI dev/build �
 ```
 
 ```ts
-import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/context";
+import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";
 
 @Injectable()
 export class GreetingService implements OnContextStart, OnContextClose {

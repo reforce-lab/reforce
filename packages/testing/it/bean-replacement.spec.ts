@@ -1,9 +1,5 @@
-import { defineBean } from "@reforce/context";
-import {
-  classBean,
-  createApplicationContext,
-  factoryBean,
-} from "@reforce/context/generated-runtime";
+import { defineBean } from "@reforce/core";
+import { classBean, createApplicationContext, factoryBean } from "@reforce/core/generated-runtime";
 import { describe, expect, test } from "vitest";
 import { createTestContext } from "@/index";
 import { testDefinition, testDependency, testSource } from "../test/support/test-definition";

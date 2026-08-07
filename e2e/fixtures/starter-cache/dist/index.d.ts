@@ -19,4 +19,4 @@ export declare class CacheMetrics {
   hits(): number;
 }
 
-export declare const cache: import("@reforce/context").StarterDefinition;
+export declare const cache: import("@reforce/core").StarterDefinition;

@@ -15,19 +15,19 @@ import type {
 // 因此这一层可以脱离真实文件系统单测（Issue #117）；上层的 project-linker 只消费结果，从不被
 // 这里回调。
 
-export const contextModuleSpecifier = "@reforce/context";
+export const coreModuleSpecifier = "@reforce/core";
 export const configModuleSpecifier = "@reforce/config";
 export const webModuleSpecifier = "@reforce/web";
 export const transactionModuleSpecifier = "@reforce/transaction";
 
-// 框架自有包的 import 一律短路合成符号、不读真实文件（与 contextSymbol 同一策略）；表驱动
+// 框架自有包的 import 一律短路合成符号、不读真实文件（与 coreSymbol 同一策略）；表驱动
 // 保持"specifier → 符号 kind/key 前缀"三处一致（Issue #114 的名单纪律）。
 const frameworkSpecifierKinds = {
-  [contextModuleSpecifier]: "context",
+  [coreModuleSpecifier]: "core",
   [configModuleSpecifier]: "config",
   [webModuleSpecifier]: "web",
   [transactionModuleSpecifier]: "transaction",
-} as const satisfies Record<string, "config" | "context" | "transaction" | "web">;
+} as const satisfies Record<string, "config" | "core" | "transaction" | "web">;
 
 export function isFrameworkSpecifier(specifier: string): boolean {
   return Object.hasOwn(frameworkSpecifierKinds, specifier);
@@ -90,7 +90,7 @@ function frameworkSymbol(
     kind,
     name,
     moduleSpecifier: specifier,
-    generic: kind === "context" && (name === "Lazy" || name === "Current"),
+    generic: kind === "core" && (name === "Lazy" || name === "Current"),
   });
 }
 

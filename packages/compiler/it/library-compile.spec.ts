@@ -46,7 +46,7 @@ const contractsSource = [
 ].join("\n");
 
 const clientSource = [
-  'import { Injectable, type OnContextClose } from "@reforce/context";',
+  'import { Injectable, type OnContextClose } from "@reforce/core";',
   'import type { Cache, RedisConfig } from "./contracts";',
   "",
   "@Injectable()",
@@ -67,7 +67,7 @@ const clientSource = [
 ].join("\n");
 
 const metricsSource = [
-  'import { Injectable } from "@reforce/context";',
+  'import { Injectable } from "@reforce/core";',
   'import { RedisClient } from "./client";',
   "",
   "@Injectable()",
@@ -78,7 +78,7 @@ const metricsSource = [
 ].join("\n");
 
 const indexSource = [
-  'import { defineStarter } from "@reforce/context";',
+  'import { defineStarter } from "@reforce/core";',
   "",
   'export { RedisClient } from "./client";',
   'export { MetricsPusher } from "./metrics";',
@@ -297,7 +297,7 @@ describe("library compile", () => {
           sources: {
             "server.ts": [
               'import { createServer } from "node:http";',
-              'import { Injectable } from "@reforce/context";',
+              'import { Injectable } from "@reforce/core";',
               "",
               "@Injectable()",
               "export class HttpProbe {",
@@ -371,7 +371,7 @@ describe("library compile", () => {
           packages: { "@acme/starter-base": starterBase },
           sources: {
             "telemetry.ts": [
-              'import { Injectable } from "@reforce/context";',
+              'import { Injectable } from "@reforce/core";',
               'import type { BaseRemote, BaseTelemetry } from "@acme/starter-base";',
               "",
               "@Injectable()",
@@ -441,7 +441,7 @@ describe("library compile", () => {
           },
           sources: {
             "cache.ts": [
-              'import { Injectable } from "@reforce/context";',
+              'import { Injectable } from "@reforce/core";',
               'import type { SharedCache } from "@acme/cache-api";',
               "",
               "@Injectable()",
@@ -492,7 +492,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "metrics.ts": [
-              'import { Injectable } from "@reforce/context";',
+              'import { Injectable } from "@reforce/core";',
               'import type { RedisConfig } from "./contracts";',
               "",
               "@Injectable()",
@@ -539,7 +539,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "factory.ts": [
-              'import { defineBean } from "@reforce/context";',
+              'import { defineBean } from "@reforce/core";',
               "",
               "export const clock = defineBean({",
               "  create: () => ({ now: () => 0 }),",
@@ -561,7 +561,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "app.ts": [
-              'import { defineApplication } from "@reforce/context";',
+              'import { defineApplication } from "@reforce/core";',
               "",
               "export default defineApplication({ starters: [] });",
               "",
@@ -582,7 +582,7 @@ describe("library compile", () => {
             ...defaultSources,
             "client.ts": clientSource.replace(
               "@Injectable()",
-              'import { Primary } from "@reforce/context";\n@Injectable()\n@Primary()',
+              'import { Primary } from "@reforce/core";\n@Injectable()\n@Primary()',
             ),
           },
         }),
@@ -599,7 +599,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "metrics.ts": [
-              'import { Injectable, type Lazy } from "@reforce/context";',
+              'import { Injectable, type Lazy } from "@reforce/core";',
               'import { RedisClient } from "./client";',
               "",
               "@Injectable()",
@@ -624,7 +624,7 @@ describe("library compile", () => {
             ...defaultSources,
             "client.ts": clientSource.replace(
               "@Injectable()",
-              'import { RequestScoped } from "@reforce/context";\n@Injectable()\n@RequestScoped()',
+              'import { RequestScoped } from "@reforce/core";\n@Injectable()\n@RequestScoped()',
             ),
           },
         }),
@@ -641,7 +641,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "metrics.ts": [
-              'import { type Current, Injectable } from "@reforce/context";',
+              'import { type Current, Injectable } from "@reforce/core";',
               'import { RedisClient } from "./client";',
               "",
               "@Injectable()",
@@ -667,7 +667,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "markers.ts": [
-              'import { defineMethodMarker } from "@reforce/context";',
+              'import { defineMethodMarker } from "@reforce/core";',
               'export const Audited = defineMethodMarker<{ label: string }>("audited");',
               "",
             ].join("\n"),
@@ -686,13 +686,13 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "markers.ts": [
-              'import { defineMethodMarker } from "@reforce/context";',
+              'import { defineMethodMarker } from "@reforce/core";',
               'export const Audited = defineMethodMarker<{ label: string }>("audited");',
               "",
             ].join("\n"),
             "client.ts": clientSource.replace(
               "@Injectable()",
-              'import { Interceptor } from "@reforce/context";\nimport { Audited } from "./markers";\n@Interceptor({ marker: Audited })',
+              'import { Interceptor } from "@reforce/core";\nimport { Audited } from "./markers";\n@Interceptor({ marker: Audited })',
             ),
           },
         }),
@@ -709,12 +709,12 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "markers.ts": [
-              'import { defineMethodMarker } from "@reforce/context";',
+              'import { defineMethodMarker } from "@reforce/core";',
               'export const Audited = defineMethodMarker<{ label: string }>("audited");',
               "",
             ].join("\n"),
             "client.ts": [
-              'import { Injectable } from "@reforce/context";',
+              'import { Injectable } from "@reforce/core";',
               'import { Audited } from "./markers";',
               "",
               "@Injectable()",
@@ -739,7 +739,7 @@ describe("library compile", () => {
           sources: {
             ...defaultSources,
             "client.ts": [
-              'import { Injectable } from "@reforce/context";',
+              'import { Injectable } from "@reforce/core";',
               'import { Transactional } from "@reforce/transaction";',
               "",
               "@Injectable()",
@@ -834,7 +834,7 @@ describe("library compile", () => {
 // —— 闭环：编出的 meta 原样喂给 M1 链接路径，行为与手写 meta 一致 ——
 
 const registrationSource = [
-  'import { defineApplication, Injectable } from "@reforce/context";',
+  'import { defineApplication, Injectable } from "@reforce/core";',
   'import type { Cache, RedisConfig } from "@acme/starter-redis";',
   'import { redisStarter } from "@acme/starter-redis";',
   "",

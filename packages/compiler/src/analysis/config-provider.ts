@@ -145,7 +145,7 @@ function validateConfigClassShape(
     if (decorator.callee.kind === "unsupported-expression") {
       return false;
     }
-    return linker.resolveEntity(source, decorator.callee)?.kind === "context";
+    return linker.resolveEntity(source, decorator.callee)?.kind === "core";
   });
   if (decorated) {
     diagnostics.push(

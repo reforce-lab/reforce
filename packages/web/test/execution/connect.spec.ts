@@ -1,4 +1,4 @@
-import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/context";
+import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/core";
 import { describe, expect, test } from "vitest";
 import type { WebApplication, WebApplicationHandle } from "@/adapter";
 import { connectWebApplication } from "@/execution/connect";
