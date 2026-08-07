@@ -2185,3 +2185,126 @@ describe.sequential("starter consumption", () => {
     commandTimeout,
   );
 });
+
+// D1 的真终端一半（RFC 0011，#242；#247 §3.6 记为「未做」的那条）。
+//
+// 模式表有两个维度——流是不是 TTY、读者是工具还是应用——而在这条用例之前，**没有一个自动化
+// 用例跑在真 TTY 上**：既有断言全在管道下，落的一律是 short。也就是说 human 这一整档、以及
+// 「颜色按流判定」这条，只有人肉核对过。
+//
+// 真 pty 靠 util-linux 的 script(1) 分配。它把 stdout 与 stderr 并进同一个 pty，所以下面读的
+// 是合并输出。非 Linux 跳过：script 的参数形态在 BSD/macOS 上不同，而这条用例要的只是
+// 「存在一个真 TTY」，不值得为它写两套调用。
+const ptyAvailable = process.platform === "linux";
+
+async function runInPty(
+  command: string,
+  options: { readonly cwd: string; readonly env?: Readonly<Record<string, string>> },
+) {
+  return await runCommand("script", ["-qec", command, "/dev/null"], {
+    cwd: options.cwd,
+    timeout: commandTimeout,
+    ...(options.env === undefined ? {} : { env: { ...process.env, ...options.env } }),
+  });
+}
+
+// 装配不出来的应用：MISSING_BEAN 带 sourceSpan，human 模式因此会画出源码框，
+// 而 short 模式只有一行。两档的区别在这条诊断上最明显。
+const missingBeanProbe = [
+  'import { Injectable } from "@reforce/context";',
+  "",
+  "export interface AbsentGateway {",
+  "  charge(): void;",
+  "}",
+  "",
+  "@Injectable()",
+  "export class PtyProbe {",
+  "  constructor(private readonly gateway: AbsentGateway) {}",
+  "}",
+  "",
+].join("\n");
+
+describe.skipIf(!ptyAvailable).sequential("rendering mode on a real terminal", () => {
+  async function brokenProject(): Promise<TemporaryProject> {
+    const project = await createApplicationProject();
+    await writeFile(join(project.projectRoot, "src", "pty-probe.ts"), missingBeanProbe);
+    return project;
+  }
+
+  test(
+    "a real tty renders diagnostics in human mode, a pipe renders them in short",
+    async () => {
+      const project = await brokenProject();
+      try {
+        const buildCommand = `${nodeExecutable} ${cliEntry} build --project ${project.projectRoot}`;
+        const onTty = await runInPty(buildCommand, { cwd: project.projectRoot });
+        const piped = await buildProject(project.projectRoot);
+
+        expect(piped.exitCode).not.toBe(0);
+        const ttyOutput = `${String(onTty.stdout)}${String(onTty.stderr)}`;
+        const pipedOutput = `${String(piped.stdout)}${String(piped.stderr)}`;
+
+        // human：主 span 的位置行（`-->`）与源码框在，一条诊断占好几行。
+        expect(ttyOutput).toContain("MISSING_BEAN");
+        expect(ttyOutput).toContain("-->");
+        // short：一条诊断恰好一行，位置直接拼在码后面，没有源码框。
+        expect(pipedOutput).toContain("MISSING_BEAN");
+        expect(pipedOutput).not.toContain("-->");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // 颜色不得是级别/严重度的唯一通道，且必须尊重 NO_COLOR（D2）。这两条在管道下永远是绿的
+  // ——管道本来就不上色，只有真 TTY 才验得出「上色了」和「NO_COLOR 关掉了」。
+  test(
+    "a real tty colours the output and NO_COLOR takes it away without losing the words",
+    async () => {
+      const project = await brokenProject();
+      try {
+        const buildCommand = `${nodeExecutable} ${cliEntry} build --project ${project.projectRoot}`;
+        const coloured = await runInPty(buildCommand, { cwd: project.projectRoot });
+        const plain = await runInPty(buildCommand, {
+          cwd: project.projectRoot,
+          env: { NO_COLOR: "1" },
+        });
+
+        const ansiIntroducer = `${String.fromCodePoint(27)}[`;
+        const colouredOutput = `${String(coloured.stdout)}${String(coloured.stderr)}`;
+        const plainOutput = `${String(plain.stdout)}${String(plain.stderr)}`;
+
+        expect(colouredOutput).toContain(ansiIntroducer);
+        expect(plainOutput).not.toContain(ansiIntroducer);
+        // 降级掉的只是颜色：码与严重度词一个字都不能少，否则色觉障碍与管道读者就丢信息了。
+        expect(plainOutput).toContain("MISSING_BEAN");
+        expect(plainOutput).toContain("error");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+
+  // banner 同属 human 档：管道下不该出现（它对 grep 和采集系统都是噪音）。
+  test(
+    "the banner appears on a tty and nowhere else",
+    async () => {
+      const project = await brokenProject();
+      try {
+        const buildCommand = `${nodeExecutable} ${cliEntry} build --project ${project.projectRoot}`;
+        const onTty = await runInPty(buildCommand, { cwd: project.projectRoot });
+        const piped = await buildProject(project.projectRoot);
+
+        expect(`${String(onTty.stdout)}${String(onTty.stderr)}`).toMatch(
+          /reforce.*node \d+\.\d+\.\d+ {3}build/u,
+        );
+        expect(`${String(piped.stdout)}${String(piped.stderr)}`).not.toContain("node ");
+      } finally {
+        await project.cleanup();
+      }
+    },
+    commandTimeout,
+  );
+});
