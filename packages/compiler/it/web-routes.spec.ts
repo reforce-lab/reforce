@@ -28,8 +28,9 @@ import {
 // web 核心 IT（ADR 0006 W1/W3/W4/W5，#142 / #152）：路由表是编译器的第二种生成物——
 // routes.json 稳定序列化可 diff，routes.ts 是 typed-edge 背书的可执行表。这里钉住：
 // 表内容与两次编译逐字节一致、同路径同方法硬错、链压平三级决胜（阶段 → order → beanId）、
-// marker 提取边界、schema 引用边界，以及"假适配器消费路由表 + 请求作用域 + 洋葱 + 错误
-// 处理器兜底"的完整链路（真实引擎适配是 #153）。
+// marker 提取边界、旧 schemas 实参的迁移硬错(RFC 0012 S2,#274)，以及"假适配器消费路由表 +
+// 请求作用域 + 洋葱 + 槽位解码 + 编码白名单 + 错误处理器兜底"的完整链路（真实引擎适配是
+// #153；槽位形态与硬错的系统覆盖在 it/web-slots.spec.ts）。
 
 type FailureResult = Extract<CompileResult, { readonly status: "failure" }>;
 
@@ -78,16 +79,27 @@ function webApplicationTsconfig(): string {
   })}\n`;
 }
 
-async function compileSources(sources: Record<string, string>): Promise<CompileResult> {
-  const { result } = await compileTree({
-    "tsconfig.json": webApplicationTsconfig(),
-    src: sources,
-  });
+async function compileSources(
+  sources: Record<string, string>,
+  // 槽位契约要过 checker:参数类型里引用 @reforce/web 的别名(Param 等)时,tsgo 需要真实
+  // node_modules 才能解析,linkWeb 在编译前把构建产物链好。纯语法层用例不需要。
+  options: { readonly linkWeb?: boolean } = {},
+): Promise<CompileResult> {
+  const { result } = await compileTree(
+    {
+      "tsconfig.json": webApplicationTsconfig(),
+      src: sources,
+    },
+    options,
+  );
   return result;
 }
 
-async function compileSourcesOrThrow(sources: Record<string, string>): Promise<CompileSuccess> {
-  const result = await compileSources(sources);
+async function compileSourcesOrThrow(
+  sources: Record<string, string>,
+  options: { readonly linkWeb?: boolean } = {},
+): Promise<CompileSuccess> {
+  const result = await compileSources(sources, options);
   if (result.status === "failure") {
     throw new Error(JSON.stringify(result.diagnostics));
   }
@@ -132,10 +144,7 @@ interface RouteManifestRoute {
   };
   readonly middleware: readonly RouteManifestMiddleware[];
   readonly meta: Record<string, unknown>;
-  readonly schemas: Record<
-    string,
-    { readonly moduleSpecifier: string; readonly exportName: string }
-  >;
+  readonly contract: unknown;
   readonly source: unknown;
 }
 
@@ -159,7 +168,6 @@ const passthroughSchemaSource = [
 
 describe("route table generation", () => {
   const sources = {
-    "schemas.ts": passthroughSchemaSource,
     "markers.ts": [
       'import { defineRouteMarker } from "@reforce/web";',
       'export const Roles = defineRouteMarker<readonly string[]>("roles");',
@@ -186,15 +194,14 @@ describe("route table generation", () => {
     ].join("\n"),
     "users-controller.ts": [
       'import { Injectable } from "@reforce/core";',
-      'import { Controller, Get, Post, Use } from "@reforce/web";',
+      'import { Controller, Get, type Param, Post, Use } from "@reforce/web";',
       'import { AuthMiddleware } from "@/auth";',
       'import { Roles } from "@/markers";',
-      'import { idParamsSchema, userResponseSchema } from "@/schemas";',
       '@Controller("/users") @Use(AuthMiddleware)',
       "export class UsersController {",
-      '  @Get("/:id", { params: idParamsSchema, response: userResponseSchema })',
+      '  @Get("/:id")',
       '  @Roles(["admin"])',
-      "  show(): void {}",
+      '  show(_id: Param<"id", bigint>): void {}',
       "",
       "  @Post()",
       "  create(): void {}",
@@ -202,11 +209,11 @@ describe("route table generation", () => {
     ].join("\n"),
   };
 
-  test("emits the route table manifest with flattened chains, meta, and schema references", async () => {
-    const result = await compileSourcesOrThrow(sources);
+  test("emits the route table manifest with flattened chains, meta, and contract nodes", async () => {
+    const result = await compileSourcesOrThrow(sources, { linkWeb: true });
 
     expect(routeManifestOf(result)).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       routes: [
         {
           method: "POST",
@@ -232,7 +239,8 @@ describe("route table generation", () => {
             },
           ],
           meta: {},
-          schemas: {},
+          // 零参 handler = 空槽位;void 返回 = passthrough 响应(#274)。
+          contract: { slots: [], response: { kind: "passthrough" } },
           source: expect.anything(),
         },
         {
@@ -259,9 +267,20 @@ describe("route table generation", () => {
             },
           ],
           meta: { roles: ["admin"] },
-          schemas: {
-            params: { moduleSpecifier: "../../src/schemas.js", exportName: "idParamsSchema" },
-            response: { moduleSpecifier: "../../src/schemas.js", exportName: "userResponseSchema" },
+          contract: {
+            slots: [
+              {
+                slot: "param",
+                key: "id",
+                form: "single",
+                source: { source: "type" },
+                table: {
+                  root: { kind: "scalar", scalar: "bigint", nullable: false },
+                  definitions: {},
+                },
+              },
+            ],
+            response: { kind: "passthrough" },
           },
           source: expect.anything(),
         },
@@ -273,31 +292,31 @@ describe("route table generation", () => {
     });
   });
 
-  test("emits an executable routes.ts with typed invoke closures and schema imports", async () => {
-    const result = await compileSourcesOrThrow(sources);
+  test("emits an executable routes.ts with slot decoders and typed invoke closures", async () => {
+    const result = await compileSourcesOrThrow(sources, { linkWeb: true });
 
     const routesModule = generatedContent(result, "routes.ts");
+    // 发射了解码器常量,StandardSchemaV1 才进 import(带标注的常量要过用户项目的 noUnusedLocals)。
     expect(routesModule).toContain(
-      'import type { GeneratedRouteTable, RequestContext } from "@reforce/web/generated-runtime";',
+      'import type { GeneratedRouteTable, RequestContext, StandardSchemaV1 } from "@reforce/web/generated-runtime";',
     );
-    // 带 schema 的路由，闭包参数钉住本路由的 schema 类型：handler 声明的是
-    // RequestContext<S>，基类型的 params/query/body 是 unknown，赋不进具体形状。
+    // 数据槽路由的 invoke:槽值经渲染的契约类型文本一次 as 断言(typed-edge,运行时解码器
+    // 已兑现该类型);路由按 (path, method) 排序,/users POST 在前,/users/:id GET 是第 1 条。
     expect(routesModule).toContain(
-      "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext<{ params: typeof webSchema0; response: typeof webSchema1 }>) => instance.show(),",
+      "invoke: (instance: InstanceType<typeof webTarget4>, _context: RequestContext, slots: readonly unknown[]) => instance.show(slots[0] as bigint),",
     );
-    // 无 schema 的路由退回裸 RequestContext。
+    expect(routesModule).toContain('{ slot: "param", key: "id", decode: webDecode1_0 },');
+    // 零参 handler:空槽位,形参全下划线。
     expect(routesModule).toContain(
-      "invoke: (instance: InstanceType<typeof webTarget4>, context: RequestContext) => instance.create(),",
+      "invoke: (instance: InstanceType<typeof webTarget4>, _context: RequestContext, _slots: readonly unknown[]) => instance.create(),",
     );
+    expect(routesModule).toContain("slots: [],");
     expect(routesModule).toContain("} as const satisfies GeneratedRouteTable;");
-    expect(routesModule).toContain(
-      'import { idParamsSchema as webSchema0 } from "../../src/schemas.js";',
-    );
   });
 
   test("compiles the same route table byte for byte across two fresh compilations", async () => {
-    const first = await compileSourcesOrThrow(sources);
-    const second = await compileSourcesOrThrow(sources);
+    const first = await compileSourcesOrThrow(sources, { linkWeb: true });
+    const second = await compileSourcesOrThrow(sources, { linkWeb: true });
 
     expect(generatedContent(second, "routes.json")).toBe(generatedContent(first, "routes.json"));
     expect(generatedContent(second, "routes.ts")).toBe(generatedContent(first, "routes.ts"));
@@ -311,9 +330,9 @@ describe("route table generation", () => {
       ].join("\n"),
     });
 
-    expect(routeManifestOf(result)).toEqual({ schemaVersion: 1, routes: [], errorHandlers: [] });
+    expect(routeManifestOf(result)).toEqual({ schemaVersion: 2, routes: [], errorHandlers: [] });
     expect(generatedContent(result, "routes.ts")).toBe(
-      "export const routeTable = {\n  schemaVersion: 1,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
+      "export const routeTable = {\n  schemaVersion: 2,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
     );
   });
 });
@@ -612,25 +631,31 @@ describe("route marker extraction", () => {
   });
 });
 
-describe("route schema references", () => {
-  test("a schema identifier that is not exported cannot be wired into the table", async () => {
+// 旧 `@Get(path, schemas)` 链路已随 RFC 0012 S2 删除:第二实参一律迁移硬错,方法不进任何
+// 分析路径,不产生二次诊断。
+describe("route schemas argument migration", () => {
+  test("a schemas argument is a single migration hard error pointing at the argument", async () => {
     const result = await compileSources({
+      "schemas.ts": passthroughSchemaSource,
       "controller.ts": [
         'import { Injectable } from "@reforce/core";',
         'import { Controller, Get } from "@reforce/web";',
-        'const localSchema = { "~standard": { version: 1, vendor: "it", validate: (value: unknown) => ({ value }) } };',
+        'import { idParamsSchema } from "@/schemas";',
         "@Controller()",
         "export class UsersController {",
-        '  @Get("/users", { response: localSchema })',
-        "  list(): void {}",
+        '  @Get("/users/:id", { params: idParamsSchema })',
+        "  show(): void {}",
         "}",
       ].join("\n"),
     });
 
-    expect(failureCodes(result)).toEqual(["INVALID_ROUTE_SCHEMA"]);
+    const failure = expectFailure(result);
+    expect(failure.diagnostics.map((item) => item.code)).toEqual(["INVALID_ROUTE_SCHEMA"]);
+    expect(failure.diagnostics[0]?.message).toContain("no longer accept a schemas argument");
+    expect(failure.diagnostics[0]?.help).toContain("typed handler parameters");
   });
 
-  test("an inline schema expression is rejected: only identifier references are static", async () => {
+  test("an inline schemas object gets the same migration error", async () => {
     const result = await compileSources({
       "controller.ts": [
         'import { Injectable } from "@reforce/core";',
@@ -638,104 +663,6 @@ describe("route schema references", () => {
         "@Controller()",
         "export class UsersController {",
         '  @Get("/users", { response: { "~standard": {} } })',
-        "  list(): void {}",
-        "}",
-      ].join("\n"),
-    });
-
-    expect(failureCodes(result)).toEqual(["INVALID_ROUTE_SCHEMA"]);
-  });
-
-  test("an unresolvable schema identifier is rejected", async () => {
-    const result = await compileSources({
-      "controller.ts": [
-        'import { Injectable } from "@reforce/core";',
-        'import { Controller, Get } from "@reforce/web";',
-        "declare const ghostSchema: object;",
-        "@Controller()",
-        "export class UsersController {",
-        '  @Get("/users", { response: ghostSchema })',
-        "  list(): void {}",
-        "}",
-      ].join("\n"),
-    });
-
-    expect(failureCodes(result)).toEqual(["INVALID_ROUTE_SCHEMA"]);
-  });
-
-  test("a top-level const schema group can be named instead of inlined", async () => {
-    const result = await compileSourcesOrThrow({
-      "schemas.ts": passthroughSchemaSource,
-      "controller.ts": [
-        'import { Controller, Get } from "@reforce/web";',
-        'import { idParamsSchema, userResponseSchema } from "@/schemas";',
-        "const showSchemas = { params: idParamsSchema, response: userResponseSchema };",
-        "@Controller()",
-        "export class UsersController {",
-        '  @Get("/users/:id", showSchemas)',
-        "  show(): void {}",
-        "}",
-      ].join("\n"),
-    });
-
-    expect(routeManifestOf(result).routes[0]?.schemas).toEqual({
-      params: { moduleSpecifier: "../../src/schemas.js", exportName: "idParamsSchema" },
-      response: { moduleSpecifier: "../../src/schemas.js", exportName: "userResponseSchema" },
-    });
-  });
-
-  test("a schema group declared in another module resolves its members there", async () => {
-    const result = await compileSourcesOrThrow({
-      "schemas.ts": [
-        passthroughSchemaSource,
-        "export const showSchemas = { params: idParamsSchema, response: userResponseSchema };",
-      ].join("\n"),
-      "controller.ts": [
-        'import { Controller, Get } from "@reforce/web";',
-        'import { showSchemas } from "@/schemas";',
-        "@Controller()",
-        "export class UsersController {",
-        '  @Get("/users/:id", showSchemas)',
-        "  show(): void {}",
-        "}",
-      ].join("\n"),
-    });
-
-    expect(routeManifestOf(result).routes[0]?.schemas).toEqual({
-      params: { moduleSpecifier: "../../src/schemas.js", exportName: "idParamsSchema" },
-      response: { moduleSpecifier: "../../src/schemas.js", exportName: "userResponseSchema" },
-    });
-  });
-
-  test("a schema group identifier that is not a const object literal is rejected", async () => {
-    const result = await compileSources({
-      "schemas.ts": passthroughSchemaSource,
-      "controller.ts": [
-        'import { Controller, Get } from "@reforce/web";',
-        'import { idParamsSchema } from "@/schemas";',
-        "const showSchemas = buildSchemas(idParamsSchema);",
-        "declare function buildSchemas(schema: object): { params: object };",
-        "@Controller()",
-        "export class UsersController {",
-        '  @Get("/users/:id", showSchemas)',
-        "  show(): void {}",
-        "}",
-      ].join("\n"),
-    });
-
-    expect(failureCodes(result)).toEqual(["INVALID_ROUTE_SCHEMA"]);
-  });
-
-  test("an unknown schema slot is rejected", async () => {
-    const result = await compileSources({
-      "schemas.ts": passthroughSchemaSource,
-      "controller.ts": [
-        'import { Injectable } from "@reforce/core";',
-        'import { Controller, Get } from "@reforce/web";',
-        'import { idParamsSchema } from "@/schemas";',
-        "@Controller()",
-        "export class UsersController {",
-        '  @Get("/users", { headers: idParamsSchema })',
         "  list(): void {}",
         "}",
       ].join("\n"),
@@ -846,164 +773,119 @@ describe("web role validation", () => {
 describe("full chain over a fake adapter", () => {
   // 契约的最小实现走通全链路（ADR 0006 W1/W4/W7）：编译产表 → tsc 背书生成物 → 假适配器
   // 启动时一次性消费 → 每请求开作用域并播种根请求 bean → 洋葱链（观测/准入/handler）→
-  // Current 句柄取请求态 → 校验 decode（string→bigint）→ 响应白名单 + bigint 序列化 →
-  // 错误处理器兜底。真实引擎适配器是 #153。
-  test("a compiled application serves requests through scope, chain, codec, and error handling", async () => {
-    const { project, result } = await compileTree({
-      "tsconfig.json": webApplicationTsconfig(),
-      src: {
-        "schema-support.ts": [
-          "type ItResult =",
-          "  | { readonly value: unknown }",
-          "  | { readonly issues: readonly { readonly message: string }[] };",
-          "export interface ItSchema {",
-          '  readonly "~standard": {',
-          "    readonly version: 1;",
-          "    readonly vendor: string;",
-          "    readonly validate: (value: unknown) => ItResult;",
-          "    readonly jsonSchema?: {",
-          "      readonly input: (options: { readonly target: string }) => Record<string, unknown>;",
-          "      readonly output: (options: { readonly target: string }) => Record<string, unknown>;",
-          "    };",
-          "  };",
-          "}",
-        ].join("\n"),
-        "schemas.ts": [
-          'import type { ItSchema } from "@/schema-support";',
-          "",
-          "export const idParamsSchema: ItSchema = {",
-          '  "~standard": {',
-          "    version: 1,",
-          '    vendor: "it",',
-          "    validate: (value) => {",
-          '      if (typeof value !== "object" || value === null) {',
-          '        return { issues: [{ message: "params must be an object" }] };',
-          "      }",
-          '      const id = Reflect.get(value, "id");',
-          '      if (typeof id !== "string" || !/^[0-9]+$/.test(id)) {',
-          '        return { issues: [{ message: "id must be a decimal string" }] };',
-          "      }",
-          "      return { value: { id: BigInt(id) } };",
-          "    },",
-          "  },",
-          "};",
-          "",
-          "export const userResponseSchema: ItSchema = {",
-          '  "~standard": {',
-          "    version: 1,",
-          '    vendor: "it",',
-          "    validate: (value) => ({ value }),",
-          "    jsonSchema: {",
-          '      input: () => ({ type: "object" }),',
-          '      output: () => ({ type: "object", properties: { id: {}, name: {} } }),',
-          "    },",
-          "  },",
-          "};",
-        ].join("\n"),
-        "markers.ts": [
-          'import { defineRouteMarker } from "@reforce/web";',
-          'export const Roles = defineRouteMarker<readonly string[]>("roles");',
-        ].join("\n"),
-        "log-book.ts": [
-          'import { Injectable } from "@reforce/core";',
-          "@Injectable()",
-          "export class LogBook {",
-          "  readonly entries: string[] = [];",
-          "}",
-        ].join("\n"),
-        "request-holder.ts": [
-          'import { defineBean } from "@reforce/core";',
-          "export class RequestHolder {",
-          "  constructor(readonly requestId: string) {}",
-          "}",
-          "export const requestHolder = defineBean<RequestHolder>({",
-          '  scope: "request",',
-          '  create: () => new RequestHolder("unseeded"),',
-          "});",
-        ].join("\n"),
-        "trace.ts": [
-          'import { Injectable } from "@reforce/core";',
-          'import { Middleware, type RequestContext } from "@reforce/web";',
-          'import { LogBook } from "@/log-book";',
-          '@Middleware({ phase: "observability", global: true })',
-          "export class TraceMiddleware {",
-          "  constructor(private readonly log: LogBook) {}",
-          "  async handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {",
-          '    this.log.entries.push("trace:" + context.method + " " + context.path);',
-          "    const response = await next();",
-          '    this.log.entries.push("trace:" + String(response.status));',
-          "    return response;",
-          "  }",
-          "}",
-        ].join("\n"),
-        "auth.ts": [
-          'import { Injectable } from "@reforce/core";',
-          'import { Middleware, type RequestContext } from "@reforce/web";',
-          'import { LogBook } from "@/log-book";',
-          'import { Roles } from "@/markers";',
-          '@Middleware({ phase: "admission" })',
-          "export class AuthMiddleware {",
-          "  constructor(private readonly log: LogBook) {}",
-          "  handle(context: RequestContext, next: () => Promise<Response>): Response | Promise<Response> {",
-          '    const user = context.request.headers.get("x-user");',
-          "    const roles = context.meta(Roles);",
-          "    if (roles !== undefined && user === null) {",
-          '      return new Response("denied", { status: 403 });',
-          "    }",
-          '    this.log.entries.push("auth:" + (user ?? "anonymous"));',
-          "    return next();",
-          "  }",
-          "}",
-        ].join("\n"),
-        "errors.ts": [
-          'import { Injectable } from "@reforce/core";',
-          'import { ErrorHandler } from "@reforce/web";',
-          "@ErrorHandler()",
-          "export class TeapotHandler {",
-          "  handle(error: unknown): Response {",
-          '    if (error instanceof Error && error.message === "boom") {',
-          '      return new Response("teapot", { status: 418 });',
-          "    }",
-          "    throw error;",
-          "  }",
-          "}",
-        ].join("\n"),
-        "users-controller.ts": [
-          'import { type Current, Injectable } from "@reforce/core";',
-          'import { Controller, Get, type RequestContext, Use } from "@reforce/web";',
-          'import { AuthMiddleware } from "@/auth";',
-          'import { LogBook } from "@/log-book";',
-          'import { Roles } from "@/markers";',
-          'import { RequestHolder } from "@/request-holder";',
-          'import { idParamsSchema, userResponseSchema } from "@/schemas";',
-          '@Controller("/users") @Use(AuthMiddleware)',
-          "export class UsersController {",
-          "  constructor(",
-          "    private readonly holder: Current<RequestHolder>,",
-          "    private readonly log: LogBook,",
-          "  ) {}",
-          "",
-          '  @Get("/:id", { params: idParamsSchema, response: userResponseSchema })',
-          '  @Roles(["admin"])',
-          "  show(context: RequestContext): { id: bigint; name: string; secret: string } {",
-          '    this.log.entries.push("handler:show");',
-          "    const { id } = context.params as { id: bigint };",
-          '    return { id, name: this.holder.get().requestId, secret: "do-not-leak" };',
-          "  }",
-          "",
-          '  @Get("/explode")',
-          "  explode(): Response {",
-          '    throw new Error("boom");',
-          "  }",
-          "}",
-        ].join("\n"),
+  // Current 句柄取请求态 → 槽位解码（:id 生成解码器 string→bigint）→ 返回类型白名单编码
+  // （映射漏删的 secret 字段不出线,bigint→字符串）→ 错误处理器兜底。真实引擎适配器是 #153。
+  test("a compiled application serves requests through scope, chain, slot decoding, and error handling", async () => {
+    const { project, result } = await compileTree(
+      {
+        "tsconfig.json": webApplicationTsconfig(),
+        src: {
+          "markers.ts": [
+            'import { defineRouteMarker } from "@reforce/web";',
+            'export const Roles = defineRouteMarker<readonly string[]>("roles");',
+          ].join("\n"),
+          "log-book.ts": [
+            'import { Injectable } from "@reforce/core";',
+            "@Injectable()",
+            "export class LogBook {",
+            "  readonly entries: string[] = [];",
+            "}",
+          ].join("\n"),
+          "request-holder.ts": [
+            'import { defineBean } from "@reforce/core";',
+            "export class RequestHolder {",
+            "  constructor(readonly requestId: string) {}",
+            "}",
+            "export const requestHolder = defineBean<RequestHolder>({",
+            '  scope: "request",',
+            '  create: () => new RequestHolder("unseeded"),',
+            "});",
+          ].join("\n"),
+          "trace.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import { Middleware, type RequestContext } from "@reforce/web";',
+            'import { LogBook } from "@/log-book";',
+            '@Middleware({ phase: "observability", global: true })',
+            "export class TraceMiddleware {",
+            "  constructor(private readonly log: LogBook) {}",
+            "  async handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {",
+            '    this.log.entries.push("trace:" + context.method + " " + context.path);',
+            "    const response = await next();",
+            '    this.log.entries.push("trace:" + String(response.status));',
+            "    return response;",
+            "  }",
+            "}",
+          ].join("\n"),
+          "auth.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import { Middleware, type RequestContext } from "@reforce/web";',
+            'import { LogBook } from "@/log-book";',
+            'import { Roles } from "@/markers";',
+            '@Middleware({ phase: "admission" })',
+            "export class AuthMiddleware {",
+            "  constructor(private readonly log: LogBook) {}",
+            "  handle(context: RequestContext, next: () => Promise<Response>): Response | Promise<Response> {",
+            '    const user = context.request.headers.get("x-user");',
+            "    const roles = context.meta(Roles);",
+            "    if (roles !== undefined && user === null) {",
+            '      return new Response("denied", { status: 403 });',
+            "    }",
+            '    this.log.entries.push("auth:" + (user ?? "anonymous"));',
+            "    return next();",
+            "  }",
+            "}",
+          ].join("\n"),
+          "errors.ts": [
+            'import { Injectable } from "@reforce/core";',
+            'import { ErrorHandler } from "@reforce/web";',
+            "@ErrorHandler()",
+            "export class TeapotHandler {",
+            "  handle(error: unknown): Response {",
+            '    if (error instanceof Error && error.message === "boom") {',
+            '      return new Response("teapot", { status: 418 });',
+            "    }",
+            "    throw error;",
+            "  }",
+            "}",
+          ].join("\n"),
+          "users-controller.ts": [
+            'import { type Current, Injectable } from "@reforce/core";',
+            'import { Controller, Get, type Param, Use } from "@reforce/web";',
+            'import { AuthMiddleware } from "@/auth";',
+            'import { LogBook } from "@/log-book";',
+            'import { Roles } from "@/markers";',
+            'import { RequestHolder } from "@/request-holder";',
+            '@Controller("/users") @Use(AuthMiddleware)',
+            "export class UsersController {",
+            "  constructor(",
+            "    private readonly holder: Current<RequestHolder>,",
+            "    private readonly log: LogBook,",
+            "  ) {}",
+            "",
+            '  @Get("/:id")',
+            '  @Roles(["admin"])',
+            '  show(id: Param<"id", bigint>): { id: bigint; name: string } {',
+            '    this.log.entries.push("handler:show");',
+            "    // 白名单编码的靶子:实体多出的 secret 字段不在返回类型契约里,不得出线。",
+            '    const entity = { id, name: this.holder.get().requestId, secret: "do-not-leak" };',
+            "    return entity;",
+            "  }",
+            "",
+            '  @Get("/explode")',
+            "  explode(): Response {",
+            '    throw new Error("boom");',
+            "  }",
+            "}",
+          ].join("\n"),
+        },
       },
-    });
+      // Param 槽走 checker,编译前就要链好 @reforce/web 的构建产物。
+      { linkWeb: true },
+    );
     if (result.status === "failure") {
       throw new Error(JSON.stringify(result.diagnostics));
     }
     await linkApplicationPackages(project.projectRoot);
-    await linkWebPackage(project.projectRoot);
     const generatedDirectory = path.join(project.projectRoot, ".reforce", "generated");
     await mkdir(generatedDirectory, { recursive: true });
     await Promise.all(
@@ -1458,7 +1340,7 @@ describe("web engine wiring", () => {
 
     expect(generatedContent(result, "bootstrap.ts")).toContain("connectWebApplication");
     expect(JSON.parse(generatedContent(result, "routes.json"))).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       routes: [],
       errorHandlers: [],
     });

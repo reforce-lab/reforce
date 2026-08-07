@@ -1,56 +1,54 @@
 import { describe, expect, test } from "vitest";
 import { ResponseSerializationError } from "@/errors";
-import { createResponseSerializer } from "@/execution/serialization";
-import {
-  failingSchema,
-  passthroughSchema,
-  schemaOf,
-  withEncode,
-  withJsonSchema,
-} from "../support/schemas";
+import { serializeResponse } from "@/execution/serialization";
 
-describe("createResponseSerializer without a response schema", () => {
-  test("passes a Response through untouched", async () => {
-    const serialize = createResponseSerializer(undefined);
+const identity = (value: unknown): unknown => value;
+
+describe("serializeResponse passthrough", () => {
+  test("passes a Response through untouched, with or without an encoder", () => {
     const response = new Response("raw", { status: 201 });
 
-    const result = await serialize(response);
-
-    expect(result).toBe(response);
+    expect(serializeResponse(response, undefined)).toBe(response);
+    expect(serializeResponse(response, identity)).toBe(response);
   });
 
-  test("rejects a non-Response return value", () => {
-    const serialize = createResponseSerializer(undefined);
+  // 契约不得写成"带 content-length = 由 reforce 序列化产生"：raw Response 走透传通道，
+  // 它自己带不带这个头都是合法的，这里钉住透传不会被加工。
+  test("leaves a passed-through Response without adding content-length", () => {
+    const response = serializeResponse(new Response("ok"), identity);
 
-    expect(serialize({ id: 1 })).rejects.toThrow(ResponseSerializationError);
+    expect(response.headers.get("content-length")).toBeNull();
+  });
+
+  // S2 中间态(#274):无返回类型标注的路由没有编码器,handler 必须自己返回 Response;
+  // 普通对象序列化随 S3 的返回标注硬错解除。
+  test("rejects a non-Response value when the route has no encoder", () => {
+    expect(() => serializeResponse({ id: 1 }, undefined)).toThrow(ResponseSerializationError);
   });
 });
 
-describe("createResponseSerializer with a validate-only schema", () => {
-  test("serializes the validated value as JSON", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
+describe("serializeResponse with an encoder", () => {
+  test("encodes the value before serializing it as JSON", async () => {
+    // 白名单投影编码器的运行时接线:投影产物才是出线形状。
+    const encode = (value: unknown): unknown => ({ id: Reflect.get(Object(value), "id") });
 
-    const response = await serialize({ id: 7, name: "amy" });
+    const response = serializeResponse({ id: 7, passwordHash: "secret" }, encode);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/json");
-    expect(await response.json()).toEqual({ id: 7, name: "amy" });
+    expect(await response.json()).toEqual({ id: 7 });
   });
 
   test("serializes bigint values as JSON strings", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
-
-    const response = await serialize({ id: 512887731683791700033n });
+    const response = serializeResponse({ id: 512887731683791700033n }, identity);
 
     expect(await response.text()).toBe('{"id":"512887731683791700033"}');
   });
 
   // content-length 是适配器的缓冲/流式判据（adapter.ts 的契约块）；new Response(str) 不自动
   // 带这个头，所以显式设是有意义的。
-  test("declares content-length so adapters can take the buffered path", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
-
-    const response = await serialize({ id: 7 });
+  test("declares content-length so adapters can take the buffered path", () => {
+    const response = serializeResponse({ id: 7 }, identity);
 
     // {"id":7} = 8 字节
     expect(response.headers.get("content-length")).toBe("8");
@@ -58,9 +56,7 @@ describe("createResponseSerializer with a validate-only schema", () => {
 
   // 必须是字节数而不是字符数：JSON.stringify 不转义非 ASCII，"汉字" 是 2 char / 6 byte。
   test("counts content-length in bytes, not characters", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
-
-    const response = await serialize({ n: "汉字" });
+    const response = serializeResponse({ n: "汉字" }, identity);
 
     const body = await response.clone().text();
     expect(body).toBe('{"n":"汉字"}');
@@ -69,133 +65,24 @@ describe("createResponseSerializer with a validate-only schema", () => {
     );
   });
 
-  // 契约不得写成"带 content-length = 由 reforce 序列化产生"：raw Response 走透传通道，
-  // 它自己带不带这个头都是合法的，这里钉住透传不会被加工。
-  test("leaves a passed-through Response without adding content-length", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
-
-    const response = await serialize(new Response("ok"));
-
-    expect(response.headers.get("content-length")).toBeNull();
-  });
-
-  test("rejects a value that fails the response schema", () => {
-    const serialize = createResponseSerializer(failingSchema("name is required"));
-
-    expect(serialize({})).rejects.toThrow(ResponseSerializationError);
-  });
-
-  test("passes a Response through without validating it", async () => {
-    const serialize = createResponseSerializer(failingSchema("never consulted"));
-    const response = new Response("raw");
-
-    const result = await serialize(response);
-
-    expect(result).toBe(response);
+  test("rejects an encoded value JSON.stringify cannot render", () => {
+    expect(() => serializeResponse("anything", () => undefined)).toThrow(
+      ResponseSerializationError,
+    );
   });
 });
 
-describe("createResponseSerializer with a Standard JSON Schema capable schema", () => {
-  const userJsonSchema = {
-    type: "object",
-    properties: {
-      id: { type: "string" },
-      name: { type: "string" },
-      tags: { type: "array", items: { type: "object", properties: { label: {} } } },
-    },
-  };
-
-  test("whitelists only the declared fields", async () => {
-    const schema = withJsonSchema(passthroughSchema(), userJsonSchema);
-    const serialize = createResponseSerializer(schema);
-
-    const response = await serialize({
-      id: "1",
-      name: "amy",
-      passwordHash: "secret",
-      tags: [{ label: "a", internal: true }],
-    });
-
-    expect(await response.json()).toEqual({ id: "1", name: "amy", tags: [{ label: "a" }] });
-  });
-
-  test("keeps declared fields absent from the value absent", async () => {
-    const schema = withJsonSchema(passthroughSchema(), userJsonSchema);
-    const serialize = createResponseSerializer(schema);
-
-    const response = await serialize({ id: "1" });
-
-    expect(await response.json()).toEqual({ id: "1" });
-  });
-
-  test("falls back to plain validation when every target throws", async () => {
-    const base = passthroughSchema();
-    const schema = {
-      ...base,
-      "~standard": {
-        ...base["~standard"],
-        jsonSchema: {
-          input: () => {
-            throw new Error("unsupported target");
-          },
-          output: () => {
-            throw new Error("unsupported target");
-          },
-        },
-      },
-    };
-    const serialize = createResponseSerializer(schema);
-
-    const response = await serialize({ id: "1", extra: true });
-
-    expect(await response.json()).toEqual({ id: "1", extra: true });
-  });
-});
-
-describe("createResponseSerializer with an encode-capable schema", () => {
-  test("encodes runtime values to the wire shape before serializing", async () => {
-    // 雪花 ID 语义：runtime bigint → wire string，由 codec 自己完成。
-    const schema = withEncode(passthroughSchema(), (value) => ({
-      id: String(Reflect.get(Object(value), "id")),
-    }));
-    const serialize = createResponseSerializer(schema);
-
-    const response = await serialize({ id: 42n });
-
-    expect(await response.text()).toBe('{"id":"42"}');
-  });
-
-  test("wraps an encode failure as a serialization error", () => {
-    const schema = withEncode(passthroughSchema(), () => {
-      throw new Error("cannot encode");
-    });
-    const serialize = createResponseSerializer(schema);
-
-    expect(serialize({})).rejects.toThrow(ResponseSerializationError);
-  });
-});
-
-describe("createResponseSerializer JSON rendering", () => {
-  test("rejects a value JSON.stringify cannot render", () => {
-    const serialize = createResponseSerializer(schemaOf(() => ({ value: undefined })));
-
-    expect(serialize("anything")).rejects.toThrow(ResponseSerializationError);
-  });
-
+describe("serializeResponse JSON rendering", () => {
   // 以下三例钉住 Issue #198 的快路径回退：无 replacer 的首次 stringify 撞上 bigint 会在任意
   // 深度抛 TypeError，回退重试必须覆盖整棵树，而非 bigint 的 TypeError 不得被吞。
   test("serializes a nested bigint as a JSON string", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
-
-    const response = await serialize({ page: { cursor: 512887731683791700033n } });
+    const response = serializeResponse({ page: { cursor: 512887731683791700033n } }, identity);
 
     expect(await response.text()).toBe('{"page":{"cursor":"512887731683791700033"}}');
   });
 
   test("serializes bigint elements inside an array", async () => {
-    const serialize = createResponseSerializer(passthroughSchema());
-
-    const response = await serialize({ ids: [1n, 2n] });
+    const response = serializeResponse({ ids: [1n, 2n] }, identity);
 
     expect(await response.text()).toBe('{"ids":["1","2"]}');
   });
@@ -203,8 +90,7 @@ describe("createResponseSerializer JSON rendering", () => {
   test("propagates the TypeError of a circular structure", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
-    const serialize = createResponseSerializer(passthroughSchema());
 
-    expect(serialize(circular)).rejects.toThrow(TypeError);
+    expect(() => serializeResponse(circular, identity)).toThrow(TypeError);
   });
 });

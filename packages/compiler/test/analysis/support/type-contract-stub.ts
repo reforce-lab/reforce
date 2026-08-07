@@ -37,7 +37,10 @@ export type StubType =
       members: StubType[];
       properties: StubProperty[];
       indexSignature?: boolean;
-    };
+    }
+  // 槽位解析(RFC 0012 S2,#274)的响应侧:方法名位查到的函数类型与 Promise 包装。
+  | { kind: "function"; returnType?: StubType }
+  | { kind: "promise"; argument: StubType };
 
 export type StubQuery = TypeQueryOf<StubType, StubProperty>;
 
@@ -85,7 +88,13 @@ export function createStubQuery(): StubQuery {
       );
     },
     hasCallSignatures(type) {
-      return type.kind === "object" && type.callable === true;
+      return (type.kind === "object" && type.callable === true) || type.kind === "function";
+    },
+    callSignatureReturnTypes(type) {
+      return type.kind === "function" ? [type.returnType] : [];
+    },
+    promiseTypeArgument(type) {
+      return type.kind === "promise" ? type.argument : undefined;
     },
     symbolNameOf(symbol) {
       return symbol.name;

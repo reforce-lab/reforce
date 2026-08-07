@@ -19,6 +19,7 @@ import type {
   ExpressionValue,
   FunctionBodyDescriptor,
   FunctionDescriptor,
+  MethodParameter,
   ObjectLiteralProperty,
   TypeNode,
   UnsupportedExpressionKind,
@@ -160,6 +161,38 @@ function typeArgumentsOf(
   return owner.typeArguments?.params ?? [];
 }
 
+// 槽位解析（RFC 0012 S2，#274）在语法层裁决"裸标量当键名"，这 6 个关键字都要可表达；
+// undefined 服务可选单键（Header<"x" | undefined>）。
+const PRIMITIVE_KEYWORD_TYPES = new Map<
+  Node["type"],
+  "void" | "string" | "number" | "bigint" | "boolean" | "undefined"
+>([
+  ["TSVoidKeyword", "void"],
+  ["TSStringKeyword", "string"],
+  ["TSNumberKeyword", "number"],
+  ["TSBigIntKeyword", "bigint"],
+  ["TSBooleanKeyword", "boolean"],
+  ["TSUndefinedKeyword", "undefined"],
+]);
+
+// 只有字符串字面量参与槽位形态裁决（Param<"id">，#274）；数字/模板等字面量类型照旧 unsupported。
+function literalTypeNodeOf(node: NodeOfType<"TSLiteralType">, context: LoweringContext): TypeNode {
+  if (node.literal.type === "Literal" && typeof node.literal.value === "string") {
+    return { kind: "string-literal", value: node.literal.value, span: spanOf(node, context) };
+  }
+  return { kind: "unsupported", span: spanOf(node, context) };
+}
+
+// typeof X（#274 schema 追溯）；typeof import(...) 没有可链接的标识符，落 unsupported。
+function typeQueryNodeOf(node: NodeOfType<"TSTypeQuery">, context: LoweringContext): TypeNode {
+  const name =
+    node.exprName.type === "TSImportType" ? undefined : entityNameOf(node.exprName, context);
+  if (name !== undefined) {
+    return { kind: "type-query", name, span: spanOf(node, context) };
+  }
+  return { kind: "unsupported", span: spanOf(node, context) };
+}
+
 export function typeNodeOf(
   node: TypeInput,
   context: LoweringContext,
@@ -168,8 +201,22 @@ export function typeNodeOf(
   if (node.type === "TSParenthesizedType") {
     return typeNodeOf(node.typeAnnotation, context, typeParameters);
   }
-  if (node.type === "TSVoidKeyword") {
-    return { kind: "primitive", name: "void", span: spanOf(node, context) };
+  const primitive = PRIMITIVE_KEYWORD_TYPES.get(node.type);
+  if (primitive !== undefined) {
+    return { kind: "primitive", name: primitive, span: spanOf(node, context) };
+  }
+  if (node.type === "TSLiteralType") {
+    return literalTypeNodeOf(node, context);
+  }
+  if (node.type === "TSUnionType") {
+    return {
+      kind: "union",
+      members: node.types.map((member) => typeNodeOf(member, context, typeParameters)),
+      span: spanOf(node, context),
+    };
+  }
+  if (node.type === "TSTypeQuery") {
+    return typeQueryNodeOf(node, context);
   }
   if (node.type === "TSArrayType") {
     return {
@@ -489,6 +536,40 @@ export function constructorParametersOf(
       rest: shape.rest,
       hasInitializer: shape.hasInitializer,
       decorators: shape.decorators,
+      span: spanOf(parameter, context),
+    };
+  });
+}
+
+// 路由 handler 的逐参数槽位解析入口（RFC 0012 S2，#274）。name/nameSpan 只对标识符模式存在；
+// nameSpan 截到名字本身（Identifier 节点的 span 含类型标注，而 checker 位置查询必须锚在参数
+// 名上——查类型注解位对 error type 拿不到东西）。
+export function methodParametersOf(
+  owner: FunctionLike,
+  context: LoweringContext,
+  typeParameters: ReadonlySet<string>,
+): readonly MethodParameter[] {
+  return owner.params.map((parameter, index) => {
+    const shape = parameterShapeOf(parameter, context);
+    const outer = parameter.type === "TSParameterProperty" ? parameter.parameter : parameter;
+    // rest 参数的类型标注挂在 RestElement 上而不是内部 Identifier 上。
+    const type =
+      parameterTypeNode(shape.node) ??
+      (outer.type === "RestElement" ? outer.typeAnnotation?.typeAnnotation : undefined);
+    const name = identifierTextOf(shape.node);
+    return {
+      kind: "method-parameter",
+      index,
+      ...(name === undefined
+        ? {}
+        : {
+            name,
+            nameSpan: context.mapper.span(shape.node.start, shape.node.start + name.length),
+          }),
+      ...(type === undefined ? {} : { typeAnnotation: typeNodeOf(type, context, typeParameters) }),
+      optional: shape.optional,
+      rest: shape.rest,
+      hasInitializer: shape.hasInitializer,
       span: spanOf(parameter, context),
     };
   });

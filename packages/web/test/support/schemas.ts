@@ -18,26 +18,3 @@ export function passthroughSchema(): StandardSchemaV1 {
 export function failingSchema(message: string): StandardSchemaV1 {
   return schemaOf(() => ({ issues: [{ message }] }));
 }
-
-export function withEncode<T extends StandardSchemaV1>(
-  schema: T,
-  encode: (value: unknown) => unknown,
-): T & { encode(value: unknown): unknown } {
-  return Object.assign({ encode }, schema);
-}
-
-export function withJsonSchema<T extends StandardSchemaV1>(
-  schema: T,
-  output: Record<string, unknown>,
-): T {
-  return {
-    ...schema,
-    "~standard": {
-      ...schema["~standard"],
-      jsonSchema: {
-        input: () => output,
-        output: () => output,
-      },
-    },
-  };
-}

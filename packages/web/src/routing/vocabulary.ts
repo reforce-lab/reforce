@@ -1,5 +1,3 @@
-import type { StandardSchemaV1 } from "@standard-schema/spec";
-
 // web 面的封闭词汇（ADR 0006 W1/W4，#142 / #152）：方法与阶段都是闭集，编译器按同一份
 // 字面量联合做诊断，路由表校验按同一份闭集拒绝未知值。扩展任何一侧都要同步另一侧。
 
@@ -38,12 +36,3 @@ export type RouteMetaValue =
   | null
   | readonly RouteMetaValue[]
   | { readonly [key: string]: RouteMetaValue };
-
-// 路由 schema 位（ADR 0006 W5）：Standard Schema 是唯一接入面。四个位分别驱动
-// 路径参数/查询串/请求体的校验+decode 与响应的特化序列化+字段白名单。
-export interface RouteSchemas {
-  readonly params?: StandardSchemaV1;
-  readonly query?: StandardSchemaV1;
-  readonly body?: StandardSchemaV1;
-  readonly response?: StandardSchemaV1;
-}
