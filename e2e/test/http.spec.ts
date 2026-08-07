@@ -406,12 +406,64 @@ describe.sequential("HTTP application over the built artifact", () => {
             headers: { "x-request-id": id },
           });
           expect(response.status).toBe(200);
+          // 合法客户端 id 原样回显在响应头(#303),并发下与各自请求一一对应。
+          expect(response.headers.get("x-request-id")).toBe(id);
           return (await response.json()) as { id: string; path: string };
         }),
       );
 
       expect(responses.map((body) => body.id)).toEqual(ids);
       expect(new Set(responses.map((body) => body.path))).toEqual(new Set(["/audit"]));
+    });
+  });
+
+  // request id 开箱件(#303):零配置默认开启——缺省生成 UUID 形,应用日志 ≡ 请求日志 ≡
+  // 响应头三相等,500 路径 requestId 与 errorId 同录一条记录。夹具零改动。
+  test("request ids stamp every response and join the application, request and error logs", async () => {
+    await withServer(async (base, server) => {
+      const generated = await fetch(`${base}/health`);
+      expect(generated.headers.get("x-request-id")).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+
+      const probed = await fetch(`${base}/field-source`, {
+        headers: { "x-request-id": "join-me" },
+      });
+      expect(probed.headers.get("x-request-id")).toBe("join-me");
+
+      const failed = await fetch(`${base}/boom/unhandled`, {
+        headers: { "x-request-id": "failing-request" },
+      });
+      expect(failed.status).toBe(500);
+      expect(failed.headers.get("x-request-id")).toBe("failing-request");
+      const failedBody = (await failed.json()) as { errorId: string };
+
+      await sleep(100);
+      const records = server
+        .output()
+        .split("\n")
+        .flatMap((line) => {
+          try {
+            return [JSON.parse(line) as Record<string, unknown>];
+          } catch {
+            return [];
+          }
+        });
+
+      // 三相等:应用自己打的记录与框架请求日志携带同一个 id,而它就是响应头上的那个。
+      const handlerRecord = records.find((record) => record.message === "handler ran");
+      expect(handlerRecord).toMatchObject({ requestId: "join-me" });
+      const requestRecord = records.find(
+        (record) => record.message === "request" && record.path === "/field-source",
+      );
+      expect(requestRecord).toMatchObject({ requestId: "join-me" });
+
+      // 双 id 关联:unhandled error 记录同时携带 requestId 与响应 body 里的 errorId。
+      const errorRecord = records.find((record) => record.message === "unhandled error");
+      expect(errorRecord).toMatchObject({
+        requestId: "failing-request",
+        errorId: failedBody.errorId,
+      });
     });
   });
 

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
 import { createErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
+import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError, defineHttpError, HttpError } from "@/http-errors";
 
 function requestContext(): RequestContextState {
@@ -142,6 +143,28 @@ describe("createErrorDispatcher", () => {
 
     expect(text).not.toContain("boom with a secret");
     expect(text).not.toContain("at ");
+  });
+
+  // #303/#250 拍板:errorId 原样保留,unhandled error 日志同时带 requestId——500 响应头带
+  // requestId、body 带 errorId,这条记录把两串字符自动关联。body 形状零改动。
+  test("the unhandled-error record joins requestId and errorId; the body shape is unchanged", async () => {
+    const records: { fields: Readonly<Record<string, unknown>> | undefined }[] = [];
+    const dispatch = createErrorDispatcher([], {
+      error: (fields) => records.push({ fields }),
+    });
+
+    const response = await runWithRequestFields(
+      { method: "GET", path: "/users", requestId: "rid-1" },
+      () => dispatch(new Error("boom"), requestContext()),
+    );
+
+    expect(records[0]?.fields).toMatchObject({ requestId: "rid-1", errorId: expect.any(String) });
+    expect(await response.json()).toEqual({
+      type: "about:blank",
+      title: "Internal Server Error",
+      status: 500,
+      errorId: expect.any(String),
+    });
   });
 
   test("hands the error object itself to the log under the reserved err field", async () => {

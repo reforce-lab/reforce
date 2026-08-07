@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { RequestValidationError, ResponseSerializationError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
+import { currentRequestId } from "@/execution/request-fields";
 import { jsonResponse } from "@/execution/serialization";
 import type { ErrorLogger } from "@/execution/web-application";
 import { HttpError } from "@/http-errors";
@@ -71,7 +72,13 @@ function fallbackResponse(error: unknown, logger: ErrorLogger | undefined): Resp
   // 日志失败不得把响应带下去：dispatchError 永不 reject 是适配器契约的一部分（#226），
   // 而 logger 是用户的——serializer 与 LogFieldSource.fields() 都可能抛。
   try {
-    logger?.error({ errorId, err: error }, "unhandled error");
+    // requestId 与 errorId 并存自动关联(#303/#250):500 响应头带 requestId、body 带 errorId,
+    // 这条记录把两串字符对上。请求作用域外(理论不可达)不写空键。
+    const requestId = currentRequestId();
+    logger?.error(
+      { errorId, ...(requestId === undefined ? {} : { requestId }), err: error },
+      "unhandled error",
+    );
   } catch {
     // 记不上就记不上，客户端仍拿到 errorId，只是这次日志里没有对应现场。
   }
