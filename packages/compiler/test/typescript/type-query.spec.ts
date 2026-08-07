@@ -110,6 +110,28 @@ describe("position queries", () => {
     expect(called).toBe(false);
   });
 
+  test("Windows-style separators still match the program and the canonical name reaches tsgo", () => {
+    // Windows CI 实测回归:path.join 的反斜杠拼写对不上 tsgo 的正斜杠规范名,整批查询
+    // 被误判"不在 program"。
+    const type = fakeType({ flags: TypeFlags.String });
+    let queriedFile: string | undefined;
+    const query = queryOf({
+      checker: {
+        getTypeAtPosition: (requestedFile) => {
+          queriedFile = requestedFile;
+          return [type];
+        },
+      },
+      program: { getSourceFileNames: () => ["C:/app/src/main.ts"] },
+    });
+
+    const answers = query.getTypesAtPositions("C:\\app\\src\\main.ts", [0]);
+
+    expect(answers).toHaveLength(1);
+    expect(answers[0]).toBeDefined();
+    expect(queriedFile).toBe("C:/app/src/main.ts");
+  });
+
   test("the error type sentinel maps to undefined", () => {
     const query = queryOf({
       checker: { getTypeAtPosition: () => [fakeType({ errorType: true })] },

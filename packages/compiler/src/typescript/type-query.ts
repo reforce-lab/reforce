@@ -115,6 +115,14 @@ export interface CreateTypeQueryInput {
 
 const anonymousSymbolNames = new Set(["__type", "__object"]);
 
+// program 成员比对的路径折叠:tsgo 返回正斜杠规范名,Node path.join 在 Windows 上给反斜杠,
+// 精确比对会把项目文件整批误判成"不在 program"(CI 实测);Windows 文件系统大小写不敏感,
+// 盘符大小写也一并折叠。查询发往 server 时用 tsgo 侧的规范名,不用调用方原始拼写。
+function canonicalPathKey(filePath: string): string {
+  const portable = filePath.replaceAll("\\", "/");
+  return process.platform === "win32" ? portable.toLowerCase() : portable;
+}
+
 function intrinsicKindOfFlags(flags: number): QueryIntrinsicKind | undefined {
   if (flags & TypeFlags.String) {
     return "string";
@@ -161,7 +169,8 @@ export function createTypeQuery(input: CreateTypeQueryInput): TypeQuery {
   const ownedTypes = new WeakSet<TsType>();
   const ownedSymbols = new WeakSet<TsSymbol>();
   // program 文件名集合与 default-lib 判定都是 snapshot 级事实,首次查询后本地缓存。
-  let programFiles: ReadonlySet<string> | undefined;
+  // key 是折叠后的路径,value 是 tsgo 侧的规范文件名。
+  let programFilesByKey: ReadonlyMap<string, string> | undefined;
   const defaultLibraryByPath = new Map<string, boolean>();
   const namedDeclarationByTypeId = new Map<number, QueryNamedDeclaration | undefined>();
 
@@ -244,12 +253,15 @@ export function createTypeQuery(input: CreateTypeQueryInput): TypeQuery {
     generation,
     getTypesAtPositions(absolutePath, offsets) {
       return guard(() => {
-        programFiles ??= new Set(input.program.getSourceFileNames());
-        if (!programFiles.has(absolutePath)) {
+        programFilesByKey ??= new Map(
+          input.program.getSourceFileNames().map((name) => [canonicalPathKey(name), name]),
+        );
+        const canonicalName = programFilesByKey.get(canonicalPathKey(absolutePath));
+        if (canonicalName === undefined) {
           return offsets.map(() => undefined);
         }
         return input.checker
-          .getTypeAtPosition(absolutePath, offsets)
+          .getTypeAtPosition(canonicalName, offsets)
           .map((type) => (type === undefined || type.isErrorType() ? undefined : adoptType(type)));
       });
     },
