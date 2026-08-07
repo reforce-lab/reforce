@@ -121,6 +121,40 @@ function validateSchemas(value: unknown, path: string): void {
   }
 }
 
+// 槽位闭集(RFC 0012 S2,#274),与 GeneratedSlotKind 同步。
+const slotKinds = new Set([
+  "param",
+  "query",
+  "header",
+  "body",
+  "request",
+  "requestContext",
+  "responseHeaders",
+]);
+
+function validateSlot(value: unknown, path: string): void {
+  const slot = requireObject(value, path);
+  requireExactKeys(slot, ["slot", "key", "decode", "schema"], path);
+  if (!slotKinds.has(String(Reflect.get(slot, "slot")))) {
+    fail(`${path}.slot must be a supported slot kind.`);
+  }
+  const key = Reflect.get(slot, "key");
+  if (key !== undefined && typeof key !== "string") {
+    fail(`${path}.key must be a string when provided.`);
+  }
+  const decode = Reflect.get(slot, "decode");
+  const schema = Reflect.get(slot, "schema");
+  if (decode !== undefined && schema !== undefined) {
+    fail(`${path} must not declare both decode and schema.`);
+  }
+  if (decode !== undefined) {
+    validateStandardSchema(decode, `${path}.decode`);
+  }
+  if (schema !== undefined) {
+    validateStandardSchema(schema, `${path}.schema`);
+  }
+}
+
 function validateMiddleware(value: unknown, path: string): void {
   const middleware = requireObject(value, path);
   requireExactKeys(middleware, ["bean", "beanId", "phase", "order", "mount"], path);
@@ -189,6 +223,8 @@ function validateRoute(value: unknown, path: string): void {
       "middleware",
       "meta",
       "schemas",
+      "slots",
+      "encode",
     ],
     path,
   );
@@ -209,6 +245,16 @@ function validateRoute(value: unknown, path: string): void {
   }
   validateMeta(Reflect.get(route, "meta"), `${path}.meta`);
   validateSchemas(Reflect.get(route, "schemas"), `${path}.schemas`);
+  const slots = Reflect.get(route, "slots");
+  if (slots !== undefined) {
+    for (const [index, entry] of requireArray(slots, `${path}.slots`).entries()) {
+      validateSlot(entry, `${path}.slots[${index}]`);
+    }
+  }
+  const encode = Reflect.get(route, "encode");
+  if (encode !== undefined) {
+    requireFunction(encode, `${path}.encode`);
+  }
 }
 
 function validateErrorHandler(value: unknown, path: string): void {

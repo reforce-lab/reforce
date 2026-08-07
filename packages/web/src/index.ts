@@ -39,4 +39,5 @@ export type {
   RouteMiddleware,
 } from "@/routing/middleware";
 export { defineRouteMarker, type RouteMarker } from "@/routing/route-marker";
+export type { Body, Header, Param, Query } from "@/routing/slots";
 export type { HttpMethod, RouteMetaValue, RouteSchemas, WebPhase } from "@/routing/vocabulary";

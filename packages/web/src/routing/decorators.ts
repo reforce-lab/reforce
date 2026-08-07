@@ -1,5 +1,4 @@
 import type { BeanClass } from "@reforce/core";
-import type { InferSchemaOutput, RequestContext } from "@/execution/request-context";
 import type {
   ErrorHandlerOptions,
   MiddlewareOptions,
@@ -26,27 +25,19 @@ type ErrorHandlerClassDecorator = <T extends BeanClass<RouteErrorHandler>>(
   context: ClassDecoratorContext<T>,
 ) => void;
 
-// handler 契约在装饰器签名处钉死：方法要么零参、要么恰好接收 RequestContext<S>，返回值
-// 由 response schema 决定——没声明 response 时 InferSchemaOutput 落回 unknown，等于不设限。
-// `| Response` 分支保留 W5 的"Response 原样透传"契约。
-//
-// 这里给的是约束不是免标注：TS 不给类方法参数做上下文类型化（implements、抽象基类、
-// 带实现的基类、装饰器签名四种形态实测都是 TS7006），所以 handler 仍要写
-// `context: RequestContext<typeof schemas>`；装饰器负责校验这个标注与传入的 schemas 一致。
-type RouteHandlerDecorator<S extends RouteSchemas> = <
+// 槽位写法(RFC 0012 S2,#274)下 handler 参数列表放开为任意形态:每个参数的槽位合法性
+// 由编译器逐参数裁决(六类硬错),装饰器签名不再复述。约束必须逐字复刻 lib 里
+// ClassMethodDecoratorContext 对 Value 的上界 `(this, ...args: any) => any`——写成更窄的
+// never[]/unknown 形态会在 context 形参处触发 TS2344(any 不可赋给 never)。
+// schemas 第二实参的类型面暂留,随旧链路在本 PR 后续阶段删除。
+type RouteHandlerDecorator = <
   This,
-  Value extends
-    | ((this: This) => Awaitable<InferSchemaOutput<S["response"]> | Response>)
-    | ((
-        this: This,
-        context: RequestContext<S>,
-      ) => Awaitable<InferSchemaOutput<S["response"]> | Response>),
+  // biome-ignore lint/suspicious/noExplicitAny: lib.decorators 的 ClassMethodDecoratorContext 上界即为 any,复刻之
+  Value extends (this: This, ...args: any) => any,
 >(
   value: Value,
   context: ClassMethodDecoratorContext<This, Value>,
 ) => void;
-
-type Awaitable<T> = T | Promise<T>;
 
 function requireOptionalPath(decorator: string, path: unknown): void {
   if (path !== undefined && typeof path !== "string") {
@@ -74,11 +65,11 @@ export function Controller(path?: string): WebClassDecorator {
   return () => undefined;
 }
 
-function routeDecorator<S extends RouteSchemas>(
+function routeDecorator(
   name: string,
   path?: string,
-  schemas?: S,
-): RouteHandlerDecorator<S> {
+  schemas?: RouteSchemas,
+): RouteHandlerDecorator {
   requireOptionalPath(name, path);
   requireOptionalSchemas(name, schemas);
   return () => undefined;
@@ -87,49 +78,49 @@ function routeDecorator<S extends RouteSchemas>(
 export function Delete<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Delete", path, schemas);
 }
 
 export function Get<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Get", path, schemas);
 }
 
 export function Head<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Head", path, schemas);
 }
 
 export function Options<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Options", path, schemas);
 }
 
 export function Patch<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Patch", path, schemas);
 }
 
 export function Post<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Post", path, schemas);
 }
 
 export function Put<const S extends RouteSchemas = RouteSchemas>(
   path?: string,
   schemas?: S,
-): RouteHandlerDecorator<S> {
+): RouteHandlerDecorator {
   return routeDecorator("Put", path, schemas);
 }
 

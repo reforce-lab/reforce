@@ -145,3 +145,67 @@ describe("validateGeneratedRouteTable", () => {
     expect(() => validateGeneratedRouteTable(table)).not.toThrow();
   });
 });
+
+// —— 槽位与编码器字段(RFC 0012 S2,#274) ——
+
+describe("validateGeneratedRouteTable slots and encode", () => {
+  function routeWithSlots(slots: unknown): unknown {
+    return { ...validRoute(), slots };
+  }
+
+  test("accepts a route with slot bindings and an encoder", () => {
+    const table = tableWith({
+      routes: [
+        {
+          ...validRoute(),
+          slots: [
+            { slot: "param", key: "id", decode: passthroughSchema() },
+            { slot: "body", schema: passthroughSchema() },
+            { slot: "requestContext" },
+          ],
+          encode: (value: unknown) => value,
+        },
+      ],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).not.toThrow();
+  });
+
+  test("rejects a slot with an unknown kind", () => {
+    const table = tableWith({ routes: [routeWithSlots([{ slot: "cookie" }])] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  test("rejects a slot declaring both decode and schema", () => {
+    const table = tableWith({
+      routes: [
+        routeWithSlots([
+          { slot: "query", key: "page", decode: passthroughSchema(), schema: passthroughSchema() },
+        ]),
+      ],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/both decode and schema/);
+  });
+
+  test("rejects a slot whose decode is not a standard schema", () => {
+    const table = tableWith({
+      routes: [routeWithSlots([{ slot: "header", key: "x-tenant", decode: {} }])],
+    });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(InvalidRouteTableError);
+  });
+
+  test("rejects a non-string slot key", () => {
+    const table = tableWith({ routes: [routeWithSlots([{ slot: "param", key: 42 }])] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/key must be a string/);
+  });
+
+  test("rejects a non-function encode", () => {
+    const table = tableWith({ routes: [{ ...validRoute(), encode: "not a function" }] });
+
+    expect(() => validateGeneratedRouteTable(table)).toThrow(/encode must be a function/);
+  });
+});

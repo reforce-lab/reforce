@@ -206,7 +206,8 @@ function prepareRoute(
   const core: RouteRunner = async (requestContext) => {
     try {
       await validateInputs(requestContext);
-      return await serialize(await route.invoke(controller, requestContext));
+      // 槽位解码产物在旧 schemas 执行链上恒为空数组;槽位执行链(#274)接入时替换。
+      return await serialize(await route.invoke(controller, requestContext, []));
     } catch (error) {
       requestContext.recordFailure(error);
       return await dispatchError(error, requestContext);

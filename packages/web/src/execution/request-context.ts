@@ -26,6 +26,10 @@ export interface RequestContext<S extends RouteSchemas = RouteSchemas> {
   readonly query: InferSchemaOutput<S["query"]>;
   // 只有声明了 body schema 才读取请求体；未声明时恒为 undefined。
   readonly body: InferSchemaOutput<S["body"]>;
+  // 响应头出口(RFC 0012 S2,#274):handler 的 `Headers` 裸标注参数与中间件共用这一个原生
+  // Headers 实例;core runner 在拿到最终响应后统一 merge——只合并编码/序列化产出的响应,
+  // 不碰 handler 直接返回的 Response(逃生口)与错误响应。
+  readonly responseHeaders: Headers;
   meta<T extends RouteMetaValue>(marker: RouteMarker<T>): T | undefined;
 }
 
@@ -45,6 +49,8 @@ export class RequestContextState implements RequestContext {
   readonly url: URL;
   readonly method: HttpMethod;
   readonly path: string;
+  // 显式标注:不标注时推导类型指向 undici-types 的 Headers,d.ts 生成报 TS2883 不可移植。
+  readonly responseHeaders: Headers = new Headers();
   private readonly lookupMeta: ReturnType<typeof metaLookup>;
   private validatedParams: unknown;
   private queryValidated = false;

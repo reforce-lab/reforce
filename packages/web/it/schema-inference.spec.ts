@@ -92,35 +92,6 @@ void verifyDeclaredSlotsCarryTheirSchemaOutput;
 void verifyUndeclaredSlotsStayUnknown;
 void verifyTheBareContextKeepsEveryDataSlotUnknown;
 
-function verifyTheDecoratorRejectsAMismatchedAnnotation(): void {
-  @Controller("/users")
-  class Users {
-    // @ts-expect-error The handler annotation must match the schemas passed to @Get.
-    @Get("/:id", showSchemas)
-    show(context: RequestContext<typeof createSchemas>): UserView {
-      void context;
-      return { id: 1n, name: "u" };
-    }
-  }
-  void Users;
-}
-
-function verifyTheDecoratorPinsTheReturnTypeToTheResponseSchema(): void {
-  @Controller("/users")
-  class Users {
-    // @ts-expect-error The response schema pins the return type; a string is not a UserView.
-    @Get("/:id", showSchemas)
-    show(context: RequestContext<typeof showSchemas>): string {
-      void context;
-      return "not a user";
-    }
-  }
-  void Users;
-}
-
-void verifyTheDecoratorRejectsAMismatchedAnnotation;
-void verifyTheDecoratorPinsTheReturnTypeToTheResponseSchema;
-
 describe("schema typing reaches the handler without a cast", () => {
   test("a handler reads the decoded params straight off the context", () => {
     @Controller("/users")
