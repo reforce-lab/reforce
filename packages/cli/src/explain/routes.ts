@@ -143,9 +143,12 @@ function responseLine(response: RouteManifestResponse): string {
   return "response · passthrough (handler-controlled Response; void answers 204)";
 }
 
+// handler 缺席 = defineHttpError 造的异常(#310):没有处理器 bean,运行时兜底闭集直译
+// problem+json,这行要让读者看出「不用注册处理器」而不是「处理器丢了」。
 function thrownErrorLine(thrown: RouteManifestThrownError): string {
   const status = thrown.status === undefined ? "" : ` → ${String(thrown.status)}`;
-  return `throws ${thrown.error}${status} · ${thrown.handler}`;
+  const via = thrown.handler ?? "built-in problem+json (defineHttpError)";
+  return `throws ${thrown.error}${status} · ${via}`;
 }
 
 function errorHandlerLine(handler: RouteManifestErrorHandler, index: number): string {

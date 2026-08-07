@@ -22,6 +22,7 @@ import {
 } from "@/analysis/web-model";
 import { createSlotResolutionContext } from "@/analysis/web-slot-context";
 import {
+  leftmostIdentifier,
   type ResponseDirectives,
   type ResponseSchemaDirectiveModel,
   type ResponseStatusModel,
@@ -590,7 +591,8 @@ function responseSchemaOf(
 const errorHandlerSignatureHelp =
   "Typed error handlers declare handle as a method whose first parameter is annotated with an " +
   "exported, non-generic application error class; `unknown` (or a field-form handle) keeps the " +
-  "handler match-all.";
+  "handler match-all. @Throws additionally accepts a const created by defineHttpError(...) — " +
+  "those errors carry their own status and code and need no handler.";
 
 interface ErrorHandlerInfo extends WebErrorHandlerModel {
   // 声明位:THROWS_WITHOUT_HANDLER 的 related span 点名已注册处理器。
@@ -667,6 +669,43 @@ function resolveThrowsDecorators(
   return { throws, failed };
 }
 
+// defineHttpError 造的异常(#310):const 初始化是 @reforce/web defineHttpError 的直接调用。
+// 这类异常没有类声明,类型化处理器的 accepts 写不出来,而运行时兜底闭集(ADR 0013 决议 6/7)
+// 直接把 HttpError 翻译成 problem+json——所以 @Throws 直接绑内置契约,不查处理器名录。
+// status/code 取实参的静态字面量,写成变量等非字面量时缺省(文档只收静态可知的事实,#306
+// 同口径)。
+function definedHttpErrorTargetOf(
+  source: ParsedSource,
+  entity: EntityName,
+  linker: ProjectLinker,
+): RouteThrownErrorModel | undefined {
+  const resolved = linker.resolveValueDeclaration(source, leftmostIdentifier(entity));
+  const name = resolved?.declaration.name;
+  if (resolved === undefined || name === undefined) {
+    return undefined;
+  }
+  if (resolved.declaration.declarationKind !== "const") {
+    return undefined;
+  }
+  const initializer = resolved.declaration.initializer;
+  if (initializer?.kind !== "call") {
+    return undefined;
+  }
+  const callee = linker.resolveEntity(resolved.source, initializer.callee);
+  if (callee?.kind !== "web" || callee.name !== "defineHttpError") {
+    return undefined;
+  }
+  const code = initializer.arguments.at(0);
+  const status = initializer.arguments.at(2);
+  return {
+    kind: "http-error",
+    errorName: name,
+    key: providerId(resolved.source.fileId, name),
+    ...(status?.kind === "number-literal" ? { status: status.value } : {}),
+    ...(code?.kind === "string-literal" ? { code: code.value } : {}),
+  };
+}
+
 function resolveThrownArgument(
   source: ParsedSource,
   argument: DecoratorArgumentValue,
@@ -677,10 +716,17 @@ function resolveThrownArgument(
       ? applicationClassTargetOf(source, argument.entity, context.linker)
       : undefined;
   if (target === undefined) {
+    const httpError =
+      argument.kind === "identifier-reference"
+        ? definedHttpErrorTargetOf(source, argument.entity, context.linker)
+        : undefined;
+    if (httpError !== undefined) {
+      return httpError;
+    }
     report(
       context.diagnostics,
       "INVALID_ERROR_HANDLER_SIGNATURE",
-      "Throws only accepts application error classes.",
+      "Throws only accepts application error classes or defineHttpError values.",
       argument.span,
       { help: errorHandlerSignatureHelp },
     );
@@ -705,7 +751,12 @@ function resolveThrownArgument(
     );
     return undefined;
   }
-  return { errorName: target.name, key: target.key, handlerBeanId: handler.beanId };
+  return {
+    kind: "handler",
+    errorName: target.name,
+    key: target.key,
+    handlerBeanId: handler.beanId,
+  };
 }
 
 // 路由 throws = 方法级 @Throws ∪ 挂载中间件类级 @Throws:按类键去重、errorName 排序(同名

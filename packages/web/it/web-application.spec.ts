@@ -120,7 +120,7 @@ function applicationDefinition(): GeneratedApplicationDefinition {
 
 function routeTable(): GeneratedRouteTable {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     routes: [
       {
         method: "GET",

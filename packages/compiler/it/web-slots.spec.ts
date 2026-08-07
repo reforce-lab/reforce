@@ -409,6 +409,34 @@ describe("schema tracing", () => {
       "export type InferOutput<T> = T extends ItSchema<infer O> ? O : never;",
       "export const createUserSchema = schema<{ name: string; age: number }>();",
       "export const tagSchema = schema<{ label: string }>();",
+      "// 输入/输出两侧分离的夹具(#310):模拟 zod .default()(输出恒有值、输入可缺省,",
+      "// coerce 输入侧是 unknown)与反向 transform(输入必填、输出可缺省)。",
+      "export interface ItSchemaIO<I, O> {",
+      '  readonly "~standard": {',
+      "    readonly version: 1;",
+      '    readonly vendor: "it";',
+      "    readonly types: { readonly input: I; readonly output: O } | undefined;",
+      "    readonly validate: (",
+      "      value: unknown,",
+      "    ) => { value: O } | { issues: readonly { message: string }[] };",
+      "  };",
+      "}",
+      "function schemaIO<I, O>(): ItSchemaIO<I, O> {",
+      "  return {",
+      '    "~standard": {',
+      "      version: 1,",
+      '      vendor: "it",',
+      "      types: undefined,",
+      "      // 夹具只关心类型面,校验行为不在本 IT 的断言范围 // justified: 测试夹具",
+      "      validate: (value) => ({ value: value as O }),",
+      "    },",
+      "  };",
+      "}",
+      "export type InferIO<T> = T extends ItSchemaIO<infer _I, infer O> ? O : never;",
+      "export const searchQuerySchema = schemaIO<",
+      "  { page?: unknown; mode: string },",
+      "  { page: number; mode?: string }",
+      ">();",
     ].join("\n"),
     "aliases.ts": [
       'import { type InferOutput, createUserSchema } from "@/schemas";',
@@ -420,9 +448,12 @@ describe("schema tracing", () => {
     "users-controller.ts": [
       controllerImports,
       'import type { CreateUser, ViaGeneric } from "@/aliases";',
-      'import { type InferOutput, createUserSchema, tagSchema } from "@/schemas";',
+      'import { type InferIO, type InferOutput, createUserSchema, searchQuerySchema, tagSchema } from "@/schemas";',
       "@Controller()",
       "export class UsersController {",
+      '  @Get("/search")',
+      "  search(_query: Query<InferIO<typeof searchQuerySchema>>): void {}",
+      "",
       '  @Post("/inline")',
       "  inline(_body: Body<InferOutput<typeof createUserSchema>>): void {}",
       "",
@@ -472,6 +503,43 @@ describe("schema tracing", () => {
       'import { createUserSchema as webSchema0 } from "../../src/schemas.js";',
     );
     expect(routesModule).toContain('{ slot: "body", schema: webSchema0 },');
+  });
+
+  test("a schema slot merges input-side optionality into the manifest table only", async () => {
+    const result = await compileSlotsOrThrow(schemaSources);
+
+    // routes.json 落线上侧:page 输出侧必填但输入侧可缺省(.default() 形态)→ optional;
+    // mode 输出侧可缺省但输入侧必填(transform 形态)→ 必填。
+    expect(contractOf(result, "GET", "/search").slots[0]).toMatchObject({
+      slot: "query",
+      form: "contract",
+      source: {
+        source: "schema",
+        schema: { moduleSpecifier: "../../src/schemas.js", exportName: "searchQuerySchema" },
+        vendor: "it",
+      },
+      table: {
+        root: {
+          kind: "object",
+          nullable: false,
+          fields: [
+            {
+              name: "mode",
+              optional: false,
+              shape: { kind: "scalar", scalar: "string", nullable: false },
+            },
+            {
+              name: "page",
+              optional: true,
+              shape: { kind: "scalar", scalar: "number", nullable: false },
+            },
+          ],
+        },
+      },
+    });
+    // typed-edge 不动:routes.ts 的 invoke 断言仍是 handler 侧(schema 输出)的形状。
+    const routesModule = generatedContent(result, "routes.ts");
+    expect(routesModule).toContain('slots[0] as { "mode"?: string; "page": number }');
   });
 
   test("a generic alias is not followed and falls back to a type-generated decoder", async () => {

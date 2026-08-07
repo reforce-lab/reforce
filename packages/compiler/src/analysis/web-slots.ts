@@ -574,7 +574,12 @@ function contractSourceOf<TType, TSymbol>(
   context: SlotResolutionContext<TType, TSymbol>,
   firstArgument: TypeNode,
   slot: DataSlotKind,
-): { readonly source?: ContractSourceModel; readonly failed: boolean } {
+): {
+  readonly source?: ContractSourceModel;
+  // schema 命中时的 schema 值类型:wireTableOf 要拿它问 ~standard.types.input(#310)。
+  readonly schemaType?: TType;
+  readonly failed: boolean;
+} {
   const hit = findSchemaTypeQuery(firstArgument, context);
   if (hit === undefined) {
     return { source: { source: "type" }, failed: false };
@@ -613,8 +618,84 @@ function contractSourceOf<TType, TSymbol>(
       ref: target.ref,
       ...(standard.vendor === undefined ? {} : { vendor: standard.vendor }),
     },
+    schemaType: valueType,
     failed: false,
   };
+}
+
+// schema 槽的线上侧可缺省合并(#310):字段表来自槽位注解类型(schema 输出侧,如 z.infer),
+// 但「请求里能不能缺这个键」由 ~standard.types.input 决定——zod 的 .default() 输出侧永远
+// 有值、输入侧可缺省,照输出侧落盘会让 OpenAPI 把可缺省参数标成必填。这里只合并根对象
+// 字段的 optional:输入侧属性可选性经 isOptionalProperty 查询,coerce 一类输入侧类型是
+// unknown 也不影响属性位的可选性;嵌套层维持输出侧。根是命名引用时内联成对象根、不动
+// definitions——同 key 定义在 OpenAPI 组件装配里是 first-wins,内容分叉会静默丢一份。
+// 两侧一致时返回 undefined,emission 落原表。
+function wireTableOf<TType, TSymbol>(
+  context: SlotResolutionContext<TType, TSymbol>,
+  schemaType: TType,
+  table: ContractTable,
+): ContractTable | undefined {
+  const query = context.query;
+  if (query === undefined) {
+    return undefined;
+  }
+  const inputType = standardSchemaInputTypeOf(context, schemaType);
+  if (inputType === undefined) {
+    return undefined;
+  }
+  const root = resolvedRootObjectOf(table);
+  if (root === undefined) {
+    return undefined;
+  }
+  const inputOptionalByName = new Map(
+    query
+      .getPropertiesOfType(inputType)
+      .map((symbol) => [query.symbolNameOf(symbol), query.isOptionalProperty(symbol)]),
+  );
+  let changed = false;
+  const fields = root.shape.fields.map((field) => {
+    const inputOptional = inputOptionalByName.get(field.name);
+    if (inputOptional === undefined || inputOptional === field.optional) {
+      return field;
+    }
+    changed = true;
+    return { ...field, optional: inputOptional };
+  });
+  if (!changed) {
+    return undefined;
+  }
+  return {
+    root: { kind: "object", fields, nullable: root.nullable },
+    definitions: table.definitions,
+  };
+}
+
+// 根形态解引用(带环守卫):返回对象根与「引用位累计的 nullable」,非对象根返回 undefined。
+function resolvedRootObjectOf(table: ContractTable):
+  | {
+      readonly shape: Extract<ContractShape, { readonly kind: "object" }>;
+      readonly nullable: boolean;
+    }
+  | undefined {
+  let current = table.root;
+  let nullable = false;
+  const seen = new Set<string>();
+  while (current.kind === "reference") {
+    if (seen.has(current.target)) {
+      return undefined;
+    }
+    seen.add(current.target);
+    nullable ||= current.nullable;
+    const definition = table.definitions[current.target];
+    if (definition === undefined) {
+      return undefined;
+    }
+    current = definition.shape;
+  }
+  if (current.kind !== "object") {
+    return undefined;
+  }
+  return { shape: current, nullable: nullable || current.nullable };
 }
 
 function standardSchemaVendorOf<TType, TSymbol>(
@@ -829,11 +910,13 @@ function resolveContractSlot<TType, TSymbol>(
       parameter.span,
     );
   }
+  const wireEntry = wireTableEntryOf(context, contractSource.schemaType, table);
   if (slot === "body") {
     return {
       kind: "body",
       ...(projection.key === undefined ? {} : { key: projection.key }),
       table,
+      ...wireEntry,
       contractSource: contractSource.source,
       span: parameter.span,
     };
@@ -843,9 +926,20 @@ function resolveContractSlot<TType, TSymbol>(
     form: "contract",
     ...(projection.key === undefined ? {} : { key: projection.key }),
     table,
+    ...wireEntry,
     contractSource: contractSource.source,
     span: parameter.span,
   };
+}
+
+// 槽位模型的 wireTable 键(#310):非 schema 槽或两侧一致时给空对象,展开处直接 spread。
+function wireTableEntryOf<TType, TSymbol>(
+  context: SlotResolutionContext<TType, TSymbol>,
+  schemaType: TType | undefined,
+  table: ContractTable,
+): { readonly wireTable?: ContractTable } {
+  const wireTable = schemaType === undefined ? undefined : wireTableOf(context, schemaType, table);
+  return wireTable === undefined ? {} : { wireTable };
 }
 
 // 三字符串槽契约的根与字段裁决(槽位差异):对象根 + 扁平字段。

@@ -34,6 +34,11 @@ const manifest: RouteManifest = {
           status: 200,
           errors: [
             { error: "OrderRejectedError", handler: "src/errors.ts#OrderRejected", status: 409 },
+            {
+              error: "PaymentRequiredError",
+              status: 402,
+              body: { kind: "problem", code: "PAYMENT_REQUIRED_X" },
+            },
           ],
         },
       },
@@ -110,6 +115,7 @@ describe("renderRouteExplanation", () => {
       "  4. requestContext",
       "  response · 200 · whitelisted by the return type contract",
       "  throws OrderRejectedError → 409 · src/errors.ts#OrderRejected",
+      "  throws PaymentRequiredError → 402 · built-in problem+json (defineHttpError)",
       '  meta · {"roles":["admin"]}',
       "error handlers (dispatch order)",
       "  1. order 0 · src/errors.ts#OrderRejected · accepts OrderRejectedError · 409",

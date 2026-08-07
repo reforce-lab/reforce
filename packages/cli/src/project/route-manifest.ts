@@ -92,11 +92,18 @@ export type RouteManifestHandlerBody =
   | { readonly kind: "table"; readonly table: ManifestContractTable }
   | { readonly kind: "free-form" };
 
+// @Throws 条目的 body 比处理器多一个变体(#310):problem = defineHttpError 造的异常,运行时
+// 兜底闭集直译 RFC 9457 problem+json,code 是 defineHttpError 实参的静态字面量(非字面量缺席)。
+export type RouteManifestThrownBody =
+  | RouteManifestHandlerBody
+  | { readonly kind: "problem"; readonly code?: string };
+
+// handler 缺席 = problem 变体(#310):没有处理器 bean,状态码与形状由 defineHttpError 声明。
 export interface RouteManifestThrownError {
   readonly error: string;
-  readonly handler: string;
+  readonly handler?: string;
   readonly status?: number;
-  readonly body?: RouteManifestHandlerBody;
+  readonly body?: RouteManifestThrownBody;
 }
 
 export interface RouteManifestResponse {
@@ -350,6 +357,17 @@ function parsedSlot(value: unknown): RouteManifestSlot | undefined {
   };
 }
 
+function parsedThrownBody(value: unknown): RouteManifestThrownBody | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  if (Reflect.get(value, "kind") !== "problem") {
+    return parsedHandlerBody(value);
+  }
+  const code = Reflect.get(value, "code");
+  return { kind: "problem", ...(typeof code === "string" ? { code } : {}) };
+}
+
 function parsedThrownError(value: unknown): RouteManifestThrownError | undefined {
   if (!isObject(value)) {
     return undefined;
@@ -357,17 +375,17 @@ function parsedThrownError(value: unknown): RouteManifestThrownError | undefined
   const error = Reflect.get(value, "error");
   const handler = Reflect.get(value, "handler");
   const status = Reflect.get(value, "status");
-  if (typeof error !== "string" || typeof handler !== "string") {
+  if (typeof error !== "string" || (handler !== undefined && typeof handler !== "string")) {
     return undefined;
   }
   const rawBody = Reflect.get(value, "body");
-  const body = rawBody === undefined ? undefined : parsedHandlerBody(rawBody);
+  const body = rawBody === undefined ? undefined : parsedThrownBody(rawBody);
   if (rawBody !== undefined && body === undefined) {
     return undefined;
   }
   return {
     error,
-    handler,
+    ...(handler === undefined ? {} : { handler }),
     ...(typeof status === "number" ? { status } : {}),
     ...(body === undefined ? {} : { body }),
   };
@@ -488,8 +506,8 @@ export function parseRouteManifestBytes(bytes: Uint8Array): RouteManifest | unde
   } catch {
     return undefined;
   }
-  // 3 = 响应侧收口(RFC 0012 S3,#275),与生成器/运行时的版本门同步。
-  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 3) {
+  // 4 = @Throws 认 defineHttpError + schema 槽线上侧表(#310),与生成器/运行时的版本门同步。
+  if (!isObject(value) || Reflect.get(value, "schemaVersion") !== 4) {
     return undefined;
   }
   const routes = parsedAll(Reflect.get(value, "routes"), parsedRoute);
