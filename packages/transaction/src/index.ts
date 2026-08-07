@@ -1,4 +1,5 @@
 export { type TransactionErrorCode, transactionErrorCodes } from "@/error-codes";
+export * as errors from "@/error-namespace";
 export {
   TransactionIsolationOnJoinError,
   TransactionIsolationUnsupportedError,

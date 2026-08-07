@@ -28,6 +28,7 @@ test("the root entry exposes only the public programming model", () => {
     "defineBean",
     "defineMethodMarker",
     "defineStarter",
+    "errors",
     "interceptPhases",
     "isReforceError",
   ]);

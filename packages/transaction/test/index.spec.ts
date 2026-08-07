@@ -13,6 +13,7 @@ test("the root entry exposes only the public transaction contract", () => {
     "TransactionTimeoutUnsupportedError",
     "Transactional",
     "activeResourceFor",
+    "errors",
     "isNestedTransactionManager",
     "runTransactional",
     "transactionErrorCodes",

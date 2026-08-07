@@ -14,6 +14,7 @@ export {
   RequestScoped,
 } from "@/bean-declaration";
 export { type CoreErrorCode, coreErrorCodes } from "@/error-codes";
+export * as errors from "@/error-namespace";
 export {
   ApplicationCleanupError,
   ApplicationContextStateError,
