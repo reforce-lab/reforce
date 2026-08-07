@@ -106,6 +106,39 @@ describe("default logger", () => {
     expect(lines).toHaveLength(1);
   });
 
+  // 显式配置（RFC 0011 L5 勘误）：settings.levels 的逐 logger 指定压过快照与一切缺省。
+  test("lets settings.levels win over the compile-time snapshot for a named logger", () => {
+    const lines: string[] = [];
+    const factory = new DefaultLoggerFactory({
+      settings: { levels: { orders: "silent" } },
+      levels: new LoggerLevels({
+        names: ["orders"],
+        levels: { orders: "debug" },
+        defaultLevel: "info",
+        layers: [],
+      }),
+      write: (line) => lines.push(line),
+    });
+
+    factory.create("orders").error(undefined, "dropped");
+
+    expect(lines).toEqual([]);
+  });
+
+  test("falls back to settings.defaultLevel for a logger no one names", () => {
+    const lines: string[] = [];
+    const factory = new DefaultLoggerFactory({
+      settings: { defaultLevel: "warn" },
+      write: (line) => lines.push(line),
+    });
+
+    factory.create("orders").info(undefined, "dropped");
+    factory.create("orders").warn(undefined, "kept");
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({ message: "kept" });
+  });
+
   // Error 的 message/stack 都是不可枚举的，不特判会被 stringify 成 {}。
   test("renders a reserved err field instead of serialising it away", () => {
     const lines: string[] = [];

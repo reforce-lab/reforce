@@ -11,6 +11,7 @@ import {
 import { bindLoggerLevels } from "@/level-binding";
 import type { LoggerLevels } from "@/levels";
 import { renderRecord } from "@/render-record";
+import type { LoggingSettings } from "@/settings";
 
 // 默认绑定（RFC 0011 L3，#242）：JSON.stringify 加一次同步写，零依赖。
 //
@@ -18,6 +19,11 @@ import { renderRecord } from "@/render-record";
 // worker thread transport——高吞吐场景换 @reforce/logging-pino，不要指望这里追平。
 
 export interface DefaultLoggerFactoryOptions {
+  /**
+   * 应用的显式级别配置（RFC 0011 L5 勘误）：settings.levels 的逐 logger 指定最优先，
+   * settings.defaultLevel 兜没逐个指定的部分。拼错的 logger 名对快照名单 warn。
+   */
+  readonly settings?: LoggingSettings;
   /**
    * 编译器合成的级别快照 bean（RFC 0011 L5，#249）。给了它，`logging.level.*` 与
    * `LOGGING_LEVEL_<NAME>` 才真正生效——这是把编译期校验过的名单接到运行期的那根线。
@@ -126,18 +132,22 @@ export class DefaultLoggerFactory implements LoggerFactory {
 
   constructor(options: DefaultLoggerFactoryOptions = {}) {
     this.options = options;
-    // 快照优先于手写的 levelFor：给了 levels 就是要 logging.level.* 说了算。两个都给的场合
-    // 只出现在测试里，那里手写的那个反而是被验证的对象，所以它排在快照缺席时。
+    // settings/快照优先于手写的 levelFor：给了它们就是要显式配置说了算。levelFor 只在两者
+    // 都缺席时说话——那个场合只出现在测试里，手写的那个正是被验证的对象。
     this.levelFor =
-      options.levels === undefined
+      options.settings === undefined && options.levels === undefined
         ? (options.levelFor ?? (() => undefined))
-        : bindLoggerLevels({ levels: options.levels });
+        : bindLoggerLevels({ settings: options.settings, levels: options.levels });
   }
 
   create(name: string): Logger {
     return new DefaultLogger({
       name,
-      threshold: this.levelFor(name) ?? this.options.defaultLevel ?? "info",
+      threshold:
+        this.levelFor(name) ??
+        this.options.settings?.defaultLevel ??
+        this.options.defaultLevel ??
+        "info",
       fieldSources: this.options.fieldSources ?? [],
       write: this.options.write ?? defaultWrite,
       now: this.options.now ?? (() => Date.now()),

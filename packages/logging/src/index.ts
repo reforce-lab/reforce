@@ -35,6 +35,15 @@ export {
 } from "@/levels";
 export { LoggerName } from "@/logger-name";
 export {
+  DefaultLoggingSettings,
+  type LoggerLevelMap,
+  type LoggingSettings,
+  type LogRenderMode,
+  reportUnknownLoggerLevels,
+  type UnknownLoggerLevelKey,
+  unknownLoggerLevelKeys,
+} from "@/settings";
+export {
   type EmitStartupSummaryOptions,
   emitStartupSummary,
   renderStartupSummary,

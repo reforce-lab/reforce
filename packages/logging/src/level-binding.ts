@@ -1,6 +1,7 @@
 import { bootstrapLogger } from "@/bootstrap-registry";
 import type { Logger, LogThreshold } from "@/contracts";
 import type { LoggerLevels } from "@/levels";
+import { type LoggingSettings, reportUnknownLoggerLevels } from "@/settings";
 
 // 编译期快照接到绑定上的那一步（RFC 0011 L5，#249 的「未做」第一条）。
 //
@@ -15,6 +16,8 @@ import type { LoggerLevels } from "@/levels";
 const levelsLoggerName = "reforce.logging";
 
 export interface LevelBindingInput {
+  /** 应用的显式级别配置 bean（RFC 0011 L5 勘误）：settings.levels 的逐 logger 指定最优先。 */
+  readonly settings?: LoggingSettings;
   /** 编译器合成的快照 bean；没有它就退回绑定自己的缺省级别。 */
   readonly levels?: LoggerLevels;
   /** 运行期环境，缺省 `process.env`（L5 表第三行：CI/生产注入的那一层）。 */
@@ -24,22 +27,32 @@ export interface LevelBindingInput {
 }
 
 /**
- * 返回逐 logger 的级别解析函数，并把快照与运行期环境对不上的地方一次性 warn 出去。
+ * 返回逐 logger 的级别解析函数，并把配置与事实对不上的地方一次性 warn 出去：
+ * settings.levels 里拼错的 logger 名对封闭名单精确比对，带 did-you-mean。
  *
  * 返回 `undefined` 而不是快照的 defaultLevel，是为了让绑定自己的缺省仍然说得上话：
- * pino 的 `PinoSettings.level` 与默认绑定的 `defaultLevel` 都是用户显式写的，快照没有逐个
- * 指定时不该把它们顶掉。
+ * `LoggingSettings.defaultLevel` 是用户显式写的，没有逐个指定这条 logger 时不该把它顶掉。
  */
 export function bindLoggerLevels(
   input: LevelBindingInput = {},
 ): (name: string) => LogThreshold | undefined {
-  const levels = input.levels;
-  if (levels === undefined) {
+  const { settings, levels } = input;
+  if (settings === undefined && levels === undefined) {
     return () => undefined;
   }
   const environment = input.environment ?? process.env;
-  reportLevelSkew(levels, environment, input.report);
-  return (name) => levels.explicitLevelFor(name, environment);
+  if (levels !== undefined) {
+    reportLevelSkew(levels, environment, input.report);
+    if (settings?.levels !== undefined) {
+      reportUnknownLoggerLevels(
+        settings.levels,
+        levels.names,
+        input.report ?? bootstrapLogger(levelsLoggerName),
+      );
+    }
+  }
+  return (name) =>
+    settings?.levels?.[name] ?? levels?.explicitLevelFor(name, environment) ?? undefined;
 }
 
 // 两族启动期 warn，都属于「编译期看不见的那一半」（L5 表第三行）：
