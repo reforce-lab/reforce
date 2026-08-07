@@ -27,6 +27,13 @@ describe("createPackageJson", () => {
     expect(dependencies).not.toHaveProperty("@hono/node-server");
   });
 
+  // 启动摘要与访问日志由 logging starter 条件发射（#271），依赖缺席即整体静默。
+  test("默认依赖带 @reforce/logging", () => {
+    const dependencies = createPackageJson(specOf()).dependencies as Record<string, string>;
+
+    expect(dependencies).toHaveProperty("@reforce/logging");
+  });
+
   test("lint 打开时带 biome 依赖", () => {
     const spec = specOf({ lint: true });
     const devDependencies = createPackageJson(spec).devDependencies as Record<string, string>;
