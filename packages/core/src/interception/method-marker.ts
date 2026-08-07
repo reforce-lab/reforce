@@ -1,3 +1,9 @@
+import {
+  describeValue,
+  InvalidMethodMarkerKeyError,
+  MethodMarkerArityError,
+  MethodMarkerTargetError,
+} from "@/argument-errors";
 // 方法级标记（ADR 0008 AM1，#202）：defineMethodMarker<T>(key) 定义标记，@Marker(value)
 // 的字面量参数被编译器提取进织入表，拦截器经 ctx.value 按 T 读回。标记本身是元数据，
 // 行为来自 @Interceptor 绑定的拦截器。
@@ -29,15 +35,15 @@ export function defineMethodMarker<T extends MethodMetaValue | undefined = undef
   key: string,
 ): MethodMarker<T> {
   if (typeof key !== "string" || key.length === 0) {
-    throw new TypeError("defineMethodMarker key must be a non-empty string.");
+    throw new InvalidMethodMarkerKeyError([describeValue(key)]);
   }
   const marker = (...args: readonly unknown[]) => {
     if (args.length > 1) {
-      throw new TypeError(`method marker "${key}" accepts at most one literal value.`);
+      throw new MethodMarkerArityError([key]);
     }
     return (_value: unknown, context: ClassMethodDecoratorContext | ClassDecoratorContext) => {
       if (context.kind !== "method") {
-        throw new TypeError(`method marker "${key}" can only decorate a class method.`);
+        throw new MethodMarkerTargetError([key]);
       }
     };
   };

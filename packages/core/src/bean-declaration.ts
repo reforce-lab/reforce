@@ -1,4 +1,16 @@
 import { isObject } from "radashi";
+import {
+  describeValue,
+  InvalidBeanDisposeError,
+  InvalidBeanOptionsError,
+  InvalidBeanPrimaryError,
+  InvalidBeanQualifierError,
+  InvalidBeanScopeError,
+  InvalidOrderValueError,
+  InvalidQualifierNameError,
+  MissingBeanFactoryError,
+  RequestBeanDisposeError,
+} from "@/argument-errors";
 import { InvalidGeneratedDefinitionError } from "@/errors";
 import { type BeanClass, type BeanDefinition, beanDefinitionBrand } from "@/public-types";
 
@@ -43,28 +55,28 @@ function isOwnedBeanDefinition<T extends object>(
 
 export function defineBean<T extends object>(options: BeanDefinitionOptions<T>): BeanDefinition<T> {
   if (!isObject(options)) {
-    throw new TypeError("defineBean options must be an object.");
+    throw new InvalidBeanOptionsError([describeValue(options)]);
   }
   if (typeof options.create !== "function") {
-    throw new TypeError("defineBean requires a create function.");
+    throw new MissingBeanFactoryError([]);
   }
   // 与其余守卫同理服务未经编译的调用方：scope 词汇表封闭为 "request"，dispose 只属于 singleton。
   const scope = Reflect.get(options, "scope");
   if (scope !== undefined && scope !== "request") {
-    throw new TypeError('defineBean scope must be the string "request" when provided.');
+    throw new InvalidBeanScopeError([describeValue(scope)]);
   }
   const dispose = Reflect.get(options, "dispose");
   if (scope === "request" && dispose !== undefined) {
-    throw new TypeError("defineBean dispose is not available on a request-scoped Bean.");
+    throw new RequestBeanDisposeError([]);
   }
   if (dispose !== undefined && typeof dispose !== "function") {
-    throw new TypeError("defineBean dispose must be a function when provided.");
+    throw new InvalidBeanDisposeError([describeValue(dispose)]);
   }
   if (options.primary !== undefined && typeof options.primary !== "boolean") {
-    throw new TypeError("defineBean primary must be a boolean when provided.");
+    throw new InvalidBeanPrimaryError([describeValue(options.primary)]);
   }
   if (options.qualifier !== undefined && typeof options.qualifier !== "string") {
-    throw new TypeError("defineBean qualifier must be a string when provided.");
+    throw new InvalidBeanQualifierError([describeValue(options.qualifier)]);
   }
 
   return Object.freeze(new OwnedBeanDefinition(options));
@@ -120,7 +132,7 @@ export function Qualifier(
   name: string,
 ): <T extends BeanClass>(value: T, context: ClassDecoratorContext<T>) => void {
   if (typeof name !== "string") {
-    throw new TypeError("Qualifier name must be a string.");
+    throw new InvalidQualifierNameError([describeValue(name)]);
   }
   return () => undefined;
 }
@@ -131,7 +143,7 @@ export function Order(
   order: number,
 ): <T extends BeanClass>(value: T, context: ClassDecoratorContext<T>) => void {
   if (typeof order !== "number" || !Number.isInteger(order)) {
-    throw new TypeError("Order value must be an integer.");
+    throw new InvalidOrderValueError([describeValue(order)]);
   }
   return () => undefined;
 }

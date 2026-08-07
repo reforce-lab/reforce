@@ -1,4 +1,9 @@
 import { isObject } from "radashi";
+import {
+  describeValue,
+  InvalidApplicationOptionsError,
+  MissingApplicationStartersError,
+} from "@/argument-errors";
 
 // defineApplication 与 Injectable/Primary/Qualifier 同策略（ADR 0004 决策 5，#120）：编译器静态读取
 // starters 数组字面量完成 starter 注册，运行时实现保持 no-op——编译后的应用不得依赖它的任何副作用。
@@ -35,10 +40,10 @@ export function defineStarter(): StarterDefinition {
 
 export function defineApplication(options: DefineApplicationOptions): ApplicationDefinition {
   if (!isObject(options)) {
-    throw new TypeError("defineApplication options must be an object.");
+    throw new InvalidApplicationOptionsError([describeValue(options)]);
   }
   if (!Array.isArray(options.starters)) {
-    throw new TypeError("defineApplication requires a starters array.");
+    throw new MissingApplicationStartersError([]);
   }
   return Object.freeze(new OwnedApplicationDefinition());
 }

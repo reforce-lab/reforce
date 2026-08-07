@@ -1,4 +1,5 @@
 import { compilerDiagnosticCodes } from "@reforce/compiler";
+import { configErrorCodes } from "@reforce/config";
 import { coreErrorCodes } from "@reforce/core";
 import { cliFailureCodes } from "@reforce/runtime/error-codes";
 import { transactionErrorCodes } from "@reforce/transaction";
@@ -12,7 +13,7 @@ import { cliErrorCodes } from "@/error-codes";
 // `error[<CODE>]`），本来就必须看得见每张表。决议 5 把 explain 扩展到全部错误码时消费的
 // 就是这份聚合。
 
-export type ErrorCodeDomain = "compiler" | "core" | "transaction" | "web" | "cli";
+export type ErrorCodeDomain = "compiler" | "core" | "config" | "transaction" | "web" | "cli";
 
 export interface ErrorCodeTable {
   readonly domain: ErrorCodeDomain;
@@ -25,6 +26,7 @@ export interface ErrorCodeTable {
 export const errorCodeTables: readonly ErrorCodeTable[] = [
   { domain: "compiler", codes: compilerDiagnosticCodes },
   { domain: "core", codes: coreErrorCodes },
+  { domain: "config", codes: configErrorCodes },
   { domain: "transaction", codes: transactionErrorCodes },
   { domain: "web", codes: webErrorCodes },
   { domain: "cli", codes: cliFailureCodes },

@@ -176,6 +176,9 @@ importers:
       '@reforce/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@reforce/config':
+        specifier: workspace:*
+        version: link:../config
       '@reforce/core':
         specifier: workspace:*
         version: link:../core

@@ -1,4 +1,5 @@
 import { isPrimitive, isPromise } from "radashi";
+import { BeanFactoryReturnError } from "@/argument-errors";
 import {
   ApplicationContextStateError,
   BeanCreationError,
@@ -70,7 +71,7 @@ export class BeanResolver {
           ? registration.create(this.createGeneratedResolver(registration))
           : registration.create();
       if (isPrimitive(instance) || isPromise(instance)) {
-        throw new TypeError("Bean creation must synchronously return an object.");
+        throw new BeanFactoryReturnError(["synchronously "]);
       }
       this.state.finishConstruction(id, instance);
       if (
@@ -173,7 +174,7 @@ export class BeanResolver {
     try {
       const instance = await this.createRegistrationInstance(registration);
       if (isPrimitive(instance)) {
-        throw new TypeError("Bean creation must return an object.");
+        throw new BeanFactoryReturnError([""]);
       }
       store.finishConstruction(id, instance);
     } catch (error) {
