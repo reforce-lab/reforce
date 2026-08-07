@@ -14,6 +14,8 @@ const reforceFrame =
   "    at BoundLogger.info (/srv/app/node_modules/@reforce/logging/dist/index.js:88:5)";
 const workspaceReforceFrame =
   "    at WebEngine.start (/home/dev/reforce/packages/web-node/dist/engine.js:41:9)";
+const coreWorkspaceFrame =
+  "    at BeanResolver.resolve (/home/dev/reforce/packages/core/dist/bean-resolver.js:73:15)";
 const thirdPartyFrame = "    at write (/srv/app/node_modules/pino/lib/tools.js:120:9)";
 
 describe("foldStackFrames", () => {
@@ -78,6 +80,17 @@ describe("foldStackFrames", () => {
 
     expect(foldStackFrames(stack)).toBe(
       ["Error: boom", userMonorepoFrame, "    … 1 frame in node/reforce (--verbose to show)"].join(
+        "\n",
+      ),
+    );
+  });
+
+  // #278 防回归：#270 把 @reforce/context 更名 @reforce/core 后名单没跟上，容器帧全量刷屏。
+  test("folds a workspace packages/core/dist frame", () => {
+    const stack = ["Error: boom", applicationFrame, coreWorkspaceFrame].join("\n");
+
+    expect(foldStackFrames(stack)).toBe(
+      ["Error: boom", applicationFrame, "    … 1 frame in node/reforce (--verbose to show)"].join(
         "\n",
       ),
     );
