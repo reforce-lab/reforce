@@ -6,6 +6,7 @@ import {
   type Logger,
   type LoggerFactory,
   type LoggerLevels,
+  type LoggingSettings,
   type LogLevel,
   type LogThreshold,
 } from "@reforce/logging";
@@ -111,16 +112,20 @@ export class PinoLoggerFactory implements LoggerFactory, OnContextClose {
     fieldSources: readonly LogFieldSource[],
     configurers: readonly PinoConfigurer[],
     destinations: readonly PinoDestinationProvider[],
-    // 编译器合成的级别快照（RFC 0011 L5，#249）：兑现 settings.ts 上那句「逐 logger 的级别由
-    // 编译期的 LoggerLevels 快照与 LOGGING_LEVEL_<NAME> 决定」。排在最后一位是因为 starter
-    // meta 的依赖边按数组位定 parameterIndex，追加不会挪动既有四条边。
+    // 编译器合成的级别快照（RFC 0011 L5，#249）。位序按追加历史排布：starter meta 的依赖边
+    // 按数组位定 parameterIndex，追加不会挪动既有各条边。
     levels: LoggerLevels,
+    // 门面的级别配置（RFC 0011 L5 勘误，#242）：defaultLevel 与逐 logger 的 levels 都从这里
+    // 来，PinoSettings 收缩为纯 pino 原生选项。两个绑定共用这份词汇——换绑定不改级别配置。
+    loggingSettings: LoggingSettings,
   ) {
     this.fieldSources = fieldSources;
-    this.levelFor = bindLoggerLevels({ levels });
+    this.levelFor = bindLoggerLevels({ settings: loggingSettings, levels });
     const base: LoggerOptions = {
       ...settings.options,
-      ...(settings.level === undefined ? {} : { level: settings.level }),
+      ...(loggingSettings.defaultLevel === undefined
+        ? {}
+        : { level: loggingSettings.defaultLevel }),
     };
     // configurer 依次改写，后一个拿到前一个的产物：顺序敏感度因此是可见的，而不是
     // 「谁最后写谁赢」的隐式竞争。

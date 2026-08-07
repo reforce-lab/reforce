@@ -82,16 +82,17 @@ function best(run: () => void): number {
 // —— 三档参照系 ——
 
 // 空名单的级别快照：基准比的是每条记录的写出开销，逐 logger 调级不在被测面内，名单为空
-// 意味着每条 logger 都落回 settings.level，三档的门槛因此一致。
+// 意味着每条 logger 都落回 defaultLevel，三档的门槛因此一致。
 const benchLevels = new LoggerLevels({ names: [], levels: {}, defaultLevel: "info", layers: [] });
 
 const barePino = pino({ level: "info" }, countingStream()).child({ name: "bench" });
 const facadeOverPino = new PinoLoggerFactory(
-  { level: "info" },
+  {},
   [],
   [],
   [{ destination: () => countingStream() }],
   benchLevels,
+  { defaultLevel: "info" },
 ).create("bench");
 const facadeOverDefault = new DefaultLoggerFactory({
   defaultLevel: "info",
@@ -113,11 +114,12 @@ const filePino = pino({ level: "info" }, pinoDefault.destination(join(fileRoot, 
   { name: "bench" },
 );
 const fileFacade = new PinoLoggerFactory(
-  { level: "info" },
+  {},
   [],
   [],
   [{ destination: () => pinoDefault.destination(join(fileRoot, "facade.log")) }],
   benchLevels,
+  { defaultLevel: "info" },
 ).create("bench");
 results.set(
   "① 裸 pino → sonic-boom 文件",

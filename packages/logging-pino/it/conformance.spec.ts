@@ -77,11 +77,12 @@ function bound(input: {
 }) {
   const captured = capturingStream();
   const factory = new PinoLoggerFactory(
-    { level: input.defaultLevel },
+    {},
     input.fieldSources,
     [],
     [{ destination: () => captured.stream }],
     levelsOf(),
+    { defaultLevel: input.defaultLevel },
   );
   return { factory, records: () => captured.lines.map(parseRecord) };
 }
@@ -99,11 +100,12 @@ describe("pino binding specifics", () => {
   test("writes the same numeric level scale the facade declares", () => {
     const captured = capturingStream();
     const factory = new PinoLoggerFactory(
-      { level: "trace" },
+      {},
       [],
       [],
       [{ destination: () => captured.stream }],
       levelsOf(),
+      { defaultLevel: "trace" },
     );
 
     factory.create("orders").warn(undefined, "probe");
@@ -119,6 +121,7 @@ describe("pino binding specifics", () => {
       [],
       [{ destination: () => captured.stream }],
       levelsOf(),
+      {},
     );
 
     factory.create("payments").info(undefined, "probe");
@@ -143,6 +146,7 @@ describe("pino binding specifics", () => {
       ],
       [{ destination: () => captured.stream }],
       levelsOf(),
+      {},
     );
 
     factory.create("orders").info(undefined, "probe");
@@ -160,6 +164,7 @@ describe("pino binding specifics", () => {
       [],
       [{ destination: () => captured.stream }],
       levelsOf(),
+      {},
     );
 
     factory.create("orders").info({ secret: "hunter2" }, "probe");
@@ -167,21 +172,22 @@ describe("pino binding specifics", () => {
     expect(JSON.parse(captured.lines[0] ?? "{}").secret).toBe("[Redacted]");
   });
 
-  test("resolves a per-logger level ahead of the default", () => {
+  // 逐 logger 调级走门面的 LoggingSettings（RFC 0011 L5 勘误）：级别配置是门面词汇，
+  // 换绑定不改配置——这条用例断言 pino 绑定原样吃下它。
+  test("resolves a per-logger level from LoggingSettings ahead of the default", () => {
     const captured = capturingStream();
-    process.env.LOGGING_LEVEL_ORDERS = "debug";
     const factory = new PinoLoggerFactory(
-      { level: "error" },
+      {},
       [],
       [],
       [{ destination: () => captured.stream }],
       levelsOf(["orders", "payments"]),
+      { defaultLevel: "error", levels: { orders: "debug" } },
     );
 
     factory.create("orders").debug(undefined, "kept");
     factory.create("payments").debug(undefined, "dropped");
 
-    delete process.env.LOGGING_LEVEL_ORDERS;
     expect(captured.lines.map((line) => JSON.parse(line).name)).toEqual(["orders"]);
   });
 
@@ -191,7 +197,7 @@ describe("pino binding specifics", () => {
     let calls = 0;
     const captured = capturingStream();
     const factory = new PinoLoggerFactory(
-      { level: "error" },
+      {},
       [
         {
           fields() {
@@ -203,6 +209,7 @@ describe("pino binding specifics", () => {
       [],
       [{ destination: () => captured.stream }],
       levelsOf(),
+      { defaultLevel: "error" },
     );
 
     factory.create("orders").debug(undefined, "dropped");
