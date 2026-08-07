@@ -18,6 +18,13 @@ catalog:
   typescript: ^7.0.2
   vitest: ^4.1.10
 
+# tsgo checker 接入（RFC 0012 S1，#273）钉死 nightly：`next` tag 日更会漂，dev 版才有
+# Type/Signature 服务端 memoization 与不可空签名。7.1 GA 时本条目改回正式版即可，
+# 消费方只有 compiler 的 typescript/unstable/* 单点 import。
+catalogs:
+  ts-next:
+    typescript: 7.1.0-dev.20260806.1
+
 minimumReleaseAgeExclude:
   - '@biomejs/biome@2.5.7'
   - '@biomejs/cli-darwin-arm64@2.5.7'

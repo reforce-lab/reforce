@@ -10,6 +10,8 @@ import { snapshotStillMatches } from "@/project/project-snapshot";
 import { parseProjectSources } from "@/project/source-files";
 import { createWatchInputs, mergeWatchInputs } from "@/project/watch-inputs";
 import { applySuppressions } from "@/suppressions";
+import { CheckerUnavailableError } from "@/typescript/checker-errors";
+import type { CheckerSession } from "@/typescript/checker-session";
 
 function failure(
   diagnostics: readonly CompilerDiagnostic[],
@@ -27,10 +29,22 @@ function failure(
   };
 }
 
+// checker 不可用只在这里翻译成诊断(RFC 0012 S1,#273):字段表算法与门面内部零 try/catch,
+// CheckerUnavailableError 一路穿透到 compile 这一处收口,走 failure() 路径。
+function checkerUnavailableDiagnostic(error: CheckerUnavailableError): CompilerDiagnostic {
+  return diagnostic({
+    code: "TYPE_CHECKER_UNAVAILABLE",
+    message: "The TypeScript checker process is unavailable for this compilation.",
+    help: "Re-run the compilation; the checker session is rebuilt automatically on the next pass.",
+    cause: error,
+  });
+}
+
 export async function compile(
   request: CompileRequest,
   state: ProjectState | undefined,
   cache: LRUCache<string, SourceFileIr>,
+  checkerSession?: CheckerSession,
 ): Promise<CompileResult> {
   if (state === undefined || !(await snapshotStillMatches(state.snapshot))) {
     return failure(
@@ -55,8 +69,28 @@ export async function compile(
     cache,
     state.parsedConfig.config.compilerOptions?.customConditions,
   );
-  const analysis = analyzeProject(parsed.sources, linker);
-  const watchInputs = mergeWatchInputs(parsed.watchInputs, linker.collectWatchInputs());
+  // lease 是懒的:S1 里 analyzeProject 只透传 typeQuery 不消费,不查询就不 spawn tsgo,
+  // 普通编译零开销;retire 只作废句柄代,tsgo snapshot 跨 compile 保留复用。
+  const checkerLease = checkerSession?.lease({
+    tsconfigPath: request.project.tsconfigPath,
+    trackedFiles: state.parsedConfig.fileNames,
+  });
+  // watch inputs 必须在 analyzeProject 之后收集:分析期 linker 还会追加 link 阶段才解析到的
+  // 声明端点,提前快照会把它们漏掉(Issue #26)。
+  const analysisWatchInputs = () =>
+    mergeWatchInputs(parsed.watchInputs, linker.collectWatchInputs());
+  let analysis: ReturnType<typeof analyzeProject>;
+  try {
+    analysis = analyzeProject(parsed.sources, linker, checkerLease?.query);
+  } catch (error) {
+    if (error instanceof CheckerUnavailableError) {
+      return failure([checkerUnavailableDiagnostic(error)], analysisWatchInputs());
+    }
+    throw error;
+  } finally {
+    checkerLease?.retire();
+  }
+  const watchInputs = analysisWatchInputs();
   // 抑制在分派之前应用（RFC 0011 D7，#242）。抑制只作用于 warning，所以失败分析里那些 error
   // 一条不少地留下，failure() 拿得到诊断；成功分析这边压掉全部 warning 后也仍然是 success——
   // 这正是最容易漏的一条：把抑制放在 failure() 之后，「全部被抑制」会撞上

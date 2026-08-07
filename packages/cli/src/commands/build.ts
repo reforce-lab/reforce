@@ -164,6 +164,8 @@ export async function runBuildCommand(
     reportUnexpectedFailure(options.reporter, error);
   }
 
+  // 关掉 checker 会话的 tsgo 子进程(RFC 0012 S1,#273);没查询过 checker 时是无进程 no-op。
+  await captureFailure(async () => compiler.close(), shutdownFailures);
   await captureFailure(() => options.reporter.flush(), shutdownFailures);
   if (lease !== undefined) {
     await captureFailure(() => dependencies.releaseLease(lease), shutdownFailures);

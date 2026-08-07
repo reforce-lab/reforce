@@ -16,6 +16,7 @@
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
     "test": "vitest run",
+    "bench:checker": "node bench/checker.bench.ts",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
@@ -30,6 +31,7 @@
     "lru-cache": "^11.5.2",
     "strip-json-comments": "^5.0.3",
     "tinyglobby": "^0.2.17",
+    "typescript": "catalog:ts-next",
     "yuku-ast": "0.8.3",
     "yuku-parser": "0.8.3"
   },
@@ -46,7 +48,6 @@
     "@rslib/core": "catalog:",
     "@types/node": "catalog:",
     "fast-check": "^4.9.0",
-    "typescript": "catalog:",
     "vitest": "catalog:"
   }
 }
