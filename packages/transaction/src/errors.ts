@@ -1,15 +1,15 @@
-import { ReforceRuntimeError } from "@reforce/core";
+import { ReforceError } from "@reforce/core";
 import type { TransactionIsolation } from "@/manager";
 
 // 事务运行时错误（ADR 0008 T3/T4，#204 定案 5）：共同原则是消灭静默降级——savepoint 缺失
 // 不退化为 REQUIRED，加入事务时的 isolation 声明不静默忽略（Spring 默认静默、要开
 // validateExistingTransaction 才拒绝；我们默认即拒绝）。
 //
-// 全部继续继承 @reforce/core 的 ReforceRuntimeError：拦截器契约里那条「兜底拦截器要
-// `if (error instanceof ReforceRuntimeError) throw error`」的放行纪律必须同时覆盖这四个护栏
+// 全部继续继承 @reforce/core 的 ReforceError：拦截器契约里那条「兜底拦截器要
+// `if (error instanceof ReforceError) throw error`」的放行纪律必须同时覆盖这四个护栏
 // 错误，否则拆包就等于把它们从护栏名单里划掉。
 
-export class TransactionSavepointUnsupportedError extends ReforceRuntimeError<"TRANSACTION_SAVEPOINT_UNSUPPORTED"> {
+export class TransactionSavepointUnsupportedError extends ReforceError<"TRANSACTION_SAVEPOINT_UNSUPPORTED"> {
   readonly code = "TRANSACTION_SAVEPOINT_UNSUPPORTED" as const;
   readonly beanId: string;
   readonly method: string;
@@ -23,7 +23,7 @@ export class TransactionSavepointUnsupportedError extends ReforceRuntimeError<"T
   }
 }
 
-export class TransactionIsolationOnJoinError extends ReforceRuntimeError<"TRANSACTION_ISOLATION_ON_JOIN"> {
+export class TransactionIsolationOnJoinError extends ReforceError<"TRANSACTION_ISOLATION_ON_JOIN"> {
   readonly code = "TRANSACTION_ISOLATION_ON_JOIN" as const;
   readonly beanId: string;
   readonly method: string;
@@ -50,7 +50,7 @@ export class TransactionIsolationOnJoinError extends ReforceRuntimeError<"TRANSA
 
 // 核心不抛这个错：它是给 adapter 的统一词汇——声明的隔离级别底层不支持时必须抛错，
 // 不得静默降级到别的级别（#204 定案 2）。
-export class TransactionIsolationUnsupportedError extends ReforceRuntimeError<"TRANSACTION_ISOLATION_UNSUPPORTED"> {
+export class TransactionIsolationUnsupportedError extends ReforceError<"TRANSACTION_ISOLATION_UNSUPPORTED"> {
   readonly code = "TRANSACTION_ISOLATION_UNSUPPORTED" as const;
   readonly isolation: TransactionIsolation;
 
@@ -65,7 +65,7 @@ export class TransactionIsolationUnsupportedError extends ReforceRuntimeError<"T
 
 // timeout 族与 isolation 族并列而不抽成 TransactionOptionOnJoinError：Rule of Three 只有
 // 两次重复，各自的诊断字段与文案也不同，保持重复。
-export class TransactionTimeoutOnJoinError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT_ON_JOIN"> {
+export class TransactionTimeoutOnJoinError extends ReforceError<"TRANSACTION_TIMEOUT_ON_JOIN"> {
   readonly code = "TRANSACTION_TIMEOUT_ON_JOIN" as const;
   readonly beanId: string;
   readonly method: string;
@@ -92,7 +92,7 @@ export class TransactionTimeoutOnJoinError extends ReforceRuntimeError<"TRANSACT
 
 // 核心不抛这个错：它是给 adapter 的统一词汇——底层不能精确实现"整个事务边界的墙钟上限"时
 // 必须抛错，不得用 statement_timeout 一类语义不等价的近似冒充。
-export class TransactionTimeoutUnsupportedError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT_UNSUPPORTED"> {
+export class TransactionTimeoutUnsupportedError extends ReforceError<"TRANSACTION_TIMEOUT_UNSUPPORTED"> {
   readonly code = "TRANSACTION_TIMEOUT_UNSUPPORTED" as const;
   readonly timeout: number;
 
@@ -107,7 +107,7 @@ export class TransactionTimeoutUnsupportedError extends ReforceRuntimeError<"TRA
 
 // 核心不抛这个错：adapter 把驱动私有的超时错误（Prisma P2028 等）映射成框架词汇，原错误
 // 留在 cause 里——调用方 catch 一个类型即可，不必认得每家驱动的错误码。
-export class TransactionTimeoutError extends ReforceRuntimeError<"TRANSACTION_TIMEOUT"> {
+export class TransactionTimeoutError extends ReforceError<"TRANSACTION_TIMEOUT"> {
   readonly code = "TRANSACTION_TIMEOUT" as const;
   readonly timeout: number;
 
@@ -122,7 +122,7 @@ export class TransactionTimeoutError extends ReforceRuntimeError<"TRANSACTION_TI
 // 运行时护栏（ADR 0008 T4）：REQUIRES_NEW 拿回了同一 manager 上某个被挂起边界的资源，说明
 // withTransaction 没有开新事务。能力边界写在拦截器的护栏处——它只抓"直接把外层 resource
 // 原样返回"这类粗糙实现。
-export class TransactionResourceReusedError extends ReforceRuntimeError<"TRANSACTION_RESOURCE_REUSED"> {
+export class TransactionResourceReusedError extends ReforceError<"TRANSACTION_RESOURCE_REUSED"> {
   readonly code = "TRANSACTION_RESOURCE_REUSED" as const;
   readonly beanId: string;
   readonly method: string;

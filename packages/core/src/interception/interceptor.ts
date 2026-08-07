@@ -56,12 +56,16 @@ export interface MethodInvocationContext<
 // 兜底型拦截器（catch 住一切、返回降级值的那种）必须放行框架护栏：
 //
 //   try { return await next() } catch (error) {
-//     if (error instanceof ReforceRuntimeError) { throw error }
+//     if (isReforceError(error)) { throw error }
 //     return fallback
 //   }
 //
 // 少这一行，框架告诉你"你的 manager 有问题"的四个事务护栏错误与上面的重入错误会被自己的
 // 兜底吞掉，现象是"没报错但数据不对"。业务异常照常降级，不受影响。
+//
+// 用 isReforceError 而不是 instanceof ReforceError（ADR 0013 决议 1，#280）：谱系统一后这一句
+// 同时覆盖 core / transaction / web / cli 四棵子树，而形状守卫在 @reforce/core 被装成两份物理
+// 拷贝时仍然成立——instanceof 那时会把另一份拷贝抛出的护栏错误判否，正是这条纪律最怕的失效。
 export interface MethodInterceptor<
   T extends MethodMetaValue | undefined = MethodMetaValue | undefined,
 > {

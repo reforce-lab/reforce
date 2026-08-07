@@ -1,3 +1,4 @@
+import { ReforceError } from "@reforce/core";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { HttpMethod } from "@/routing/vocabulary";
 
@@ -7,15 +8,15 @@ export type WebErrorCode =
   | "REQUEST_VALIDATION_FAILED"
   | "RESPONSE_SERIALIZATION_FAILED";
 
-export abstract class ReforceWebError<Code extends WebErrorCode = WebErrorCode> extends Error {
-  abstract readonly code: Code;
-  declare readonly cause?: unknown;
-
-  protected constructor(message: string, options: { readonly cause?: unknown } = {}) {
-    super(message, { cause: options.cause });
-    this.name = new.target.name;
-  }
-}
+// web 这一棵子树（ADR 0013 决议 1，#280）。此前它是独立的 `extends Error`，字段只有 code 与
+// cause——reporter 的识别只认 @reforce/core 的基类，web 错误的码拿不到、help 通道对它们完全
+// 关闭。并入同一个根之后两者一起打开，类型参数上界仍收在 WebErrorCode 上，本包的码保持闭集。
+//
+// 空类体：字段、protected 构造与 Symbol.for("reforce.error") 标记全部从根继承，这一层只做
+// 「web 的码闭集」这一件事。
+export abstract class ReforceWebError<
+  Code extends WebErrorCode = WebErrorCode,
+> extends ReforceError<Code> {}
 
 export class InvalidRouteTableError extends ReforceWebError<"INVALID_ROUTE_TABLE"> {
   readonly code = "INVALID_ROUTE_TABLE" as const;
@@ -34,10 +35,8 @@ export class InvalidRouteTableError extends ReforceWebError<"INVALID_ROUTE_TABLE
 // 点名 beanId 而不是层号：每条路由的链在编译期已按 beanId 去重，beanId 已经唯一定位那一层；
 // 层号是 dispatch 下标不是链下标，读者拿它去数中间件会数错（同 #202 定案 2）。
 //
-// 「下一步怎么办」暂时并进 message：渲染器读 help（reporter 的 failureHelp 沿 cause 链取第一条
-// 渲染成 `= help:`），只是它的识别只认 @reforce/core 的 ReforceRuntimeError，本类不在其中——
-// 断链在识别侧，不在渲染侧。ADR 0013 决议 1（#280）把 ReforceWebError 并入同一谱系后这条通道
-// 打开，届时把后半句拆回 help。
+// 与 InterceptorReenteredError 同款分工（#282）：message 说「发生了什么」，help 说「下一步
+// 怎么办」，reporter 在 human 模式下把后者单独渲染成 `= help:`。
 export class MiddlewareReenteredError extends ReforceWebError<"MIDDLEWARE_REENTERED"> {
   readonly code = "MIDDLEWARE_REENTERED" as const;
   readonly beanId: string;
@@ -50,7 +49,10 @@ export class MiddlewareReenteredError extends ReforceWebError<"MIDDLEWARE_REENTE
     readonly path: string;
   }) {
     super(
-      `Middleware Bean "${input.beanId}" on ${input.method} ${input.path} called next() more than once; the middleware chain is not re-entrant. next() runs the rest of the chain exactly once — put whatever has to happen afterwards after \`await next()\`.`,
+      `Middleware Bean "${input.beanId}" on ${input.method} ${input.path} called next() more than once; the middleware chain is not re-entrant.`,
+      {
+        help: "next() runs the rest of the chain exactly once — put whatever has to happen afterwards after `await next()`.",
+      },
     );
     this.beanId = input.beanId;
     this.method = input.method;

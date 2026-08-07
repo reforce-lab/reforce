@@ -5,7 +5,7 @@ import type {
   GeneratedFactoryRegistration,
 } from "@/generated/contracts";
 import { factoryBean } from "@/generated-runtime";
-import { defineBean, Injectable, Order, Primary, Qualifier, ReforceRuntimeError } from "@/index";
+import { defineBean, Injectable, Order, Primary, Qualifier, ReforceError } from "@/index";
 
 interface BaseResource {
   readonly base: true;
@@ -111,7 +111,7 @@ describe("public bean declarations", () => {
   });
 
   test("runtime errors retain stable names", () => {
-    class ExampleError extends ReforceRuntimeError<"APPLICATION_CONTEXT_STATE"> {
+    class ExampleError extends ReforceError<"APPLICATION_CONTEXT_STATE"> {
       readonly code = "APPLICATION_CONTEXT_STATE" as const;
 
       constructor() {

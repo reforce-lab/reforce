@@ -1,14 +1,14 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { isPathStrictlyContained } from "@reforce/primitives";
+import { ReforceCliError } from "@/errors";
 import { findIncompleteDistTransaction } from "@/project/directory-transaction";
 
-export class ArtifactInvalidError extends Error {
+export class ArtifactInvalidError extends ReforceCliError<"ARTIFACT_INVALID"> {
   readonly code = "ARTIFACT_INVALID" as const;
 
   constructor(message: string, options: { readonly cause?: unknown } = {}) {
     super(message, options);
-    this.name = "ArtifactInvalidError";
   }
 }
 
