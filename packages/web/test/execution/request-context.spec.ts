@@ -18,29 +18,26 @@ function stateOf(inputs: {
   });
 }
 
+// 校验产物不再写回 context(RFC 0012 S2,#274):槽位解码结果经 invoke 第三参直达 handler,
+// context 上的 params/query 恒为原始快照。
 describe("RequestContextState inputs", () => {
-  test("params start as the raw match record and are replaced by the validated value", () => {
+  test("params expose the raw match record", () => {
     const context = stateOf({ params: { id: "42" } });
 
     expect(context.params).toEqual({ id: "42" });
-    context.applyValidated("params", { id: 42n });
-    expect(context.params).toEqual({ id: 42n });
   });
 
-  test("query starts as a search-param snapshot and is replaced by the validated value", () => {
-    const context = stateOf({ url: "https://reforce.test/users?limit=10&offset=0" });
+  test("query exposes a search-param snapshot with later duplicates winning", () => {
+    const context = stateOf({ url: "https://reforce.test/users?limit=10&offset=0&limit=20" });
 
-    expect(context.query).toEqual({ limit: "10", offset: "0" });
-    context.applyValidated("query", { limit: 10 });
-    expect(context.query).toEqual({ limit: 10 });
+    expect(context.query).toEqual({ limit: "20", offset: "0" });
   });
 
-  test("body stays undefined until a validated value is applied", () => {
-    const context = stateOf({});
+  test("the query snapshot is frozen and stable across reads", () => {
+    const context = stateOf({ url: "https://reforce.test/users?limit=10" });
 
-    expect(context.body).toBeUndefined();
-    context.applyValidated("body", { name: "amy" });
-    expect(context.body).toEqual({ name: "amy" });
+    expect(context.query).toBe(context.query);
+    expect(Object.isFrozen(context.query)).toBe(true);
   });
 });
 

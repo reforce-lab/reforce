@@ -57,7 +57,7 @@ function routeOf(overrides: Partial<GeneratedRoute>): GeneratedRoute {
       Reflect.apply(ProbeController.prototype.list, instance, [context]),
     middleware: [],
     meta: {},
-    schemas: {},
+    slots: [],
     ...overrides,
   };
 }
@@ -66,7 +66,7 @@ function tableOf(
   routes: readonly GeneratedRoute[],
   errorHandlers: GeneratedRouteTable["errorHandlers"] = [],
 ): GeneratedRouteTable {
-  return { schemaVersion: 1, routes, errorHandlers };
+  return { schemaVersion: 2, routes, errorHandlers };
 }
 
 function recordingMiddleware(log: string[], label: string): new () => RouteMiddleware {
@@ -364,7 +364,7 @@ describe("createWebApplication onion execution", () => {
 });
 
 describe("createWebApplication route assembly", () => {
-  test("validates request inputs after middleware and before the handler", async () => {
+  test("decodes slots after middleware and before the handler", async () => {
     const order: string[] = [];
     class Observe {
       async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
@@ -373,9 +373,9 @@ describe("createWebApplication route assembly", () => {
       }
     }
     class Echo {
-      show(context: RequestContext): Response {
+      show(id: unknown): Response {
         order.push("handler");
-        return new Response(JSON.stringify(context.params));
+        return new Response(JSON.stringify({ id: String(id) }));
       }
     }
     const application = createWebApplication({
@@ -384,7 +384,8 @@ describe("createWebApplication route assembly", () => {
           controller: Echo,
           beanId: "src/echo.ts#Echo",
           handler: "show",
-          invoke: (instance, context) => Reflect.apply(Echo.prototype.show, instance, [context]),
+          invoke: (instance, _context, slots) =>
+            Reflect.apply(Echo.prototype.show, instance, [slots[0]]),
           middleware: [
             {
               bean: Observe,
@@ -394,12 +395,16 @@ describe("createWebApplication route assembly", () => {
               mount: "global",
             },
           ],
-          schemas: {
-            params: schemaOf((value) => {
-              order.push("validate");
-              return { value };
-            }),
-          },
+          slots: [
+            {
+              slot: "param",
+              key: "id",
+              decode: schemaOf((value) => {
+                order.push("decode");
+                return { value: Reflect.get(Object(value), "id") };
+              }),
+            },
+          ],
         }),
       ]),
       context: contextOf([
@@ -412,9 +417,41 @@ describe("createWebApplication route assembly", () => {
       throw new Error("Expected one prepared route");
     }
 
-    await route.handle(new Request("https://reforce.test/probe"), { id: "1" });
+    const response = await route.handle(new Request("https://reforce.test/probe"), { id: "1" });
 
-    expect(order).toEqual(["middleware", "validate", "handler"]);
+    expect(order).toEqual(["middleware", "decode", "handler"]);
+    expect(await response.json()).toEqual({ id: "1" });
+  });
+
+  test("a slot decode failure answers 400 without reaching the handler", async () => {
+    const controller = new ProbeController();
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          slots: [
+            {
+              slot: "query",
+              key: "page",
+              decode: schemaOf(() => ({ issues: [{ message: "page must be a number" }] })),
+            },
+          ],
+        }),
+      ]),
+      context: contextOf([[ProbeController, controller]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    const response = await route.handle(new Request("https://reforce.test/probe?page=x"), {});
+
+    expect(response.status).toBe(400);
+    expect(controller.handled).toBeUndefined();
+    expect(await response.json()).toMatchObject({
+      source: "query",
+      issues: [{ message: "page must be a number" }],
+    });
   });
 
   test("rejects a middleware Bean that does not implement handle()", () => {
@@ -448,10 +485,136 @@ describe("createWebApplication route assembly", () => {
   test("rejects a table with an unknown schema version", () => {
     expect(() =>
       createWebApplication({
-        table: { schemaVersion: 2, routes: [], errorHandlers: [] },
+        table: { schemaVersion: 1, routes: [], errorHandlers: [] },
         context: contextOf([]),
       }),
     ).toThrow(InvalidRouteTableError);
+  });
+});
+
+// —— 响应编码与响应头合并(RFC 0012 S2,#274) ——
+
+describe("createWebApplication response encoding", () => {
+  class PlainReturn {
+    show(): { readonly id: bigint; readonly secret?: string } {
+      return { id: 42n, secret: "drop me" };
+    }
+  }
+
+  function plainRoute(overrides: Partial<GeneratedRoute>): GeneratedRoute {
+    return routeOf({
+      controller: PlainReturn,
+      beanId: "src/plain.ts#PlainReturn",
+      handler: "show",
+      invoke: (instance) => Reflect.apply(PlainReturn.prototype.show, instance, []),
+      ...overrides,
+    });
+  }
+
+  function preparedWith(overrides: Partial<GeneratedRoute>) {
+    const application = createWebApplication({
+      table: tableOf([plainRoute(overrides)]),
+      context: contextOf([[PlainReturn, new PlainReturn()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+    return route;
+  }
+
+  test("a plain return value goes through the route encoder before serialization", async () => {
+    const route = preparedWith({
+      encode: (value) => ({ id: String(Reflect.get(Object(value), "id")) }),
+    });
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: "42" });
+  });
+
+  // S2 中间态:无编码器 = 无返回类型标注,handler 必须自己返回 Response;普通对象 500。
+  test("a plain return value without an encoder becomes a 500", async () => {
+    const route = preparedWith({});
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(response.status).toBe(500);
+  });
+});
+
+describe("createWebApplication response header merging", () => {
+  class HeaderWriter {
+    plain(context: RequestContext): { readonly ok: boolean } {
+      context.responseHeaders.set("x-request-id", "abc");
+      context.responseHeaders.append("set-cookie", "a=1");
+      context.responseHeaders.append("set-cookie", "b=2");
+      return { ok: true };
+    }
+
+    raw(context: RequestContext): Response {
+      context.responseHeaders.set("x-request-id", "abc");
+      return new Response("raw");
+    }
+
+    failing(context: RequestContext): never {
+      context.responseHeaders.set("x-request-id", "abc");
+      throw new Error("boom");
+    }
+  }
+
+  function preparedFor(handler: "plain" | "raw" | "failing", encode?: (value: unknown) => unknown) {
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: HeaderWriter,
+          beanId: "src/header-writer.ts#HeaderWriter",
+          handler,
+          invoke: (instance, context) =>
+            Reflect.apply(HeaderWriter.prototype[handler], instance, [context]),
+          ...(encode === undefined ? {} : { encode }),
+        }),
+      ]),
+      context: contextOf([[HeaderWriter, new HeaderWriter()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+    return route;
+  }
+
+  test("merges context response headers into an encoded response, set-cookie one per line", async () => {
+    const route = preparedFor("plain", (value) => value);
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-request-id")).toBe("abc");
+    expect(response.headers.getSetCookie()).toEqual(["a=1", "b=2"]);
+    // 序列化默认头不因合并丢失。
+    expect(response.headers.get("content-type")).toBe("application/json");
+  });
+
+  // 逃生口不碰:handler 直接返回的 Response 是用户全权掌控的出口。
+  test("leaves a handler-returned Response without the context headers", async () => {
+    const route = preparedFor("raw");
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(await response.text()).toBe("raw");
+    expect(response.headers.get("x-request-id")).toBeNull();
+  });
+
+  // 错误响应由错误分派统一负责,handler 半路写下的头不跟着错误出线。
+  test("leaves an error response without the context headers", async () => {
+    const route = preparedFor("failing", (value) => value);
+
+    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-request-id")).toBeNull();
   });
 });
 

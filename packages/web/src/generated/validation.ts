@@ -110,17 +110,6 @@ function validateStandardSchema(value: unknown, path: string): void {
   }
 }
 
-function validateSchemas(value: unknown, path: string): void {
-  const schemas = requireObject(value, path);
-  requireExactKeys(schemas, ["params", "query", "body", "response"], path);
-  for (const key of ["params", "query", "body", "response"] as const) {
-    const schema = Reflect.get(schemas, key);
-    if (schema !== undefined) {
-      validateStandardSchema(schema, `${path}.${key}`);
-    }
-  }
-}
-
 // 槽位闭集(RFC 0012 S2,#274),与 GeneratedSlotKind 同步。
 const slotKinds = new Set([
   "param",
@@ -222,7 +211,6 @@ function validateRoute(value: unknown, path: string): void {
       "invoke",
       "middleware",
       "meta",
-      "schemas",
       "slots",
       "encode",
     ],
@@ -244,12 +232,9 @@ function validateRoute(value: unknown, path: string): void {
     validateMiddleware(entry, `${path}.middleware[${index}]`);
   }
   validateMeta(Reflect.get(route, "meta"), `${path}.meta`);
-  validateSchemas(Reflect.get(route, "schemas"), `${path}.schemas`);
-  const slots = Reflect.get(route, "slots");
-  if (slots !== undefined) {
-    for (const [index, entry] of requireArray(slots, `${path}.slots`).entries()) {
-      validateSlot(entry, `${path}.slots[${index}]`);
-    }
+  const slots = requireArray(Reflect.get(route, "slots"), `${path}.slots`);
+  for (const [index, entry] of slots.entries()) {
+    validateSlot(entry, `${path}.slots[${index}]`);
   }
   const encode = Reflect.get(route, "encode");
   if (encode !== undefined) {
@@ -268,8 +253,8 @@ function validateErrorHandler(value: unknown, path: string): void {
 export function validateGeneratedRouteTable(value: unknown): GeneratedRouteTable {
   const table = requireObject(value, "routeTable");
   requireExactKeys(table, ["schemaVersion", "routes", "errorHandlers"], "routeTable");
-  if (Reflect.get(table, "schemaVersion") !== 1) {
-    fail("routeTable.schemaVersion must be 1.");
+  if (Reflect.get(table, "schemaVersion") !== 2) {
+    fail("routeTable.schemaVersion must be 2.");
   }
   const routes = requireArray(Reflect.get(table, "routes"), "routeTable.routes");
   const shapes = new Map<string, string>();

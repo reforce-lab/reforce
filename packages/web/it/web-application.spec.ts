@@ -120,7 +120,7 @@ function applicationDefinition(): GeneratedApplicationDefinition {
 
 function routeTable(): GeneratedRouteTable {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     routes: [
       {
         method: "GET",
@@ -139,15 +139,9 @@ function routeTable(): GeneratedRouteTable {
           },
         ],
         meta: { rateLimit: { max: 5 } },
-        schemas: {
-          response: {
-            "~standard": {
-              version: 1,
-              vendor: "reforce-test",
-              validate: (value) => ({ value }),
-            },
-          },
-        },
+        slots: [{ slot: "requestContext" }],
+        // 返回类型契约的白名单投影编码器(#274),这里用恒等替身:IT 关注执行链接线。
+        encode: (value) => value,
       },
       {
         method: "GET",
@@ -159,7 +153,7 @@ function routeTable(): GeneratedRouteTable {
           Reflect.apply(Greeter.prototype.explode, instance, [context]),
         middleware: [],
         meta: {},
-        schemas: {},
+        slots: [],
       },
     ],
     errorHandlers: [

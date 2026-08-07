@@ -2,10 +2,10 @@ import type { ApplicationContext } from "@reforce/core";
 import type { PreparedRoute, RequestSeeder, WebApplication } from "@/adapter";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";
-import { createRequestInputValidator } from "@/execution/input-validation";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
-import { createResponseSerializer } from "@/execution/serialization";
+import { serializeResponse } from "@/execution/serialization";
+import { createSlotExecutor } from "@/execution/slot-execution";
 import type { GeneratedRoute } from "@/generated/route-table";
 import { validateGeneratedRouteTable } from "@/generated/validation";
 import type { RouteErrorHandler, RouteMiddleware } from "@/routing/middleware";
@@ -187,6 +187,21 @@ function composeChain(
   };
 }
 
+// 响应头合并范围(RFC 0012 S2,#274 推断口径,PR 描述写明):只合并编码/序列化产出的响应;
+// handler 直接返回的 Response(逃生口)与 400/500 错误响应不碰——前者是用户全权掌控的出口,
+// 后者由错误分派统一负责,handler 半路写下的头不该跟着错误出线。
+function mergeResponseHeaders(response: Response, headers: Headers): void {
+  for (const [name, value] of headers) {
+    // Headers 迭代对 set-cookie 逐条产出、其余同名键并成逗号串;set-cookie 必须逐条 append
+    // (逗号串会被浏览器当一条 cookie),其余用 set 让 handler 声明的头覆盖序列化默认值。
+    if (name === "set-cookie") {
+      response.headers.append(name, value);
+    } else {
+      response.headers.set(name, value);
+    }
+  }
+}
+
 function prepareRoute(
   route: GeneratedRoute,
   context: ApplicationContext,
@@ -200,14 +215,17 @@ function prepareRoute(
     beanId: entry.beanId,
     middleware: requireMiddlewareInstance(context.get(entry.bean), entry.beanId),
   }));
-  const validateInputs = createRequestInputValidator(route.schemas);
-  const serialize = createResponseSerializer(route.schemas.response);
+  const executeSlots = createSlotExecutor(route.slots);
 
   const core: RouteRunner = async (requestContext) => {
     try {
-      await validateInputs(requestContext);
-      // 槽位解码产物在旧 schemas 执行链上恒为空数组;槽位执行链(#274)接入时替换。
-      return await serialize(await route.invoke(controller, requestContext, []));
+      const slots = await executeSlots(requestContext);
+      const result = await route.invoke(controller, requestContext, slots);
+      const response = serializeResponse(result, route.encode);
+      if (!(result instanceof Response)) {
+        mergeResponseHeaders(response, requestContext.responseHeaders);
+      }
+      return response;
     } catch (error) {
       requestContext.recordFailure(error);
       return await dispatchError(error, requestContext);

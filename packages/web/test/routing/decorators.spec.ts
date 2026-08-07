@@ -27,9 +27,9 @@ describe("route decorator runtime guards", () => {
     expect(() => Controller(1 as unknown as string)).toThrow(TypeError);
   });
 
-  test("Get rejects a non-object schemas argument", () => {
+  test("Get rejects a non-string path", () => {
     // 守卫服务未经编译的 JS 调用方，类型系统在这里被绕过 // justified: 见上一行
-    expect(() => Get("/users", "schema" as unknown as Record<string, never>)).toThrow(TypeError);
+    expect(() => Get(1 as unknown as string)).toThrow(TypeError);
   });
 
   test("Middleware rejects an unknown phase", () => {
