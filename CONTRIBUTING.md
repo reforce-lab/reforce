@@ -141,7 +141,7 @@ reforce start --project apps/api
 
 - **新码带域前缀**：`CORE_` / `CONFIG_` / `WEB_` / `CLI_` / `TRANSACTION_`。compiler 诊断码维持无前缀惯例——它们有独立闭集与独立消费面（抑制注释、诊断级别）。
 - **存量码一律不改名。** 改码会砸掉用户已经写下的 `--diagnostic-level`、`// reforce-ignore` 注释和 json 消费方。
-- **长文与码同 PR**：新增任何错误码，`packages/cli/src/explain/codes.ts` 里同时补上它的长文。没有长文时诊断行不会打出 `= 详解:`，`reforce explain <CODE>` 会明确回答「暂无长文」——但那是给**存量**码的过渡答案，不是新码的许可。
+- **长文与码同 PR**：新增任何错误码，`packages/cli/src/explain/` 的对应长文表（compiler 诊断在 `codes.ts`，其余按读者场景分表）里同时补上它的长文。这条由 `packages/cli/test/explain/codes.spec.ts` 的全量覆盖断言机械化（#297 收口后全部存量码已有长文）：漏写长文的码会被点名，测试通不过。
 - **不是所有失败都要码。** 纯包内的控制流信号（不会越过框架边界抵达用户的那种）维持裸 `Error`，不进码表。
 
 ## 知识沉淀义务
