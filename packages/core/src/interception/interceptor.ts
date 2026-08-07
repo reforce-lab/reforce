@@ -1,3 +1,10 @@
+import {
+  describeValue,
+  InvalidInterceptorMarkerError,
+  InvalidInterceptorOptionsError,
+  InvalidInterceptorOrderError,
+  InvalidInterceptorPhaseError,
+} from "@/argument-errors";
 import type { MethodMarker, MethodMetaValue } from "@/interception/method-marker";
 import type { BeanClass } from "@/public-types";
 
@@ -118,24 +125,20 @@ export function Interceptor<T extends MethodMetaValue | undefined>(
   options: InterceptorOptions<T>,
 ): <C extends BeanClass<InterceptorLike<T>>>(value: C, context: ClassDecoratorContext<C>) => void {
   if (options === null || typeof options !== "object") {
-    throw new TypeError("Interceptor options must be an object.");
+    throw new InvalidInterceptorOptionsError([describeValue(options)]);
   }
   const marker: unknown = options.marker;
   if (typeof marker !== "function" || typeof Reflect.get(marker, "key") !== "string") {
-    throw new TypeError(
-      "Interceptor marker must be a method marker created by defineMethodMarker().",
-    );
+    throw new InvalidInterceptorMarkerError([]);
   }
   if (options.phase !== undefined && !isInterceptPhase(options.phase)) {
-    throw new TypeError(
-      'Interceptor phase must be "observability", "admission", "cache", "transaction", or "application".',
-    );
+    throw new InvalidInterceptorPhaseError([describeValue(options.phase)]);
   }
   if (
     options.order !== undefined &&
     (typeof options.order !== "number" || !Number.isInteger(options.order))
   ) {
-    throw new TypeError("Interceptor order must be an integer when provided.");
+    throw new InvalidInterceptorOrderError([describeValue(options.order)]);
   }
   return () => undefined;
 }

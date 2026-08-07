@@ -17,6 +17,7 @@ import {
 } from "@/binding/key-mapping";
 import { configProvenanceRecords } from "@/binding/provenance";
 import { readConfigPropertiesMetadata } from "@/config-properties";
+import { InvalidSchemaOutputError, MissingPropertiesBaseError } from "@/errors";
 
 // 绑定 phase 跑在**一切 bean 构造之前**（ADR 0005 决策 6.1），所以这里拿不到容器里的
 // LoggerFactory——只能走引导缓冲，等绑定就位后由启动代码重放（RFC 0011 L7/L8，#249/#250）。
@@ -145,9 +146,7 @@ async function validateRegistration(
   const metadata = readConfigPropertiesMetadata(registration.target);
   if (metadata === undefined) {
     // 编译器保证 config 类都继承 ConfigProperties；这里只是防御坏的生成产物
-    throw new TypeError(
-      `Config "${registration.id}" does not extend a ConfigProperties(...) base class.`,
-    );
+    throw new MissingPropertiesBaseError([registration.id]);
   }
   const input = buildBindingInput(prefixWordsOf(metadata.prefix), snapshot.values);
   const result = await metadata.schema["~standard"].validate(input);
@@ -161,7 +160,7 @@ async function validateRegistration(
   if (typeof result.value !== "object" || result.value === null) {
     // ConfigProperties 的类型约束要求 schema 输出 object；运行期拿到非对象
     // 说明 schema 声明被绕过，属编程错误而非环境配置问题
-    throw new TypeError(`Config "${registration.id}" schema produced a non-object output.`);
+    throw new InvalidSchemaOutputError([registration.id]);
   }
   return { config: { registration, prefix: metadata.prefix, output: result.value } };
 }

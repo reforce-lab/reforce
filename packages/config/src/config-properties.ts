@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
+import { InvalidPropertiesPrefixError, InvalidPropertiesSchemaError } from "@/errors";
 
 export const configPropertiesMetadata: unique symbol = Symbol("reforce.configPropertiesMetadata");
 
@@ -36,14 +37,10 @@ export function ConfigProperties<Schema extends StandardSchemaV1<unknown, object
   schema: Schema,
 ): ConfigPropertiesClass<StandardSchemaV1.InferOutput<Schema>> {
   if (typeof prefix !== "string" || !prefixPattern.test(prefix)) {
-    throw new TypeError(
-      `ConfigProperties prefix must be dot-separated camelCase words (received ${JSON.stringify(prefix)}).`,
-    );
+    throw new InvalidPropertiesPrefixError([JSON.stringify(prefix)]);
   }
   if (!isStandardSchema(schema)) {
-    throw new TypeError(
-      "ConfigProperties schema must implement Standard Schema v1 (an object with a `~standard` property carrying `version: 1` and a `validate` function).",
-    );
+    throw new InvalidPropertiesSchemaError([]);
   }
 
   class ConfigPropertiesBase {

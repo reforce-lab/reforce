@@ -8,6 +8,10 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./define-error": {
+      "types": "./dist/define-error.d.ts",
+      "default": "./dist/define-error.js"
+    },
     "./generated-runtime": {
       "types": "./dist/generated-runtime.d.ts",
       "default": "./dist/generated-runtime.js"

@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@reforce/compiler": "workspace:*",
+    "@reforce/config": "workspace:*",
     "@reforce/core": "workspace:*",
     "@reforce/primitives": "workspace:*",
     "@reforce/runtime": "workspace:*",

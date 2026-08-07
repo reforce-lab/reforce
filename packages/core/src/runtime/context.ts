@@ -1,5 +1,13 @@
 import { isObject } from "radashi";
 import {
+  DuplicateRequestSeedError,
+  describeValue,
+  InvalidRequestSeedError,
+  InvalidRequestSeedsError,
+  SeedInstanceTypeMismatchError,
+  SeedTargetNotRequestScopedError,
+} from "@/argument-errors";
+import {
   ApplicationCleanupError,
   ApplicationContextStateError,
   ApplicationStartError,
@@ -78,14 +86,14 @@ export class RuntimeApplicationContext implements ApplicationContext {
   // UnregisteredBeanTargetError）。
   private collectSeeds(seeds: readonly RequestScopeSeed[]): ReadonlyMap<string, object> {
     if (!Array.isArray(seeds)) {
-      throw new TypeError("runInRequestScope seeds must be an array.");
+      throw new InvalidRequestSeedsError([describeValue(seeds)]);
     }
     const byId = new Map<string, object>();
     for (const seed of seeds) {
       // 公开签名类型化，运行时仍按不可信输入逐字段复检（与 generated/validation 同一惯例）。
       const instance = isObject(seed) ? Reflect.get(seed, "instance") : undefined;
       if (!isObject(instance)) {
-        throw new TypeError("Each request seed needs a target and an object instance.");
+        throw new InvalidRequestSeedError([]);
       }
       const target = Reflect.get(seed, "target");
       const id = this.state.beanId(target);
@@ -94,13 +102,13 @@ export class RuntimeApplicationContext implements ApplicationContext {
       }
       const registration = this.state.registration(id);
       if (registration?.scope !== "request") {
-        throw new TypeError(`Seed target "${id}" is not a request-scoped Bean.`);
+        throw new SeedTargetNotRequestScopedError([id]);
       }
       if (registration.kind === "class" && !(instance instanceof registration.target)) {
-        throw new TypeError(`Seed instance for "${id}" must be an instance of its class target.`);
+        throw new SeedInstanceTypeMismatchError([id]);
       }
       if (byId.has(id)) {
-        throw new TypeError(`Seed target "${id}" appears more than once.`);
+        throw new DuplicateRequestSeedError([id]);
       }
       byId.set(id, instance);
     }
