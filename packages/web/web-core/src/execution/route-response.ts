@@ -14,6 +14,7 @@
 // content-length 判据想表达的事，现在它由类型本身承载，不必再靠一个头去猜。
 
 import type { RequestContextState } from "@/execution/request-context";
+import type { ResponseHeaders } from "@/execution/response-headers";
 
 /** 出站体的四种形态。前三种是「整体已在内存中」，最后一种才要流式桥接。 */
 export type ResponseBody = Uint8Array | string | ReadableStream<Uint8Array> | null;
@@ -40,7 +41,7 @@ export interface RouteResponse {
    * 行为后果要明写：写在 context 上的响应头现在**一定**出站，包括错误响应与逃生口。
    * 这是有意的语义收敛（取代 RFC 0012 S3 / #275 拍板 3），一条无例外的规则胜过一条带例外的。
    */
-  readonly headers: Headers;
+  readonly headers: ResponseHeaders;
   readonly body: ResponseBody;
 }
 
@@ -51,7 +52,7 @@ export interface RouteResponse {
  * 头写进传入的 `headers`（即 context 那一个实例），不新建。
  */
 export function respond(
-  headers: Headers,
+  headers: ResponseHeaders,
   status: number,
   body: ResponseBody = null,
 ): RouteResponse {
@@ -71,7 +72,7 @@ export function respond(
 // 头的方向：用户 Response 上的头压过 context 上已有的同名头——那个对象是调用点最具体的
 // 表达。set-cookie 例外，必须逐条 append（Headers 迭代会把同名并成逗号串，而逗号串会被
 // 浏览器当成一条 cookie）。
-export function absorbResponse(response: Response, headers: Headers): RouteResponse {
+export function absorbResponse(response: Response, headers: ResponseHeaders): RouteResponse {
   for (const [name, value] of response.headers) {
     if (name === "set-cookie") {
       continue;

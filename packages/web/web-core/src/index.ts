@@ -26,6 +26,7 @@ export {
 // 状态码/头/体时用 `respond()` 显式造一条（取代「为了这个只好 new Response」，那条路会真的
 // 造出一个标准对象连带一条流）；拿到它之后用 `readRouteBody()` 读体；自建 harness 或测试
 // 替身直接扮演 `PreparedRoute.handle` 时用 `absorbResponse()` 复用框架逃生口的同一套语义。
+export { ResponseHeaders } from "@/execution/response-headers";
 export {
   absorbResponse,
   type ResponseBody,

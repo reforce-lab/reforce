@@ -4,6 +4,7 @@ import { STATUS_CODES } from "node:http";
 import { RequestValidationError, ResponseSerializationError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId } from "@/execution/request-fields";
+import type { ResponseHeaders } from "@/execution/response-headers";
 import { absorbResponse, type RouteResponse } from "@/execution/route-response";
 import { jsonResponse } from "@/execution/serialization";
 import type { ErrorLogger } from "@/execution/web-application";
@@ -27,7 +28,7 @@ import type { RouteErrorHandler } from "@/routing/middleware";
 // 指向一个不存在的 URL 等于射箭后画靶。RFC 规定 type 为 about:blank 时 title 就是该状态码的
 // HTTP 原因短语，所以 title 取 node:http 的 STATUS_CODES 而不是自建映射：defineHttpError 允许
 // 任意状态码，自建表必然覆盖不全。
-function problemResponse(problem: ProblemDescription, headers: Headers): RouteResponse {
+function problemResponse(problem: ProblemDescription, headers: ResponseHeaders): RouteResponse {
   const body = {
     type: "about:blank",
     title: STATUS_CODES[problem.status] ?? "Error",
@@ -154,7 +155,7 @@ function encodedHandlerResponse(
   entry: ErrorDispatchEntry,
   status: number,
   result: unknown,
-  headers: Headers,
+  headers: ResponseHeaders,
 ): RouteResponse {
   return jsonResponse(status, entry.encode === undefined ? result : entry.encode(result), headers);
 }

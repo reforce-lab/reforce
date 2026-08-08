@@ -1,4 +1,4 @@
-import { absorbResponse } from "@reforce/web-core";
+import { absorbResponse, ResponseHeaders } from "@reforce/web-core";
 import type { PreparedRoute } from "@reforce/web-core/adapter";
 import { describe, expect, test } from "vitest";
 import { createRouter, type Dispatch } from "@/router";
@@ -7,7 +7,8 @@ function route(method: PreparedRoute["method"], path: string): PreparedRoute {
   return {
     method,
     path,
-    handle: () => Promise.resolve(absorbResponse(new Response("unreachable"), new Headers())),
+    handle: () =>
+      Promise.resolve(absorbResponse(new Response("unreachable"), new ResponseHeaders())),
     meta: () => undefined,
   };
 }

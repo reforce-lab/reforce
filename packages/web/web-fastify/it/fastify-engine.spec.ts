@@ -1,7 +1,12 @@
 import type { Server } from "node:http";
 import { type AddressInfo, connect } from "node:net";
 import { Writable } from "node:stream";
-import { absorbResponse, defineRouteMarker, type RouteOutcome } from "@reforce/web-core";
+import {
+  absorbResponse,
+  defineRouteMarker,
+  ResponseHeaders,
+  type RouteOutcome,
+} from "@reforce/web-core";
 import type { PreparedRoute, WebApplication } from "@reforce/web-core/adapter";
 import type { FastifyInstance } from "fastify";
 import { describe, expect, test } from "vitest";
@@ -38,7 +43,7 @@ function route(
       // 测试桩把内部货币的入口对象物化回标准 Request——用例写的是 handler 视角的断言，
       // 引擎侧的惰性由 it/lazy-request.spec.ts 单独盯。
       const outcome = await handle(request.standard(), params);
-      return outcome instanceof Response ? absorbResponse(outcome, new Headers()) : outcome;
+      return outcome instanceof Response ? absorbResponse(outcome, new ResponseHeaders()) : outcome;
     },
     meta: (marker) => Reflect.get(meta, marker.key) as never,
   };

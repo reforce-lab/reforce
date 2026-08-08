@@ -236,7 +236,9 @@ function renderRouteManifest(web: WebModel, generatedDirectory: string): string 
 const bareSlotArguments = {
   request: "context.request",
   requestContext: "context",
-  responseHeaders: "context.responseHeaders",
+  // 裸 `Headers` 槽位物化成标准对象（#373）：用户声明的是 `Headers`，拿到的就得是 `Headers`。
+  // 框架内部的响应头通道是轻量载体，只有声明了这个槽位的路由才付物化的钱。
+  responseHeaders: "context.responseHeaders.standard()",
 } as const;
 
 interface SlotRouteRendering {

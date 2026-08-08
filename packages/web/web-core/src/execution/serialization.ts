@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { ResponseSerializationError } from "@/errors";
+import type { ResponseHeaders } from "@/execution/response-headers";
 import { absorbResponse, type RouteResponse } from "@/execution/route-response";
 import type { GeneratedRouteResponse } from "@/generated/route-table";
 
@@ -38,7 +39,11 @@ function renderJson(value: unknown): string | undefined {
 // 开销），而只想要字节数的 `Buffer.byteLength` 是 20 纳秒。端到端逐层压测这一项是 1.99
 // 微秒/请求（#373 顶楼的 L4→L5）。
 // error-dispatch 的兜底/编码响应共用同一出口:JSON 响应的头与长度语义只此一份。
-export function jsonResponse(status: number, value: unknown, headers: Headers): RouteResponse {
+export function jsonResponse(
+  status: number,
+  value: unknown,
+  headers: ResponseHeaders,
+): RouteResponse {
   const rendered = renderJson(value);
   if (rendered === undefined) {
     throw new ResponseSerializationError("the handler return value is not JSON-serializable.");
@@ -61,7 +66,7 @@ export type ResponseEncoder = (value: unknown) => unknown;
 export function serializeResponse(
   value: unknown,
   response: GeneratedRouteResponse,
-  headers: Headers,
+  headers: ResponseHeaders,
 ): RouteResponse {
   if (value instanceof Response) {
     return absorbResponse(value, headers);

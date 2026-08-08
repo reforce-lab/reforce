@@ -198,7 +198,18 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       // 才比 fastify 快三分之一——本 issue 要做的就是把那份便宜挪进框架自己。
       const handler = async (context: Context) => {
         const result = await route.handle(incomingRequestOf(context), context.req.param());
-        return new Response(result.body, { status: result.status, headers: result.headers });
+        // 头以「名值对数组」交给 Response，而不是先物化成标准 Headers（#373）：从数组建
+        // Headers 时同名会逐条 append，所以 set-cookie 逐条 push 即可，语义与其它引擎一致。
+        const headers: [string, string][] = [];
+        result.headers.forEach((value, name) => {
+          if (name !== "set-cookie") {
+            headers.push([name, value]);
+          }
+        });
+        for (const cookie of result.headers.getSetCookie()) {
+          headers.push(["set-cookie", cookie]);
+        }
+        return new Response(result.body, { status: result.status, headers });
       };
       app.on(route.method, route.path, handler);
     }
