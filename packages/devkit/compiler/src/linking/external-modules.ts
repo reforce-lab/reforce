@@ -151,6 +151,7 @@ function externalSymbolFor(
       kind: declaration.kind,
       name,
       moduleSpecifier: source.fileId,
+      declaringSource: source,
       declaration,
       generic: declaration.generic,
     });
@@ -177,6 +178,7 @@ function externalSymbolFor(
     kind: declaration.kind,
     name,
     moduleSpecifier,
+    declaringSource: source,
     declaration,
     generic: declaration.generic,
     external,

@@ -81,7 +81,7 @@ function applicationProjectTree() {
         experimentalDecorators: false,
         emitDecoratorMetadata: false,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
     src: {
       "application.ts": `import { writeFileSync } from "node:fs";

@@ -19,7 +19,7 @@ function applicationTsconfig(): string {
       experimentalDecorators: false,
       emitDecoratorMetadata: false,
     },
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   })}\n`;
 }
 

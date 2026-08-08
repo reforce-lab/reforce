@@ -71,7 +71,7 @@ async function setupSignalsWatch(options: {
         experimentalDecorators: false,
         emitDecoratorMetadata: false,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
     src: options.sources,
   });

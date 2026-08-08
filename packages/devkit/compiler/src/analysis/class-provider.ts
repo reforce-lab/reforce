@@ -452,37 +452,119 @@ function exportedInjectableName(
 
 interface ImplementationConstructorSelection {
   readonly valid: boolean;
+  // 声明该构造器的模块：参数类型必须在这个模块的作用域里解析，继承来的构造器与 Injectable
+  // 不在同一文件时二者不同。
+  readonly source?: ParsedSource;
   readonly declaration?: ClassDeclaration["constructors"][number];
+  // 依赖边的位置改锚到 Injectable 自己的声明位：构造器来自 node_modules 的 .d.ts 时，参数 span
+  // 的 fileId 是外部闭包的合成 id（external/<digest>.ts），渲染器按应用根 join 读不到文件，只
+  // 剩一行毫无意义的路径。"依赖未满足"是继承自 starter 基类时最常见的失败，它必须指回用户
+  // 自己的类。参数形态本身的诊断没有一并改锚：那些位置有一半出自 linker.resolveType 内部，
+  // 从这里够不着——而 starter 的构造器参数已经在它自己的 `reforce lib` 里验过一遍。
+  readonly dependencySpanOverride?: SourceSpan;
 }
 
-function implementationConstructorFor(
+// 同一个类自己写下的构造器（不含继承）。.d.ts 里的构造器一律没有函数体，所以"实现构造器"
+// 这条判据只对源码模块成立；环境声明模块改判"至多一条签名"，多条即重载、同样不可判定。
+function ownConstructorOf(
+  source: ParsedSource,
   declaration: ClassDeclaration,
-  diagnostics: CompilerDiagnostic[],
-): ImplementationConstructorSelection {
-  const implementations = declaration.constructors.filter((candidate) => candidate.implementation);
-  const inaccessible = ["private", "protected"].includes(
-    implementations[0]?.accessibility ?? "public",
-  );
-  if (
-    declaration.constructors.some((candidate) => !candidate.implementation) ||
-    implementations.length > 1 ||
-    inaccessible
-  ) {
-    diagnostics.push(
-      diagnostic({
-        code: "INVALID_INJECTABLE",
-        message:
-          "An Injectable must have zero or one public implementation constructor and no overload signatures.",
-        sourceSpan: declaration.span,
-        help: "Remove constructor overloads and expose one public constructor.",
-      }),
-    );
+): { readonly valid: boolean; readonly declaration?: ClassDeclaration["constructors"][number] } {
+  const ambient = source.sourceKind.startsWith("d.");
+  const candidates = ambient
+    ? declaration.constructors
+    : declaration.constructors.filter((candidate) => candidate.implementation);
+  const overloaded = ambient
+    ? false
+    : declaration.constructors.some((candidate) => !candidate.implementation);
+  if (overloaded || candidates.length > 1) {
     return { valid: false };
   }
-  const implementation = implementations.at(0);
-  return implementation === undefined
-    ? { valid: true }
-    : { valid: true, declaration: implementation };
+  const selected = candidates.at(0);
+  return selected === undefined ? { valid: true } : { valid: true, declaration: selected };
+}
+
+// 语法继承链限深：与 web-slots 的 aliasFollowLimit、web-routes 的 heritageFollowLimit 同一
+// 预算——循环 extends 无稳定去重身份，只能靠预算兜住。
+const heritageFollowLimit = 16;
+
+interface HeritageClass {
+  readonly source: ParsedSource;
+  readonly declaration: ClassDeclaration;
+  // 基类在应用源码集内声明时为真：诊断可以照常锚在基类自己的位置上，那是用户能打开的文件。
+  readonly withinApplication: boolean;
+}
+
+function heritageClassOf(
+  source: ParsedSource,
+  declaration: ClassDeclaration,
+  linker: ProjectLinker,
+): HeritageClass | undefined {
+  const heritage = declaration.heritage;
+  // extends f(...)（mixin）与任意表达式形态跟不出静态类身份，继承链在此断开：此时依赖表
+  // 保持为空，与本次修复前同解——真正兜住它的是生成物进类型检查那一层。
+  if (heritage?.kind !== "reference") {
+    return undefined;
+  }
+  const symbol = linker.resolveEntity(source, heritage.entity);
+  if (symbol?.declaration?.kind !== "class" || symbol.declaringSource === undefined) {
+    return undefined;
+  }
+  return {
+    source: symbol.declaringSource,
+    declaration: symbol.declaration,
+    withinApplication: symbol.source !== undefined,
+  };
+}
+
+// 派生类不写构造器时，TypeScript 补的是 `constructor(...args) { super(...args) }`——实参照原样
+// 转发给最近一个自己写了构造器的祖先。依赖边必须按那个祖先的参数表建，否则生成物 emit
+// `new Foo()`，基类字段被静默赋 undefined，直到首次访问才 TypeError（#350）。
+function implementationConstructorFor(
+  source: ParsedSource,
+  declaration: ClassDeclaration,
+  linker: ProjectLinker,
+  diagnostics: CompilerDiagnostic[],
+): ImplementationConstructorSelection {
+  const invalid = (message: string, help: string): ImplementationConstructorSelection => {
+    diagnostics.push(
+      diagnostic({ code: "INVALID_INJECTABLE", message, sourceSpan: declaration.span, help }),
+    );
+    return { valid: false };
+  };
+  const shapeHelp = "Remove constructor overloads and expose one public constructor.";
+  const shapeMessage =
+    "An Injectable must have zero or one public implementation constructor and no overload signatures.";
+  let current: HeritageClass = { source, declaration, withinApplication: true };
+  for (let depth = 0; depth <= heritageFollowLimit; depth += 1) {
+    const own = ownConstructorOf(current.source, current.declaration);
+    if (!own.valid) {
+      return invalid(shapeMessage, shapeHelp);
+    }
+    if (own.declaration !== undefined) {
+      // 可见性只对类自己的构造器成立：生成物 `new Foo()` 直接调用它。祖先的 protected 构造器
+      // 由派生类隐式构造器经 super() 调用，照样可实例化；祖先的 private 构造器在 TypeScript
+      // 里根本 extends 不了，到不了这里。
+      if (depth === 0 && ["private", "protected"].includes(own.declaration.accessibility)) {
+        return invalid(shapeMessage, shapeHelp);
+      }
+      return {
+        valid: true,
+        source: current.source,
+        declaration: own.declaration,
+        ...(current.withinApplication ? {} : { dependencySpanOverride: declaration.span }),
+      };
+    }
+    const next = heritageClassOf(current.source, current.declaration, linker);
+    if (next === undefined) {
+      return { valid: true };
+    }
+    current = next;
+  }
+  return invalid(
+    `Cannot determine the constructor of ${declaration.name ?? "an Injectable"}: its extends chain is circular or deeper than ${heritageFollowLimit}.`,
+    "Break the extends cycle or flatten the base class chain.",
+  );
 }
 
 interface LinkedClassContracts {
@@ -910,14 +992,18 @@ function constructorParameterDependency(
   return { index: parameter.index, linkedType: linked, sourceSpan: parameter.span };
 }
 
+// 构造器可能继承自基类，所以参数类型按 selection.source（声明该构造器的模块）解析，而不是
+// 按 Injectable 所在的模块——两者不同文件时，基类 import 进来的契约只在基类模块的作用域里
+// 有名字（#350）。
 function constructorDependencies(
-  source: ParsedSource,
-  implementation: ClassDeclaration["constructors"][number] | undefined,
+  selection: ImplementationConstructorSelection,
+  fallbackSource: ParsedSource,
   exportName: string,
   linker: ProjectLinker,
   diagnostics: CompilerDiagnostic[],
 ): readonly PendingDependency[] {
-  return (implementation?.parameters ?? []).flatMap((parameter) => {
+  const source = selection.source ?? fallbackSource;
+  return (selection.declaration?.parameters ?? []).flatMap((parameter) => {
     const dependency = constructorParameterDependency(
       source,
       parameter,
@@ -925,7 +1011,14 @@ function constructorDependencies(
       linker,
       diagnostics,
     );
-    return dependency === undefined ? [] : [dependency];
+    if (dependency === undefined) {
+      return [];
+    }
+    return [
+      selection.dependencySpanOverride === undefined
+        ? dependency
+        : { ...dependency, sourceSpan: selection.dependencySpanOverride },
+    ];
   });
 }
 
@@ -972,7 +1065,7 @@ export function analyzeClassProvider(
   if (exportName === undefined) {
     return undefined;
   }
-  const implementation = implementationConstructorFor(declaration, diagnostics);
+  const implementation = implementationConstructorFor(source, declaration, linker, diagnostics);
   if (!implementation.valid) {
     return undefined;
   }
@@ -1012,8 +1105,8 @@ export function analyzeClassProvider(
     );
   }
   const pendingDependencies = constructorDependencies(
+    implementation,
     source,
-    implementation.declaration,
     exportName,
     linker,
     diagnostics,

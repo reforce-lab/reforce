@@ -32,7 +32,13 @@ export interface LinkedSymbol {
   readonly kind: LinkedSymbolKind;
   readonly name: string;
   readonly moduleSpecifier: string;
+  // 只在应用源码集内声明的符号上出现：十余处（emission 的 import 重建、web 的应用类判定、
+  // 限定符的可导出性核实）把"source 有没有"直接当"是不是应用内声明"用，所以外部包符号
+  // 必须继续缺省它，不能为了让外部符号也有个模块而放宽。
   readonly source?: ParsedSource;
+  // 声明该符号的模块本身，不分应用内外（#350）：extends 上溯要按基类所在模块解析基类构造器
+  // 的参数类型，而基类可能只存在于 node_modules 的 .d.ts 里——那种符号没有 source。
+  readonly declaringSource?: ParsedSource;
   readonly declaration?: ClassDeclaration | InterfaceDeclaration;
   readonly generic: boolean;
   readonly external?: ExternalSymbolAttribution;

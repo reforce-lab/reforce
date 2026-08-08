@@ -83,7 +83,7 @@ package exports 只公开 `dist`。仓库内跨 package import、CLI dev/build �
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", ".reforce/generated/**/*.d.ts"]
+  "include": ["src", ".reforce/generated/**/*.ts"]
 }
 ```
 

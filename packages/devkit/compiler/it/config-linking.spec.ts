@@ -45,7 +45,7 @@ function applicationTree(
         strict: true,
         paths: { "@/*": ["./src/*"] },
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
     ...(Object.keys(packages).length > 0 ? { node_modules: nodeModulesTree(packages) } : {}),
     src: sources,

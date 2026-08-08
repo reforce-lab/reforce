@@ -55,7 +55,7 @@ export class ApplicationService {}
         experimentalDecorators: false,
         emitDecoratorMetadata: false,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
     src: sourceFiles,
   });
@@ -267,7 +267,7 @@ export class ApplicationService {}
         },
         "tsconfig.json": `${JSON.stringify({
           extends: "../../tsconfig.shared.json",
-          include: ["src", ".reforce/generated/**/*.d.ts"],
+          include: ["src", ".reforce/generated/**/*.ts"],
         })}\n`,
       },
     },

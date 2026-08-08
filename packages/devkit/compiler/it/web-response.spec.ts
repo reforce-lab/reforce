@@ -32,7 +32,7 @@ function applicationTsconfig(): string {
       strict: true,
       paths: { "@/*": ["./src/*"] },
     },
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   })}\n`;
 }
 

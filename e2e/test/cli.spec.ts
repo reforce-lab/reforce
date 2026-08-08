@@ -259,7 +259,7 @@ function leafTsconfig(extendsPath: string): string {
   return `${JSON.stringify({
     extends: extendsPath,
     compilerOptions: { paths: { "@/*": ["./src/*"] } },
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   })}\n`;
 }
 
