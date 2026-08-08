@@ -8,6 +8,7 @@ import {
 } from "@/analysis/web-error-handlers";
 import { type MiddlewareInfo, registerMiddleware } from "@/analysis/web-middleware";
 import type { RouteThrownErrorModel } from "@/analysis/web-model";
+import type { RouteMarkerDeclarationInfo } from "@/analysis/web-route-markers";
 import { resolveThrowsDecorators, type ThrowsResolutionContext } from "@/analysis/web-throws";
 import type { CompilerDiagnostic } from "@/api";
 import { report } from "@/diagnostics";
@@ -76,6 +77,8 @@ function reportMisplacedClassDecorators(
 export function registerWebBeans(
   scans: readonly ClassRoleScan[],
   providerById: ReadonlyMap<string, ProviderModel>,
+  // marker 名录先于本遍建成：@Middleware({ requires: Marker }) 要在登记时就解析成 key（#380）。
+  markers: ReadonlyMap<string, RouteMarkerDeclarationInfo>,
   analysis: ErrorHandlerAnalysisInputs,
   diagnostics: CompilerDiagnostic[],
 ): WebBeanRegistry {
@@ -93,7 +96,7 @@ export function registerWebBeans(
       continue;
     }
     reportMisplacedClassDecorators(scan, diagnostics);
-    registerMiddleware(scan, providerById, middlewareById, diagnostics);
+    registerMiddleware(scan, providerById, markers, analysis.linker, middlewareById, diagnostics);
     registerErrorHandler(scan, providerById, errorHandlers, analysis, diagnostics);
   }
   return { middlewareById, errorHandlers };

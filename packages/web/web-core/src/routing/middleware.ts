@@ -1,5 +1,6 @@
 import type { RequestContext } from "@/execution/request-context";
 import type { RouteOutcome, RouteResponse } from "@/execution/route-response";
+import type { RouteMarker } from "@/routing/route-marker";
 import type { WebPhase } from "@/routing/vocabulary";
 
 // 中间件只有一个概念（ADR 0006 W4）：洋葱模型的 bean。await next() 前后两相覆盖
@@ -45,6 +46,23 @@ export interface MiddlewareOptions {
   readonly phase?: WebPhase;
   readonly order?: number;
   readonly global?: boolean;
+  /**
+   * 这个中间件需要路由上挂着哪个 `RouteMarker`（#380）。缺省不要求，挂到哪条路由就在哪条
+   * 路由上跑。
+   *
+   * 声明了它，**编译期**就把没挂该 marker 的路由从 `route.middleware` 里排除掉——一个只做
+   * 角色检查的中间件，在没挂 `@Roles` 的路由上是纯开销：进函数、`await next()`、出函数。
+   * 排除对 `global: true` 与 `@Use` 显式挂载一视同仁：声明「我要 X」的中间件在没有 X 的
+   * 路由上本来就无事可做。
+   *
+   * 值必须是能静态解析到 `defineRouteMarker(...)` 声明的标识符（同 `@Use` 的实参纪律）：
+   * 装饰器运行时是 no-op，判定全在编译期，所以它读不了变量、表达式或跨模块的重导出。
+   *
+   * 写 `RouteMarker<never>` 而不是 `RouteMarker`（= `RouteMarker<RouteMetaValue>`）：marker 的
+   * 调用签名让 T 逆变，用户手上的 `RouteMarker<readonly string[]>` 赋不进后者。这里只用得到
+   * `key`，`never` 是「任意 T 的 marker 都收」的写法。
+   */
+  readonly requires?: RouteMarker<never>;
 }
 
 export interface ErrorHandlerOptions {

@@ -100,7 +100,20 @@ export function Middleware(options: MiddlewareOptions = {}): MiddlewareClassDeco
   if (options.global !== undefined && typeof options.global !== "boolean") {
     throw new TypeError("Middleware global must be a boolean when provided.");
   }
+  // requires 的判定完全在编译期（#380）：这里只守未经编译的调用方，同 defineRouteMarker 的
+  // key 守卫。形状判据与 RouteMarker 一致——带非空 string key 的函数。
+  if (options.requires !== undefined && !isRouteMarker(options.requires)) {
+    throw new TypeError("Middleware requires must be a route marker from defineRouteMarker.");
+  }
   return () => undefined;
+}
+
+function isRouteMarker(value: unknown): boolean {
+  return (
+    typeof value === "function" &&
+    typeof Reflect.get(value, "key") === "string" &&
+    Reflect.get(value, "key") !== ""
+  );
 }
 
 export function ErrorHandler(options: ErrorHandlerOptions = {}): ErrorHandlerClassDecorator {

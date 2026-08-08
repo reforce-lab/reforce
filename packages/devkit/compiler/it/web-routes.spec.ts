@@ -490,6 +490,101 @@ describe("middleware chain flattening", () => {
       },
     ]);
   });
+
+  // #380：一个只做角色检查的中间件，在没挂 @Roles 的路由上是纯开销——进函数、await next()、
+  // 出函数。requires 让它在编译期就不进那条路由的链，因此运行时的 handle 一次都不会被调用。
+  test("a middleware requiring a marker only joins the routes that carry it", async () => {
+    const result = await compileSourcesOrThrow({
+      "markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web-core";',
+        'export const Roles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+      "middleware.ts": [
+        'import { Injectable } from "@reforce/core";',
+        'import { Middleware } from "@reforce/web-core";',
+        'import { Roles } from "@/markers";',
+        '@Middleware({ phase: "admission", global: true, requires: Roles })',
+        "export class RoleGuard {}",
+        '@Middleware({ phase: "observability", global: true })',
+        "export class TraceMiddleware {}",
+      ].join("\n"),
+      "controller.ts": [
+        'import { Injectable } from "@reforce/core";',
+        'import { Controller, Get } from "@reforce/web-core";',
+        'import { Roles } from "@/markers";',
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/admin")',
+        '  @Roles(["admin"])',
+        "  admin(): void {}",
+        '  @Get("/health")',
+        "  health(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    const routes = routeManifestOf(result).routes;
+    expect(
+      routes.map((route) => [route.path, route.middleware.map((entry) => entry.beanId)]),
+    ).toEqual([
+      ["/admin", ["src/middleware.ts#TraceMiddleware", "src/middleware.ts#RoleGuard"]],
+      ["/health", ["src/middleware.ts#TraceMiddleware"]],
+    ]);
+  });
+
+  // 一视同仁：声明「我要 X」的中间件被 @Use 显式挂到没有 X 的路由上，同样不进链——它在
+  // 那里本来就无事可做。
+  test("requires also excludes an explicitly mounted middleware", async () => {
+    const result = await compileSourcesOrThrow({
+      "markers.ts": [
+        'import { defineRouteMarker } from "@reforce/web-core";',
+        'export const Roles = defineRouteMarker<readonly string[]>("roles");',
+      ].join("\n"),
+      "middleware.ts": [
+        'import { Injectable } from "@reforce/core";',
+        'import { Middleware } from "@reforce/web-core";',
+        'import { Roles } from "@/markers";',
+        '@Middleware({ phase: "admission", requires: Roles })',
+        "export class RoleGuard {}",
+      ].join("\n"),
+      "controller.ts": [
+        'import { Injectable } from "@reforce/core";',
+        'import { Controller, Get, Use } from "@reforce/web-core";',
+        'import { RoleGuard } from "@/middleware";',
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/health")',
+        "  @Use(RoleGuard)",
+        "  health(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(routeManifestOf(result).routes[0]?.middleware).toEqual([]);
+  });
+
+  test("requires naming something other than a route marker is rejected in place", async () => {
+    const result = await compileSources({
+      "middleware.ts": [
+        'import { Injectable } from "@reforce/core";',
+        'import { Middleware } from "@reforce/web-core";',
+        'const notAMarker = "roles";',
+        '@Middleware({ phase: "admission", global: true, requires: notAMarker })',
+        "export class RoleGuard {}",
+      ].join("\n"),
+      "controller.ts": [
+        'import { Injectable } from "@reforce/core";',
+        'import { Controller, Get } from "@reforce/web-core";',
+        "@Controller()",
+        "export class PingController {",
+        '  @Get("/ping")',
+        "  ping(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(failureCodes(result)).toEqual(["INVALID_MIDDLEWARE_DECLARATION"]);
+  });
 });
 
 describe("route marker extraction", () => {

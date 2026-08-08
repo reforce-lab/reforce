@@ -7,6 +7,7 @@ import type {
   ClassMethodDeclaration,
   DecoratorArgumentValue,
   DecoratorUse,
+  EntityName,
   ObjectLiteralProperty,
   ValueDeclaration,
 } from "@/parser/source-ir";
@@ -243,6 +244,25 @@ function metaPropertyOf(
   return value === undefined ? undefined : { key: property.key, value };
 }
 
+// 标识符 → marker 声明。两个使用侧共用：方法上的 @Marker(...) 装饰器，以及
+// @Middleware({ requires: Marker }) 的选项值（#380）。解析范围与 @Use 的实参同一纪律——
+// 同文件本地 const 或一跳具名 import，静态解析不到就不是 marker。
+export function markerReferenceOf(
+  source: ParsedSource,
+  entity: EntityName,
+  markers: ReadonlyMap<string, RouteMarkerDeclarationInfo>,
+  linker: ProjectLinker,
+): RouteMarkerDeclarationInfo | undefined {
+  if (entity.kind !== "identifier") {
+    return undefined;
+  }
+  const resolved = linker.resolveValueDeclaration(source, entity.name);
+  if (resolved?.declaration.name === undefined) {
+    return undefined;
+  }
+  return markers.get(markerRegistryKey(resolved.source.fileId, resolved.declaration.name));
+}
+
 // marker 使用：callee 不是 web 符号的方法装饰器里，凡能解析到 defineRouteMarker 声明的都算
 // marker（同文件本地 const 或一跳具名 import）。其余解析不到的装饰器不属于 Reforce，保持沉默。
 function markerUseOf(
@@ -257,11 +277,7 @@ function markerUseOf(
   if (linker.resolveEntity(source, decorator.callee) !== undefined) {
     return undefined;
   }
-  const resolved = linker.resolveValueDeclaration(source, decorator.callee.name);
-  if (resolved?.declaration.name === undefined) {
-    return undefined;
-  }
-  return markers.get(markerRegistryKey(resolved.source.fileId, resolved.declaration.name));
+  return markerReferenceOf(source, decorator.callee, markers, linker);
 }
 
 function markerValueOf(
