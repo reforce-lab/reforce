@@ -143,6 +143,10 @@ export async function startDevWatchBuild(
         rspack(config) {
           config.optimization ??= {};
           config.optimization.emitOnErrors = false;
+          // dev 错误页两层门的外层守卫是 `process.env.NODE_ENV !== "production"`（#279）：
+          // dev 构建必须把它折叠成真值分支才能保留 dev-error-page 链路。显式钉死与
+          // production-dist 对称，防 mode 与 nodeEnv 的绑定关系在升级中漂移。
+          config.optimization.nodeEnv = "development";
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
