@@ -6,6 +6,8 @@ import type { FastifyServerOptions } from "fastify";
 // 在实例构造时读走，`initialConfig` 被冻结（实测改写抛 TypeError）。所以它们必须走 settings。
 export interface WebFastifyServeSettings {
   readonly port: number;
+  // 缺省 localhost（#323）：只有本机连得上。要对外（容器、局域网联调）就显式配 `0.0.0.0`
+  // 或 `::`。三个引擎缺省一致，理由见 @reforce/web 的 webEngineHostname。
   readonly hostname?: string;
   /**
    * Fastify 自带那套日志的开关，**原样**是 fastify 的类型（RFC 0011 L8，#242）。

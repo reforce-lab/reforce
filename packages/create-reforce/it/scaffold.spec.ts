@@ -313,7 +313,9 @@ describe("scaffoldProject", () => {
       const example = await readGenerated(target, ".env.example");
       const config = await readGenerated(target, "src/config/web-server.config.ts");
       expect(example).toContain("WEB_SERVER_PORT");
-      expect(config).toContain('ConfigProperties("webServer"');
+      // 匹配到换行：schema 长到要换行时 Biome 会把前缀顶到下一行（#323 加 hostname 后就是），
+      // 而这条用例要钉的是前缀本身，不是模板的排版。
+      expect(config).toMatch(/ConfigProperties\(\s*"webServer"/u);
     });
   });
 

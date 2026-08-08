@@ -122,8 +122,10 @@ function waitForParticipantAcknowledgement(
 // NODE_ENV=development 时，这行根本不存在，旗标无人设置，错误页构造性关闭。
 // 键字面量必须与 web/src/execution/error-dispatch.ts 的读取侧一致。
 //
-// REFORCE_DEV_ERROR_PAGE=off 是逃生门：dev 服务当前绑在所有接口上，同网段的人拿得到
-// 带栈与源码的错误页；关掉后 dev 也回到与生产同形的脱敏 problem+json。
+// REFORCE_DEV_ERROR_PAGE=off 是逃生门：关掉后 dev 也回到与生产同形的脱敏 problem+json。
+// 自 #323 起监听面缺省 localhost，错误页不再默认摊给同网段的人；逃生门仍然要留——把
+// hostname 显式配成 0.0.0.0 做局域网联调时，带栈与源码的错误页又暴露出去了，那时只有这个
+// 开关能单独关掉它。
 export function enableDevErrorPage(): void {
   if (process.env.REFORCE_DEV_ERROR_PAGE !== "off") {
     Reflect.set(globalThis, Symbol.for("reforce.devErrorPage"), true);

@@ -349,3 +349,38 @@ describe("engine lifecycle", () => {
     await engine.onContextClose();
   });
 });
+
+// 缺省监听面（#323）：不配 hostname 时只绑本机回环。此前 @hono/node-server 拿不到 hostname
+// 就走 node 的缺省，绑的是全接口——同网段任何人访问一条出错路由就能看到 dev 错误页里的堆栈
+// 与源码，而同一份配置换到 fastify 上又只绑 localhost。断言看的是 server.address()，即内核
+// 实际绑上的地址。
+describe("the listen hostname", () => {
+  const loopback = new Set(["127.0.0.1", "::1"]);
+
+  async function boundAddress(hostname?: string): Promise<AddressInfo> {
+    const engine = new WebEngine(
+      { port: 0, ...(hostname === undefined ? {} : { hostname }) },
+      [],
+      [],
+    );
+    const handle = await engine.start({ routes: [ping] });
+    try {
+      return (Reflect.get(engine, "server") as Server).address() as AddressInfo;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  test("binds a loopback address when the application configured none", async () => {
+    const address = await boundAddress();
+
+    expect(loopback.has(address.address)).toBe(true);
+  });
+
+  // 反向用例，同时钉住上一条不是空转：显式配置一律照办，收紧的是缺省而不是用户的决定权。
+  test("binds the wildcard address the application configured", async () => {
+    const address = await boundAddress("0.0.0.0");
+
+    expect(address.address).toBe("0.0.0.0");
+  });
+});

@@ -107,7 +107,7 @@ reforce 不调 `setNotFoundHandler`，想定制就在 configurer 里自己设。
 ```ts
 export interface WebFastifyServeSettings {
   readonly port: number;            // 0 = 让操作系统分配临时端口（实际端口见 stderr 的启动日志）
-  readonly hostname?: string;
+  readonly hostname?: string;       // 缺省 localhost，只有本机连得上；对外配 0.0.0.0 或 ::
   readonly maxParamLength?: number; // 缺省不限制，与 web-node 对齐（fastify 自己的默认是 100）
   readonly bodyLimit?: number;      // 缺省用 fastify 的默认值（1 MiB）
 }

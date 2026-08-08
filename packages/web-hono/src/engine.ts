@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { Injectable, type OnContextClose } from "@reforce/core";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
-import { webEngineAddress } from "@reforce/web/adapter";
+import { webEngineAddress, webEngineHostname } from "@reforce/web/adapter";
 import { type Context, Hono } from "hono";
 import { matchedRoutes } from "hono/route";
 import { TrieRouter } from "hono/router/trie-router";
@@ -44,11 +44,10 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       throw new Error("The Hono web engine is already running.");
     }
     const app = await this.buildApplication(application);
-    const server = serve({
-      fetch: app.fetch,
-      port: this.settings.port,
-      ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
-    }) as Server;
+    // 主机名必须显式传给 serve（#323）：省略时 @hono/node-server 走 node 的缺省绑全接口，与
+    // fastify 的缺省相反，同一份应用换引擎就换了暴露面。缺省值归 webEngineHostname 一处决定。
+    const hostname = webEngineHostname(this.settings.hostname);
+    const server = serve({ fetch: app.fetch, port: this.settings.port, hostname }) as Server;
     // 关停收尾：server.close() 只等已登记的连接结束，"关停开始后才变空闲"的 keep-alive 连接
     // Node 不会替我们收掉（web-node 同样要这一步）。
     //
@@ -75,10 +74,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     // 三个不同前缀、绕过日志门面、也喂不进启动摘要。谁来说、说成什么样归框架统一决定。
     return {
       close: () => this.close(),
-      address: webEngineAddress({
-        ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
-        port: address.port,
-      }),
+      address: webEngineAddress({ hostname, port: address.port }),
     };
   }
 

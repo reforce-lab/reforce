@@ -67,6 +67,7 @@ export interface WebApplication {
 // 前缀、绕过日志门面、也喂不进启动摘要。引擎只报事实，谁来说、说成什么样归框架统一决定
 // （同 L6 把请求日志收回核心的理由）。
 export interface WebEngineAddress {
+  /** 实际传给 listen 的主机名，即监听面本身；展示用的是 url，两者对通配地址不同（见下）。 */
   readonly hostname: string;
   readonly port: number;
   /** 拼好的可点击 URL；三个引擎拼法一致，免得各写各的又漂移。 */
@@ -79,13 +80,43 @@ export interface WebApplicationHandle {
   readonly address?: WebEngineAddress;
 }
 
-/** 三个引擎共用的 URL 拼法：缺省主机名是 localhost，与此前三条 stderr 行逐字一致。 */
+// 监听主机名的单一事实源（#323）。三个引擎"不配置 hostname"时的底层缺省互不相同（实测
+// Node 26 / fastify 5.11）：node 与 hono 的 listen 不传 host 时绑全接口（`::`），fastify 缺省
+// 绑 localhost（127.0.0.1）。也就是同一份应用配置换个引擎就换了暴露面，所以缺省不再交给
+// 引擎——三个适配器都必须把本函数的返回值显式传进自己的 listen，不许再走"省略参数吃底层
+// 缺省"那条路。
+//
+// 缺省 localhost 而不是全接口：dev 错误页（#279）带堆栈、源码框与请求上下文，绑全接口等于把
+// 它交给同网段的任何人；浏览器侧还有 DNS rebinding——恶意页面把自家域名重绑到开发机的内网
+// IP，绕过同源限制读 dev 服务的响应（Vite 因此把 server.host 的缺省改成 localhost）。生产也
+// 缺省 localhost 是同一条原则的延伸：对外暴露是一个部署决定，得写出来，不该由"没配置"得到。
+// 容器里监听全接口把 hostname 配成 `0.0.0.0` 或 `::` 即可，显式值一律照办、不做任何加工。
+export function webEngineHostname(configured: string | undefined): string {
+  return configured ?? "localhost";
+}
+
+// 通配地址不是能点开的地址：`::` 直接拼进 URL 还会拼出畸形的 `http://:::3000/`（authority 里
+// 的裸 IPv6 必须加方括号），而启动摘要那一行是给人点的，e2e 也从里面抠 URL 做就绪探测。
+// 监听面是全接口时，本机能到达它的名字就是 localhost（Vite 的 "Local:" 行同样这么显示）。
+const wildcardHostnames = new Set(["0.0.0.0", "::"]);
+
+function urlHostname(hostname: string): string {
+  if (wildcardHostnames.has(hostname)) {
+    return "localhost";
+  }
+  return hostname.includes(":") ? `[${hostname}]` : hostname;
+}
+
+/** 三个引擎共用的 URL 拼法，免得各写各的又漂移。hostname 传 webEngineHostname 的结果。 */
 export function webEngineAddress(input: {
-  readonly hostname?: string;
+  readonly hostname: string;
   readonly port: number;
 }): WebEngineAddress {
-  const hostname = input.hostname ?? "localhost";
-  return { hostname, port: input.port, url: `http://${hostname}:${input.port}/` };
+  return {
+    hostname: input.hostname,
+    port: input.port,
+    url: `http://${urlHostname(input.hostname)}:${input.port}/`,
+  };
 }
 
 // 引擎适配器要兑现的行为契约（#232）。这里只说结果，不规定用什么机制达成——各引擎的路由库能力
