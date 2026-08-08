@@ -1,6 +1,5 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
 import { analyzeClassProvider } from "@/analysis/class-provider";
-import { analyzeConfigProviders } from "@/analysis/config-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
@@ -20,6 +19,9 @@ import type {
   ProviderDraft,
   ProviderModel,
 } from "@/analysis/model";
+import { type PassContext, runContributePasses, runDiscoverPasses } from "@/analysis/pass";
+import { createPassChannels } from "@/analysis/pass-channels";
+import { analysisPasses } from "@/analysis/pass-registry";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
 import {
@@ -154,8 +156,12 @@ export function analyzeProject(
 ): AnalysisResult {
   const diagnostics: CompilerDiagnostic[] = [];
   validateModuleSyntax(sources, diagnostics);
-  const configAnalysis = analyzeConfigProviders(sources, linker, diagnostics);
-  const drafts = collectProviderDrafts(sources, linker, diagnostics, configAnalysis.claimed);
+  // pass 相位（#344 定案 1）：discover 只吃 (sources, linker)，产 draft、写通道；它的下游
+  // collectProviderDrafts 读 claimedDeclarations。相位内的执行序就是 analysisPasses 的下标序。
+  const channels = createPassChannels();
+  const passContext: PassContext = { sources, linker, diagnostics, typeQuery };
+  const discovered = runDiscoverPasses(analysisPasses, passContext, channels);
+  const drafts = collectProviderDrafts(sources, linker, diagnostics, channels.claimedDeclarations);
 
   // web 引擎约定（ADR 0006 W2 的 #153 接线，见 web-model.ts）：提供 @reforce/web-core 的
   // WebEngineAdapter 契约的 starter bean 由生成的 bootstrap 消费，先于 resolveProviders
@@ -171,14 +177,14 @@ export function analyzeProject(
   // 探针集合刻意不含事务 draft 自己：拦截器的 provides 只有 TransactionInterceptor，它永远
   // 提供不了 LoggerFactory，所以答案与 synthesizeLoggerBeans 过去在内部算的完全一致。
   // 不写这条注释的话，后来人会以为这是个顺序 bug 而去「修」它。
-  const loggerBinding = providedLoggerFactorySymbol([...configAnalysis.drafts, ...drafts], linker);
+  const loggerBinding = providedLoggerFactorySymbol([...discovered, ...drafts], linker);
   const transactionDraft = transactionInterceptorDraft(
     sources,
     linker,
     loggerBinding !== undefined,
   );
   const applicationDrafts = [
-    ...configAnalysis.drafts,
+    ...discovered,
     ...drafts,
     ...(transactionDraft === undefined ? [] : [transactionDraft]),
   ];
@@ -224,7 +230,15 @@ export function analyzeProject(
           ]),
     ],
   });
-  const localDrafts = [...applicationDrafts, ...loggers.drafts];
+  // contribute 相位（#344 定案 1）：吃全量 draft、读写通道、再产 draft。事务与 logging 迁进来
+  // 之前它没有成员，此处是空转——驱动先就位，后续两步才是纯注册变更。
+  const contributed = runContributePasses(
+    analysisPasses,
+    passContext,
+    [...applicationDrafts, ...loggers.drafts],
+    channels,
+  );
+  const localDrafts = [...contributed];
   // starter 契约解析仍会经 binder 推新的 linker 诊断，所以 linker.diagnostics 必须在
   // resolveProviders 之后再并入；顺序无所谓，最终由 orderDiagnostics 排序去重。
   const starterDrafts = resolveProviders(
