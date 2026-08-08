@@ -19,21 +19,52 @@ export interface RequestTarget {
   readonly url?: string;
 }
 
-export function requestUrl(raw: RequestTarget): URL | undefined {
-  let url: URL;
-  try {
-    url = new URL(`http://${raw.headers.host ?? "localhost"}`);
-  } catch {
-    return undefined;
+// 校验与构造分家（#373）。原来是一件事：每请求 `new URL` 一次再赋 pathname/search，实测
+// 502 纳秒，其中构造 URL 与两个 setter 占 335、Host 校验只占 167。而 fastify 的路由匹配走
+// find-my-way 的字符串比较，根本不要 URL 对象——那 502 纳秒里绝大多数路由一分钱的用处都没有
+// （端到端逐层压测是 0.79 微秒/请求，#373 顶楼的 L0→L1）。
+//
+// 拆开之后：校验仍然每请求做、仍然在进 handle 之前出 400（#226 的契约一字不动），URL 只在
+// 真有人读 `context.url` 时才构造。
+//
+// 校验带一格缓存：真实服务上 Host 头在整个进程生命周期里基本恒定，同值重复时校验降到 2.4
+// 纳秒。只留一格而不是 Map：键完全由请求方控制，Map 会被轮换的 Host 头撑成内存泄漏；轮换
+// 也只是让缓存失效退回 167 纳秒，不比改之前差。
+let cachedHost: string | undefined;
+let cachedHostAccepted = false;
+
+/**
+ * Host 头是否可用作请求 URL 的 authority。返回 undefined = 畸形或带凭据，调用方出 400：
+ *   `Host: a b`            → new URL 抛 TypeError
+ *   `Host: user@evil.com`  → new URL 通过，但带凭据的 authority 一律不收
+ */
+export function acceptHost(raw: RequestTarget): string | undefined {
+  const host = raw.headers.host ?? "localhost";
+  if (host !== cachedHost) {
+    cachedHost = host;
+    cachedHostAccepted = false;
+    try {
+      const probe = new URL(`http://${host}`);
+      cachedHostAccepted = probe.username === "" && probe.password === "";
+    } catch {
+      cachedHostAccepted = false;
+    }
   }
-  if (url.username !== "" || url.password !== "") {
-    return undefined;
-  }
-  const target = raw.url ?? "/";
+  return cachedHostAccepted ? host : undefined;
+}
+
+/** 用已经通过校验的 host 构造本次请求的 URL。host 未经校验时不要调它。 */
+export function targetUrl(host: string, target: string): URL {
+  const url = new URL(`http://${host}`);
   const query = target.indexOf("?");
   url.pathname = query === -1 ? target : target.slice(0, query);
   url.search = query === -1 ? "" : target.slice(query);
   return url;
+}
+
+export function requestUrl(raw: RequestTarget): URL | undefined {
+  const host = acceptHost(raw);
+  return host === undefined ? undefined : targetUrl(host, raw.url ?? "/");
 }
 
 function toHeaders(raw: IncomingMessage): Headers {
@@ -57,17 +88,22 @@ export class FastifyIncomingRequest implements IncomingRequest {
   readonly method: string;
   private standardRequest: Request | undefined;
 
+  private target: URL | undefined;
+
   constructor(
     private readonly raw: IncomingMessage,
-    // 引擎为了取 pathname 已经解析过这一个 URL，直接交出去，核心不再重复解析（#341）。
-    private readonly target: URL,
+    // 已通过 acceptHost 校验的 Host（#373）：URL 只在真有人读时才用它构造。
+    private readonly host: string,
     // fastify 的 buffer parser 已经把体读完（见 engine.ts 的 addContentTypeParser）。
     private readonly body: unknown,
   ) {
     this.method = raw.method ?? "GET";
   }
 
+  // fastify 的路由匹配不需要 URL 对象，所以引擎侧也不再急着造（#373）：`GET /json` 这类
+  // 不读 context.url / context.query 的路由一次都不构造。
   url(): URL {
+    this.target ??= targetUrl(this.host, this.raw.url ?? "/");
     return this.target;
   }
 
@@ -87,7 +123,7 @@ export class FastifyIncomingRequest implements IncomingRequest {
 
   standard(): Request {
     // 必须缓存：同一请求内两次读 context.request 若拿到两个 Request，body 会被重复消费。
-    this.standardRequest ??= toRequest(this.raw, this.target, this.body);
+    this.standardRequest ??= toRequest(this.raw, this.url(), this.body);
     return this.standardRequest;
   }
 }

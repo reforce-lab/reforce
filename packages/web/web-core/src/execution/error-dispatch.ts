@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { RequestValidationError, ResponseSerializationError } from "@/errors";
@@ -18,8 +19,6 @@ import type { RouteErrorHandler } from "@/routing/middleware";
 // 兜底闭集（ADR 0013 决议 7，#294）：HttpError → 它自己的 status + code + detail；校验失败
 // → 400 + 脱敏 issues；其余 → 500 + errorId。三者都是 RFC 9457 problem+json。
 
-const encoder = new TextEncoder();
-
 // RFC 9457（https://www.rfc-editor.org/rfc/rfc9457.html）：五个标准成员 type/title/status/
 // detail/instance，外加任意扩展成员，客户端必须忽略不认识的扩展。Spring 6 / ASP.NET Core /
 // Zalando / Quarkiverse / Micronaut 都已收敛于此。
@@ -37,10 +36,11 @@ function problemResponse(problem: ProblemDescription, headers: Headers): RouteRe
   };
   // 长度取字节数，文案可以带非 ASCII。头写进 context 那一个 Headers（#340 决议 2）——
   // 错误响应此前刻意不合并 handler 写的头，现在与所有出口同规则：写在 context 上的一定出站。
-  const bytes = encoder.encode(JSON.stringify(body));
+  // body 交文字不交字节（#373）：与 jsonResponse 同一条规则，错误路径不另开一套。
+  const rendered = JSON.stringify(body);
   headers.set("content-type", "application/problem+json");
-  headers.set("content-length", String(bytes.byteLength));
-  return { status: problem.status, headers, body: bytes };
+  headers.set("content-length", String(Buffer.byteLength(rendered)));
+  return { status: problem.status, headers, body: rendered };
 }
 
 /** 兜底三分支的判定结果：status + RFC 9457 扩展成员。 */

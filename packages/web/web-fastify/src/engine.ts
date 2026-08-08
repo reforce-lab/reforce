@@ -15,7 +15,7 @@ import {
   type FastifyRouteCustomizer,
   reservedRouteOptionKeys,
 } from "@/bridges";
-import { FastifyIncomingRequest, requestUrl } from "@/request";
+import { acceptHost, FastifyIncomingRequest, requestUrl } from "@/request";
 import type { WebFastifyServeSettings } from "@/settings";
 
 // fastify 引擎适配器（#238）：reforce 的路由处理函数就是一个普通的 fastify handler，走 fastify 正常的
@@ -254,13 +254,15 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
         method: route.method,
         url: route.path,
         handler: async (request, reply) => {
-          const url = requestUrl(request.raw);
-          if (url === undefined) {
+          // 只校验 Host、不构造 URL（#373）：畸形/带凭据仍然在进 handle 之前出 400（#226），
+          // 但 URL 本身留给 IncomingRequest 惰性构造——fastify 的路由匹配不需要它。
+          const host = acceptHost(request.raw);
+          if (host === undefined) {
             return await reply.code(400).send();
           }
           // PreparedRoute.handle 契约保证永不 reject（@reforce/web-core/adapter），无需兜底
           const result = await route.handle(
-            new FastifyIncomingRequest(request.raw, url, request.body),
+            new FastifyIncomingRequest(request.raw, host, request.body),
             request.params as Readonly<Record<string, string>>,
           );
           return await transfer(reply, result);

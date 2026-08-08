@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { ResponseSerializationError } from "@/errors";
 import { absorbResponse, type RouteResponse } from "@/execution/route-response";
 import type { GeneratedRouteResponse } from "@/generated/route-table";
@@ -25,23 +26,26 @@ function renderJson(value: unknown): string | undefined {
   }
 }
 
-const encoder = new TextEncoder();
-
 // 头直接写进传入的那一个 Headers（#340 决议 2：响应头单一通道，就是 context.responseHeaders）。
 // 不新建、不返回第二份，因此没有「两份头需要合并」这件事——mergeResponseHeaders 已删除。
 //
 // 长度必须是**字节数**而不是字符数：JSON.stringify 不转义非 ASCII，"汉字" 是 2 char / 6 byte。
-// 先编码再把字节交出去，而不是编码一次只为量长度。
+//
+// body 交出去的是**文字**，不是字节（#373 纠正 #340 的选择）。#340 说对了一半——不该造标准
+// Response 连带一条流——但接着把 body 定成 Uint8Array，等于把「造了拆」从上一层挪到了下一层：
+// 三个引擎的写出分支本来就认字符串，拿到字节反而要再包一次。实测 `TextEncoder.encode` 825
+// 纳秒且**与内容长度无关**（11 字节 825、120 字节 846，即它不是编码成本是调用本身的固定
+// 开销），而只想要字节数的 `Buffer.byteLength` 是 20 纳秒。端到端逐层压测这一项是 1.99
+// 微秒/请求（#373 顶楼的 L4→L5）。
 // error-dispatch 的兜底/编码响应共用同一出口:JSON 响应的头与长度语义只此一份。
 export function jsonResponse(status: number, value: unknown, headers: Headers): RouteResponse {
   const rendered = renderJson(value);
   if (rendered === undefined) {
     throw new ResponseSerializationError("the handler return value is not JSON-serializable.");
   }
-  const bytes = encoder.encode(rendered);
   headers.set("content-type", "application/json");
-  headers.set("content-length", String(bytes.byteLength));
-  return { status, headers, body: bytes };
+  headers.set("content-length", String(Buffer.byteLength(rendered)));
+  return { status, headers, body: rendered };
 }
 
 export type ResponseEncoder = (value: unknown) => unknown;
