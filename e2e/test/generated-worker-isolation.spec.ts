@@ -139,11 +139,21 @@ beforeAll(async () => {
   await writeFile(
     join(temporaryProject.projectRoot, "worker-bundle-entry.ts"),
     [
-      'import * as applicationModule from "./project/src/application";',
+      // 观察用的 token 从各自的源模块取（#314）：应用入口不需要、也不再 re-export 应用模块，
+      // fixture 的入口保持零 re-export 以钉死「编译器扫描不依赖入口导出」。
       'import * as bootstrapModule from "./project/.reforce/generated/bootstrap";',
+      'import { GreetingService } from "./project/src/greeting";',
+      'import { SelectionProbe } from "./project/src/providers";',
+      'import { AlphaService, lifecycleSnapshot, managedResource } from "./project/src/worker-lifecycle";',
       'import { observeApplication } from "./worker-entry";',
       "",
-      "await observeApplication(bootstrapModule, applicationModule);",
+      "await observeApplication(bootstrapModule, {",
+      "  GreetingService,",
+      "  SelectionProbe,",
+      "  AlphaService,",
+      "  managedResource,",
+      "  lifecycleSnapshot,",
+      "});",
       "",
     ].join("\n"),
   );
