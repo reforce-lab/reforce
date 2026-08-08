@@ -96,7 +96,7 @@ hono 按注册顺序匹配、没有静态段优先的概念，而 reforce 编译
 ```ts
 export interface WebHonoServeSettings {
   readonly port: number;      // 0 = 让操作系统分配临时端口（实际端口见 stderr 的启动日志）
-  readonly hostname?: string;
+  readonly hostname?: string; // 缺省 localhost，只有本机连得上；对外配 0.0.0.0 或 ::
 }
 ```
 
