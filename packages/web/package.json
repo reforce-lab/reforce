@@ -35,7 +35,8 @@
     "@reforce/core": "workspace:*",
     "@standard-schema/spec": "^1.1.0",
     "@swc/helpers": "catalog:",
-    "radashi": "^12.9.1"
+    "radashi": "^12.9.1",
+    "youch": "4.1.1"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

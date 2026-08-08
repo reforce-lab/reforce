@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { createRspackHmrRuntime } from "@/dev-runtime";
+import { afterEach, expect, test, vi } from "vitest";
+import { createRspackHmrRuntime, enableDevErrorPage } from "@/dev-runtime";
 import type { RspackHmrRuntime } from "@/hmr-manager";
 
 function rejectingRuntime(error: unknown): RspackHmrRuntime {
@@ -45,4 +45,38 @@ test("an unrelated HMR check error remains fatal", async () => {
   const result = runtime.check(false);
 
   await expect(result).rejects.toBe(error);
+});
+
+// —— dev 错误页旗标（#279）——
+// 键字面量与 @reforce/web 错误分派的读取侧一致；这三条钉住「设置侧」的全部分支。
+
+const devErrorPageFlag = Symbol.for("reforce.devErrorPage");
+
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, devErrorPageFlag);
+  vi.unstubAllEnvs();
+});
+
+test("enableDevErrorPage raises the global flag", () => {
+  enableDevErrorPage();
+
+  expect(Reflect.get(globalThis, devErrorPageFlag)).toBe(true);
+});
+
+test("REFORCE_DEV_ERROR_PAGE=off keeps the flag unset", () => {
+  vi.stubEnv("REFORCE_DEV_ERROR_PAGE", "off");
+
+  enableDevErrorPage();
+
+  expect(Reflect.get(globalThis, devErrorPageFlag)).toBeUndefined();
+});
+
+// 逃生门只认 "off" 一个值：拼错值静默把带栈的页面留在 LAN 上，比「开着」更危险的是
+// 「以为关了」。这里钉住非 off 值不关门，文档教用户用 off。
+test("an unrelated REFORCE_DEV_ERROR_PAGE value still raises the flag", () => {
+  vi.stubEnv("REFORCE_DEV_ERROR_PAGE", "false");
+
+  enableDevErrorPage();
+
+  expect(Reflect.get(globalThis, devErrorPageFlag)).toBe(true);
 });

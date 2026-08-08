@@ -172,6 +172,21 @@ curl -i -X POST http://localhost:3000/greetings \
 
 客户端按 `code` 分派，不要匹配 `detail`：码是稳定契约，文案随时会改。
 
+**开发期错误页**：`reforce dev` 下，用浏览器（准确说：请求的 `Accept` 含 `text/html`）访问
+出错的路由，看到的不是上面的 JSON，而是一页带堆栈、源码框和请求上下文的 HTML——错误消息、
+路由模式、参数、请求头（凭证类头只显示长度）、`errorId`，以及可以直接复制的
+`reforce explain <码>` 命令。`curl` 和前端 `fetch` 拿到的仍是和生产**逐字节同形**的
+problem+json：错误页只换呈现，不改状态码，也不改 JSON 契约。生产构建物理不含渲染器，
+这页永远不会出现在线上。
+
+- 点栈帧文件名跳编辑器，默认 VS Code；设环境变量 `IDE` 换（支持 `vscode` / `sublime` /
+  `phpstorm` 等名字，或一个带 `%f`（文件）`%l`（行号）占位符的 URL 模板）。WSL / 远程开发时
+  本地编辑器打不开远端路径，用 URL 模板形式指回远程窗口，例如 WSL 下
+  `IDE='vscode://vscode-remote/wsl+<发行版名>%f:%l'`。
+- 逃生门：`REFORCE_DEV_ERROR_PAGE=off` 关掉错误页（只认 `off` 这一个值），dev 的错误响应
+  回到与生产同形的脱敏 problem+json。**注意 dev 服务监听在所有网卡上**：同一局域网里任何人
+  访问一条出错路由都能看到堆栈与源码，在不可信网络上开发时请关掉。
+
 真要接管某一类错误（换个响应体、加个 header、上报到监控），写一个 `@ErrorHandler()` bean：
 返回 `Response` 就算接管，重新 `throw` 就交给下一个，全都放弃了框架才兜底。**别写
 catch-all**——那会把框架的校验 400 也变成 500，用户就再也看不到「哪个字段不合法」。

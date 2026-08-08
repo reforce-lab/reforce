@@ -1,6 +1,7 @@
-import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { cp, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { findPackageJSON } from "node:module";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { DevCompilation } from "@/dev/watch-coordinator";
 
 function sleep(milliseconds: number): Promise<void> {
@@ -9,6 +10,7 @@ function sleep(milliseconds: number): Promise<void> {
 
 const workspaceRoot = resolve("../..");
 const coreRoot = join(workspaceRoot, "packages", "core");
+const webRoot = join(workspaceRoot, "packages", "web");
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
 
 export async function installContextDistribution(projectRoot: string): Promise<void> {
@@ -19,6 +21,25 @@ export async function installContextDistribution(projectRoot: string): Promise<v
     cp(join(coreRoot, "dist"), join(target, "dist"), { recursive: true }),
     cp(radashiRoot, join(projectRoot, "node_modules", "radashi"), { recursive: true }),
   ]);
+}
+
+// dev 错误页外置链路要的最小 web 布局（#279）：@reforce/web 复制 dist（与 core 同法），
+// 渲染器 youch 用符号链接指回工作区真身——它的依赖闭包必须从真实 .pnpm 布局解析，整棵
+// 复制既慢又随上游依赖图漂移。resolve 会穿透符号链接落到 realpath，与用户项目里
+// 「youch 只对 @reforce/web 可见」的严格布局等价。
+export async function installWebDistribution(projectRoot: string): Promise<void> {
+  const target = join(projectRoot, "node_modules", "@reforce", "web");
+  await mkdir(target, { recursive: true });
+  await Promise.all([
+    cp(join(webRoot, "package.json"), join(target, "package.json")),
+    cp(join(webRoot, "dist"), join(target, "dist"), { recursive: true }),
+  ]);
+  const youchPackageJson = findPackageJSON("youch", pathToFileURL(join(webRoot, "package.json")));
+  if (youchPackageJson === undefined) {
+    throw new Error("The workspace cannot resolve the dev error page renderer package.");
+  }
+  // Windows 上目录符号链接用 junction，免开发者模式；POSIX 忽略 type 参数。
+  await symlink(dirname(youchPackageJson), join(projectRoot, "node_modules", "youch"), "junction");
 }
 
 // 编译到达本来就是个事件（onCompilation 回调），所以这里等的是事件而不是时钟：不再有

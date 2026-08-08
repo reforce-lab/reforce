@@ -1,5 +1,5 @@
 import { isObject } from "radashi";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
 import { createErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
@@ -266,6 +266,73 @@ describe("createErrorDispatcher", () => {
     const response = await dispatch(new Error("boom"), requestContext());
 
     expect(response.status).toBe(500);
+  });
+});
+
+// dev 错误页协商矩阵的 JSON 象限（#279）：三条都不该触发渲染器加载，这里保持纯单测；
+// 命中渲染的象限连同注入/降级/隔离在 it/dev-error-page.spec.ts（渲染要读模板资产，属 fs 行为）。
+describe("dev error page negotiation keeps the JSON path", () => {
+  // 键字面量与 error-dispatch.ts 读取侧、runtime dev-runtime.ts 设置侧一致。
+  const flagKey = Symbol.for("reforce.devErrorPage");
+
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, flagKey);
+  });
+
+  function negotiatedContext(
+    input: { readonly method?: "GET" | "HEAD"; readonly accept?: string } = {},
+  ): RequestContextState {
+    const request = new Request("https://reforce.test/users", {
+      method: input.method ?? "GET",
+      ...(input.accept === undefined ? {} : { headers: { accept: input.accept } }),
+    });
+    return new RequestContextState({
+      request,
+      url: new URL(request.url),
+      method: input.method ?? "GET",
+      path: "/users",
+      params: {},
+      meta: {},
+    });
+  }
+
+  // 默认关死：不经 dev-runtime 设旗标，浏览器直接戳 dev 端口拿到的仍是与生产逐字节同形的
+  // problem+json——第三方打包器不折叠 NODE_ENV、生产误设 NODE_ENV=development 由此构造性安全。
+  test("without the flag an html Accept gets the byte-identical problem+json", async () => {
+    const dispatch = createErrorDispatcher([]);
+    const error = new ConflictError("taken");
+
+    const plain = await dispatch(error, negotiatedContext());
+    const negotiated = await dispatch(error, negotiatedContext({ accept: "text/html,*/*" }));
+
+    expect(negotiated.status).toBe(plain.status);
+    expect(await negotiated.text()).toBe(await plain.text());
+    expect([...negotiated.headers.entries()]).toEqual([...plain.headers.entries()]);
+  });
+
+  test("with the flag a non-html Accept keeps the JSON path", async () => {
+    Reflect.set(globalThis, flagKey, true);
+    const dispatch = createErrorDispatcher([]);
+
+    const response = await dispatch(
+      new ConflictError("taken"),
+      negotiatedContext({ accept: "*/*" }),
+    );
+
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+  });
+
+  // HEAD 的响应体不会被读，渲染是纯浪费；协商在 wantsHtml 里对 HEAD 短路。
+  test("a HEAD request never gets the html page", async () => {
+    Reflect.set(globalThis, flagKey, true);
+    const dispatch = createErrorDispatcher([]);
+
+    const response = await dispatch(
+      new ConflictError("taken"),
+      negotiatedContext({ method: "HEAD", accept: "text/html" }),
+    );
+
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
   });
 });
 
