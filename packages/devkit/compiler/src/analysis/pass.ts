@@ -116,6 +116,27 @@ export function runContributePasses(
   return accumulated;
 }
 
+/**
+ * 单个 refine pass 的驱动。
+ *
+ * 与另外两个相位不同，这里**刻意不是循环**：refine pass 各产各的领域 model（WeavingModel、
+ * WebModel……），类型互不相同，一个 `runRefinePasses(registry)` 只能返回
+ * `Map<string, unknown>`，调用点要靠未经校验的断言取回真实类型——那正是仓库类型纪律禁止的，
+ * 而 `AnalysisSuccess` 的 `web` / `weaving` 是具名字段（定案 5：weaving 半配对，不假装是纯
+ * emitter 配对），本来就要逐个取。
+ *
+ * 顺序与依赖的正确性不靠这个函数：它由注册表下标序加 `channelOrderProblems` 静态核实，而
+ * refine pass 之间无通道关系，调用序不可观测。
+ */
+export function runRefinePass<M>(
+  pass: RefinePass<M>,
+  context: PassContext,
+  providers: readonly ProviderModel[],
+  channels: PassChannels,
+): M {
+  return pass.run(context, providers, channels);
+}
+
 /** 注册表序与通道拓扑不一致的地方（断言 A 的实现，spec 断言它为空）。 */
 export function channelOrderProblems(registry: PassRegistry): readonly string[] {
   const lastWriter = new Map<keyof PassChannels, number>();

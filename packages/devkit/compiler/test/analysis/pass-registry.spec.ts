@@ -126,6 +126,15 @@ describe("断言 B · 通道的消费方自己定序", () => {
     expect(unregistered).toEqual([]);
   });
 
+  test("闭集里的每条通道都有写者：没人写的通道是死重，读者在等一个永不到达的值", () => {
+    // 通道是闭集（pass-channels.ts），所以「有没有多余的一条」是可以机械判定的。读者可以是
+    // 核心步而不是 pass（claimedDeclarations 的读者是 collectProviderDrafts），所以只核写者。
+    const written = new Set<string>(analysisPasses.flatMap((pass) => pass.writes));
+    const orphans = Object.keys(createPassChannels()).filter((channel) => !written.has(channel));
+
+    expect(orphans).toEqual([]);
+  });
+
   test("frameworkLoggers 恒在登记表里：它按设计就是多写单读的那条", () => {
     expect(orderInsensitiveChannels.has("frameworkLoggers")).toBe(true);
   });

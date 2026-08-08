@@ -1,4 +1,5 @@
 import { analyzeConfigProviders } from "@/analysis/config-provider";
+import type { WeavingModel } from "@/analysis/interception-model";
 import {
   contextFrameworkLoggerName,
   loggingPackageName,
@@ -7,7 +8,8 @@ import {
   synthesizeLoggerBeans,
   webFrameworkLoggerName,
 } from "@/analysis/logger-synthesis";
-import type { ContributePass, DiscoverPass, PassRegistry } from "@/analysis/pass";
+import { analyzeMethodInterception } from "@/analysis/method-interception";
+import type { ContributePass, DiscoverPass, PassRegistry, RefinePass } from "@/analysis/pass";
 import {
   transactionalMarkerKey,
   transactionFrameworkLoggerName,
@@ -158,9 +160,39 @@ const loggingPass: ContributePass = {
   },
 };
 
+// 织入分析（ADR 0008 AM1，#202）：第一个 refine pass。它要完整的 provider 表——每个被织
+// bean 的拦截器作为构造依赖边追加进 provider.dependencies，所以只能排在 resolveProviders 之后。
+//
+// 它是 interceptorBindings 的**唯一读者**，写者是上面的 transaction。收敛前那条边是
+// method-interception.ts 里的一句跨文件硬编码（`providerById.has(transactionInterceptorBeanId)`
+// 再就地拼绑定），现在两侧各自声明通道，`channelOrderProblems` 静态核实读在写之后。
+//
+// refine 追加依赖边只许 singleton → singleton（pass.ts 的 RefinePass 注释）：validateScopeRules
+// 在本相位之前就跑完了，这里追加的边不再受它检查。拦截器被强制为 singleton，因此成立。
+const interceptionPass: RefinePass<WeavingModel> = {
+  name: "method-interception",
+  phase: "refine",
+  reads: ["interceptorBindings"],
+  writes: [],
+  run(context, providers, out) {
+    return analyzeMethodInterception(
+      context.sources,
+      context.linker,
+      providers,
+      context.diagnostics,
+      out.interceptorBindings,
+    );
+  },
+};
+
 export const analysisPasses = [
   configPass,
   webEnginePass,
   transactionPass,
   loggingPass,
+  interceptionPass,
 ] as const satisfies PassRegistry;
+
+// refine 的 model 逐个具名取回（pass.ts 的 runRefinePass 说明了为什么不是循环），所以注册表
+// 之外还要把 pass 本身导出给 analyzeProject。
+export { interceptionPass };

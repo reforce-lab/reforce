@@ -3,7 +3,6 @@ import { analyzeClassProvider } from "@/analysis/class-provider";
 import { createExecutionPlans } from "@/analysis/execution-plan";
 import { analyzeFactoryProvider } from "@/analysis/factory-provider";
 import type { WeavingModel } from "@/analysis/interception-model";
-import { analyzeMethodInterception } from "@/analysis/method-interception";
 import type {
   BeanProviderModel,
   ConfigProviderModel,
@@ -11,9 +10,14 @@ import type {
   ProviderDraft,
   ProviderModel,
 } from "@/analysis/model";
-import { type PassContext, runContributePasses, runDiscoverPasses } from "@/analysis/pass";
+import {
+  type PassContext,
+  runContributePasses,
+  runDiscoverPasses,
+  runRefinePass,
+} from "@/analysis/pass";
 import { createPassChannels } from "@/analysis/pass-channels";
-import { analysisPasses } from "@/analysis/pass-registry";
+import { analysisPasses, interceptionPass } from "@/analysis/pass-registry";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
 import type { WebModel } from "@/analysis/web-model";
@@ -190,13 +194,7 @@ export function analyzeProject(
   // 它把每个被织 bean 的拦截器作为构造依赖边追加进 provider.dependencies，构造排序、
   // cycle-proxy 改写与 request 计划全部沿既有机制生效。拦截器被强制为 singleton，追加边
   // 不会引入新的跨作用域形态，validateScopeRules 先跑不受影响。
-  const weaving = analyzeMethodInterception(
-    sources,
-    linker,
-    allProviders,
-    diagnostics,
-    channels.interceptorBindings,
-  );
+  const weaving = runRefinePass(interceptionPass, passContext, allProviders, channels);
   diagnostics.push(...linker.diagnostics);
 
   // 闸门只看 error：有 error 说明 provider 表不完整，继续走 emission 会生成实参缺失的构造
