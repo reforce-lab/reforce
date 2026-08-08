@@ -66,7 +66,9 @@ function createWebShutdownContext(
   return {
     start: () => context.start(),
     get: <T extends object>(target: BeanClass<T> | BeanDefinition<T>): T => context.get(target),
-    runInRequestScope: (seeds, callback) => context.runInRequestScope(seeds, callback),
+    hasRequestScopedBeans: context.hasRequestScopedBeans,
+    runInRequestScope: (seeds, callback, facts) =>
+      context.runInRequestScope(seeds, callback, facts),
     close: () => {
       closing ??= closeInOrder();
       return closing;

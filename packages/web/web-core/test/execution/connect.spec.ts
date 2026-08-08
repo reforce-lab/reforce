@@ -36,6 +36,8 @@ class FakeContext implements ApplicationContext {
     return instance as T;
   }
 
+  readonly hasRequestScopedBeans = false;
+
   runInRequestScope<R>(_seeds: never[], callback: () => R): Promise<Awaited<R>> {
     return Promise.resolve(callback()) as Promise<Awaited<R>>;
   }

@@ -360,6 +360,45 @@ describe("current handles and request-scoped access", () => {
   });
 });
 
+// 请求仓的归属边界（#380）。一份生成物起两个 context 是 testing 与 dev 重启的常态，两边的
+// beanId 是同一批字符串，所以「这一仓是谁的」不能靠 id 认——认错的表现不是报错，是 B 的
+// 消费方安静地拿到 A 这次请求的实例。请求作用域挪成模块级单例 ALS 之后，这条由 store 上的
+// owner 引用比较兜住；本组用例正是那次挪动的校验闸。
+describe("request scope ownership across contexts", () => {
+  async function twoStartedContexts() {
+    const definition = testDefinition([
+      clockRegistration(),
+      rootRegistration(),
+      rootHolderRegistration(),
+    ]);
+    const alpha = createApplicationContext(definition);
+    const beta = createApplicationContext(definition);
+    await Promise.all([alpha.start(), beta.start()]);
+    return { alpha, beta };
+  }
+
+  test("context.get on another context's request Bean reports no active request", async () => {
+    const { alpha, beta } = await twoStartedContexts();
+
+    await alpha.runInRequestScope([{ target: RootContext, instance: seededRoot("alpha") }], () => {
+      expect(() => beta.get(RootContext)).toThrow(RequestContextMissingError);
+    });
+
+    await Promise.all([alpha.close(), beta.close()]);
+  });
+
+  test("a Current handle of another context reports no active request", async () => {
+    const { alpha, beta } = await twoStartedContexts();
+    const betaHolder = beta.get(RootHolder);
+
+    await alpha.runInRequestScope([{ target: RootContext, instance: seededRoot("alpha") }], () => {
+      expect(() => betaHolder.root.get()).toThrow(RequestContextMissingError);
+    });
+
+    await Promise.all([alpha.close(), beta.close()]);
+  });
+});
+
 describe("request scope entry validation", () => {
   test("runInRequestScope requires a running context", async () => {
     const context = createApplicationContext(

@@ -45,6 +45,7 @@ await runProductionApplication(
       get() {
         throw new Error("The production runtime ordering harness has no Beans.");
       },
+      hasRequestScopedBeans: false,
       async runInRequestScope(): Promise<never> {
         throw new Error("The production runtime ordering harness has no request scope.");
       },

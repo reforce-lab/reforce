@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
-import { defineRouteMarker } from "@/routing/route-marker";
+import { defineRouteMarker, type MetaLookup, metaLookup } from "@/routing/route-marker";
 
 function stateOf(inputs: {
   readonly url?: string;
@@ -14,7 +14,7 @@ function stateOf(inputs: {
     method: "GET",
     path: "/users/:id",
     params: inputs.params ?? {},
-    meta: inputs.meta ?? {},
+    meta: metaLookup(inputs.meta ?? {}),
   });
 }
 
@@ -54,6 +54,29 @@ describe("RequestContextState route meta", () => {
     const context = stateOf({});
 
     expect(context.meta(Missing)).toBeUndefined();
+  });
+
+  // #380：构造函数此前自己算一遍 metaLookup(route.meta)，而 prepareRoute 启动期已经算过
+  // 同一份——每请求白造一个闭包。现在读取闭包由外面传进来，这条断言钉住"用的就是传进来
+  // 的那一个"，不是又造了一个等价的。
+  test("meta delegates to the lookup handed in instead of building its own", () => {
+    const Roles = defineRouteMarker<string>("roles");
+    const calls: string[] = [];
+    const lookup: MetaLookup = (marker) => {
+      calls.push(marker.key);
+      return undefined;
+    };
+    const context = new RequestContextState({
+      incoming: fromStandardRequest(new Request("https://reforce.test/users/1")),
+      method: "GET",
+      path: "/users/:id",
+      params: {},
+      meta: lookup,
+    });
+
+    context.meta(Roles);
+
+    expect(calls).toEqual(["roles"]);
   });
 });
 

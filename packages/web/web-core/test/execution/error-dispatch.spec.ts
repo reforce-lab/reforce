@@ -6,6 +6,7 @@ import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError, defineHttpError, HttpError } from "@/http-errors";
+import { metaLookup } from "@/routing/route-marker";
 import { readRouteBody, readRouteJson } from "../support/route-response";
 
 function requestContext(): RequestContextState {
@@ -14,7 +15,7 @@ function requestContext(): RequestContextState {
     method: "GET",
     path: "/users",
     params: {},
-    meta: {},
+    meta: metaLookup({}),
   });
 }
 
@@ -292,7 +293,7 @@ describe("dev error page negotiation keeps the JSON path", () => {
       method: input.method ?? "GET",
       path: "/users",
       params: {},
-      meta: {},
+      meta: metaLookup({}),
     });
   }
 

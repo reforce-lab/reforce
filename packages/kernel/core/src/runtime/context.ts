@@ -24,6 +24,7 @@ import type {
   BeanDefinition,
   ContextOperation,
   ContextStartReport,
+  RequestFacts,
   RequestScopeSeed,
 } from "@/public-types";
 import { BeanResolver } from "@/runtime/bean-resolver";
@@ -58,12 +59,20 @@ export class RuntimeApplicationContext implements ApplicationContext {
     return this.resolver.get(target);
   }
 
+  // 「这个应用声明过请求作用域 bean 吗」（#380）。编译期定死的事实：requestConstructionOrder
+  // 是生成物里的计划，core 没有条件注册。调用方（web 引擎接线）据此决定要不要每请求开作用
+  // 域——一个请求 bean 都没有的应用，开出来的是一个永远没人查的空仓。
+  get hasRequestScopedBeans(): boolean {
+    return this.state.definition.plans.requestConstructionOrder.length > 0;
+  }
+
   // 开启请求作用域并播种根请求值（ADR 0006 W7，#151）：请求仓挂上 ALS 后按
   // requestConstructionOrder 全量构造（播种者跳过），callback 与其 await 链内的任何
   // Current.get 都取到这一仓。嵌套调用即独立请求，内层结束后外层自动恢复。
   async runInRequestScope<R>(
     seeds: readonly RequestScopeSeed[],
     callback: () => R,
+    facts?: RequestFacts,
   ): Promise<Awaited<R>> {
     if (this.state.contextState !== "running") {
       throw this.stateError("runInRequestScope");
@@ -72,7 +81,7 @@ export class RuntimeApplicationContext implements ApplicationContext {
     for (const [id, instance] of this.collectSeeds(seeds)) {
       store.seed(id, instance);
     }
-    return await this.state.requestScope.run(store, async () => {
+    return await this.state.requestScope.run(store, facts, async () => {
       for (const id of this.state.definition.plans.requestConstructionOrder) {
         await this.resolver.constructRequest(id, store);
       }

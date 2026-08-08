@@ -26,6 +26,7 @@ test("the root entry exposes only the public programming model", () => {
     "RequestScoped",
     "UnregisteredBeanTargetError",
     "coreErrorCodes",
+    "currentRequestFacts",
     "defineApplication",
     "defineBean",
     "defineMethodMarker",
@@ -33,6 +34,7 @@ test("the root entry exposes only the public programming model", () => {
     "errors",
     "interceptPhases",
     "isReforceError",
+    "runWithRequestFacts",
   ]);
 });
 

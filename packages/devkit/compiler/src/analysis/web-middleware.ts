@@ -10,6 +10,7 @@ import {
   webPhaseOrder,
   webPhaseRank,
 } from "@/analysis/web-model";
+import { markerReferenceOf, type RouteMarkerDeclarationInfo } from "@/analysis/web-route-markers";
 import type { CompilerDiagnostic } from "@/api";
 import { report } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
@@ -30,6 +31,9 @@ export interface MiddlewareInfo {
   readonly phase: WebPhaseModel;
   readonly order: number;
   readonly global: boolean;
+  // @Middleware({ requires: Marker }) 声明的 marker key（#380）；缺省不要求。装配 route.middleware
+  // 时没挂这个 key 的路由把它排除掉——它在那些路由上只是「进函数、await next()、出函数」。
+  readonly requires?: string;
   // 类级 @Throws 原始形态(#275):处理器名录建成后统一解析,挂载路由取并集。
   readonly throwsDecorators: readonly DecoratorUse[];
 }
@@ -38,6 +42,14 @@ interface MiddlewareOptionsModel {
   readonly phase: WebPhaseModel;
   readonly order: number;
   readonly global: boolean;
+  readonly requires?: string;
+}
+
+// requires 是唯一要查名录的选项值：它是标识符引用，不是字面量。其余三个只看自己那个值。
+interface MiddlewareOptionContext {
+  readonly source: ParsedSource;
+  readonly markers: ReadonlyMap<string, RouteMarkerDeclarationInfo>;
+  readonly linker: ProjectLinker;
 }
 
 function isWebPhaseModel(value: string): value is WebPhaseModel {
@@ -68,11 +80,32 @@ const middlewareOptionParsers = {
     parse: (value: DecoratorArgumentValue, options: MiddlewareOptionsModel) =>
       value.kind === "boolean-literal" ? { ...options, global: value.value } : undefined,
   },
+  requires: {
+    message:
+      "Middleware requires must name a route marker declared with defineRouteMarker in this project.",
+    parse: (
+      value: DecoratorArgumentValue,
+      options: MiddlewareOptionsModel,
+      context: MiddlewareOptionContext,
+    ) => {
+      if (value.kind !== "identifier-reference") {
+        return undefined;
+      }
+      const marker = markerReferenceOf(
+        context.source,
+        value.entity,
+        context.markers,
+        context.linker,
+      );
+      return marker === undefined ? undefined : { ...options, requires: marker.key };
+    },
+  },
 } as const;
 
 function middlewareOptionOf(
   property: ObjectLiteralProperty,
   options: MiddlewareOptionsModel,
+  context: MiddlewareOptionContext,
   diagnostics: CompilerDiagnostic[],
 ): MiddlewareOptionsModel | undefined {
   if (property.kind === "unsupported-property") {
@@ -95,7 +128,7 @@ function middlewareOptionOf(
   }
   // Object.hasOwn 已证明成员资格，索引签名推不回字面量联合 // justified: 见上一行
   const parser = middlewareOptionParsers[property.key as keyof typeof middlewareOptionParsers];
-  const parsed = parser.parse(property.value, options);
+  const parsed = parser.parse(property.value, options, context);
   if (parsed === undefined) {
     report(diagnostics, "INVALID_MIDDLEWARE_DECLARATION", parser.message, property.span);
     return undefined;
@@ -105,6 +138,7 @@ function middlewareOptionOf(
 
 function middlewareOptionsOf(
   decorator: DecoratorUse,
+  context: MiddlewareOptionContext,
   diagnostics: CompilerDiagnostic[],
 ): MiddlewareOptionsModel | undefined {
   const defaults: MiddlewareOptionsModel = { phase: "application", order: 0, global: false };
@@ -123,7 +157,7 @@ function middlewareOptionsOf(
   }
   let options: MiddlewareOptionsModel | undefined = defaults;
   for (const property of argument.properties) {
-    options = middlewareOptionOf(property, options, diagnostics);
+    options = middlewareOptionOf(property, options, context, diagnostics);
     if (options === undefined) {
       return undefined;
     }
@@ -186,6 +220,9 @@ export function flattenedChain(
   globalMiddleware: readonly MiddlewareInfo[],
   controllerUse: readonly MiddlewareInfo[],
   routeUse: readonly MiddlewareInfo[],
+  // 这条路由挂着的 marker key 集合（#380）：声明了 requires 的中间件，key 不在里面就不进链。
+  // 对三种挂载点一视同仁——声明「我要 X」的中间件在没有 X 的路由上本来就无事可做。
+  routeMetaKeys: ReadonlySet<string>,
 ): readonly RouteMiddlewareModel[] {
   const byBeanId = new Map<string, RouteMiddlewareModel>();
   const mounts: readonly (readonly [MiddlewareMountModel, readonly MiddlewareInfo[]])[] = [
@@ -195,6 +232,9 @@ export function flattenedChain(
   ];
   for (const [mount, entries] of mounts) {
     for (const entry of entries) {
+      if (entry.requires !== undefined && !routeMetaKeys.has(entry.requires)) {
+        continue;
+      }
       if (!byBeanId.has(entry.beanId)) {
         byBeanId.set(entry.beanId, {
           ref: entry.ref,
@@ -219,6 +259,8 @@ export function flattenedChain(
 export function registerMiddleware(
   scan: ClassRoleScan,
   providerById: ReadonlyMap<string, ProviderModel>,
+  markers: ReadonlyMap<string, RouteMarkerDeclarationInfo>,
+  linker: ProjectLinker,
   middlewareById: Map<string, MiddlewareInfo>,
   diagnostics: CompilerDiagnostic[],
 ): void {
@@ -238,7 +280,11 @@ export function registerMiddleware(
     providerById,
     diagnostics,
   );
-  const options = middlewareOptionsOf(decorator, diagnostics);
+  const options = middlewareOptionsOf(
+    decorator,
+    { source: scan.source, markers, linker },
+    diagnostics,
+  );
   if (claim !== undefined && options !== undefined) {
     middlewareById.set(claim.beanId, {
       ref: claim.ref,
@@ -246,6 +292,7 @@ export function registerMiddleware(
       phase: options.phase,
       order: options.order,
       global: options.global,
+      ...(options.requires === undefined ? {} : { requires: options.requires }),
       throwsDecorators: scan.web.get("Throws") ?? [],
     });
   }

@@ -127,6 +127,7 @@ export function analyzeWebRoutes(
   const registry = registerWebBeans(
     scans,
     providerById,
+    markers,
     { linker, typeQuery, fileIdOf },
     diagnostics,
   );
@@ -440,7 +441,15 @@ function collectMethodRoutes(
     context.linker,
     diagnostics,
   );
-  const middleware = flattenedChain(context.globalMiddleware, controller.use, routeUse);
+  // meta 要先于链压平算出来（#380）：声明了 requires 的中间件按这条路由挂着的 marker key
+  // 决定进不进链，而 @Throws 的并集只取真正进了链的那些。
+  const meta = routeMetaOf(scan.source, method, context.markers, context.linker, diagnostics);
+  const middleware = flattenedChain(
+    context.globalMiddleware,
+    controller.use,
+    routeUse,
+    new Set(meta.keys()),
+  );
   const throws = unionThrows([
     directives.throws,
     ...middleware.map((entry) => context.middlewareThrows.get(entry.beanId) ?? []),
@@ -455,7 +464,7 @@ function collectMethodRoutes(
       contract,
       throws,
       middleware,
-      meta: routeMetaOf(scan.source, method, context.markers, context.linker, diagnostics),
+      meta,
     },
     candidates,
     diagnostics,

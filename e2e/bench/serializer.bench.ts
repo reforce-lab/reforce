@@ -57,6 +57,7 @@ const context: ApplicationContext = {
   get: <T extends object>(_target: BeanClass<T> | BeanDefinition<T>): T =>
     // 表内唯一 controller 即 ProfileController // justified: 基准替身的身份映射
     new ProfileController() as unknown as T,
+  hasRequestScopedBeans: false,
   runInRequestScope: <R>(_seeds: never[], callback: () => R) =>
     Promise.resolve(callback()) as Promise<Awaited<R>>,
   close: () => Promise.resolve(),

@@ -11,6 +11,7 @@ import {
   Use,
 } from "@/routing/decorators";
 import type { RouteMiddleware } from "@/routing/middleware";
+import { defineRouteMarker, type RouteMarker } from "@/routing/route-marker";
 import { schemaOf } from "../support/schemas";
 
 // 装饰器是编译期标记（ADR 0006 W3）：运行时必须保持 no-op；参数守卫只服务未经编译的调用方。
@@ -49,6 +50,29 @@ describe("route decorator runtime guards", () => {
 
   test("Middleware rejects a non-integer order", () => {
     expect(() => Middleware({ order: 1.5 })).toThrow(TypeError);
+  });
+
+  // requires 的真正判定在编译期（#380）；这里守的是未经编译的调用方，顺带让 tsc 背书
+  // 「一个具体 T 的 RouteMarker 赋得进 requires」——用户写的 marker 从来不是裸
+  // RouteMarker<RouteMetaValue>。
+  test("Middleware accepts a route marker as requires and stays a no-op", () => {
+    const Roles = defineRouteMarker<readonly string[]>("roles");
+
+    @Middleware({ phase: "admission", global: true, requires: Roles })
+    class RoleGuard {
+      handle(): Response {
+        return new Response("guarded");
+      }
+    }
+
+    expect(new RoleGuard().handle().status).toBe(200);
+  });
+
+  test("Middleware rejects a requires that is not a route marker", () => {
+    // 守卫服务未经编译的 JS 调用方，类型系统在这里被绕过 // justified: 见上一行
+    expect(() => Middleware({ requires: "roles" as unknown as RouteMarker<never> })).toThrow(
+      TypeError,
+    );
   });
 
   test("ErrorHandler rejects a non-integer order", () => {

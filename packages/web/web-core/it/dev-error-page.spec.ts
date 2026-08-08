@@ -6,6 +6,7 @@ import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError } from "@/http-errors";
+import { metaLookup } from "@/routing/route-marker";
 import { readRouteBody, readRouteJson } from "../test/support/route-response";
 
 // dev 错误页真渲染（#279）：渲染器要读 youch 的模板资产，属 filesystem 行为，所以在 it/。
@@ -39,7 +40,7 @@ function htmlContext(
     method: "GET",
     path: "/users/:id",
     params: input.params ?? { id: "42" },
-    meta: {},
+    meta: metaLookup({}),
   });
 }
 
