@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { normalizePattern } from "@/project/config-file-discovery";
 
@@ -18,14 +19,22 @@ describe("normalizePattern", () => {
     expect(normalized).toBe("C:/workspace/app/src/external.ts");
   });
 
-  test("剥掉 UNC pattern 前面那个合成的点", () => {
-    // 这条钉的是**现状**，不是「应该」：盘符分支切 2 个字符（连 `./` 一起去掉），UNC 分支只切 1 个，
-    // 于是 UNC 前缀留下三条斜杠而不是两条。这个分支在 Windows runner 上也没有证据——现有两条
-    // Windows IT 走的都是相对 files 与盘符形态，从没进过这里。要动它得先有真实 get-tsconfig
-    // 输出作依据（Issue #381 交付说明已记）。
+  test("剥掉 UNC pattern 前面那截合成的 ./，双斜杠原样留下", () => {
     const normalized = normalizePattern(".///localhost/c$/app/src", onWindows);
 
-    expect(normalized).toBe("///localhost/c$/app/src");
+    expect(normalized).toBe("//localhost/c$/app/src");
+  });
+
+  test("剥完的 UNC pattern 经 path.resolve 仍落在原 share 上", () => {
+    // 这条钉的是缺陷的后果而不是字符串本身：多留一条斜杠时 path.win32.resolve 不再把它当 UNC 根，
+    // `///localhost/c$/…` 会被重解释成项目所在盘上的路径，跨 share 的源文件因此被误判成落在项目根内
+    // （Issue #390）。`files` 条目走的正是这条 resolve。
+    const resolved = path.win32.resolve(
+      "C:\\app",
+      normalizePattern(".///localhost/c$/app/src/external.ts", onWindows),
+    );
+
+    expect(resolved).toBe("\\\\localhost\\c$\\app\\src\\external.ts");
   });
 
   test("win32 语义下不碰普通的相对 pattern", () => {
@@ -34,8 +43,8 @@ describe("normalizePattern", () => {
     expect(normalized).toBe("./src/**/*.ts");
   });
 
-  test("POSIX 语义下保留 .///，因为切掉首字符会把它变成绝对路径", () => {
-    // `.///foo` 是相对路径，`//foo` 不是——这就是 win32 那两条改写必须走注入而不能拉直的理由。
+  test("POSIX 语义下保留 .///，因为剥掉前缀会把它变成绝对路径", () => {
+    // `.///foo` 是相对路径，`/foo` 不是——这就是 win32 那条改写必须走注入而不能拉直的理由。
     const normalized = normalizePattern(".///foo", onPosix);
 
     expect(normalized).toBe(".///foo");
