@@ -1,3 +1,4 @@
+import { type CanonicalPathKeyOptions, toCanonicalPathKey } from "@reforce/primitives";
 import { StaleCheckerHandleError } from "@/typescript/checker-errors";
 import {
   SymbolFlags,
@@ -120,17 +121,13 @@ export interface CreateTypeQueryInput {
   // IPC 失败的统一出口:由会话层标记崩溃并抛 CheckerUnavailableError,门面自己不吞不译。
   readonly onTransportFailure: (error: unknown) => never;
   readonly isRetired: () => boolean;
+  // program 成员比对的路径 key 用哪套平台形态：tsgo 返回正斜杠规范名，Node 的 path.join 在 Windows
+  // 上给反斜杠，精确比对会把项目文件整批误判成「不在 program」（Windows CI 实测）。缺省即当前平台；
+  // 显式传入让非 Windows runner 也能覆盖 win32 那一半（Issue #381）。
+  readonly pathKey?: CanonicalPathKeyOptions;
 }
 
 const anonymousSymbolNames = new Set(["__type", "__object"]);
-
-// program 成员比对的路径折叠:tsgo 返回正斜杠规范名,Node path.join 在 Windows 上给反斜杠,
-// 精确比对会把项目文件整批误判成"不在 program"(CI 实测);Windows 文件系统大小写不敏感,
-// 盘符大小写也一并折叠。查询发往 server 时用 tsgo 侧的规范名,不用调用方原始拼写。
-function canonicalPathKey(filePath: string): string {
-  const portable = filePath.replaceAll("\\", "/");
-  return process.platform === "win32" ? portable.toLowerCase() : portable;
-}
 
 function intrinsicKindOfFlags(flags: number): QueryIntrinsicKind | undefined {
   if (flags & TypeFlags.String) {
@@ -263,9 +260,13 @@ export function createTypeQuery(input: CreateTypeQueryInput): TypeQuery {
     getTypesAtPositions(absolutePath, offsets) {
       return guard(() => {
         programFilesByKey ??= new Map(
-          input.program.getSourceFileNames().map((name) => [canonicalPathKey(name), name]),
+          input.program
+            .getSourceFileNames()
+            .map((name) => [toCanonicalPathKey(name, input.pathKey), name]),
         );
-        const canonicalName = programFilesByKey.get(canonicalPathKey(absolutePath));
+        const canonicalName = programFilesByKey.get(
+          toCanonicalPathKey(absolutePath, input.pathKey),
+        );
         if (canonicalName === undefined) {
           return offsets.map(() => undefined);
         }

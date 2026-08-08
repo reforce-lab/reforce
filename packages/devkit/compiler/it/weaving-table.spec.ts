@@ -5,6 +5,7 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
+import { applicationTsconfig } from "./support/project";
 
 // 织入表 IT（ADR 0008 AM1，#202 定案 4/5）：weaving.json 是可 diff 的纯数据面，钉住——
 // 多标记叠加的链并集、(阶段, order, beanId) 排序、0 参标记记 null、空链方法在表、
@@ -18,21 +19,11 @@ afterAll(async () => {
   await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
 });
 
-function applicationTsconfig(): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-      paths: { "@/*": ["./src/*"] },
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
-  })}\n`;
-}
-
 async function compileSourcesOrThrow(sources: Record<string, string>): Promise<CompileSuccess> {
-  const tree: ProjectTree = { "tsconfig.json": applicationTsconfig(), src: sources };
+  const tree: ProjectTree = {
+    "tsconfig.json": applicationTsconfig({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    src: sources,
+  };
   const project = await createTemporaryProject(tree);
   temporaryProjects.push(project);
   const compiler = createCompiler();

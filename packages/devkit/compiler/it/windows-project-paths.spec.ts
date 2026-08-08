@@ -4,6 +4,7 @@ import path from "node:path";
 import { writeProjectTree } from "@reforce/tooling-testing";
 import { afterEach, expect, test } from "vitest";
 import { createCompiler } from "@/index";
+import { applicationTsconfig } from "./support/project";
 
 const temporaryDirectories: string[] = [];
 
@@ -17,20 +18,6 @@ afterEach(async () => {
     ),
   );
 });
-
-function applicationTsconfig(files: readonly string[]): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-    },
-    // 两条生成物都要点名（#350）：判据是「.d.ts 与 .ts 两半都收下」，只收 qualifiers 的
-    // include 覆盖不住 beans.ts，而后者才是 emission 缺陷现形的地方。
-    files: [...files, ".reforce/generated/qualifiers.d.ts", ".reforce/generated/beans.ts"],
-  })}\n`;
-}
 
 async function createTemporaryDirectory(parent: string, prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(await realpath(parent), prefix));
@@ -96,7 +83,7 @@ test.skipIf(process.platform !== "win32")(
       src: {
         "application.ts": "export class ApplicationService {}\n",
       },
-      "tsconfig.json": applicationTsconfig(["src/application.ts"]),
+      "tsconfig.json": applicationTsconfig({ files: ["src/application.ts"] }),
     });
     const uncProject = localhostAdminShare(localProject);
     await access(uncProject);
@@ -132,7 +119,7 @@ test.skipIf(process.platform !== "win32")(
       src: {
         "application.ts": "export class ApplicationService {}\n",
       },
-      "tsconfig.json": applicationTsconfig(["src/application.ts", externalSource]),
+      "tsconfig.json": applicationTsconfig({ files: ["src/application.ts", externalSource] }),
     });
     await writeProjectTree(externalRoot, {
       "external.ts": "export interface ExternalContract {}\n",

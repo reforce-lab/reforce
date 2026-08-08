@@ -8,7 +8,12 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
-import { type CompileSuccess, linkApplicationPackages, linkWebPackage } from "./support/project";
+import {
+  applicationTsconfig,
+  type CompileSuccess,
+  linkApplicationPackages,
+  linkWebPackage,
+} from "./support/project";
 
 // S3 响应侧的 compile 级 IT(RFC 0012 S3,#275):推导与显式同表、推导失败降级 free-form、
 // @ResponseStatus/@ResponseSchema/@Throws 的生成物形状、错误处理器 accepts/status/encode
@@ -23,22 +28,9 @@ afterAll(async () => {
   await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
 });
 
-function applicationTsconfig(): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-      paths: { "@/*": ["./src/*"] },
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
-  })}\n`;
-}
-
 async function projectOf(sources: Record<string, string>): Promise<TemporaryProject> {
   const project = await createTemporaryProject({
-    "tsconfig.json": applicationTsconfig(),
+    "tsconfig.json": applicationTsconfig({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
     src: sources,
   });
   temporaryProjects.push(project);

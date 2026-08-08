@@ -7,16 +7,23 @@ import { sortNativePaths } from "@/determinism";
 export const sourceSuffixPattern = /\.(?:ts|tsx|mts|cts)$/u;
 export const declarationSuffixPattern = /\.d\.(?:ts|mts|cts)$/u;
 
-function normalizePattern(pattern: string): string {
+// win32 形态可注入而不是直接读 process.platform：这两条改写在 POSIX 上不能无条件执行，`.///foo`
+// 切掉首字符会变成绝对路径 `//foo`，语义就变了。注入之后 Linux 上也能对 win32 那半下断言（Issue #381）。
+export function normalizePattern(
+  pattern: string,
+  { windows = process.platform === "win32" } = {},
+): string {
   const portable = pattern.replaceAll("\\", "/");
-  if (process.platform !== "win32") {
+  if (!windows) {
     return portable;
   }
-  // On win32 an absolute pattern surfaces as "./C:/..." (and ".///..." once separators are
-  // normalized); strip the synthetic leading "./" so glob matching sees the real path.
+  // On win32 an absolute pattern surfaces as "./C:/..." (and ".///..." for UNC once separators are
+  // normalized); drop the synthetic prefix so glob matching sees the real path.
   if (/^\.\/[A-Za-z]:\//u.test(portable)) {
     return portable.slice(2);
   }
+  // 只切掉那个点，留下的三条斜杠是现状而非结论：这个分支在 Windows runner 上也没有证据，改它需要
+  // 先拿到真实的 get-tsconfig UNC 输出（Issue #381）。
   if (portable.startsWith(".///")) {
     return portable.slice(1);
   }
@@ -24,7 +31,7 @@ function normalizePattern(pattern: string): string {
 }
 
 function normalizePatterns(patterns: readonly string[] | undefined): readonly string[] {
-  return patterns?.map(normalizePattern) ?? [];
+  return patterns?.map((pattern) => normalizePattern(pattern)) ?? [];
 }
 
 // Deliberately broader than tsc: `dot: true` makes `**/*` reach `.reforce/generated`, which tsc's

@@ -1,6 +1,7 @@
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { afterAll, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
+import { applicationTsconfig } from "./support/project";
 
 type CompileSuccess = Extract<CompileResult, { readonly status: "success" }>;
 type GeneratedFilePath = GeneratedFile["path"];
@@ -12,20 +13,6 @@ type GeneratedFilePath = GeneratedFile["path"];
 // MISSING_BEAN）的排查建议以此为事实依据。
 
 const temporaryProjects: TemporaryProject[] = [];
-
-function applicationTsconfig(): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-      experimentalDecorators: false,
-      emitDecoratorMetadata: false,
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
-  })}\n`;
-}
 
 function generatedContent(result: CompileSuccess, filePath: GeneratedFilePath): string {
   const content = result.files.find((file) => file.path === filePath)?.content;
@@ -79,7 +66,9 @@ afterAll(async () => {
 
 test("discovers and wires providers in a file no other file imports or re-exports", async () => {
   const project = await createTemporaryProject({
-    "tsconfig.json": applicationTsconfig(),
+    "tsconfig.json": applicationTsconfig({
+      compilerOptions: { experimentalDecorators: false, emitDecoratorMetadata: false },
+    }),
     src: {
       // 入口不 import 应用内任何模块：standalone.ts 对整个 import 图完全孤立。
       "application.ts": [

@@ -5,6 +5,7 @@ import {
 } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler } from "@/index";
+import { applicationTsconfig } from "./support/project";
 
 // 方法级织入的硬错矩阵 IT（ADR 0008 AM1，#202）：要么生效、要么编译错，无静默第三态。
 // 每条硬错一例，双侧定位的条目（同键重复、override 丢标记）断言 related span 存在。
@@ -17,21 +18,11 @@ afterAll(async () => {
   await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
 });
 
-function applicationTsconfig(): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-      paths: { "@/*": ["./src/*"] },
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
-  })}\n`;
-}
-
 async function compileSources(sources: Record<string, string>): Promise<CompileResult> {
-  const tree: ProjectTree = { "tsconfig.json": applicationTsconfig(), src: sources };
+  const tree: ProjectTree = {
+    "tsconfig.json": applicationTsconfig({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
+    src: sources,
+  };
   const project = await createTemporaryProject(tree);
   temporaryProjects.push(project);
   const compiler = createCompiler();

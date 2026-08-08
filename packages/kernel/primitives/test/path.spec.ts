@@ -5,8 +5,12 @@ import {
   isPathContained,
   isPathStrictlyContained,
   isRelativePosixPath,
+  toCanonicalPathKey,
   toPortablePath,
 } from "@/path";
+
+const win32Key = { separator: win32.sep, caseInsensitive: true } as const;
+const posixKey = { separator: posix.sep, caseInsensitive: false } as const;
 
 describe("toPortablePath", () => {
   test("把注入的 Windows 分隔符换成 POSIX 分隔符", () => {
@@ -50,6 +54,43 @@ describe("toPortablePath", () => {
     const result = toPortablePath(["a", "b"].join(sep));
 
     expect(result).toBe("a/b");
+  });
+});
+
+describe("toCanonicalPathKey", () => {
+  test("Windows 语义下分隔符与大小写一起折叠", () => {
+    const result = toCanonicalPathKey("C:\\Workspace\\App\\Src\\Application.ts", win32Key);
+
+    expect(result).toBe("c:/workspace/app/src/application.ts");
+  });
+
+  test("Windows 语义下 tsgo 的正斜杠规范名与 Node 的反斜杠拼接折成同一个 key", () => {
+    // 这是 canonicalPathKey 存在的理由：两种来源必须比对成功，否则项目文件被整批误判成不在 program。
+    const fromTsgo = toCanonicalPathKey("c:/workspace/app/src/application.ts", win32Key);
+    const fromNodeJoin = toCanonicalPathKey("C:\\Workspace\\App\\src\\Application.ts", win32Key);
+
+    expect(fromNodeJoin).toBe(fromTsgo);
+  });
+
+  test("POSIX 语义下保留大小写", () => {
+    const result = toCanonicalPathKey("/workspace/App/Src/Application.ts", posixKey);
+
+    expect(result).toBe("/workspace/App/Src/Application.ts");
+  });
+
+  test("POSIX 语义下字面反斜杠是文件名字符，不当分隔符折掉", () => {
+    // POSIX 上 `a\b.ts` 与 `a/b.ts` 是两个不同的文件；无条件 replaceAll 会把它们折成同一个 key，
+    // 那正是本函数收进 primitives 时修掉的缺陷（Issue #381）。
+    const literalBackslash = toCanonicalPathKey("/workspace/a\\b.ts", posixKey);
+    const nestedDirectory = toCanonicalPathKey("/workspace/a/b.ts", posixKey);
+
+    expect(literalBackslash).not.toBe(nestedDirectory);
+  });
+
+  test("缺省的分隔符与大小写敏感性都跟随当前平台", () => {
+    const result = toCanonicalPathKey(["Dir", "B.ts"].join(sep));
+
+    expect(result).toBe(process.platform === "win32" ? "dir/b.ts" : "Dir/B.ts");
   });
 });
 

@@ -1,4 +1,4 @@
-import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { compareUtf16CodeUnits, toCanonicalPathKey } from "@reforce/primitives";
 import { type ProviderModel, sourceReference } from "@/analysis/model";
 import { prepareThrowsResolution, registerWebBeans } from "@/analysis/web-bean-registry";
 import {
@@ -103,12 +103,6 @@ function webWiring(
   };
 }
 
-// tsgo 返回正斜杠规范路径,Windows 上大小写也要折叠(同 type-query 的 canonicalPathKey 口径)。
-function canonicalPathOf(filePath: string): string {
-  const portable = filePath.replaceAll("\\", "/");
-  return process.platform === "win32" ? portable.toLowerCase() : portable;
-}
-
 export function analyzeWebRoutes(
   sources: readonly ParsedSource[],
   linker: ProjectLinker,
@@ -126,10 +120,10 @@ export function analyzeWebRoutes(
 
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
   const fileIdBySourcePath = new Map(
-    sources.map((source) => [canonicalPathOf(source.absolutePath), source.fileId as string]),
+    sources.map((source) => [toCanonicalPathKey(source.absolutePath), source.fileId as string]),
   );
   const fileIdOf = (declarationPath: string): string | undefined =>
-    fileIdBySourcePath.get(canonicalPathOf(declarationPath));
+    fileIdBySourcePath.get(toCanonicalPathKey(declarationPath));
   const registry = registerWebBeans(
     scans,
     providerById,

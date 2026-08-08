@@ -168,7 +168,7 @@ function authorTree(options: AuthorTreeOptions = {}): ProjectTree {
   }
   return {
     "package.json": `${JSON.stringify(packageJson)}\n`,
-    "tsconfig.json": applicationTsconfig(["src"]),
+    "tsconfig.json": applicationTsconfig({ include: ["src"] }),
     src: options.sources ?? defaultSources,
     ...(options.packages === undefined ? {} : { node_modules: nodeModulesTree(options.packages) }),
     dist: options.dist ?? defaultDist,
