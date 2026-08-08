@@ -574,6 +574,35 @@ describe("library compile", () => {
     expect(failure.diagnostics[0].message).toContain("defineApplication");
   });
 
+  // @Fallback() 的生成侧（#343）：在它之前 defaultBean 是「格式收、生成器不产」的字段，
+  // 唯一的产出路径是手写 meta——@reforce/logging 就是这么来的。
+  test("writes defaultBean for a Fallback-marked starter bean", async () => {
+    const result = expectLibrarySuccess(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "client.ts": clientSource.replace(
+              "@Injectable()",
+              'import { Fallback } from "@reforce/core";\n@Injectable()\n@Fallback()',
+            ),
+          },
+        }),
+      ),
+    );
+
+    expect(beanOf(parseMeta(result), "@acme/starter-redis#RedisClient").defaultBean).toBe(true);
+  });
+
+  // 缺省即 false（读取侧把缺席归一为 false），所以不写这个键。
+  test("omits defaultBean on a starter bean without Fallback", async () => {
+    const result = expectLibrarySuccess(await compileLibrary(authorTree()));
+
+    expect(
+      beanOf(parseMeta(result), "@acme/starter-redis#RedisClient").defaultBean,
+    ).toBeUndefined();
+  });
+
   test("reports UNSUPPORTED_LIBRARY_DECLARATION for Primary and Qualifier decorators", async () => {
     const failure = expectLibraryFailure(
       await compileLibrary(

@@ -382,6 +382,10 @@ function materializeStarter(
     // starter meta v1 没有 scope 面：库模式编译拒绝 @RequestScoped，meta bean 恒为 singleton。
     scope: "singleton",
     primary: false,
+    // 物化 starter 恒为 false（#343）：provider 上的 fallback 记的是「源码声明带没带
+    // @Fallback()」，而 starter 是从 meta 物化来的、没有源码可读。它的让位资格在
+    // StarterBeanModel.defaultBean 上，物化之前 selectStarterCandidate 就已经用掉了。
+    fallback: false,
     qualifiers: [],
     dependencies: [],
     startHook: bean.lifecycle.start,

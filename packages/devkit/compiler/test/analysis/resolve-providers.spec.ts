@@ -128,6 +128,7 @@ function provider(input: ProviderInput): ProviderModel {
     provides: input.provides ?? [],
     scope: input.scope ?? "singleton",
     primary: input.primary ?? false,
+    fallback: false,
     ...(input.order === undefined ? {} : { order: input.order }),
     qualifiers: input.qualifiers ?? [],
     dependencies: input.dependencies ?? [],

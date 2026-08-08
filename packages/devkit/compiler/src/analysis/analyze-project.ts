@@ -96,11 +96,37 @@ function sourceProviderDrafts(
   // 否则同一个类会拿到两套互相矛盾的诊断。
   const classDrafts = source.unit.classes
     .filter((declaration) => !claimedByConfig.has(declaration))
-    .map((declaration) => analyzeClassProvider(source, declaration, linker, diagnostics));
+    .map((declaration) => {
+      const draft = analyzeClassProvider(source, declaration, linker, diagnostics);
+      rejectApplicationFallback(draft, declaration, diagnostics);
+      return draft;
+    });
   const factoryDrafts = source.unit.beanFactories.map((declaration) =>
     analyzeFactoryProvider(source, declaration, linker, diagnostics),
   );
   return [...classDrafts, ...factoryDrafts].filter((draft) => draft !== undefined);
+}
+
+// @Fallback() 只在 starter 包里有意义（#343）：它归一为 meta 的 defaultBean，而应用侧的候选
+// 裁决只认 starter 的 defaultBean（resolve-providers 的两处 filter）。本文件是应用编译独占的
+// 路径——库编译走 library/compile.ts 自己的采集循环，不经过这里——所以拦在这儿既拦得住误用，
+// 又不影响 starter 作者正常使用。放过去的后果是注解看着能用、写了没反应，比报错难查得多。
+function rejectApplicationFallback(
+  draft: ProviderDraft | undefined,
+  declaration: ClassDeclaration,
+  diagnostics: CompilerDiagnostic[],
+): void {
+  if (draft?.provider.fallback !== true) {
+    return;
+  }
+  diagnostics.push(
+    diagnostic({
+      code: "INVALID_DECORATOR_USAGE",
+      message: `Fallback cannot mark ${declaration.name ?? "an anonymous class"} in an application: it only means anything in a starter package.`,
+      sourceSpan: declaration.span,
+      help: "Remove Fallback, or move this class into a starter package built with `reforce lib`.",
+    }),
+  );
 }
 
 function collectProviderDrafts(

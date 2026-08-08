@@ -75,6 +75,11 @@ const projectDiagnostics = [
     "INVALID_LIFECYCLE_DECLARATION",
   ],
   [
+    "rejects Fallback in an application: it only means anything in a starter",
+    "application-fallback-rejected",
+    "INVALID_DECORATOR_USAGE",
+  ],
+  [
     "rejects a decorator on a constructor parameter",
     "legacy-parameter-decorator-rejected",
     "INVALID_DECORATOR_USAGE",

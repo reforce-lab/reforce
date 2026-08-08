@@ -42,6 +42,7 @@ interface MetaBeanDraft {
   readonly runtimeExport: { readonly module: string; readonly export: string };
   readonly provides: readonly string[];
   readonly dependencies: readonly MetaDependencyDraft[];
+  readonly defaultBean?: true;
   readonly lifecycle?: { readonly start?: "onContextStart"; readonly close?: "onContextClose" };
   readonly source: GeneratedSourceReferenceModel;
 }
@@ -298,6 +299,9 @@ export async function buildLibraryMeta(
       runtimeExport,
       provides,
       dependencies: [...dependencies],
+      // 缺省即 false，所以只有 true 才写键（与 lifecycle 同法）：读取侧
+      // starter-meta.ts 把缺席归一为 false，多写一个 `defaultBean: false` 只是噪音。
+      ...(provider.fallback ? { defaultBean: true as const } : {}),
       ...(lifecycle === undefined ? {} : { lifecycle }),
       source: provider.declarationSource,
     };

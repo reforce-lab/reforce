@@ -7,6 +7,7 @@ export {
 } from "@/application-declaration";
 export {
   defineBean,
+  Fallback,
   Injectable,
   Order,
   Primary,

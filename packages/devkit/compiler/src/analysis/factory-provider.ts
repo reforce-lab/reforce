@@ -433,6 +433,7 @@ export function analyzeFactoryProvider(
       provides: [providedSymbol],
       scope: scopeSelection.scope,
       primary: literalOptions.primary,
+      fallback: false,
       qualifiers: literalOptions.qualifiers,
       dependencies: [],
       dispose: functions.dispose !== undefined,

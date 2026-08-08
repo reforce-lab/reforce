@@ -12,6 +12,7 @@ test("the root entry exposes only the public programming model", () => {
     "BeanLifecycleError",
     "ConfigBindingError",
     "EarlyBeanAccessError",
+    "Fallback",
     "Injectable",
     "Interceptor",
     "InterceptorReenteredError",

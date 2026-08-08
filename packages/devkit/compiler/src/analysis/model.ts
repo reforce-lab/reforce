@@ -85,6 +85,11 @@ interface ProviderBase {
   readonly provides: readonly LinkedSymbol[];
   readonly scope: BeanScopeModel;
   readonly primary: boolean;
+  // 源码声明带没带 @Fallback()（#343）——@Primary 的反面：同一契约还有别的候选时主动退出。
+  // 只有库编译消费它，归一为 meta 的 defaultBean 字段。应用编译在入口把带标记的 provider 判为
+  // 错误：应用侧候选裁决只认 starter 的 defaultBean（resolve-providers 的两处 filter），放过去
+  // 就是个静默无效的注解。因此从 meta 物化的 starter provider 与框架合成 bean 恒为 false。
+  readonly fallback: boolean;
   // @Order(n) 只服务集合成员排序（ADR 0006 W6）；无标记即 undefined，排在全部有序成员之后。
   readonly order?: number;
   readonly qualifiers: readonly QualifierModel[];

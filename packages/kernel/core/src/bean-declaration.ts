@@ -119,6 +119,16 @@ export function Primary(): <T extends BeanClass>(
   return () => undefined;
 }
 
+// @Primary 的反面（ADR 0004 增补，#343）：同一契约还有别的候选时主动退出，让「starter 装上
+// 就能用」与「应用写自己的就覆盖」同时成立。它只在 starter 包里有意义——编译到 meta 的
+// defaultBean 字段，应用侧候选裁决没有这个概念，所以应用代码里用它是编译错误而不是空转。
+export function Fallback(): <T extends BeanClass>(
+  value: T,
+  context: ClassDecoratorContext<T>,
+) => void {
+  return () => undefined;
+}
+
 // scope 是编译期属性（ADR 0006 W7，#151）：编译器读取标记并把 scope 写进生成物，运行时按
 // 生成物执行，装饰器本身照惯例保持 no-op。
 export function RequestScoped(): <T extends BeanClass>(
