@@ -7,27 +7,21 @@ import { sortNativePaths } from "@/determinism";
 export const sourceSuffixPattern = /\.(?:ts|tsx|mts|cts)$/u;
 export const declarationSuffixPattern = /\.d\.(?:ts|mts|cts)$/u;
 
-// win32 形态可注入而不是直接读 process.platform：这两条改写在 POSIX 上不能无条件执行，`.///foo`
-// 切掉首字符会变成绝对路径 `//foo`，语义就变了。注入之后 Linux 上也能对 win32 那半下断言（Issue #381）。
+// win32 上的绝对 pattern 会带一截合成的 `./`：get-tsconfig 的 normalizeRelativePath 对
+// path.relative relativize 不掉的路径（跨盘符、跨 share）无条件加 `./` 前缀，于是盘符形态浮上来是
+// `./C:/…`、UNC 形态是 `.///…`。两种剥的是同一截前缀，所以只能有一份实现：此前拆成两条分支各写一次
+// slice，UNC 那条少剥了一位，留下的 `///server/share` 在 path.win32.resolve 里不再是 UNC 根，
+// 被重解释成项目所在盘上的路径（Issue #390）。
+const syntheticWin32Prefix = /^\.\/(?=[A-Za-z]:\/|\/\/)/u;
+
+// win32 形态可注入而不是直接读 process.platform：这条改写在 POSIX 上不能无条件执行，`.///foo`
+// 剥掉前缀后是 `/foo`，语义就变了。注入之后 Linux 上也能对 win32 那半下断言（Issue #381）。
 export function normalizePattern(
   pattern: string,
   { windows = process.platform === "win32" } = {},
 ): string {
   const portable = pattern.replaceAll("\\", "/");
-  if (!windows) {
-    return portable;
-  }
-  // On win32 an absolute pattern surfaces as "./C:/..." (and ".///..." for UNC once separators are
-  // normalized); drop the synthetic prefix so glob matching sees the real path.
-  if (/^\.\/[A-Za-z]:\//u.test(portable)) {
-    return portable.slice(2);
-  }
-  // 只切掉那个点，留下的三条斜杠是现状而非结论：这个分支在 Windows runner 上也没有证据，改它需要
-  // 先拿到真实的 get-tsconfig UNC 输出（Issue #381）。
-  if (portable.startsWith(".///")) {
-    return portable.slice(1);
-  }
-  return portable;
+  return windows ? portable.replace(syntheticWin32Prefix, "") : portable;
 }
 
 function normalizePatterns(patterns: readonly string[] | undefined): readonly string[] {
