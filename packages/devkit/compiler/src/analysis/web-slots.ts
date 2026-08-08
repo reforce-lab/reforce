@@ -14,7 +14,7 @@ import type {
   WebExportRefModel,
 } from "@/analysis/web-model";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic } from "@/diagnostics";
+import { diagnostic, report } from "@/diagnostics";
 import type {
   ClassMethodDeclaration,
   EntityName,
@@ -334,30 +334,6 @@ export function resolveRouteSlots<TType, TSymbol>(
     return undefined;
   }
   return { slots: accumulator.slots, response };
-}
-
-function report(
-  diagnostics: CompilerDiagnostic[],
-  code: CompilerDiagnostic["code"],
-  message: string,
-  span: SourceSpan,
-  options: {
-    readonly help?: string;
-    readonly related?: CompilerDiagnostic["related"];
-    readonly suggestions?: CompilerDiagnostic["suggestions"];
-  } = {},
-): undefined {
-  diagnostics.push(
-    diagnostic({
-      code,
-      message,
-      sourceSpan: span,
-      help: options.help,
-      related: options.related,
-      suggestions: options.suggestions,
-    }),
-  );
-  return undefined;
 }
 
 function isBareSlot(slot: RouteSlotModel): slot is BareRouteSlotModel {

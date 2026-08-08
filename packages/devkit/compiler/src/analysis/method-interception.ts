@@ -20,7 +20,7 @@ import {
   validateTransactionalValue,
 } from "@/analysis/transaction-weaving";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic } from "@/diagnostics";
+import { diagnostic, report } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type {
@@ -43,24 +43,6 @@ const markerDeclarationHelp =
   'Declare method markers as export const X = defineMethodMarker<T>("key") with a non-empty string literal key.';
 const interceptorHelp =
   "Declare interceptors as @Interceptor({ marker, phase?, order? }) singleton classes.";
-
-function report(
-  diagnostics: CompilerDiagnostic[],
-  code: CompilerDiagnostic["code"],
-  message: string,
-  span: SourceSpan,
-  options: { readonly help?: string; readonly related?: CompilerDiagnostic["related"] } = {},
-): void {
-  diagnostics.push(
-    diagnostic({
-      code,
-      message,
-      sourceSpan: span,
-      help: options.help,
-      related: options.related,
-    }),
-  );
-}
 
 interface MethodMarkerDeclarationInfo {
   readonly key: string;
