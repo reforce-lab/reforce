@@ -23,6 +23,13 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    // 零 bean 的契约包用它产纯户口表的 meta（@reforce/web-core、@reforce/logging-contracts）。
+    // 其余 starter 在自己的 rslib build 里由 bundler-plugin 顺带产出，不走这条。
+    // 为什么是独立任务而不是 build 的一部分，见两个包各自的 turbo.json。
+    "meta": {
+      "dependsOn": ["build", "@reforce/cli#build"],
+      "outputs": ["reforce-meta.json"]
+    },
     "check": {
       "outputs": []
     },

@@ -61,6 +61,7 @@ function draftOf(id: string): ProviderDraft {
       scope: "singleton",
       primary: false,
       fallback: false,
+      eager: false,
       qualifiers: [],
       dependencies: [],
       startHook: false,

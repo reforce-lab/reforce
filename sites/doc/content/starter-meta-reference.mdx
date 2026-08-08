@@ -1,0 +1,131 @@
+---
+title: reforce-meta.json reference
+description: The coordinate grammar, every key, the requires vocabulary, and what compatibility Reforce promises.
+---
+
+# `reforce-meta.json` reference
+
+This page is the contract. The admission gate is `parseStarterMeta` from
+`@reforce/starter-meta`; the JSON Schema published at `@reforce/starter-meta/schema.json` is a
+deliberately looser approximation for editor completion, because cross-field rules — "`provides`
+must contain the bean's own id", "`runtimeExport.module` must stay inside the package" — are not
+expressible in JSON Schema. When they disagree, the parser wins, and a test in that package keeps
+the disagreement to exactly that: the schema is never stricter than the parser.
+
+## Coordinate grammar
+
+Every contract, bean id, and dependency is a **coordinate**. There are two forms:
+
+```
+@acme/starter-redis#RedisCache              meta coordinate
+@acme/contracts:dist/port.d.ts#CachePort    file coordinate
+```
+
+The **meta coordinate** is `<package>#<export>`. It is resolved through the named package's own
+symbol table, so the package's internal file layout is not part of the string. Use it whenever the
+package it names publishes a meta.
+
+The **file coordinate** is `<package>:<package-relative path>#<export>`. It is the degenerate form
+for contract packages that publish no meta: identity falls back to "this export, in this file, in
+this installed copy". It works, but it bakes another package's `dist` layout into your published
+bytes — when that package moves a file, your meta breaks. Prefer the meta form; ask contract
+packages you depend on to publish a meta so you can use it.
+
+Both forms reject anything that is not a bare package name: relative paths, absolute paths,
+backslashes, a scope without a name, and a non-scoped name with a slash in it.
+
+## Top level
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `schemaVersion` | yes | Schema major. Currently `1`. |
+| `starterDeps` | yes | Other starter packages whose meta coordinates appear in this file. They are pulled into the application registry transitively. |
+| `symbols` | yes | This package's symbol table: what `<own package>#<export>` resolves to. |
+| `beans` | yes | The beans this starter contributes. May be empty — a package can publish a symbol table and no beans, which is how a pure contract package makes its coordinates usable. |
+| `requires` | no | Capabilities the reader must understand. See below. |
+
+Unknown top-level keys are ignored.
+
+## `symbols[]`
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | `<own package>#<export>`. |
+| `file` | yes | The published declaration file the symbol is anchored to, package-relative posix. |
+| `subpaths` | yes | The exports subpaths the symbol is reachable from, e.g. `["."]` or `[".", "./testing"]`. |
+
+## `beans[]`
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | `<own package>#<export>`. Unique across the file. |
+| `runtimeExport` | yes | `{ module, export }` — where the reader imports the class at runtime. `module` must be the package itself or one of its subpaths. |
+| `provides` | yes | Every contract the bean satisfies. Must contain the bean's own id. |
+| `dependencies` | yes | Constructor parameters, in positional order. May be empty. |
+| `defaultBean` | no | The bean only wins when nothing else provides the contract. Default `false`. |
+| `role` | no | `"root"` materializes the bean even when nothing depends on it; `"demand"` (the default) waits to be asked. |
+| `lifecycle` | no | `{ start?: "onContextStart", close?: "onContextClose" }`. Absent means neither. |
+| `source` | no | Where the bean is declared, for diagnostics only. See below. |
+
+Only class-construction semantics are supported: a bean is a class, and its dependencies are its
+constructor parameters in order.
+
+### `dependencies[]`
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `contract` | yes | The coordinate this parameter asks for. |
+| `open` | yes | The contract needs a provider from outside this package. The reader recomputes this, so a wrong value is harmless. |
+| `collection` | no | The parameter is a `readonly T[]`: every candidate is injected and zero candidates is legal. Default `false`. |
+
+### `source`
+
+`source` is `{ file, start, end }` with zero-based `line`/`character` and an `offset` used only for
+tie-breaking. No consumer dereferences the span byte-for-byte; it feeds diagnostics.
+
+It is **optional**, because it is the field a hand-written meta gets wrong first and outgrows
+first. Omit it and diagnostics about the bean simply say the fact came from your meta, with no code
+frame. `reforce lib` always writes it.
+
+If you do write it and your package does not publish the file it points at — the common case, since
+`files: ["dist", "reforce-meta.json"]` leaves `src` behind — `reforce meta check` reports a
+warning. Nothing is mis-wired; readers just cannot show the source line.
+
+## The `requires` vocabulary
+
+Ignoring unknown keys is what lets the schema grow without invalidating every published starter at
+once. It is also a disaster for any key whose *absence* means something different from its
+presence: an older reader ignores it and wires the graph wrongly, quietly.
+
+`requires` is the escape hatch. A capability listed there makes an older reader stop with a hard
+error instead of guessing.
+
+The bar for adding a name is one question: **would a reader that ignores this key produce wrong
+wiring rather than a loud error?** Only if the answer is yes.
+
+| Capability | Why it qualifies |
+| --- | --- |
+| `collection` | An absent `collection` means a single edge. An older reader turns a collection parameter into a single-candidate injection — no error, wrong graph. |
+
+Keys deliberately **not** in the vocabulary:
+
+- `defaultBean` — ignoring it makes the bean an ordinary candidate. If that collides, the reader
+  reports an ambiguity. Loud, not silent.
+- `lifecycle`, `role` — in the schema since v1, so every v1 reader already knows them. They are not
+  a forward-compatibility risk at all.
+
+Write `requires` only when you actually use the capability. A starter with no collection edges that
+declares `requires: ["collection"]` has raised its own compatibility floor for nothing.
+
+## Compatibility promise
+
+- **Unknown keys are ignored** by consumers. The one exception is `reforce lib`'s round-trip
+  self-check on its own output, where reader and writer are the same version and an unknown key can
+  only mean the generator drifted from the schema.
+- **`schemaVersion` is a single integer and a major-only gate.** There is no minor. A reader either
+  knows a major or refuses the file, and readers keep the parsers of older majors side by side —
+  one compiler reads starters published against several majors.
+- **New keys arrive as optional keys within a major.** A key that would change wiring by its
+  absence arrives together with a `requires` capability instead.
+- **A major bump is reserved for changes no optional key can express.** It invalidates nothing that
+  is already published: the old parser stays.

@@ -89,7 +89,7 @@ function sourceProviderDrafts(
     .filter((declaration) => !claimedByConfig.has(declaration))
     .map((declaration) => {
       const draft = analyzeClassProvider(source, declaration, linker, diagnostics);
-      rejectApplicationFallback(draft, declaration, diagnostics);
+      rejectStarterOnlyMarkers(draft, declaration, diagnostics);
       return draft;
     });
   const factoryDrafts = source.unit.beanFactories.map((declaration) =>
@@ -98,26 +98,38 @@ function sourceProviderDrafts(
   return [...classDrafts, ...factoryDrafts].filter((draft) => draft !== undefined);
 }
 
-// @Fallback() 只在 starter 包里有意义（#343）：它归一为 meta 的 defaultBean，而应用侧的候选
-// 裁决只认 starter 的 defaultBean（resolve-providers 的两处 filter）。本文件是应用编译独占的
-// 路径——库编译走 library/compile.ts 自己的采集循环，不经过这里——所以拦在这儿既拦得住误用，
-// 又不影响 starter 作者正常使用。放过去的后果是注解看着能用、写了没反应，比报错难查得多。
-function rejectApplicationFallback(
+// @Fallback()（#343）与 @Eager()（#369）只在 starter 包里有意义：前者归一为 meta 的
+// defaultBean、后者归一为 role，而应用侧的候选裁决只认 starter 的 defaultBean
+// （resolve-providers 的两处 filter），本地 draft 又一律入图、没有「按需物化」这个概念。
+// 本文件是应用编译独占的路径——库编译走 library/compile.ts 自己的采集循环，不经过这里——
+// 所以拦在这儿既拦得住误用，又不影响 starter 作者正常使用。放过去的后果是注解看着能用、
+// 写了没反应，比报错难查得多。
+const starterOnlyMarkers = [
+  { name: "Fallback", of: (draft: ProviderDraft) => draft.provider.fallback },
+  { name: "Eager", of: (draft: ProviderDraft) => draft.provider.eager },
+] as const;
+
+function rejectStarterOnlyMarkers(
   draft: ProviderDraft | undefined,
   declaration: ClassDeclaration,
   diagnostics: CompilerDiagnostic[],
 ): void {
-  if (draft?.provider.fallback !== true) {
+  if (draft === undefined) {
     return;
   }
-  diagnostics.push(
-    diagnostic({
-      code: "INVALID_DECORATOR_USAGE",
-      message: `Fallback cannot mark ${declaration.name ?? "an anonymous class"} in an application: it only means anything in a starter package.`,
-      sourceSpan: declaration.span,
-      help: "Remove Fallback, or move this class into a starter package built with `reforce lib`.",
-    }),
-  );
+  for (const marker of starterOnlyMarkers) {
+    if (!marker.of(draft)) {
+      continue;
+    }
+    diagnostics.push(
+      diagnostic({
+        code: "INVALID_DECORATOR_USAGE",
+        message: `${marker.name} cannot mark ${declaration.name ?? "an anonymous class"} in an application: it only means anything in a starter package.`,
+        sourceSpan: declaration.span,
+        help: `Remove ${marker.name}, or move this class into a starter package built with \`reforce lib\`.`,
+      }),
+    );
+  }
 }
 
 function collectProviderDrafts(

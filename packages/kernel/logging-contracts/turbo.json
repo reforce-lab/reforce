@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // 契约包自己也发一份纯户口表的 meta（#347/#369），理由与 web-core 那份逐条相同：
+    // 独立任务绕开 devDep 环，脚本按路径起 node 绕开冷检出没有 .bin 的问题。
+    "meta": {
+      "dependsOn": ["build", "@reforce/cli#build"],
+      "outputs": ["reforce-meta.json"]
+    }
+  }
+}

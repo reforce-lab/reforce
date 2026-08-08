@@ -4,7 +4,7 @@ import {
   contextFrameworkLoggerName,
   loggingPackageName,
   providedLoggerFactorySymbol,
-  spanOfMetaSource,
+  spanOfStarterBean,
   synthesizeLoggerBeans,
   webFrameworkLoggerName,
 } from "@/analysis/logger-synthesis";
@@ -75,7 +75,11 @@ const webEnginePass: DiscoverPass = {
       out.frameworkLoggers.push({
         name: webFrameworkLoggerName,
         reason: webPackageName,
-        span: spanOfMetaSource(bean.metaSource),
+        span: spanOfStarterBean(bean),
+        // manifest 里的路径必须与机器无关（#369）：span 是**项目根**相对的（诊断渲染要它才
+        // 读得出代码框），metaSource 是**包内**相对的（进生成物用）。混用会让 manifest 里出现
+        // `../../home/<用户名>/…`，被 CLI 的 portable-path 校验整片拒绝。
+        source: bean.metaSource,
       });
     }
     return [];
@@ -145,7 +149,15 @@ const loggingPass: ContributePass = {
     const frameworkLoggers = [
       ...(binding === undefined
         ? []
-        : [{ name: contextFrameworkLoggerName, reason: loggingPackageName, span: binding.span }]),
+        : [
+            {
+              name: contextFrameworkLoggerName,
+              reason: loggingPackageName,
+              span: binding.span,
+              // 绑定来自 starter 时同样要带上包内相对的那份，理由同 web 那条。
+              ...(binding.source === undefined ? {} : { source: binding.source }),
+            },
+          ]),
       ...out.frameworkLoggers.toSorted((left, right) => (left.name < right.name ? -1 : 1)),
     ];
     const loggers = synthesizeLoggerBeans({

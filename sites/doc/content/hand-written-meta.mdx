@@ -1,0 +1,134 @@
+---
+title: Writing a meta by hand
+description: The smallest reforce-meta.json that works, for packages that cannot run reforce lib.
+---
+
+# Writing a meta by hand
+
+`reforce lib` is the right answer for a TypeScript package with `@Injectable()` classes. Write the
+file by hand when that does not apply — a package built by a toolchain the compiler cannot drive, a
+JavaScript package with hand-written declarations, or an adapter you maintain in a repository that
+follows its own release rhythm and does not want a compiler in its build.
+
+Everything below is checked by `npx reforce-meta-check .`, so you never have to guess whether you
+got it right.
+
+## The smallest thing that works
+
+A package with one bean, one dependency the application must supply, and nothing else.
+
+```
+@acme/starter-redis
+├── package.json
+├── reforce-meta.json
+└── dist
+    ├── index.d.ts
+    └── index.js
+```
+
+`package.json` — the `./reforce-meta` subpath and the `files` entry are both load-bearing:
+
+```json
+{
+  "name": "@acme/starter-redis",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./reforce-meta": "./reforce-meta.json"
+  },
+  "files": ["dist", "reforce-meta.json"]
+}
+```
+
+`dist/index.d.ts` — the classes the coordinates point at, plus the starter handle the application
+names in `defineApplication`:
+
+```ts
+export declare class RedisSettings {
+  readonly url: string;
+}
+
+export declare class RedisCache {
+  constructor(settings: RedisSettings);
+  get(key: string): Promise<string | undefined>;
+}
+
+export declare const redis: import("@reforce/core").StarterDefinition;
+```
+
+`reforce-meta.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "starterDeps": [],
+  "symbols": [
+    {
+      "id": "@acme/starter-redis#RedisCache",
+      "file": "dist/index.d.ts",
+      "subpaths": ["."]
+    },
+    {
+      "id": "@acme/starter-redis#RedisSettings",
+      "file": "dist/index.d.ts",
+      "subpaths": ["."]
+    }
+  ],
+  "beans": [
+    {
+      "id": "@acme/starter-redis#RedisCache",
+      "runtimeExport": { "module": "@acme/starter-redis", "export": "RedisCache" },
+      "provides": ["@acme/starter-redis#RedisCache"],
+      "dependencies": [{ "contract": "@acme/starter-redis#RedisSettings", "open": true }],
+      "lifecycle": { "close": "onContextClose" }
+    }
+  ]
+}
+```
+
+Read that against the [reference](/starter-meta-reference) once and the shape stops being
+mysterious. Four things are worth calling out:
+
+- **`symbols` lists the contracts too, not just the beans.** `RedisSettings` has no bean here — the
+  application supplies it — but its coordinate still has to resolve, so it needs a row.
+- **`provides` contains the bean's own id.** Always. A bean provides itself; anything else it
+  satisfies is listed alongside.
+- **`open: true`** says "somebody outside this package has to provide this". If your own package
+  provides it, the reader recomputes the flag anyway, so it is not a value you have to get right.
+- **No `source`.** It is optional, and for a hand-written meta it is the field most likely to be
+  wrong and quickest to go stale. Leaving it out costs one line of position in a diagnostic.
+
+## Then check it
+
+```bash
+npx reforce-meta-check .
+```
+
+The checker exits `0` on success, `1` on any error, and `2` if it cannot read the two files at all.
+It reports the mistakes that a schema alone cannot catch: a symbol anchored to a `.d.ts` your
+package does not publish, a subpath you claim but never declared in `exports`, a coordinate naming
+somebody else's package where it must name yours.
+
+Wire it into your release pipeline next to `npm pack`. The check is worth most on a packed or
+installed tree, where "the file exists" is exactly "the file ships".
+
+## Growing it
+
+When you add a constructor parameter that takes every candidate for a contract:
+
+```json
+{
+  "requires": ["collection"],
+  "beans": [
+    {
+      "dependencies": [{ "contract": "@acme/starter-redis#CacheCustomizer", "open": true, "collection": true }]
+    }
+  ]
+}
+```
+
+The `requires` entry is not optional politeness. A reader that predates `collection` would ignore
+the key and inject a single candidate — no error, wrong graph. Declaring the capability makes that
+reader stop instead. See [the vocabulary](/starter-meta-reference) for the rule that decides which
+keys need one.

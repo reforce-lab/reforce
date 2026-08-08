@@ -1,6 +1,4 @@
 import type { Writable } from "node:stream";
-import { resolveRenderMode } from "@reforce/runtime/render-mode";
-import { isInteractive } from "@reforce/runtime/terminal";
 import {
   isLevelEnabled,
   type LogFieldSource,
@@ -10,11 +8,13 @@ import {
   type LogLevel,
   type LogRecord,
   type LogThreshold,
-} from "@/contracts";
+  renderRecord,
+} from "@reforce/logging-contracts";
+import { resolveRenderMode } from "@reforce/primitives/render-mode";
+import { isInteractive } from "@reforce/primitives/terminal";
 import { bindLoggerLevels } from "@/level-binding";
 import type { LoggerLevels } from "@/levels";
 import { createHumanRenderer } from "@/render-human";
-import { renderRecord } from "@/render-record";
 import type { LoggingSettings } from "@/settings";
 
 // 默认绑定（RFC 0011 L3，#242）：JSON.stringify 加一次同步写，零依赖。

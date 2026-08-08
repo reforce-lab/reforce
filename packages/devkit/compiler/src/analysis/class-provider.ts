@@ -239,6 +239,7 @@ function addInvalidDecoratorDiagnostic(
 interface ClassDecoratorSelection {
   readonly primary: boolean;
   readonly fallback: boolean;
+  readonly eager: boolean;
   readonly requestScoped: boolean;
   readonly qualifierDecorators: readonly DecoratorUse[];
   readonly explicitQualifier?: string | undefined;
@@ -366,6 +367,7 @@ function classDecoratorSelection(
   const injectable = decorators.get("Injectable") ?? [];
   const primaryDecorators = decorators.get("Primary") ?? [];
   const fallbackDecorators = decorators.get("Fallback") ?? [];
+  const eagerDecorators = decorators.get("Eager") ?? [];
   const requestScopedDecorators = decorators.get("RequestScoped") ?? [];
   const qualifierDecorators = decorators.get("Qualifier") ?? [];
   const orderDecorators = decorators.get("Order") ?? [];
@@ -376,6 +378,7 @@ function classDecoratorSelection(
     [
       ...primaryDecorators,
       ...fallbackDecorators,
+      ...eagerDecorators,
       ...requestScopedDecorators,
       ...qualifierDecorators,
       ...orderDecorators,
@@ -388,6 +391,7 @@ function classDecoratorSelection(
   }
   validateMarkerDecorators("Primary", primaryDecorators, declaration, diagnostics);
   validateMarkerDecorators("Fallback", fallbackDecorators, declaration, diagnostics);
+  validateMarkerDecorators("Eager", eagerDecorators, declaration, diagnostics);
   validateMarkerDecorators("RequestScoped", requestScopedDecorators, declaration, diagnostics);
   const requestScoped = requestScopedDecorators.length >= 1;
   // 角色 bean 恒为 singleton（bean-roles.ts）：框架在启动期一次性解析它们，请求态经
@@ -417,6 +421,7 @@ function classDecoratorSelection(
   return {
     primary: primaryDecorators.length === 1,
     fallback: fallbackDecorators.length === 1,
+    eager: eagerDecorators.length === 1,
     requestScoped,
     qualifierDecorators,
     explicitQualifier,
@@ -1125,6 +1130,7 @@ export function analyzeClassProvider(
       scope: selection.requestScoped ? "request" : "singleton",
       primary: selection.primary,
       fallback: selection.fallback,
+      eager: selection.eager,
       ...(selection.order === undefined ? {} : { order: selection.order }),
       ...(selection.role === undefined ? {} : { role: selection.role }),
       qualifiers,

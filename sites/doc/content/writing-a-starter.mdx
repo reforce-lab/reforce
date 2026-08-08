@@ -1,0 +1,101 @@
+---
+title: Writing a starter
+description: Publish a package whose beans wire themselves into any Reforce application, on your own release schedule.
+---
+
+# Writing a starter
+
+A **starter** is an ordinary npm package that ships one extra file: `reforce-meta.json`. That file
+is the package's bean graph — what it provides, what it needs, and where the classes live at
+runtime. An application that registers your starter gets those beans in its container, resolved by
+the same compiler that resolves its own classes.
+
+You do not need to be in this repository to write one, and you do not install the framework to
+validate one. That is the whole point of the contract being public: a starter and the compiler that
+reads it are released by different people, on different days.
+
+## What the compiler needs from you
+
+Three things, and they must agree with each other:
+
+1. **A built `dist`** with `.d.ts` declarations. Coordinates in the meta point at declaration files,
+   not at your `src`.
+2. **`reforce-meta.json` in the package root**, reachable through the `./reforce-meta` exports
+   subpath. That subpath is how consumers find the file at all.
+3. **A starter handle** — a `StarterDefinition` export the application names in
+   `defineApplication({ starters: [...] })`.
+
+```json
+{
+  "name": "@acme/starter-redis",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./reforce-meta": "./reforce-meta.json"
+  },
+  "files": ["dist", "reforce-meta.json"]
+}
+```
+
+The `files` entry matters as much as the `exports` entry. A meta that is not published is a starter
+that silently contributes nothing.
+
+## Generating the meta
+
+If your package is written in TypeScript and its beans are ordinary `@Injectable()` classes, do not
+write the meta by hand — generate it:
+
+```bash
+reforce lib --project .
+```
+
+`reforce lib` compiles the package in library mode, cross-checks every coordinate against the built
+`dist`, and writes `reforce-meta.json` next to `package.json`. It refuses to write anything if the
+exports subpath is missing, so a package that cannot deliver its meta never gets one on disk.
+
+In CI, run the check mode instead. It compiles exactly the same way and compares the bytes it would
+write against the bytes you committed, without touching the file:
+
+```bash
+reforce lib --project . --check
+```
+
+A stale meta does not fail your build. It fails in somebody else's application, as a missing bean
+with nothing pointing back at you. This is the check that turns that into your problem, in your
+repository, at the commit that caused it.
+
+## Validating a meta you did not generate
+
+Two commands answer "would this package wire up correctly if I installed it", and they share one
+implementation, so they never disagree:
+
+```bash
+# If you already have Reforce installed:
+reforce meta check ./packages/my-starter
+
+# If you do not, and do not want to install it:
+npx reforce-meta-check ./packages/my-starter
+```
+
+Both read `package.json` and `reforce-meta.json` and report:
+
+- the meta failing the schema gate, or naming a capability the reader does not know
+- a symbol anchored to a declaration file the package does not ship
+- a symbol claiming an exports subpath `package.json` never declares
+- (as a warning) a bean whose `source` points at a file that is not published — the wiring is fine,
+  but diagnostics about that bean lose their code frame
+
+The standalone checker is a `bin` of `@reforce/starter-meta`, which depends on nothing but a tiny
+path helper. Installing it is not installing the framework.
+
+## Versioning
+
+Your starter and the compiler that reads it move independently, so the contract is designed for
+"the reader is older than the writer":
+
+- **Unknown keys are ignored.** You can publish a meta written against a newer schema and older
+  compilers keep working.
+- **Keys whose absence would silently mis-wire something are named in `requires`.** An older reader
+  that does not know a listed capability fails loudly instead of wiring the graph wrong.
+- **`schemaVersion` is a major-only gate.** Readers keep the parsers of older majors around.
+
+The details are in the [schema reference](/starter-meta-reference).

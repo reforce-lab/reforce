@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   isLoggerContract,
   loggerBeanId,
+  loggingContractsPackageName,
   loggingOriginId,
   redirectKey,
 } from "@/analysis/logger-synthesis";
@@ -28,8 +29,16 @@ function symbol(input: { readonly name: string; readonly packageName?: string })
 }
 
 describe("logger contract detection", () => {
-  test("recognises the Logger contract from the logging package", () => {
-    expect(isLoggerContract(symbol({ name: "Logger", packageName: loggingOriginId }))).toBe(true);
+  // 契约的归属包是 @reforce/logging-contracts，不是 starter 包（#347）：契约沉到了引导层，
+  // 而合成 bean 的 id / origin 仍指 starter 包，两者刻意不同。下一条断言钉的正是这个区分。
+  test("recognises the Logger contract from the contracts package", () => {
+    expect(
+      isLoggerContract(symbol({ name: "Logger", packageName: loggingContractsPackageName })),
+    ).toBe(true);
+  });
+
+  test("ignores the same contract name attributed to the starter package", () => {
+    expect(isLoggerContract(symbol({ name: "Logger", packageName: loggingOriginId }))).toBe(false);
   });
 
   // 同名契约来自别的包时不能命中：否则用户自己的 Logger 接口会被框架接管。
@@ -40,9 +49,9 @@ describe("logger contract detection", () => {
   });
 
   test("ignores the factory contract", () => {
-    expect(isLoggerContract(symbol({ name: "LoggerFactory", packageName: loggingOriginId }))).toBe(
-      false,
-    );
+    expect(
+      isLoggerContract(symbol({ name: "LoggerFactory", packageName: loggingContractsPackageName })),
+    ).toBe(false);
   });
 
   test("ignores a local interface with no external attribution", () => {

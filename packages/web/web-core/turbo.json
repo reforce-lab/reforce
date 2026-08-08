@@ -1,0 +1,20 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // web-core 一个 bean 都没有，产的是一份纯户口表的 meta（#369）：有了它，引擎包的契约才能
+    // 写成 `@reforce/web-core#WebEngineAdapter`，而不是把 web-core 的 dist 布局抄进契约串。
+    //
+    // 它是**独立任务**而不是 build 的一部分：走 build 就要 devDepend 打包插件或 CLI，而
+    // `^build` 含 devDeps，于是 web-core#build → …#build → compiler#build → web-core#build
+    // 成环（最后一条是 compiler 的 IT 夹具要装真的 web-core）。
+    //
+    // 脚本按路径起 node 而不是走 .bin/reforce：CI 是冷检出上 `pnpm install --frozen-lockfile`
+    // 之后才 build，而 cli/dist 是构建产物——install 那一刻 pnpm 链不出那个 bin（只 WARN 然后
+    // 跳过），脚本会以 `reforce: not found` 失败。
+    "meta": {
+      "dependsOn": ["build", "@reforce/cli#build"],
+      "outputs": ["reforce-meta.json"]
+    }
+  }
+}

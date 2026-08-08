@@ -7,6 +7,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./terminal": {
+      "types": "./dist/terminal.d.ts",
+      "default": "./dist/terminal.js"
+    },
+    "./stack-frames": {
+      "types": "./dist/stack-frames.d.ts",
+      "default": "./dist/stack-frames.js"
+    },
+    "./render-mode": {
+      "types": "./dist/render-mode.d.ts",
+      "default": "./dist/render-mode.js"
     }
   },
   "files": [

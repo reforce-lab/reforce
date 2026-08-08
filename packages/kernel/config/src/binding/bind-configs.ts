@@ -4,7 +4,7 @@ import type {
   GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
 } from "@reforce/core/generated-runtime";
-import { bootstrapLogger } from "@reforce/logging";
+import { bootstrapLogger } from "@reforce/logging-contracts";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { type EnvironmentSnapshot, loadEnvironmentSnapshot } from "@/binding/env-layers";
 import {

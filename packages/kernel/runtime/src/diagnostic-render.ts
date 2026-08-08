@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { Writable } from "node:stream";
-import type { RenderMode } from "@/render-mode";
+import type { RenderMode } from "@reforce/primitives/render-mode";
+import { style, type TextStyle } from "@reforce/primitives/terminal";
 import type { ReportedDiagnostic, ReportedSpan } from "@/reporter";
-import { style, type TextStyle } from "@/terminal";
 
 // 诊断渲染（RFC 0011 D3，#242）。三模各自有确定的消费者，不能互相靠拢：
 //   short —— 逐字保持 #191 以来的 `[CODE] file:LINE:CHAR message` 单行，按行 grep 的脚本与

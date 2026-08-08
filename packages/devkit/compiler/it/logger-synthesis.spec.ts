@@ -403,7 +403,7 @@ describe("synthesised logger beans", () => {
           runtimeExport: { module: "@acme/fancy-logging", export: "FancyLoggerFactory" },
           provides: [
             "@acme/fancy-logging#FancyLoggerFactory",
-            "@reforce/logging:dist/contracts.d.ts#LoggerFactory",
+            "@reforce/logging-contracts:dist/contracts.d.ts#LoggerFactory",
           ],
           dependencies: [],
           source: starterMetaSpan("src/factory.ts"),
@@ -473,6 +473,28 @@ describe("synthesised logger beans", () => {
     expect(ids).toContain("@reforce/logging#DefaultLoggingFactory");
     expect(ids).toContain("@reforce/logging#DefaultLoggingSettings");
     expect(diagnostics).toEqual([]);
+  }, 60_000);
+
+  // manifest 里的路径必须与机器无关（#369）：合成的框架 logger 的「它为什么在图里」指向那条
+  // starter 绑定，而 starter 装在 node_modules 里。诊断渲染要的是项目根相对路径（能读出代码
+  // 框），产物要的是包内相对路径（两台机器上逐字节相同）——两者混用会让 manifest 里出现
+  // `../../home/<用户名>/...`，被 CLI 的 portable-path 校验整片拒绝，报成 GENERATED_TRANSACTION_FAILED。
+  test("keeps every manifest source path machine-independent when the binding comes from a starter", async () => {
+    const { manifest } = await compileTreeSuccessfully({
+      "tsconfig.json": applicationTsconfig(),
+      src: loggingStarterApplication({}),
+    });
+
+    const paths = manifest.beans.flatMap(
+      (bean: {
+        readonly source: { readonly file: string };
+        readonly dependencies: readonly { readonly source: { readonly file: string } }[];
+      }) => [bean.source.file, ...bean.dependencies.map((dependency) => dependency.source.file)],
+    );
+
+    expect(
+      paths.filter((file: string) => file.startsWith("/") || file.split("/").includes("..")),
+    ).toEqual([]);
   }, 60_000);
 
   // 场景 (b)：本地 LoggingSettings bean 恒胜（决策 11）——starter 自带的默认 settings 让位，

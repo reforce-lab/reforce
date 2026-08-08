@@ -1,6 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { GeneratedSourceReferenceModel } from "@/analysis/model";
+import {
+  parseContractCoordinate,
+  parseStarterMeta,
+  type StarterMeta,
+  type StarterMetaBean,
+  starterMetaSubpath,
+  supportedSchemaVersions,
+} from "@reforce/starter-meta";
+import type { SourceReferenceModel } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { StarterSymbolAnchor, StarterSymbolTable } from "@/linking/external-modules";
@@ -8,15 +16,8 @@ import type { LinkedSymbol } from "@/linking/model";
 import type { ModuleRecord, ResolvedModule } from "@/linking/module-resolver";
 import { moduleKey } from "@/linking/module-resolver";
 import type { PackageLocator } from "@/linking/package-locator";
-import {
-  parseContractCoordinate,
-  parseStarterMeta,
-  type StarterMeta,
-  type StarterMetaBean,
-  starterMetaSubpath,
-} from "@/linking/starter-meta";
 import type { EntityName, StartersArrayElement } from "@/parser/source-ir";
-import type { SourceSpan } from "@/parser/source-location";
+import type { CanonicalFileId, SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
 // Starter 注册与链接（ADR 0004，#120；M1 范围见 #145）：
@@ -70,7 +71,18 @@ export interface StarterBeanModel {
   readonly defaultBean: boolean;
   readonly root: boolean;
   readonly lifecycle: { readonly start: boolean; readonly close: boolean };
-  readonly metaSource: GeneratedSourceReferenceModel;
+  /**
+   * bean 声明处，**包内**相对路径——它会原样进生成的 beans.ts，所以必须与机器无关。
+   * meta 省略 source 时落在这份 meta 文件本身的零 span 上（#369）。
+   */
+  readonly metaSource: SourceReferenceModel;
+  /**
+   * 同一处位置的**项目根**相对路径，只喂诊断的 sourceSpan。
+   *
+   * 两份路径必须并存：诊断渲染器按项目根 join fileId，而 metaSource 是包内相对的——直接拿
+   * 它当 fileId 会把 starter 的 `src/engine.ts` 解析成应用自己的 `src/engine.ts`（#369）。
+   */
+  readonly metaSourceFileId: CanonicalFileId;
   readonly sourceText: string;
 }
 
@@ -344,9 +356,22 @@ async function readStarterMeta(
     diagnostics.push(
       diagnostic({
         code: "UNSUPPORTED_STARTER_META_VERSION",
-        message: `${packageName} reforce-meta declares schemaVersion ${parsed.foundVersion}; this compiler supports schemaVersion 1${chain}.`,
+        message: `${packageName} reforce-meta declares schemaVersion ${parsed.foundVersion}; this compiler supports ${supportedSchemaVersions.join(", ")}${chain}.`,
         sourceSpan: registration.span,
         help: "Upgrade the Reforce compiler or use a starter release with a compatible meta schema.",
+      }),
+    );
+    return undefined;
+  }
+  if (parsed.status === "unsupported-capability") {
+    // 能力门（#369）：meta 点名要求的能力这个编译器不认识，接着往下读只会产出「看着成功、
+    // 接线是错的」结果——例如把集合边静默注成单边。硬错，让用户去升编译器。
+    diagnostics.push(
+      diagnostic({
+        code: "UNSUPPORTED_STARTER_META_VERSION",
+        message: `${packageName} reforce-meta requires ${parsed.required.join(", ")}, which this compiler does not understand${chain}.`,
+        sourceSpan: registration.span,
+        help: "Upgrade the Reforce compiler: the starter uses a meta capability this version cannot wire correctly.",
       }),
     );
     return undefined;
@@ -473,8 +498,24 @@ interface StarterLinkageInputs {
   ) => LinkedSymbol | undefined;
 }
 
-function metaSourceText(starter: RegisteredStarter, source: GeneratedSourceReferenceModel): string {
+function metaSourceText(starter: RegisteredStarter, source: SourceReferenceModel): string {
   return `${starter.packageName}/${source.file}:${source.start.line + 1}:${source.start.character + 1}`;
+}
+
+const zeroPosition = { offset: 0, line: 0, character: 0 } as const;
+
+// bean 省略 source 时的落点（#369）：那条事实的出处就是这份 meta 文件本身。零 span 渲染成
+// 一行位置、没有代码框——比伪造一个包内源码坐标诚实，而 source 本就只喂诊断。
+function metaFileReference(starter: RegisteredStarter): SourceReferenceModel {
+  return {
+    file: toPosix(path.relative(starter.rootPath, starter.metaPath)),
+    start: zeroPosition,
+    end: zeroPosition,
+  };
+}
+
+function toPosix(value: string): string {
+  return value.replaceAll(path.sep, "/");
 }
 
 // 外部模块闭包的种子（registry 部分）：meta 户口表锚定的定义文件、file 坐标指向的契约文件、
@@ -564,6 +605,14 @@ export function createStarterLinkage(inputs: StarterLinkageInputs): StarterLinka
     resolveModuleExportFor,
   } = inputs;
 
+  function projectRelativeFileId(rootPath: string, file: string): CanonicalFileId {
+    // 收敛前这里根本不存在：spanOfMetaSource 把**包内**相对路径直接当 fileId，渲染器按项目根
+    // join，starter 的 src/engine.ts 于是被解析成应用自己的 src/engine.ts——位置行指向一个
+    // 不相干的文件，代码框永远读不出来（#369）。
+    const relative = path.relative(projectRoot, path.join(rootPath, file));
+    return toPosix(relative) as CanonicalFileId; // The brand records the relative-posix normalization done on this line.
+  }
+
   function anchorSymbol(
     rootPath: string,
     file: string,
@@ -636,7 +685,7 @@ export function createStarterLinkage(inputs: StarterLinkageInputs): StarterLinka
         code: "STARTER_META_RUNTIME_MISMATCH",
         message: `${bean.id}: ${detail}`,
         sourceSpan: starter.registration.span,
-        related: [{ message: metaSourceText(starter, bean.source) }],
+        related: [{ message: metaSourceText(starter, bean.source ?? metaFileReference(starter)) }],
         help: "The starter's reforce-meta and its published dist disagree; reinstall or upgrade the starter package.",
       }),
     );
@@ -693,6 +742,7 @@ export function createStarterLinkage(inputs: StarterLinkageInputs): StarterLinka
     if (provides === undefined) {
       return undefined;
     }
+    const metaSource = bean.source ?? metaFileReference(starter);
     return {
       id: bean.id,
       packageName: starter.packageName,
@@ -708,8 +758,9 @@ export function createStarterLinkage(inputs: StarterLinkageInputs): StarterLinka
       defaultBean: bean.defaultBean,
       root: bean.role === "root",
       lifecycle: bean.lifecycle,
-      metaSource: bean.source,
-      sourceText: metaSourceText(starter, bean.source),
+      metaSource,
+      metaSourceFileId: projectRelativeFileId(starter.rootPath, metaSource.file),
+      sourceText: metaSourceText(starter, metaSource),
     };
   }
 

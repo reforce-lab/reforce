@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      // 本包的 build 会读 @reforce/logging-contracts 的户口表把契约坐标归一成 `包名#导出名`
+      // （#369/#347），所以那份 meta 必须先在——它不在 `^build` 里，那条边只到 contracts 的 dist。
+      "dependsOn": ["^build", "@reforce/logging-contracts#meta"],
+      "outputs": ["dist/**", "reforce-meta.json"]
+    }
+  }
+}

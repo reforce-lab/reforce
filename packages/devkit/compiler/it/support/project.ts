@@ -77,11 +77,18 @@ export async function linkTransactionPackage(projectRoot: string): Promise<void>
   );
 }
 
+// 两个包一起链（#347）：logging 的 dist 对 @reforce/logging-contracts 有真实 import，少链
+// 一个的话链接期解析不到契约符号，正向用例会集体落成 MISSING_BEAN。
 export async function linkLoggingPackage(projectRoot: string): Promise<void> {
   await linkPackage(
     projectRoot,
     "@reforce/logging",
     path.join(repositoryRoot, "packages", "observability", "logging"),
+  );
+  await linkPackage(
+    projectRoot,
+    "@reforce/logging-contracts",
+    path.join(repositoryRoot, "packages", "kernel", "logging-contracts"),
   );
 }
 export async function writePositiveApplication(projectRoot: string): Promise<void> {

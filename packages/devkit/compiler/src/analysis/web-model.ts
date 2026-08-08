@@ -1,4 +1,4 @@
-import type { GeneratedSourceReferenceModel } from "@/analysis/model";
+import type { SourceReferenceModel } from "@/analysis/model";
 import type { ContractTable } from "@/analysis/type-contract";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
@@ -136,7 +136,7 @@ export interface RouteModel {
   // 路由契约(#274):槽位与响应侧的唯一真相,emission 据它渲染 slots/invoke/encode。
   readonly contract: RouteContractModel;
   readonly throws: readonly RouteThrownErrorModel[];
-  readonly source: GeneratedSourceReferenceModel;
+  readonly source: SourceReferenceModel;
 }
 
 // 类型化错误处理器的 accepts(#275):handle 参数 0 标注的项目错误类,运行时 instanceof 闸。

@@ -1,18 +1,26 @@
 import type { Writable } from "node:stream";
 import { isReforceError } from "@reforce/core";
-import { isObject } from "radashi";
-import { renderDiagnostic } from "@/diagnostic-render";
-import type { CliFailureCode } from "@/error-codes";
 import {
   type RenderAudience,
   type RenderMode,
   resolveRenderMode,
   resolveVerbose,
-} from "@/render-mode";
-import { foldStackFrames, stackOf } from "@/stack-frames";
-import { isInteractive, style } from "@/terminal";
+} from "@reforce/primitives/render-mode";
+import { foldStackFrames, stackOf } from "@reforce/primitives/stack-frames";
+import { isInteractive, style } from "@reforce/primitives/terminal";
+import { isObject } from "radashi";
+import { renderDiagnostic } from "@/diagnostic-render";
+import type { CliFailureCode } from "@/error-codes";
 
-export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain" | "openapi";
+export type CliCommandName =
+  | "cli"
+  | "dev"
+  | "build"
+  | "start"
+  | "lib"
+  | "meta"
+  | "explain"
+  | "openapi";
 
 export type CliCommandPhase =
   | "argv"
@@ -76,7 +84,8 @@ export interface ReportedDiagnostic {
 
 interface CliDiagnosticEvent {
   readonly kind: "diagnostic";
-  readonly command: "dev" | "build" | "lib";
+  // 会打编译器诊断的命令。`meta` 不编译，但它报的正是 meta 字节的诊断码（#369）。
+  readonly command: "dev" | "build" | "lib" | "meta";
   readonly phase: "project" | "compiler";
   readonly diagnostic: ReportedDiagnostic;
   // 该诊断码有长文时由 CLI 填入完整命令串（`reforce explain <CODE>`）。渲染器只判断有没有，

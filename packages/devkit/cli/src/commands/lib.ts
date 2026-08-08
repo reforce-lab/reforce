@@ -5,13 +5,14 @@ import {
   createCompiler,
   type LibraryGeneratedFile,
 } from "@reforce/compiler";
+import type { CliFailureCode } from "@reforce/runtime/error-codes";
 import {
   captureFailure,
   createFailureEvent,
   type Reporter,
   reportShutdownFailure,
 } from "@reforce/runtime/reporter";
-import { isObject } from "radashi";
+import { findExportsProblem } from "@reforce/starter-meta";
 import {
   applyDiagnosticPolicy,
   type DiagnosticPolicy,
@@ -32,14 +33,14 @@ export interface LibCommandOptions {
   readonly tsconfigPath?: string;
   readonly reporter: Reporter;
   readonly diagnosticPolicy?: DiagnosticPolicy;
+  /**
+   * 只比对不写盘（#369）：CI 用它守「meta 与源码同步」，本地照常写。
+   *
+   * 它顺带修掉一处顺序缺陷——exports 校验此前跑在写盘**之后**，作者拿到一份写好了却接不上的
+   * 产物；`--check` 本就不许写盘，那道校验只能前移，两种模式因此共用同一个顺序。
+   */
+  readonly checkOnly?: boolean;
 }
-
-// subpath 字面量由 ADR 0004 决策 2 与 compiler 的 starter-meta schema 闸门（#145）钉死；
-// compiler 根入口刻意只在运行时暴露 createCompiler，这里不经 import 复用常量。
-const expectedSubpathTargets: readonly {
-  readonly subpath: string;
-  readonly target: string;
-}[] = [{ subpath: "./reforce-meta", target: "./reforce-meta.json" }];
 
 function reportCompilerDiagnostics(
   reporter: Reporter,
@@ -49,32 +50,16 @@ function reportCompilerDiagnostics(
   reportDiagnostics({ reporter, command: "lib", phase, diagnostics });
 }
 
-// 接受 exports 的两种直写形态：字符串目标，或 default 条件指向目标的条件对象。其余形态
-// （pattern、数组 fallback、深嵌条件）解析结果依赖包管理器语义，一律要求作者改成直写。
-function subpathReaches(target: unknown, expected: string): boolean {
-  if (typeof target === "string") {
-    return target === expected;
-  }
-  return isObject(target) && Reflect.get(target, "default") === expected;
-}
-
-async function findExportsProblem(projectRoot: string): Promise<string | undefined> {
+// exports 的判定住在 @reforce/starter-meta（#369）：`reforce meta check` 与外部作者的
+// `npx reforce-meta-check` 用的是同一份，三个入口不会各自漂。
+async function exportsProblemAt(projectRoot: string): Promise<string | undefined> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(join(projectRoot, "package.json"), "utf8"));
   } catch {
     return "package.json cannot be read as JSON.";
   }
-  const exports = isObject(parsed) ? Reflect.get(parsed, "exports") : undefined;
-  if (!isObject(exports)) {
-    return "package.json must declare an exports map.";
-  }
-  for (const { subpath, target } of expectedSubpathTargets) {
-    if (!subpathReaches(Reflect.get(exports, subpath), target)) {
-      return `exports must map "${subpath}" to "${target}".`;
-    }
-  }
-  return undefined;
+  return findExportsProblem(parsed);
 }
 
 async function writeGeneratedFile(projectRoot: string, file: LibraryGeneratedFile): Promise<void> {
@@ -87,6 +72,35 @@ async function writeGeneratedFile(projectRoot: string, file: LibraryGeneratedFil
 type LibraryCompilation = Awaited<ReturnType<ReturnType<typeof createCompiler>["compileLibrary"]>>;
 type LibraryCompilationSuccess = Extract<LibraryCompilation, { readonly status: "success" }>;
 
+// 磁盘上的字节与本次编译的字节不一致的那些文件。读不到当成不一致：没有 meta 与 meta 过期，
+// 对 `--check` 是同一个答案。
+async function driftedFiles(
+  projectRoot: string,
+  files: readonly LibraryGeneratedFile[],
+): Promise<readonly string[]> {
+  const drifted: string[] = [];
+  for (const file of files) {
+    const onDisk = await readFile(join(projectRoot, file.path), "utf8").catch(() => undefined);
+    if (onDisk !== file.content) {
+      drifted.push(file.path);
+    }
+  }
+  return drifted;
+}
+
+function reportFailure(reporter: Reporter, code: CliFailureCode, message: string): 1 {
+  reporter.report(
+    createFailureEvent({
+      command: "lib",
+      phase: "project",
+      fallbackCode: code,
+      message,
+      cause: undefined,
+    }),
+  );
+  return 1;
+}
+
 // 落盘与上报独立成段：runLibCommand 只说「解析 → 编译 → 交给它 → 收尾」，成功分支里的
 // 诊断策略、写文件、exports 校验三件事不该和外层的失败聚合挤在同一个抽象层级上。
 async function commitLibraryOutput(input: {
@@ -94,30 +108,40 @@ async function commitLibraryOutput(input: {
   readonly compilation: LibraryCompilationSuccess;
   readonly reporter: Reporter;
   readonly policy: DiagnosticPolicy;
+  readonly checkOnly: boolean;
 }): Promise<0 | 1> {
   // 成功路径也要遍历诊断（RFC 0011 OM2，#242）：编译成功不再等于零诊断。
   const warnings = applyDiagnosticPolicy(input.policy, input.compilation.diagnostics);
   reportCompilerDiagnostics(input.reporter, "compiler", warnings);
-  for (const file of input.compilation.files) {
-    await writeGeneratedFile(input.projectRoot, file);
-  }
-  const exportsProblem = await findExportsProblem(input.projectRoot);
+  const packageName = input.compilation.packageName;
+  const exportsProblem = await exportsProblemAt(input.projectRoot);
   if (exportsProblem !== undefined) {
-    input.reporter.report(
-      createFailureEvent({
-        command: "lib",
-        phase: "project",
-        fallbackCode: "PACKAGE_EXPORTS_INVALID",
-        message: `${input.compilation.packageName} ${exportsProblem}`,
-        cause: undefined,
-      }),
+    return reportFailure(
+      input.reporter,
+      "PACKAGE_EXPORTS_INVALID",
+      `${packageName} ${exportsProblem}`,
     );
-    return 1;
+  }
+  if (input.checkOnly) {
+    const drifted = await driftedFiles(input.projectRoot, input.compilation.files);
+    if (drifted.length > 0) {
+      return reportFailure(
+        input.reporter,
+        "STARTER_META_OUT_OF_DATE",
+        `${packageName} has ${drifted.join(", ")} out of date; run reforce lib to regenerate.`,
+      );
+    }
+  } else {
+    for (const file of input.compilation.files) {
+      await writeGeneratedFile(input.projectRoot, file);
+    }
   }
   input.reporter.report({
     kind: "success",
     command: "lib",
-    message: `Generated starter meta for ${input.compilation.packageName}.`,
+    message: input.checkOnly
+      ? `Starter meta for ${packageName} is up to date.`
+      : `Generated starter meta for ${packageName}.`,
   });
   // 产物照常落盘：图是完整的。非零退出只是给 CI 的闸门信号。
   return deniedByDiagnosticPolicy(input.policy, warnings) ? 1 : 0;
@@ -146,6 +170,7 @@ export async function runLibCommand(options: LibCommandOptions): Promise<0 | 1> 
           compilation,
           reporter: options.reporter,
           policy: options.diagnosticPolicy ?? permissiveDiagnosticPolicy,
+          checkOnly: options.checkOnly === true,
         });
       }
     }

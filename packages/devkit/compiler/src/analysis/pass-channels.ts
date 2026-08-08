@@ -15,7 +15,10 @@ import type { ClassDeclaration } from "@/parser/source-ir";
 /** 解析期的候选重定向与 levels bean（logging 写，resolveProviders 读）。 */
 export interface ResolutionOverrides {
   readonly redirects: Map<string, string>;
-  levelsBeanId?: string;
+  // 「缺席 ≡ undefined」的数据字段在 eOPT 下写成 `| undefined`（#367）：写入侧是
+  // `out.resolutionOverrides.levelsBeanId = loggers.levelsBeanId`，图里没有日志时它本来就是
+  // undefined，收窄成 `?: string` 只会逼写入点做一次无意义的条件展开。
+  levelsBeanId?: string | undefined;
 }
 
 export interface PassChannels {
