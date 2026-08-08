@@ -48,6 +48,36 @@ function elapsedMs(startedAt: number): number {
   return Math.round((performance.now() - startedAt) * 1000) / 1000;
 }
 
+// 一次判定、一处使用：把「要不要打」和「打什么」收在一起，调用点就只剩一句。判定仍在字段
+// 字面量之前（不变量 8）——它是 try 里的第一条语句。
+//
+// 成功路径（begin/join/savepoint/commit/release）的 logger 故障必须吞掉、只落 stderr（#314）：
+// commit 与 savepoint release 两个用点在事务已生效**之后**执行，logger（用户可经
+// @LoggerName("reforce.transaction") 注入）在这里抛出去就是伪造失败信号——调用方会把一笔
+// 已落库的写当成失败去重试；异常还会被边界的 catch 接住，记成一条与事实相反的
+// "transaction rollback"，savepoint 场景下更会把整个外层事务回滚。下面 reportBoundaryFailure
+// 的"不吞"论证在这里不成立：成功路径没有业务错误可被顶替。isEnabled 同样在 try 内——它和
+// debug 一样是用户注入面。
+function debugBoundary(
+  logger: TransactionLogger | undefined,
+  message: string,
+  fields: () => Readonly<Record<string, unknown>>,
+): void {
+  if (logger === undefined) {
+    return;
+  }
+  try {
+    if (!logger.isEnabled("debug")) {
+      return;
+    }
+    logger.debug(fields(), message);
+  } catch (loggingFailure) {
+    process.stderr.write(
+      `[reforce.transaction] the boundary logger failed: ${String(loggingFailure)}\n`,
+    );
+  }
+}
+
 // 边界失败降 **debug** 后原样重抛（Spring 对位；RFC 0011 打磨，#242）：异常会一路传播，
 // 真 500 的 error 已由 error-dispatch 与请求日志记账，这里再发一条 error 就是一次失败三条
 // error 的重复报告。debug 档要的是「回滚发生在哪个边界」的排查现场，判定在字段构造之前
@@ -55,19 +85,8 @@ function elapsedMs(startedAt: number): number {
 //
 // 与 web 侧 500 兜底的关键分歧：那边 logger 抛了就吞掉，因为 dispatchError 永不 reject 是
 // 适配器契约；这边吞掉会让一个坏 logger **顶替**业务错误，所以原错照抛，日志故障单独落
-// stderr——最吵，但不改变调用方看到的错误。
-// 一次判定、一处使用：把「要不要打」和「打什么」收在一起，调用点就只剩一句。判定仍在字段
-// 字面量之前（不变量 8）——它是这个函数的第一条语句。
-function debugBoundary(
-  logger: TransactionLogger | undefined,
-  message: string,
-  fields: () => Readonly<Record<string, unknown>>,
-): void {
-  if (logger === undefined || !logger.isEnabled("debug")) {
-    return;
-  }
-  logger.debug(fields(), message);
-}
+// stderr——最吵，但不改变调用方看到的错误。注意这条论证只对**失败路径**成立：前提是手上
+// 有一个业务错误可被顶替；成功路径的对应处理见上面 debugBoundary（#314）。
 
 function reportBoundaryFailure(
   logger: TransactionLogger,
