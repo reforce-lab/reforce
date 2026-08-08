@@ -126,6 +126,13 @@ export async function installApplicationPackages(
     cp(join(loggingContractsRoot, "dist"), join(loggingContractsTarget, "dist"), {
       recursive: true,
     }),
+    // 契约包自己也发 meta（#369/#347）：logging 的 meta 把 LoggerFactory 记成
+    // `@reforce/logging-contracts#LoggerFactory`，链接期要按 starterDeps 拉起这份户口表才
+    // 解析得到它。少拷它的表现是 STARTER_META_NOT_FOUND 加一串 MISSING_BEAN。
+    cp(
+      join(loggingContractsRoot, "reforce-meta.json"),
+      join(loggingContractsTarget, "reforce-meta.json"),
+    ),
     cp(join(primitivesRoot, "package.json"), join(primitivesTarget, "package.json")),
     cp(join(primitivesRoot, "dist"), join(primitivesTarget, "dist"), { recursive: true }),
     cp(join(runtimeRoot, "package.json"), join(runtimeTarget, "package.json")),

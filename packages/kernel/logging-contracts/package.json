@@ -12,23 +12,27 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "default": "./dist/testing.js"
-    }
+    },
+    "./reforce-meta": "./reforce-meta.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "reforce-meta.json"
   ],
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p it/tsconfig.json",
     "test": "vitest run",
     "check": "biome check .",
-    "check:write": "biome check --write ."
+    "check:write": "biome check --write .",
+    "meta": "reforce lib --project . --tsconfig tsconfig.json"
   },
   "dependencies": {
     "@swc/helpers": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@reforce/cli": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
