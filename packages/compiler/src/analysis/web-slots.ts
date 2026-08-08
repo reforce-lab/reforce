@@ -664,10 +664,46 @@ function wireTableOf<TType, TSymbol>(
   if (!changed) {
     return undefined;
   }
-  return {
-    root: { kind: "object", fields, nullable: root.nullable },
-    definitions: table.definitions,
-  };
+  const wireRoot: ContractShape = { kind: "object", fields, nullable: root.nullable };
+  return { root: wireRoot, definitions: reachableDefinitionsOf(wireRoot, table.definitions) };
+}
+
+// 内联根后按可达性收缩 definitions(#310):被内联替换的命名定义若已无字段引用,留在表里会
+// 以输出侧的旧 optional 进 OpenAPI components,与内联后的 wire 根自相矛盾。
+function reachableDefinitionsOf(
+  root: ContractShape,
+  definitions: ContractTable["definitions"],
+): ContractTable["definitions"] {
+  const reachable: Record<string, ContractTable["definitions"][string]> = {};
+  const pending: ContractShape[] = [root];
+  while (pending.length > 0) {
+    const shape = pending.pop();
+    if (shape === undefined) {
+      continue;
+    }
+    switch (shape.kind) {
+      case "object":
+        pending.push(...shape.fields.map((field) => field.shape));
+        break;
+      case "array":
+        pending.push(shape.element);
+        break;
+      case "union":
+        pending.push(...shape.members.map((member) => member.shape));
+        break;
+      case "reference": {
+        const definition = definitions[shape.target];
+        if (definition !== undefined && !(shape.target in reachable)) {
+          reachable[shape.target] = definition;
+          pending.push(definition.shape);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return reachable;
 }
 
 // 根形态解引用(带环守卫):返回对象根与「引用位累计的 nullable」,非对象根返回 undefined。

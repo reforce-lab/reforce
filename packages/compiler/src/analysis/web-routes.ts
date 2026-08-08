@@ -22,7 +22,6 @@ import {
 } from "@/analysis/web-model";
 import { createSlotResolutionContext } from "@/analysis/web-slot-context";
 import {
-  leftmostIdentifier,
   type ResponseDirectives,
   type ResponseSchemaDirectiveModel,
   type ResponseStatusModel,
@@ -674,12 +673,26 @@ function resolveThrowsDecorators(
 // 直接把 HttpError 翻译成 problem+json——所以 @Throws 直接绑内置契约,不查处理器名录。
 // status/code 取实参的静态字面量,写成变量等非字面量时缺省(文档只收静态可知的事实,#306
 // 同口径)。
+// 状态码合法域与 @ResponseStatus 同口径:非整数或出 100-599 的字面量不落 status——openapi
+// 的 responses 键必须是合法状态码,写进去只会砸下游校验器。
+function literalStatusOf(argument: DecoratorArgumentValue | undefined): number | undefined {
+  if (argument?.kind !== "number-literal") {
+    return undefined;
+  }
+  const value = argument.value;
+  return Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined;
+}
+
 function definedHttpErrorTargetOf(
   source: ParsedSource,
   entity: EntityName,
   linker: ProjectLinker,
 ): RouteThrownErrorModel | undefined {
-  const resolved = linker.resolveValueDeclaration(source, leftmostIdentifier(entity));
+  // 只认裸标识符:限定名(NS.X / X.foo)按最左标识符解析会把 X.foo 误认成 X,宁可不认。
+  if (entity.kind !== "identifier") {
+    return undefined;
+  }
+  const resolved = linker.resolveValueDeclaration(source, entity.name);
   const name = resolved?.declaration.name;
   if (resolved === undefined || name === undefined) {
     return undefined;
@@ -696,12 +709,12 @@ function definedHttpErrorTargetOf(
     return undefined;
   }
   const code = initializer.arguments.at(0);
-  const status = initializer.arguments.at(2);
+  const status = literalStatusOf(initializer.arguments.at(2));
   return {
     kind: "http-error",
     errorName: name,
     key: providerId(resolved.source.fileId, name),
-    ...(status?.kind === "number-literal" ? { status: status.value } : {}),
+    ...(status === undefined ? {} : { status }),
     ...(code?.kind === "string-literal" ? { code: code.value } : {}),
   };
 }
@@ -711,18 +724,7 @@ function resolveThrownArgument(
   argument: DecoratorArgumentValue,
   context: ThrowsResolutionContext,
 ): RouteThrownErrorModel | undefined {
-  const target =
-    argument.kind === "identifier-reference"
-      ? applicationClassTargetOf(source, argument.entity, context.linker)
-      : undefined;
-  if (target === undefined) {
-    const httpError =
-      argument.kind === "identifier-reference"
-        ? definedHttpErrorTargetOf(source, argument.entity, context.linker)
-        : undefined;
-    if (httpError !== undefined) {
-      return httpError;
-    }
+  const invalid = (): undefined =>
     report(
       context.diagnostics,
       "INVALID_ERROR_HANDLER_SIGNATURE",
@@ -730,7 +732,12 @@ function resolveThrownArgument(
       argument.span,
       { help: errorHandlerSignatureHelp },
     );
-    return undefined;
+  if (argument.kind !== "identifier-reference") {
+    return invalid();
+  }
+  const target = applicationClassTargetOf(source, argument.entity, context.linker);
+  if (target === undefined) {
+    return definedHttpErrorTargetOf(source, argument.entity, context.linker) ?? invalid();
   }
   const handler = handlerForThrownClass(target, context);
   if (handler === undefined) {

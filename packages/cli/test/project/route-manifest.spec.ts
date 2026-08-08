@@ -315,6 +315,41 @@ describe("parseRouteManifestBytes", () => {
     expect(parseRouteManifestBytes(bytes)?.routes[0]?.contract.response.errors).toEqual(errors);
   });
 
+  // handler ⇔ body 变体的耦合(#310):两个键由编译器成对发射,混搭只能来自损坏,整份拒收。
+  test("a handler and problem-body mismatch rejects the whole manifest", () => {
+    const mismatches = [
+      // handler 缺席但 body 不是 problem 变体。
+      { error: "X", body: { kind: "free-form" } },
+      // handler 缺席且无 body。
+      { error: "X", status: 409 },
+      // handler 在场却带 problem body。
+      { error: "X", handler: "src/errors.ts#Boom", body: { kind: "problem", code: "C" } },
+      // problem body 的 code 非字符串。
+      { error: "X", body: { kind: "problem", code: 42 } },
+    ];
+    for (const thrown of mismatches) {
+      const bytes = encoded({
+        schemaVersion: 4,
+        routes: [
+          {
+            method: "GET",
+            path: "/pay",
+            controller: { beanId: "src/pay.ts#PayController", handler: "pay" },
+            middleware: [],
+            meta: {},
+            contract: {
+              slots: [],
+              response: { kind: "free-form", status: 200, errors: [thrown] },
+            },
+          },
+        ],
+        errorHandlers: [],
+      });
+
+      expect(parseRouteManifestBytes(bytes), JSON.stringify(thrown)).toBeUndefined();
+    }
+  });
+
   test("a thrown error with a non-string handler rejects the whole manifest", () => {
     const bytes = encoded({
       schemaVersion: 4,

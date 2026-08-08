@@ -222,6 +222,9 @@ const httpErrorsSource = [
   "// status 不是字面量:静态读不出,manifest 该条目不落 status(文档只收静态可知的事实)。",
   "const teapotStatus = 418;",
   'export const TeapotDynamicError = defineHttpError("TEAPOT_DYNAMIC", "teapot", teapotStatus);',
+  "",
+  "// status 字面量出 100-599 合法域:同样不落 status——非法状态码进 openapi 只会砸下游。",
+  'export const WeirdStatusError = defineHttpError("WEIRD_STATUS", "weird", 42.5);',
 ].join("\n");
 
 describe("S3 response declarations", () => {
@@ -243,7 +246,7 @@ describe("S3 response declarations", () => {
     "orders-controller.ts": [
       controllerImports,
       'import { OrderRejectedError, SpecialOrderRejectedError } from "@/errors";',
-      'import { PaymentRequiredError, TeapotDynamicError } from "@/http-errors";',
+      'import { PaymentRequiredError, TeapotDynamicError, WeirdStatusError } from "@/http-errors";',
       'import { QuotaMiddleware } from "@/quota-middleware";',
       'import { orderWireSchema } from "@/schemas";',
       '@Controller("/orders")',
@@ -295,7 +298,7 @@ describe("S3 response declarations", () => {
       "  throwingHttp(): void {}",
       "",
       '  @Get("/throws-http-dynamic")',
-      "  @Throws(TeapotDynamicError)",
+      "  @Throws(TeapotDynamicError, WeirdStatusError)",
       "  throwingDynamic(): void {}",
       "}",
     ].join("\n"),
@@ -418,6 +421,7 @@ describe("S3 response declarations", () => {
     const throwing = responseOf(result, "GET", "/orders/throws-http-dynamic");
     expect(throwing.errors).toEqual([
       { error: "TeapotDynamicError", body: { kind: "problem", code: "TEAPOT_DYNAMIC" } },
+      { error: "WeirdStatusError", body: { kind: "problem", code: "WEIRD_STATUS" } },
     ]);
   });
 
@@ -487,6 +491,25 @@ describe("S3 response hard errors", () => {
     });
 
     expect(failureCodes(result)).toEqual(["THROWS_WITHOUT_HANDLER"]);
+  });
+
+  // 限定名不认:按最左标识符解析会把 X.foo 误认成 X,宁可硬错也不落错误声明。
+  test("a qualified reference to a defineHttpError const is INVALID_ERROR_HANDLER_SIGNATURE", async () => {
+    const { result } = await compileResponses({
+      "http-errors.ts": httpErrorsSource,
+      "users-controller.ts": [
+        controllerImports,
+        'import { PaymentRequiredError } from "@/http-errors";',
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/users")',
+        "  @Throws(PaymentRequiredError.foo)",
+        "  list(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(failureCodes(result)).toEqual(["INVALID_ERROR_HANDLER_SIGNATURE"]);
   });
 
   test("a const that is not a defineHttpError call is INVALID_ERROR_HANDLER_SIGNATURE", async () => {

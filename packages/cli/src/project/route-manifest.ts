@@ -365,7 +365,12 @@ function parsedThrownBody(value: unknown): RouteManifestThrownBody | undefined {
     return parsedHandlerBody(value);
   }
   const code = Reflect.get(value, "code");
-  return { kind: "problem", ...(typeof code === "string" ? { code } : {}) };
+  // code 缺席合法(defineHttpError 实参非字面量),存在但非字符串是损坏——静默丢掉会让
+  // openapi 把钉死的 code const 无声退化成裸 string,按坏表拒收。
+  if (code !== undefined && typeof code !== "string") {
+    return undefined;
+  }
+  return { kind: "problem", ...(code === undefined ? {} : { code }) };
 }
 
 function parsedThrownError(value: unknown): RouteManifestThrownError | undefined {
@@ -381,6 +386,12 @@ function parsedThrownError(value: unknown): RouteManifestThrownError | undefined
   const rawBody = Reflect.get(value, "body");
   const body = rawBody === undefined ? undefined : parsedThrownBody(rawBody);
   if (rawBody !== undefined && body === undefined) {
+    return undefined;
+  }
+  // handler 缺席 ⇔ problem 变体(#310):两个键都由编译器成对发射,混搭只可能来自损坏或版本
+  // 错位。放过去 explain 会按缺 handler 标 built-in、openapi 按 body 形状渲染,两个命令给出
+  // 互相矛盾的契约——按「有表但读不出」同一纪律整份拒收。
+  if ((handler === undefined) !== (body?.kind === "problem")) {
     return undefined;
   }
   return {

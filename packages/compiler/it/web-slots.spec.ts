@@ -444,15 +444,21 @@ describe("schema tracing", () => {
       "export type CreateUser = InferOutput<typeof createUserSchema>;",
       "// 泛型别名不追溯(rhs 不登记),使用处合法降级为按类型生成解码器。",
       "export type ViaGeneric<T> = InferOutput<typeof createUserSchema>;",
+      "// 命名别名会被提升成 definition:wire 合并后引用根内联、孤儿定义按可达性剪掉。",
+      'import { type InferIO, searchQuerySchema } from "@/schemas";',
+      "export type SearchQueryAlias = InferIO<typeof searchQuerySchema>;",
     ].join("\n"),
     "users-controller.ts": [
       controllerImports,
-      'import type { CreateUser, ViaGeneric } from "@/aliases";',
+      'import type { CreateUser, SearchQueryAlias, ViaGeneric } from "@/aliases";',
       'import { type InferIO, type InferOutput, createUserSchema, searchQuerySchema, tagSchema } from "@/schemas";',
       "@Controller()",
       "export class UsersController {",
       '  @Get("/search")',
       "  search(_query: Query<InferIO<typeof searchQuerySchema>>): void {}",
+      "",
+      '  @Get("/search-aliased")',
+      "  searchAliased(_query: Query<SearchQueryAlias>): void {}",
       "",
       '  @Post("/inline")',
       "  inline(_body: Body<InferOutput<typeof createUserSchema>>): void {}",
@@ -540,6 +546,28 @@ describe("schema tracing", () => {
     // typed-edge 不动:routes.ts 的 invoke 断言仍是 handler 侧(schema 输出)的形状。
     const routesModule = generatedContent(result, "routes.ts");
     expect(routesModule).toContain('slots[0] as { "mode"?: string; "page": number }');
+  });
+
+  test("a named-alias schema slot merges input-side optionality like the inline form", async () => {
+    const result = await compileSlotsOrThrow(schemaSources);
+
+    // 条件类型别名(InferIO<typeof x>)不被提升为 definition,根保持内联对象——wire 合并
+    // 与内联写法同路径。引用根的内联+可达性剪枝是 wireTableOf 的发射不变量防御,当前
+    // 别名形态不触发。
+    const slot = contractOf(result, "GET", "/search-aliased").slots[0] as {
+      readonly table: {
+        readonly root: Record<string, unknown>;
+        readonly definitions: Record<string, unknown>;
+      };
+    };
+    expect(slot.table.root).toMatchObject({
+      kind: "object",
+      fields: [
+        { name: "mode", optional: false },
+        { name: "page", optional: true },
+      ],
+    });
+    expect(slot.table.definitions).toEqual({});
   });
 
   test("a generic alias is not followed and falls back to a type-generated decoder", async () => {
