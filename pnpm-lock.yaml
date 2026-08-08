@@ -62,38 +62,38 @@ importers:
     dependencies:
       '@reforce/config':
         specifier: workspace:*
-        version: link:../packages/config
+        version: link:../packages/kernel/config
       '@reforce/core':
         specifier: workspace:*
-        version: link:../packages/core
-      '@reforce/web':
+        version: link:../packages/kernel/core
+      '@reforce/web-core':
         specifier: workspace:*
-        version: link:../packages/web
+        version: link:../packages/web/web-core
       '@reforce/web-fastify':
         specifier: workspace:*
-        version: link:../packages/web-fastify
+        version: link:../packages/web/web-fastify
       '@reforce/web-hono':
         specifier: workspace:*
-        version: link:../packages/web-hono
+        version: link:../packages/web/web-hono
       '@reforce/web-node':
         specifier: workspace:*
-        version: link:../packages/web-node
+        version: link:../packages/web/web-node
     devDependencies:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.7
       '@reforce/cli':
         specifier: workspace:*
-        version: link:../packages/cli
+        version: link:../packages/devkit/cli
       '@reforce/logging':
         specifier: workspace:*
-        version: link:../packages/logging
+        version: link:../packages/observability/logging
       '@reforce/logging-pino':
         specifier: workspace:*
-        version: link:../packages/logging-pino
+        version: link:../packages/observability/logging-pino
       '@reforce/testing':
         specifier: workspace:*
-        version: link:../packages/testing
+        version: link:../packages/kernel/testing
       '@reforce/tooling-testing':
         specifier: workspace:*
         version: link:../tooling/testing
@@ -122,14 +122,85 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
-  packages/bundler-plugin:
+  packages/data/transaction:
+    dependencies:
+      '@reforce/core':
+        specifier: workspace:*
+        version: link:../../kernel/core
+      '@swc/helpers':
+        specifier: 'catalog:'
+        version: 0.5.23
+    devDependencies:
+      '@biomejs/biome':
+        specifier: 'catalog:'
+        version: 2.5.7
+      '@reforce/tooling-rslib':
+        specifier: workspace:*
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-tsconfig':
+        specifier: workspace:*
+        version: link:../../../tooling/tsconfig
+      '@reforce/tooling-vitest':
+        specifier: workspace:*
+        version: link:../../../tooling/vitest
+      '@rslib/core':
+        specifier: 'catalog:'
+        version: 0.23.2(typescript@7.0.2)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
+
+  packages/data/transaction-testing:
+    dependencies:
+      '@reforce/transaction':
+        specifier: workspace:*
+        version: link:../transaction
+      '@swc/helpers':
+        specifier: 'catalog:'
+        version: 0.5.23
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
+    devDependencies:
+      '@biomejs/biome':
+        specifier: 'catalog:'
+        version: 2.5.7
+      '@reforce/tooling-rslib':
+        specifier: workspace:*
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-tsconfig':
+        specifier: workspace:*
+        version: link:../../../tooling/tsconfig
+      '@reforce/tooling-vitest':
+        specifier: workspace:*
+        version: link:../../../tooling/vitest
+      '@rslib/core':
+        specifier: 'catalog:'
+        version: 0.23.2(typescript@7.0.2)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+
+  packages/devkit/bundler-plugin:
     dependencies:
       '@reforce/compiler':
         specifier: workspace:*
         version: link:../compiler
       '@reforce/primitives':
         specifier: workspace:*
-        version: link:../primitives
+        version: link:../../kernel/primitives
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -145,19 +216,19 @@ importers:
         version: 2.5.7
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-testing':
         specifier: workspace:*
-        version: link:../../tooling/testing
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -174,29 +245,29 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/cli:
+  packages/devkit/cli:
     dependencies:
       '@reforce/compiler':
         specifier: workspace:*
         version: link:../compiler
       '@reforce/config':
         specifier: workspace:*
-        version: link:../config
+        version: link:../../kernel/config
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
       '@reforce/primitives':
         specifier: workspace:*
-        version: link:../primitives
+        version: link:../../kernel/primitives
       '@reforce/runtime':
         specifier: workspace:*
-        version: link:../runtime
+        version: link:../../kernel/runtime
       '@reforce/transaction':
         specifier: workspace:*
-        version: link:../transaction
-      '@reforce/web':
+        version: link:../../data/transaction
+      '@reforce/web-core':
         specifier: workspace:*
-        version: link:../web
+        version: link:../../web/web-core
       '@rsbuild/core':
         specifier: ^2.1.9
         version: 2.1.9
@@ -218,16 +289,16 @@ importers:
         version: 2.5.7
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-testing':
         specifier: workspace:*
-        version: link:../../tooling/testing
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -244,14 +315,14 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/compiler:
+  packages/devkit/compiler:
     dependencies:
       '@dagrejs/graphlib':
         specifier: ^4.0.1
         version: 4.0.5
       '@reforce/primitives':
         specifier: workspace:*
-        version: link:../primitives
+        version: link:../../kernel/primitives
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -291,28 +362,28 @@ importers:
         version: 2.5.7
       '@reforce/config':
         specifier: workspace:*
-        version: link:../config
+        version: link:../../kernel/config
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-testing':
         specifier: workspace:*
-        version: link:../../tooling/testing
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@reforce/transaction':
         specifier: workspace:*
-        version: link:../transaction
-      '@reforce/web':
+        version: link:../../data/transaction
+      '@reforce/web-core':
         specifier: workspace:*
-        version: link:../web
+        version: link:../../web/web-core
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.1.0-dev.20260806.1)
@@ -332,99 +403,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/config:
-    dependencies:
-      '@reforce/core':
-        specifier: workspace:*
-        version: link:../core
-      '@reforce/logging':
-        specifier: workspace:*
-        version: link:../logging
-      '@standard-schema/spec':
-        specifier: ^1.1.0
-        version: 1.1.0
-      '@swc/helpers':
-        specifier: 'catalog:'
-        version: 0.5.23
-      dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 'catalog:'
-        version: 2.5.7
-      '@reforce/tooling-rslib':
-        specifier: workspace:*
-        version: link:../../tooling/rslib
-      '@reforce/tooling-testing':
-        specifier: workspace:*
-        version: link:../../tooling/testing
-      '@reforce/tooling-tsconfig':
-        specifier: workspace:*
-        version: link:../../tooling/tsconfig
-      '@reforce/tooling-vitest':
-        specifier: workspace:*
-        version: link:../../tooling/vitest
-      '@rslib/core':
-        specifier: 'catalog:'
-        version: 0.23.2(typescript@7.0.2)
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.1.2
-      fast-check:
-        specifier: ^4.9.0
-        version: 4.9.0
-      type-fest:
-        specifier: 'catalog:'
-        version: 5.8.0
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
-
-  packages/core:
-    dependencies:
-      '@swc/helpers':
-        specifier: 'catalog:'
-        version: 0.5.23
-      radashi:
-        specifier: ^12.9.1
-        version: 12.9.1
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 'catalog:'
-        version: 2.5.7
-      '@reforce/tooling-rslib':
-        specifier: workspace:*
-        version: link:../../tooling/rslib
-      '@reforce/tooling-testing':
-        specifier: workspace:*
-        version: link:../../tooling/testing
-      '@reforce/tooling-tsconfig':
-        specifier: workspace:*
-        version: link:../../tooling/tsconfig
-      '@reforce/tooling-vitest':
-        specifier: workspace:*
-        version: link:../../tooling/vitest
-      '@rslib/core':
-        specifier: 'catalog:'
-        version: 0.23.2(typescript@7.0.2)
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.1.2
-      fast-check:
-        specifier: ^4.9.0
-        version: 4.9.0
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
-
-  packages/create-reforce:
+  packages/devkit/create-reforce:
     dependencies:
       '@clack/core':
         specifier: ^1.4.3
@@ -441,13 +420,13 @@ importers:
         version: 2.5.7
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -461,82 +440,51 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/logging:
-    dependencies:
-      '@reforce/core':
-        specifier: workspace:*
-        version: link:../core
-      '@reforce/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      '@swc/helpers':
-        specifier: 'catalog:'
-        version: 0.5.23
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 'catalog:'
-        version: 2.5.7
-      '@reforce/tooling-rslib':
-        specifier: workspace:*
-        version: link:../../tooling/rslib
-      '@reforce/tooling-testing':
-        specifier: workspace:*
-        version: link:../../tooling/testing
-      '@reforce/tooling-tsconfig':
-        specifier: workspace:*
-        version: link:../../tooling/tsconfig
-      '@reforce/tooling-vitest':
-        specifier: workspace:*
-        version: link:../../tooling/vitest
-      '@rslib/core':
-        specifier: 'catalog:'
-        version: 0.23.2(typescript@7.0.2)
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.1.2
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
-
-  packages/logging-pino:
+  packages/kernel/config:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
         version: link:../core
       '@reforce/logging':
         specifier: workspace:*
-        version: link:../logging
+        version: link:../../observability/logging
+      '@standard-schema/spec':
+        specifier: ^1.1.0
+        version: 1.1.0
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
-      pino:
-        specifier: ^10.3.1
-        version: 10.3.1
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
     devDependencies:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.7
-      '@reforce/bundler-plugin':
-        specifier: workspace:*
-        version: link:../bundler-plugin
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-testing':
+        specifier: workspace:*
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
+      type-fest:
+        specifier: 'catalog:'
+        version: 5.8.0
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -544,24 +492,30 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/primitives:
+  packages/kernel/core:
     dependencies:
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
+      radashi:
+        specifier: ^12.9.1
+        version: 12.9.1
     devDependencies:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.7
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-testing':
+        specifier: workspace:*
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -578,7 +532,41 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/runtime:
+  packages/kernel/primitives:
+    dependencies:
+      '@swc/helpers':
+        specifier: 'catalog:'
+        version: 0.5.23
+    devDependencies:
+      '@biomejs/biome':
+        specifier: 'catalog:'
+        version: 2.5.7
+      '@reforce/tooling-rslib':
+        specifier: workspace:*
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-tsconfig':
+        specifier: workspace:*
+        version: link:../../../tooling/tsconfig
+      '@reforce/tooling-vitest':
+        specifier: workspace:*
+        version: link:../../../tooling/vitest
+      '@rslib/core':
+        specifier: 'catalog:'
+        version: 0.23.2(typescript@7.0.2)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
+
+  packages/kernel/runtime:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
@@ -595,16 +583,16 @@ importers:
         version: 2.5.7
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-testing':
         specifier: workspace:*
-        version: link:../../tooling/testing
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -618,7 +606,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/testing:
+  packages/kernel/testing:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
@@ -632,19 +620,19 @@ importers:
         version: 2.5.7
       '@reforce/logging':
         specifier: workspace:*
-        version: link:../logging
+        version: link:../../observability/logging
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-testing':
         specifier: workspace:*
-        version: link:../../tooling/testing
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -661,11 +649,14 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/transaction:
+  packages/observability/logging:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
+      '@reforce/runtime':
+        specifier: workspace:*
+        version: link:../../kernel/runtime
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -675,22 +666,22 @@ importers:
         version: 2.5.7
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-testing':
+        specifier: workspace:*
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
-      fast-check:
-        specifier: ^4.9.0
-        version: 4.9.0
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -698,30 +689,36 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/transaction-testing:
+  packages/observability/logging-pino:
     dependencies:
-      '@reforce/transaction':
+      '@reforce/core':
         specifier: workspace:*
-        version: link:../transaction
+        version: link:../../kernel/core
+      '@reforce/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
-      vitest:
-        specifier: 'catalog:'
-        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
     devDependencies:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.7
+      '@reforce/bundler-plugin':
+        specifier: workspace:*
+        version: link:../../devkit/bundler-plugin
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -731,12 +728,15 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/web:
+  packages/web/web-core:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../kernel/core
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -755,16 +755,16 @@ importers:
         version: 2.5.7
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-testing':
         specifier: workspace:*
-        version: link:../../tooling/testing
+        version: link:../../../tooling/testing
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -778,14 +778,14 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/web-fastify:
+  packages/web/web-fastify:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
-      '@reforce/web':
+        version: link:../../kernel/core
+      '@reforce/web-core':
         specifier: workspace:*
-        version: link:../web
+        version: link:../web-core
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -798,16 +798,16 @@ importers:
         version: 2.5.7
       '@reforce/bundler-plugin':
         specifier: workspace:*
-        version: link:../bundler-plugin
+        version: link:../../devkit/bundler-plugin
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -821,17 +821,17 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/web-hono:
+  packages/web/web-hono:
     dependencies:
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.0)
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
-      '@reforce/web':
+        version: link:../../kernel/core
+      '@reforce/web-core':
         specifier: workspace:*
-        version: link:../web
+        version: link:../web-core
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -844,16 +844,16 @@ importers:
         version: 2.5.7
       '@reforce/bundler-plugin':
         specifier: workspace:*
-        version: link:../bundler-plugin
+        version: link:../../devkit/bundler-plugin
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -867,14 +867,14 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
 
-  packages/web-node:
+  packages/web/web-node:
     dependencies:
       '@reforce/core':
         specifier: workspace:*
-        version: link:../core
-      '@reforce/web':
+        version: link:../../kernel/core
+      '@reforce/web-core':
         specifier: workspace:*
-        version: link:../web
+        version: link:../web-core
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -887,16 +887,16 @@ importers:
         version: 2.5.7
       '@reforce/bundler-plugin':
         specifier: workspace:*
-        version: link:../bundler-plugin
+        version: link:../../devkit/bundler-plugin
       '@reforce/tooling-rslib':
         specifier: workspace:*
-        version: link:../../tooling/rslib
+        version: link:../../../tooling/rslib
       '@reforce/tooling-tsconfig':
         specifier: workspace:*
-        version: link:../../tooling/tsconfig
+        version: link:../../../tooling/tsconfig
       '@reforce/tooling-vitest':
         specifier: workspace:*
-        version: link:../../tooling/vitest
+        version: link:../../../tooling/vitest
       '@rslib/core':
         specifier: 'catalog:'
         version: 0.23.2(typescript@7.0.2)
@@ -1006,7 +1006,7 @@ importers:
     dependencies:
       '@reforce/primitives':
         specifier: workspace:*
-        version: link:../../packages/primitives
+        version: link:../../packages/kernel/primitives
       '@swc/core':
         specifier: ^1.15.47
         version: 1.15.47(@swc/helpers@0.5.23)

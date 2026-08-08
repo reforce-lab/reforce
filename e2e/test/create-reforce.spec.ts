@@ -17,8 +17,15 @@ import { installApplicationPackages } from "../support/application-packages";
 // 顺带冒烟「z.infer 别名 → typeof → schema 值」的编译期追溯。
 
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
-const createReforceEntry = join(workspaceRoot, "packages", "create-reforce", "dist", "index.js");
-const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
+const createReforceEntry = join(
+  workspaceRoot,
+  "packages",
+  "devkit",
+  "create-reforce",
+  "dist",
+  "index.js",
+);
+const cliEntry = join(workspaceRoot, "packages", "devkit", "cli", "dist", "reforce.js");
 const zodRoot = fileURLToPath(new URL(".", import.meta.resolve("zod/package.json")));
 const nodeExecutable = await resolveNodeExecutable();
 const commandTimeout = 120_000;

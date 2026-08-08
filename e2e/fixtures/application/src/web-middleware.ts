@@ -1,4 +1,4 @@
-import { Middleware, type RequestContext } from "@reforce/web";
+import { Middleware, type RequestContext } from "@reforce/web-core";
 import { Roles } from "@/web-markers";
 
 // 洋葱中间件（ADR 0006 W4）：三个阶段各一枚，全部全局挂载。每层在 await next() 之后把

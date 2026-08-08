@@ -1,6 +1,6 @@
 import { defineApplication } from "@reforce/core";
 import { logging } from "@reforce/logging";
-import type { RequestSeeder } from "@reforce/web";
+import type { RequestSeeder } from "@reforce/web-core";
 import { web } from "@reforce/web-node";
 import { HttpExchange, httpExchange } from "@/http-exchange";
 

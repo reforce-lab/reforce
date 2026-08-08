@@ -15,7 +15,7 @@
     "@reforce/config": "workspace:*",
     "@reforce/core": "workspace:*",
     "@reforce/logging": "workspace:*",
-    "@reforce/web": "workspace:*",
+    "@reforce/web-core": "workspace:*",
     "@reforce/web-fastify": "workspace:*",
     "@reforce/web-hono": "workspace:*",
     "@reforce/web-node": "workspace:*"

@@ -20,7 +20,7 @@ import { installApplicationPackages } from "../support/application-packages";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
-const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
+const cliEntry = join(workspaceRoot, "packages", "devkit", "cli", "dist", "reforce.js");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const commandTimeout = 120_000;
 const nodeExecutable = await resolveNodeExecutable();
@@ -367,7 +367,7 @@ describe.sequential("HTTP application over the built artifact", () => {
     });
   });
 
-  // L4 的完整用户链路（RFC 0011，#242 影响面：「@reforce/web：请求字段的 LogFieldSource
+  // L4 的完整用户链路（RFC 0011，#242 影响面：「@reforce/web-core：请求字段的 LogFieldSource
   // 实现」）。断言的是**应用自己**打的那条记录，不是框架发的请求日志——后者的 method/path
   // 是 web 核心直接写进去的，用它做断言证明不了贡献者接上没有。
   test("an application log written during a request carries that request's fields", async () => {

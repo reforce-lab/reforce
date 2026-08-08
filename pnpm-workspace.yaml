@@ -1,6 +1,6 @@
 packages:
   - e2e
-  - "packages/*"
+  - "packages/*/*"
   - "tooling/*"
   - "sites/*"
 

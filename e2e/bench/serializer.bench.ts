@@ -6,8 +6,8 @@
 // 复跑：`pnpm --dir e2e run bench:serializer`。
 
 import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/core";
-import { createWebApplication } from "@reforce/web";
-import type { PreparedRoute } from "@reforce/web/adapter";
+import { createWebApplication } from "@reforce/web-core";
+import type { PreparedRoute } from "@reforce/web-core/adapter";
 
 const iterations = 200_000;
 const rounds = 5;

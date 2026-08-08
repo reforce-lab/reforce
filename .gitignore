@@ -12,14 +12,16 @@ dist/
 
 # 真 starter 包的 meta 三件套由 `reforce lib` 随 build 产出（#153），与 dist 同为构建产物。
 # 用通配而不是逐包罗列：新增引擎包时漏写一行就会把构建产物提交进来（e2e 夹具在 /e2e 下，不受影响）。
-/packages/*/reforce-meta.json
-/packages/*/reforce.js
-/packages/*/reforce.d.ts
+# 两层通配对应 packages/<分组>/<包>/：写成一层不是「少忽略几个文件」，而是整条规则失配、
+# 三件套全部变成待提交，同时 biome 会连带把生成的 json 一起检查（它默认读 .gitignore）。
+/packages/*/*/reforce-meta.json
+/packages/*/*/reforce.js
+/packages/*/*/reforce.d.ts
 
 # @reforce/logging 的 meta 是手写源文件不是构建产物（RFC 0011 勘误，#242）：defaultBean 与
 # 无 @Injectable 的位序包装 bean 是 `reforce lib` 还表达不了的形状，由 it/reforce-meta.spec.ts
 # 回读自检兜底。
-!/packages/logging/reforce-meta.json
+!/packages/observability/logging/reforce-meta.json
 
 # turbo
 .turbo/
@@ -27,7 +29,7 @@ dist/
 # test / coverage
 coverage/
 /e2e/e2e-junit.xml
-/packages/cli/recovery-junit.xml
+/packages/devkit/cli/recovery-junit.xml
 
 # logs
 *.log

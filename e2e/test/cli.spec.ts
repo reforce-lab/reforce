@@ -16,11 +16,11 @@ import { installApplicationPackages } from "../support/application-packages";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
-const cliRoot = join(workspaceRoot, "packages", "cli");
+const cliRoot = join(workspaceRoot, "packages", "devkit", "cli");
 const cliEntry = join(cliRoot, "dist", "reforce.js");
 // starter lib 编译只需要 @reforce/core 的 dist 类型面（fixture 应用副本的装配在
 // support/application-packages.ts）。
-const coreRoot = join(workspaceRoot, "packages", "core");
+const coreRoot = join(workspaceRoot, "packages", "kernel", "core");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const windowsSignalFixture = fileURLToPath(
   import.meta.resolve("@reforce/tooling-testing/windows-signal-harness"),
@@ -579,7 +579,7 @@ async function startDevelopment(input: {
   }
 }
 
-// 哨兵重写的节奏钟（packages/cli/it/support/watch-harness.ts 同款取值理由）：只控制「多久
+// 哨兵重写的节奏钟（packages/devkit/cli/it/support/watch-harness.ts 同款取值理由）：只控制「多久
 // 没等到就重写哨兵」，不判失败——判死仍归 vitest 的用例击杀钟 commandTimeout。
 const watchDeliveryRetouchIntervalMilliseconds = 3_000;
 

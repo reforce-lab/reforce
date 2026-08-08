@@ -1,13 +1,13 @@
 import { Injectable, type OnContextStart } from "@reforce/core";
 import type { LogFieldSource, Logger, LoggerLevelMap, LoggingSettings } from "@reforce/logging";
-import { WebRequestFields } from "@reforce/web";
+import { WebRequestFields } from "@reforce/web-core";
 
 // 日志的用户链路（RFC 0011 L3 勘误，#242）。绑定不再是应用里的样板 bean：@reforce/logging
 // 升格为 starter，默认绑定（零依赖 JSON writer）以 defaultBean 随 `starters: [logging, …]`
 // 进图。应用要写的只剩显式级别配置——一个普通的 LoggingSettings bean，本地恒胜 starter
 // 自带的全默认 DefaultLoggingSettings。
 
-// 请求字段贡献者（RFC 0011 L4）：@reforce/web 出实现，应用决定注册不注册。它没有
+// 请求字段贡献者（RFC 0011 L4）：@reforce/web-core 出实现，应用决定注册不注册。它没有
 // @Injectable()——web 不是 starter，本包的类不会自己进图，所以这里是一个薄子类。
 // `implements LogFieldSource` 是它被链接到默认绑定那条集合边的唯一依据。
 @Injectable()

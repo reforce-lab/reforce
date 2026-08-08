@@ -21,7 +21,7 @@ import { installApplicationPackages } from "../support/application-packages";
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
-const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
+const cliEntry = join(workspaceRoot, "packages", "devkit", "cli", "dist", "reforce.js");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const commandTimeout = 120_000;
 

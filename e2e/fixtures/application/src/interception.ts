@@ -1,6 +1,6 @@
 import type { ReplacingInterceptHandle } from "@reforce/core";
 import { Injectable, Interceptor } from "@reforce/core";
-import { Controller, Get } from "@reforce/web";
+import { Controller, Get } from "@reforce/web-core";
 import { Audited } from "@/method-markers";
 
 // 方法级织入的最小取证场景（ADR 0008 AM1，#202，x-onion 同款取证法）：拦截器把标记值

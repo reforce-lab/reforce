@@ -73,7 +73,7 @@ pnpm run test:e2e
 
 package exports 只公开 `dist`，仓库测试的跨 package import 由 Turbo 先构建上游依赖后消费产物，不设置仓库专用 export condition。Rsbuild 的 `development` / `production` mode 只控制用户应用行为，两种 mode 都必须消费 Reforce package 的 `dist`。
 
-dev-only 运行时依赖（当前只有 `@reforce/web` 的 `youch`，#279）：只被 dev 链路加载、但按 pnpm 严格布局必须放在 `dependencies` 的包。版本锁 exact，升级前须人工重审其 HTML 模板的转义面；「生产不含」由 CLI 生产构建的 NODE_ENV 折叠 + 空 stub 替换双闸保证，产物哨兵断言用其传递依赖名（如 `@speed-highlight/core`），不用会撞中文注释的裸名。
+dev-only 运行时依赖（当前只有 `@reforce/web-core` 的 `youch`，#279）：只被 dev 链路加载、但按 pnpm 严格布局必须放在 `dependencies` 的包。版本锁 exact，升级前须人工重审其 HTML 模板的转义面；「生产不含」由 CLI 生产构建的 NODE_ENV 折叠 + 空 stub 替换双闸保证，产物哨兵断言用其传递依赖名（如 `@speed-highlight/core`），不用会撞中文注释的裸名。
 
 CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 26 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Node.js 进程证据支持。
 
@@ -130,20 +130,20 @@ reforce start --project apps/api
 
 | 域 | 表 |
 |---|---|
-| compiler 诊断 | `packages/compiler/src/error-codes.ts` → `compilerDiagnosticCodes` |
-| 容器 | `packages/core/src/error-codes.ts` → `coreErrorCodes` |
-| 事务 | `packages/transaction/src/error-codes.ts` → `transactionErrorCodes` |
-| web | `packages/web/src/error-codes.ts` → `webErrorCodes` |
-| runtime / CLI 失败码 | `packages/runtime/src/error-codes.ts` → `cliFailureCodes` |
-| CLI 错误码 | `packages/cli/src/error-codes.ts` → `cliErrorCodes`（前者的子集） |
+| compiler 诊断 | `packages/devkit/compiler/src/error-codes.ts` → `compilerDiagnosticCodes` |
+| 容器 | `packages/kernel/core/src/error-codes.ts` → `coreErrorCodes` |
+| 事务 | `packages/data/transaction/src/error-codes.ts` → `transactionErrorCodes` |
+| web | `packages/web/web-core/src/error-codes.ts` → `webErrorCodes` |
+| runtime / CLI 失败码 | `packages/kernel/runtime/src/error-codes.ts` → `cliFailureCodes` |
+| CLI 错误码 | `packages/devkit/cli/src/error-codes.ts` → `cliErrorCodes`（前者的子集） |
 
-`packages/cli/src/explain/code-registry.ts` 把它们聚合到一起，`packages/cli/test/explain/code-registry.spec.ts` 断言全局唯一。**新增一个持有码的包，就建它的 `src/error-codes.ts` 并在 registry 里登记一行**，否则它不参与查重。
+`packages/devkit/cli/src/explain/code-registry.ts` 把它们聚合到一起，`packages/devkit/cli/test/explain/code-registry.spec.ts` 断言全局唯一。**新增一个持有码的包，就建它的 `src/error-codes.ts` 并在 registry 里登记一行**，否则它不参与查重。
 
 **新增码的纪律。**
 
 - **新码带域前缀**：`CORE_` / `CONFIG_` / `WEB_` / `CLI_` / `TRANSACTION_`。compiler 诊断码维持无前缀惯例——它们有独立闭集与独立消费面（抑制注释、诊断级别）。
 - **存量码一律不改名。** 改码会砸掉用户已经写下的 `--diagnostic-level`、`// reforce-ignore` 注释和 json 消费方。
-- **长文与码同 PR**：新增任何错误码，`packages/cli/src/explain/` 的对应长文表（compiler 诊断在 `codes.ts`，其余按读者场景分表）里同时补上它的长文。这条由 `packages/cli/test/explain/codes.spec.ts` 的全量覆盖断言机械化（#297 收口后全部存量码已有长文）：漏写长文的码会被点名，测试通不过。
+- **长文与码同 PR**：新增任何错误码，`packages/devkit/cli/src/explain/` 的对应长文表（compiler 诊断在 `codes.ts`，其余按读者场景分表）里同时补上它的长文。这条由 `packages/devkit/cli/test/explain/codes.spec.ts` 的全量覆盖断言机械化（#297 收口后全部存量码已有长文）：漏写长文的码会被点名，测试通不过。
 - **不是所有失败都要码。** 纯包内的控制流信号（不会越过框架边界抵达用户的那种）维持裸 `Error`，不进码表。
 
 ## 知识沉淀义务
