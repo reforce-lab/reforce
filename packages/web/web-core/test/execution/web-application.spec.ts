@@ -1,8 +1,10 @@
-import type {
-  ApplicationContext,
-  BeanClass,
-  BeanDefinition,
-  RequestScopeSeed,
+import {
+  type ApplicationContext,
+  type BeanClass,
+  type BeanDefinition,
+  type RequestFacts,
+  type RequestScopeSeed,
+  runWithRequestFacts,
 } from "@reforce/core";
 import { describe, expect, test, vi } from "vitest";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
@@ -22,7 +24,14 @@ import { schemaOf } from "../support/schemas";
 
 // 单测层把 ApplicationContext 收窄为纯查表替身（跨包运行时属外部边界）；真实 context 的
 // 全链路（请求作用域、Current 句柄）由 it/web-application.spec.ts 覆盖。
-function contextOf(beans: readonly (readonly [BeanClass, object])[]): ApplicationContext {
+//
+// hasRequestScopedBeans 缺省 false（#380）：绝大多数用例的路由不碰请求 bean，那正是「一次
+// run() 都不开」那一档。要走开作用域那一档的用例显式打开它，替身也照实把请求事实挂上去
+// ——这是 core 唯一被借用的运行时，为的是不把「facts 到底传没传下去」偷偷放过。
+function contextOf(
+  beans: readonly (readonly [BeanClass, object])[],
+  options: { readonly hasRequestScopedBeans?: boolean } = {},
+): ApplicationContext {
   const byTarget = new Map<unknown, object>(beans);
   return {
     start: () => Promise.resolve({ beanTimings: [] }),
@@ -34,11 +43,13 @@ function contextOf(beans: readonly (readonly [BeanClass, object])[]): Applicatio
       // 查表替身按注册键取值，泛型键值关联由用例自己维护 // justified: 测试替身的查表窄化
       return instance as T;
     },
+    hasRequestScopedBeans: options.hasRequestScopedBeans ?? false,
     async runInRequestScope<R>(
       _seeds: readonly RequestScopeSeed[],
       callback: () => R,
+      facts?: RequestFacts,
     ): Promise<Awaited<R>> {
-      return await callback();
+      return await (facts === undefined ? callback() : runWithRequestFacts(facts, callback));
     },
     close: () => Promise.resolve(),
   };
@@ -76,6 +87,14 @@ function tableOf(
 ): GeneratedRouteTable {
   return { schemaVersion: 4, routes, errorHandlers };
 }
+
+// 只用来声明「这个应用注册了 logger」（#380 判据的一半），不看它记了什么。
+const silentLogger: RequestLogger = {
+  isEnabled: () => false,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
 
 function recordingMiddleware(log: string[], label: string): new () => RouteMiddleware {
   return class {
@@ -731,6 +750,9 @@ describe("WebRequestFields", () => {
         }),
       ]),
       context: contextOf([[Peeking, new Peeking()]]),
+      // 一个请求 bean 都没有，但注册了 logger——请求事实存在的全部理由就是应用日志
+      // （#380 判据的「或者」那一半）。
+      logger: silentLogger,
     });
     const route = application.routes[0];
     if (route === undefined) {
@@ -760,6 +782,7 @@ describe("WebRequestFields", () => {
     const application = createWebApplication({
       table: tableOf([routeOf({})]),
       context: contextOf([[ProbeController, new ProbeController()]]),
+      logger: silentLogger,
     });
     const route = application.routes[0];
     if (route === undefined) {
@@ -1036,7 +1059,8 @@ describe("createWebApplication request id", () => {
       table: tableOf([
         routeOf({ controller: Outcomes, beanId: "src/outcomes.ts#Outcomes", ...invokeOf("ok") }),
       ]),
-      context: contextOf([[Outcomes, new Outcomes()]]),
+      // seeder 只在开请求 bean 仓那一档跑（#380）：没有请求 bean 就没有东西可播种。
+      context: contextOf([[Outcomes, new Outcomes()]], { hasRequestScopedBeans: true }),
       requestSeeds: () => {
         seen = currentRequestId();
         return [];
@@ -1088,13 +1112,6 @@ describe("createWebApplication fixed per-request cost", () => {
     return route;
   }
 
-  const silentLogger: RequestLogger = {
-    isEnabled: () => false,
-    info: () => undefined,
-    warn: () => undefined,
-    error: () => undefined,
-  };
-
   // handlerMs 是请求日志的字段，没有 logger 就没有读者；此前两次取时是无条件的。
   test("takes no timestamp at all when no logger is wired", async () => {
     const now = vi.spyOn(performance, "now");
@@ -1116,13 +1133,111 @@ describe("createWebApplication fixed per-request cost", () => {
     now.mockRestore();
   });
 
+  // #380 判据：注册表里有 scope:"request" 的 bean，或者注册了 logger。两者都没有，一次
+  // AsyncLocalStorage.run() 都不开——请求期间因此读不到任何请求事实。这是接受并写进文档的
+  // 已知洞：那种配置下本来就没有任何东西在消费 request id（响应头那个是传值的，不经 ALS）。
+  test("opens no request scope when there is neither a request Bean nor a logger", async () => {
+    let seen: string | undefined = "untouched";
+    class Peeking {
+      ok(): Response {
+        seen = currentRequestId();
+        return new Response("ok");
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: Peeking,
+          beanId: "src/peeking.ts#Peeking",
+          invoke: (instance) => Reflect.apply(Peeking.prototype.ok, instance, []),
+        }),
+      ]),
+      context: contextOf([[Peeking, new Peeking()]]),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
+
+    expect(seen).toBeUndefined();
+  });
+
+  test("a logger alone is enough for currentRequestId to work", async () => {
+    let seen: string | undefined;
+    class Peeking {
+      ok(): Response {
+        seen = currentRequestId();
+        return new Response("ok");
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: Peeking,
+          beanId: "src/peeking.ts#Peeking",
+          invoke: (instance) => Reflect.apply(Peeking.prototype.ok, instance, []),
+        }),
+      ]),
+      context: contextOf([[Peeking, new Peeking()]]),
+      logger: silentLogger,
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "logged" } }),
+      ),
+      {},
+    );
+
+    expect(seen).toBe("logged");
+  });
+
+  test("a request-scoped Bean alone is enough for currentRequestId to work", async () => {
+    let seen: string | undefined;
+    class Peeking {
+      ok(): Response {
+        seen = currentRequestId();
+        return new Response("ok");
+      }
+    }
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: Peeking,
+          beanId: "src/peeking.ts#Peeking",
+          invoke: (instance) => Reflect.apply(Peeking.prototype.ok, instance, []),
+        }),
+      ]),
+      context: contextOf([[Peeking, new Peeking()]], { hasRequestScopedBeans: true }),
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "scoped" } }),
+      ),
+      {},
+    );
+
+    expect(seen).toBe("scoped");
+  });
+
   // `requestSeeds?.(context) ?? []` 此前每请求造一个新的空数组。
   test("reuses one shared empty seed array when no seeder is wired", async () => {
     const seen: (readonly unknown[])[] = [];
     const application = createWebApplication({
       table: tableOf([routeOf({})]),
       context: {
-        ...contextOf([[ProbeController, new ProbeController()]]),
+        ...contextOf([[ProbeController, new ProbeController()]], { hasRequestScopedBeans: true }),
         async runInRequestScope<R>(
           seeds: readonly RequestScopeSeed[],
           callback: () => R,

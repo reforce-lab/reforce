@@ -41,7 +41,8 @@ export class ResolutionState {
   private readonly cycleProxyByTargetId = new Map<string, object>();
   private readonly lazyHandleByTargetId = new Map<string, Lazy<object>>();
   private readonly cleanupLedger = new Map<string, CleanupAction>();
-  // 每个 context 一套 ALS：两个 context 的请求上下文互不可见（与实例表同一隔离边界）。
+  // ALS 本身是模块级单例（#380），这个实例只当 owner 身份用：store 上记着它，
+  // `active()` 比对不上就当作「不在请求作用域内」，两个 context 的请求仓因此仍互不可见。
   readonly requestScope = new RequestScope();
   // 启动台账挂这里，因为 BeanResolver 与 LifecycleRunner 都只拿得到 ResolutionState
   // （RFC 0011 C6，#250）。

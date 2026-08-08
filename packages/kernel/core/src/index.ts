@@ -63,5 +63,10 @@ export type {
   OnContextClose,
   OnContextStart,
   QualifiedBean,
+  RequestFacts,
   RequestScopeSeed,
 } from "@/public-types";
+// 请求事实的读取点（#380）：与请求作用域同一个 ALS，裸函数读取——想读 request id 的代码
+// （logger 的 serializer、starter 里的工具函数）手上没有 context，逼它们先变成 bean 的约束
+// 会传染。
+export { currentRequestFacts, runWithRequestFacts } from "@/runtime/request-scope";

@@ -3,7 +3,7 @@ import type { PreparedRoute, RequestSeeder, WebApplication } from "@/adapter";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
-import { runWithRequestFields } from "@/execution/request-fields";
+import { runWithRequestFields, type WebRequestFacts } from "@/execution/request-fields";
 import { requestIdHeader, resolveRequestId } from "@/execution/request-id";
 import { type RouteResponse, toRouteResponse } from "@/execution/route-response";
 import { serializeResponse } from "@/execution/serialization";
@@ -210,11 +210,63 @@ function composeChain(
 // (RFC 0012 S3 / #275 拍板 3)一并删除。语义收敛为一条无例外的规则:写在 context 上的响应头
 // 一定出站。
 
+/**
+ * 每请求「入场」：在跑这一条路由之前把请求作用域开好。启动期从三档里挑一档定死（#380）。
+ *
+ * 挑法只看**声明**，不看函数体，因为三个判据全是编译期事实：有没有请求作用域 bean 是生成物
+ * 里的 requestConstructionOrder（core 没有条件注册），有没有 logger 是生成的 bootstrap 传不传
+ * 那个参数。request-id 不进判据——响应头那个 id 是传值的，全程不经 ALS。
+ *
+ * 粒度是应用级不是路由级：路由级只在「没 logger、没请求 bean、但少数路由有请求 bean」这个
+ * 很窄的组合里多省一点，而只要注册了 logger 全应用都得开，那份复杂度就白花了。
+ */
+type RequestEntry = (
+  requestContext: RequestContextState,
+  requestId: string,
+  run: () => Promise<RouteResponse>,
+) => Promise<RouteResponse>;
+
+// 请求事实对象在这里造，因为只有开了作用域才有人读得到它（#380）：第三档一次都不造。
+function requestFactsOf(requestContext: RequestContextState, requestId: string): WebRequestFacts {
+  return { method: requestContext.method, path: requestContext.path, requestId };
+}
+
+function createRequestEntry(options: CreateWebApplicationOptions): RequestEntry {
+  const { context, requestSeeds } = options;
+  if (context.hasRequestScopedBeans) {
+    // DI 必须靠这一仓定位请求 bean 实例，所以这一档非开不可；请求事实顺路挂在同一个 store 上。
+    if (requestSeeds === undefined) {
+      // 没装 seeder：共用一个冻结空数组，此前每请求造一个新的（#380）。
+      return (requestContext, requestId, run) =>
+        context.runInRequestScope(emptySeeds, run, requestFactsOf(requestContext, requestId));
+    }
+    return (requestContext, requestId, run) => {
+      const facts = requestFactsOf(requestContext, requestId);
+      // seeds 必须在开仓之前算好，而 seeder 读得到 currentRequestId 是 #303 立下的行为，
+      // 所以这一段单独套一次事实作用域。只有真的装了 seeder 的应用付这次 run()。
+      // 交给 seeder 的就是 requestContext 本身（#341）：要标准 Request 就读 `context.request`，
+      // 不读就一次都不物化。
+      const seeds = runWithRequestFields(facts, () => requestSeeds(requestContext));
+      return context.runInRequestScope(seeds, run, facts);
+    };
+  }
+  if (options.logger !== undefined) {
+    // 没有请求 bean 但有 logger：应用日志每条要自带 method/path/requestId，这是请求事实存在的
+    // 全部理由。开一个只带事实的作用域，不建仓、不走空的请求构造计划。
+    return (requestContext, requestId, run) =>
+      runWithRequestFields(requestFactsOf(requestContext, requestId), run);
+  }
+  // 两者都没有：一次 run() 都不开。已知洞（接受）：这种配置下调 currentRequestId() 拿到
+  // undefined 且不报错——编译期看不见函数体里的自由函数调用，堵不住；而这种配置下本来就
+  // 没有任何东西在消费 request id。
+  return (_requestContext, _requestId, run) => run();
+}
+
 function prepareRoute(
   route: GeneratedRoute,
   context: ApplicationContext,
   dispatchError: ErrorDispatcher,
-  requestSeeds: RequestSeeder | undefined,
+  enterRequest: RequestEntry,
   logger: RequestLogger | undefined,
 ): PreparedRoute {
   const controller = context.get(route.controller);
@@ -254,57 +306,47 @@ function prepareRoute(
         params,
         meta: lookupMeta,
       });
-      // 请求字段先入场再开作用域（RFC 0011 L4，#242）：ALS 只向内传播，所以请求 bean 的构造
-      // 与整条中间件链都在它里面——这一段里任何一条应用日志都自带 method 与 path。
-      return await runWithRequestFields(
-        { method: route.method, path: route.path, requestId },
-        async () => {
-          // seeds 在字段作用域内部计算(#303 行为中立挪移):seeder 因此读得到 currentRequestId。
-          // 交出去的就是 requestContext 本身（#341）：seeder 要标准 Request 就读
-          // `context.request`，不读就一次都不物化。
-          const seeds = requestSeeds?.(requestContext) ?? emptySeeds;
-          // 日志落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
-          // 请求态字段。挪到外面就只剩静态字段了。
-          return await context.runInRequestScope(seeds, async () => {
-            // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
-            // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
-            const startedAt = logger === undefined ? undefined : performance.now();
-            // 此前这里包着一个 async IIFE，只为在 try/catch 之后还能读到 response（#380）：
-            // 每请求白付一个 async frame。改成先声明后赋值，两条分支都必赋值。
-            let response: RouteResponse;
-            try {
-              response = await chain(requestContext);
-            } catch (error) {
-              requestContext.recordFailure(error);
-              response = await dispatchError(error, requestContext);
-            }
-            // 统一缝盖章(#303):编码响应/直返 Response/400/500/中间件抛错的外层兜底,全部
-            // 出口都经过这里。
-            // 无条件 set——不变量是「客户端可见 id ≡ 日志 id」,覆盖用户手写头。#340 之后
-            // 这里操作的恒是框架自己那个 Headers（逃生口的头是被**拷贝**进来的，不是借用
-            // 用户那个实例），所以不再有 fetch 代理 Response 的 immutable headers 会抛的
-            // 情况，那道 try/catch 已成死代码，删除。
-            response.headers.set(requestIdHeader, requestId);
-            // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
-            // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
-            // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
-            try {
-              logRequest({
-                logger,
-                method: route.method,
-                path: route.path,
-                requestId,
-                response,
-                startedAt,
-                error: requestContext.failure,
-              });
-            } catch {
-              // 记不上就记不上，不值得赔上一个已经成功的响应。
-            }
-            return response;
+      // 整条链都在作用域里（RFC 0011 L4，#242）：ALS 只向内传播，所以请求 bean 的构造与整条
+      // 中间件链都要在它里面——这一段里任何一条应用日志才自带 method 与 path，LogFieldSource
+      // 也才读得到 trace id 之类的请求态字段。
+      return await enterRequest(requestContext, requestId, async () => {
+        // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
+        // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
+        const startedAt = logger === undefined ? undefined : performance.now();
+        // 此前这里包着一个 async IIFE，只为在 try/catch 之后还能读到 response（#380）：
+        // 每请求白付一个 async frame。改成先声明后赋值，两条分支都必赋值。
+        let response: RouteResponse;
+        try {
+          response = await chain(requestContext);
+        } catch (error) {
+          requestContext.recordFailure(error);
+          response = await dispatchError(error, requestContext);
+        }
+        // 统一缝盖章(#303):编码响应/直返 Response/400/500/中间件抛错的外层兜底,全部
+        // 出口都经过这里。
+        // 无条件 set——不变量是「客户端可见 id ≡ 日志 id」,覆盖用户手写头。#340 之后
+        // 这里操作的恒是框架自己那个 Headers（逃生口的头是被**拷贝**进来的，不是借用
+        // 用户那个实例），所以不再有 fetch 代理 Response 的 immutable headers 会抛的
+        // 情况，那道 try/catch 已成死代码，删除。
+        response.headers.set(requestIdHeader, requestId);
+        // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
+        // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
+        // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。
+        try {
+          logRequest({
+            logger,
+            method: route.method,
+            path: route.path,
+            requestId,
+            response,
+            startedAt,
+            error: requestContext.failure,
           });
-        },
-      );
+        } catch {
+          // 记不上就记不上，不值得赔上一个已经成功的响应。
+        }
+        return response;
+      });
     },
   };
 }
@@ -327,9 +369,10 @@ export function createWebApplication(options: CreateWebApplicationOptions): Prep
     })),
     options.logger,
   );
+  const enterRequest = createRequestEntry(options);
   return {
     routes: table.routes.map((route) =>
-      prepareRoute(route, options.context, dispatchError, options.requestSeeds, options.logger),
+      prepareRoute(route, options.context, dispatchError, enterRequest, options.logger),
     ),
     controllerCount: new Set(table.routes.map((route) => route.controller)).size,
     ...(options.logger === undefined ? {} : { logNotFound: createNotFoundLogger(options.logger) }),
