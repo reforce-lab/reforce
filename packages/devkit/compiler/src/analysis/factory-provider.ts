@@ -434,6 +434,7 @@ export function analyzeFactoryProvider(
       scope: scopeSelection.scope,
       primary: literalOptions.primary,
       fallback: false,
+      eager: false,
       qualifiers: literalOptions.qualifiers,
       dependencies: [],
       dispose: functions.dispose !== undefined,

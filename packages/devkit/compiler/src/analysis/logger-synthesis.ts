@@ -1,15 +1,16 @@
 import { markerUseValueOf } from "@/analysis/marker-value";
 import type {
-  GeneratedSourceReferenceModel,
   LiteralArgumentValue,
   PendingDependency,
   ProviderDraft,
+  SourceReferenceModel,
 } from "@/analysis/model";
 import { sourceReference } from "@/analysis/model";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
+import type { StarterBeanModel } from "@/linking/starter-linking";
 import type { DecoratorUse } from "@/parser/source-ir";
 import type { CanonicalFileId, SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
@@ -110,13 +111,13 @@ export function providedLoggerFactorySymbol(
   for (const draft of drafts) {
     const local = draft.provider.provides.find(isLoggerFactoryContract);
     if (local !== undefined) {
-      return { symbol: local, span: spanOfMetaSource(draft.provider.declarationSource) };
+      return { symbol: local, span: spanOfSourceReference(draft.provider.declarationSource) };
     }
   }
   for (const bean of linker.starterLinkage.beans) {
     const provided = bean.provides.find(isLoggerFactoryContract);
     if (provided !== undefined) {
-      return { symbol: provided, span: spanOfMetaSource(bean.metaSource) };
+      return { symbol: provided, span: spanOfStarterBean(bean) };
     }
   }
   return undefined;
@@ -208,13 +209,19 @@ export const contextFrameworkLoggerBeanId = loggerBeanId(contextFrameworkLoggerN
 // 拼错——而调它的级是合法动作，引导缓冲重放后由真 logger 按它过滤（RFC 0011 C4，#250）。
 const bootstrapLoggerNames = ["reforce.config"] as const;
 
-// metaSource 与 SourceSpan 逐字段同构（差一个 file/fileId 的名字），所以这是改名不是伪造位置。
-// 框架 logger 没有用户源码位置，「它为什么在图里」的答案就是那条注册了 web 引擎的 starter meta
-// 条目——与引擎 bean 自己的 declarationSource 指向同一处。
-export function spanOfMetaSource(source: GeneratedSourceReferenceModel): SourceSpan {
-  // file 出自 starter 链接阶段，已满足 canonical 相对路径文法 // justified: 品牌只记录该校验
+// SourceReferenceModel 与 SourceSpan 逐字段同构（差一个 file/fileId 的名字），所以这是改名
+// 不是伪造位置。**只对应用侧的位置引用成立**：它们的 file 已经是项目根相对的。
+export function spanOfSourceReference(source: SourceReferenceModel): SourceSpan {
+  // file 出自项目源码发现，已满足 canonical 相对路径文法 // justified: 品牌只记录该校验
   const fileId = source.file as CanonicalFileId;
   return { fileId, start: source.start, end: source.end };
+}
+
+// starter bean 的位置引用是**包内**相对的，不能走上面那条——链接期为此另算了一份项目根相对的
+// fileId（starter-linking 的 projectRelativeFileId，#369）。框架 logger 没有用户源码位置，
+// 「它为什么在图里」的答案就是那条注册了引擎的 starter meta 条目。
+export function spanOfStarterBean(bean: StarterBeanModel): SourceSpan {
+  return { fileId: bean.metaSourceFileId, start: bean.metaSource.start, end: bean.metaSource.end };
 }
 
 interface LoggerDemand {
@@ -340,6 +347,7 @@ function loggerLevelsDraft(names: readonly string[], span: SourceSpan): Provider
       scope: "singleton",
       primary: false,
       fallback: false,
+      eager: false,
       qualifiers: [],
       dependencies: [],
       literalArguments: [{ index: 0, value: snapshot }],
@@ -498,6 +506,7 @@ function loggerDraft(
       scope: "singleton",
       primary: false,
       fallback: false,
+      eager: false,
       qualifiers: [],
       dependencies: [],
       literalArguments: [{ index: 1, value: name satisfies LiteralArgumentValue }],

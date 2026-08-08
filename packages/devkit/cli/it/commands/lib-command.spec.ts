@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { afterEach, expect, test } from "vitest";
@@ -104,9 +104,9 @@ test("lib fails with PACKAGE_EXPORTS_INVALID when the meta subpath is missing", 
     phase: "project",
     code: "PACKAGE_EXPORTS_INVALID",
   });
-  // 产物仍然写盘：作者补一行 exports 即可发布，不需要重跑编译。
-  const meta = JSON.parse(await readFile(join(project.projectRoot, "reforce-meta.json"), "utf8"));
-  expect(meta.schemaVersion).toBe(1);
+  // 什么都没写盘（#369）：exports 校验此前跑在写盘之后，作者拿到的是一份写好了却接不上的
+  // 产物——`--check` 不许写盘，这道校验只能前移，两种模式因此共用同一个顺序。
+  await expect(readFile(join(project.projectRoot, "reforce-meta.json"), "utf8")).rejects.toThrow();
 });
 
 test("lib reports compiler diagnostics for unsupported library declarations", async () => {
@@ -152,4 +152,61 @@ test("runCli dispatches the lib command with compile options", async () => {
 
   expect(exitCode).toBe(0);
   expect(output.events[0]).toMatchObject({ kind: "success", command: "lib" });
+});
+
+// --check（#369）：CI 用它守「meta 与源码同步」。判据是「一个字节都不写」+「过期时点名」。
+test("lib --check passes when the committed meta matches the source", async () => {
+  const project = await createLibrary();
+  await runLibCommand({
+    cwd: project.projectRoot,
+    projectDirectory: ".",
+    reporter: recordingReporter().reporter,
+  });
+  const output = recordingReporter();
+
+  const exitCode = await runLibCommand({
+    cwd: project.projectRoot,
+    projectDirectory: ".",
+    reporter: output.reporter,
+    checkOnly: true,
+  });
+
+  expect(exitCode).toBe(0);
+  expect(output.events[0]).toMatchObject({
+    kind: "success",
+    message: "Starter meta for @acme/starter-widget is up to date.",
+  });
+});
+
+test("lib --check fails with STARTER_META_OUT_OF_DATE when the meta is stale", async () => {
+  const project = await createLibrary();
+  await writeFile(join(project.projectRoot, "reforce-meta.json"), "{}\n", "utf8");
+  const output = recordingReporter();
+
+  const exitCode = await runLibCommand({
+    cwd: project.projectRoot,
+    projectDirectory: ".",
+    reporter: output.reporter,
+    checkOnly: true,
+  });
+
+  expect(exitCode).toBe(1);
+  expect(output.events[0]).toMatchObject({
+    kind: "failure",
+    command: "lib",
+    code: "STARTER_META_OUT_OF_DATE",
+  });
+});
+
+test("lib --check writes nothing, so a missing meta stays missing", async () => {
+  const project = await createLibrary();
+
+  await runLibCommand({
+    cwd: project.projectRoot,
+    projectDirectory: ".",
+    reporter: recordingReporter().reporter,
+    checkOnly: true,
+  });
+
+  await expect(readFile(join(project.projectRoot, "reforce-meta.json"), "utf8")).rejects.toThrow();
 });

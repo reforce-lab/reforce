@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "reforce-meta.json",
+  "description": "A reforce starter's published bean graph. This schema is a deliberately loose approximation meant for editor completion: cross-field rules (provides must contain the bean's own id, runtimeExport.module must stay inside the package, coordinates must resolve) are not expressible here. parseStarterMeta from @reforce/starter-meta is the admission gate; schema.json only helps you type.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "starterDeps", "symbols", "beans"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Schema major. Single integer, no minor: a reader either knows this major or refuses the file. Readers keep the parsers of older majors around, so one compiler reads starters published against several majors.",
+      "enum": [1]
+    },
+    "requires": {
+      "description": "Capabilities the reader must understand. Unknown keys are ignored by readers, which is a disaster for keys whose absence silently changes wiring - those keys name a capability here so an older reader fails loudly instead of mis-wiring.",
+      "type": "array",
+      "items": { "enum": ["collection"] }
+    },
+    "starterDeps": {
+      "description": "Other starter packages whose meta coordinates appear in this file. They must reach the application registry too.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/packageName" }
+    },
+    "symbols": {
+      "description": "The package's public symbol table: what a coordinate of the form <package>#<export> resolves to.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/symbol" }
+    },
+    "beans": {
+      "description": "The beans this starter contributes to an application's container.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/bean" }
+    }
+  },
+  "$defs": {
+    "packageName": {
+      "description": "A bare package name: \"pkg\" or \"@scope/pkg\".",
+      "type": "string",
+      "pattern": "^(?!\\.)(?:@[^/@#:\\\\]+/)?[^/@#:\\\\]+$"
+    },
+    "coordinate": {
+      "description": "A symbol coordinate: \"<package>#<export>\" for packages that publish a meta, or \"<package>:<package-relative path>#<export>\" for contract packages that do not.",
+      "type": "string",
+      "pattern": "^(?!\\.)(?:@[^/@#:\\\\]+/)?[^/@#:\\\\]+(?::[^#\\\\]+)?#[^#]+$"
+    },
+    "relativePath": {
+      "description": "A package-relative posix path: no leading slash, no drive letter, no empty segment, no \".\" or \"..\" segment.",
+      "type": "string",
+      "pattern": "^(?![A-Za-z]:)(?!(?:.*/)?\\.\\.?(?:/|$))[^/\\\\]+(?:/[^/\\\\]+)*$"
+    },
+    "symbol": {
+      "description": "One entry of the package's symbol table.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "file", "subpaths"],
+      "properties": {
+        "id": {
+          "description": "This symbol's coordinate. Always \"<own package>#<export>\".",
+          "$ref": "#/$defs/coordinate"
+        },
+        "file": {
+          "description": "The published declaration file the symbol is anchored to.",
+          "$ref": "#/$defs/relativePath"
+        },
+        "subpaths": {
+          "description": "The exports subpaths the symbol is reachable from, e.g. [\".\", \"./testing\"].",
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "pattern": "^\\.(?:/.+)?$" }
+        }
+      }
+    },
+    "bean": {
+      "description": "One bean. Only class construction semantics are supported: dependencies are constructor parameters, in order.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "runtimeExport", "provides", "dependencies"],
+      "properties": {
+        "id": {
+          "description": "The bean's coordinate. Always \"<own package>#<export>\".",
+          "$ref": "#/$defs/coordinate"
+        },
+        "runtimeExport": { "$ref": "#/$defs/runtimeExport" },
+        "provides": {
+          "description": "Every contract this bean satisfies. Must contain the bean's own id.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/coordinate" }
+        },
+        "dependencies": {
+          "description": "Constructor parameters, in positional order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "defaultBean": {
+          "description": "This bean only wins when nothing else provides the contract. Absent means false, and an absent-but-meant-true value merely produces an ambiguity error rather than a wrong wiring, which is why it is not a `requires` capability.",
+          "type": "boolean"
+        },
+        "role": {
+          "description": "\"root\" materializes the bean even when nothing depends on it. \"demand\" (the default) only materializes it when something asks.",
+          "enum": ["demand", "root"]
+        },
+        "lifecycle": { "$ref": "#/$defs/lifecycle" },
+        "source": {
+          "description": "Where the bean is declared. Diagnostics only - no consumer dereferences the span by byte, and omitting it just costs a location line. Optional because it is the field a hand-written meta gets wrong first and outgrows first.",
+          "$ref": "#/$defs/sourceReference"
+        }
+      }
+    },
+    "dependency": {
+      "description": "One constructor parameter of a bean.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["contract", "open"],
+      "properties": {
+        "contract": {
+          "description": "The contract this parameter asks for.",
+          "$ref": "#/$defs/coordinate"
+        },
+        "open": {
+          "description": "The contract needs a provider from outside this package. Recomputed by the reader, so a wrong value here is harmless.",
+          "type": "boolean"
+        },
+        "collection": {
+          "description": "The parameter is a readonly T[]: every candidate for the contract is injected, and zero candidates is legal. Absent means a single edge - which is why writing it requires the \"collection\" capability.",
+          "type": "boolean"
+        }
+      }
+    },
+    "runtimeExport": {
+      "description": "Where the reader imports the bean class from at runtime.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["module", "export"],
+      "properties": {
+        "module": {
+          "description": "An import specifier inside the own package: the package name or one of its subpaths.",
+          "type": "string",
+          "minLength": 1
+        },
+        "export": {
+          "description": "The exported binding name at that specifier.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "lifecycle": {
+      "description": "Container lifecycle hooks the bean class implements. Absent means neither.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": [],
+      "properties": {
+        "start": { "enum": ["onContextStart"] },
+        "close": { "enum": ["onContextClose"] }
+      }
+    },
+    "sourceReference": {
+      "description": "A span in a package file. Zero-based line and character; offset is used for tie-breaking only.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["file", "start", "end"],
+      "properties": {
+        "file": { "$ref": "#/$defs/relativePath" },
+        "start": { "$ref": "#/$defs/position" },
+        "end": { "$ref": "#/$defs/position" }
+      }
+    },
+    "position": {
+      "description": "A zero-based position. end must not be earlier than start.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["offset", "line", "character"],
+      "properties": {
+        "offset": { "type": "integer", "minimum": 0 },
+        "line": { "type": "integer", "minimum": 0 },
+        "character": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

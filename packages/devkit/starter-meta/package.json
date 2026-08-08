@@ -1,56 +1,43 @@
 {
-  "name": "@reforce/compiler",
+  "name": "@reforce/starter-meta",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "The reforce-meta.json contract: types, parser, JSON Schema and a standalone checker.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./schema.json": "./schema.json"
+  },
+  "bin": {
+    "reforce-meta-check": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "schema.json"
   ],
   "scripts": {
     "build": "rslib build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
     "test": "vitest run",
-    "bench:checker": "node bench/checker.bench.ts",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
   "dependencies": {
-    "@dagrejs/graphlib": "^4.0.1",
     "@reforce/primitives": "workspace:*",
-    "@reforce/starter-meta": "workspace:*",
-    "@swc/helpers": "catalog:",
-    "enhanced-resolve": "^5.24.5",
-    "estree-util-is-identifier-name": "^3.0.0",
-    "get-tsconfig": "^4.14.1",
-    "json-stable-stringify": "^1.3.0",
-    "lru-cache": "^11.5.2",
-    "strip-json-comments": "^5.0.3",
-    "tinyglobby": "^0.2.17",
-    "typescript": "catalog:ts-next",
-    "yuku-ast": "0.8.3",
-    "yuku-parser": "0.8.3"
+    "@swc/helpers": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
-    "@reforce/config": "workspace:*",
-    "@reforce/core": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
-    "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@reforce/tooling-vitest": "workspace:*",
-    "@reforce/transaction": "workspace:*",
-    "@reforce/web-core": "workspace:*",
     "@rslib/core": "catalog:",
-    "@standard-schema/spec": "^1.1.0",
-    "@swc/core": "^1.15.47",
     "@types/node": "catalog:",
     "fast-check": "^4.9.0",
+    "typescript": "catalog:",
     "vitest": "catalog:"
   }
 }

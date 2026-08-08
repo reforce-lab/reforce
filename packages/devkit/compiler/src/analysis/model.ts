@@ -5,17 +5,11 @@ import type { LinkedSymbol, LinkedType } from "@/linking/model";
 import type { SourceSpan } from "@/parser/source-location";
 import type { ParsedSource } from "@/project/source-files";
 
-interface GeneratedSourcePositionModel {
-  readonly offset: number;
-  readonly line: number;
-  readonly character: number;
-}
+// 位置引用的类型住在 @reforce/starter-meta（#369）：它同时是 meta 的公开契约与生成物的形状，
+// 一个名字一份定义。这里重新导出，编译器内部继续从 @/analysis/model 取。
+export type { SourceReferenceModel } from "@reforce/starter-meta";
 
-export interface GeneratedSourceReferenceModel {
-  readonly file: string;
-  readonly start: GeneratedSourcePositionModel;
-  readonly end: GeneratedSourcePositionModel;
-}
+import type { SourceReferenceModel } from "@reforce/starter-meta";
 
 type DependencyMode = "eager" | "cycle-proxy" | "explicit-lazy" | "current";
 
@@ -28,7 +22,7 @@ export interface SingleDependencyModel {
   // execution-plan's cycle marking rewrites "eager" to "cycle-proxy" in place after analysis,
   // so this is the only field that must stay mutable.
   mode: DependencyMode;
-  readonly source: GeneratedSourceReferenceModel;
+  readonly source: SourceReferenceModel;
   // 该边的契约符号：emission 用它写 type-only 类型标注（ADR 0004 决策 8，#120）。只进生成的
   // import type 与 resolve<T>() 标注，不进 manifest / 运行时 JSON——序列化前必须剥掉。
   readonly contract: LinkedSymbol;
@@ -46,7 +40,7 @@ export interface CollectionMemberModel {
 export interface CollectionDependencyModel {
   readonly parameterIndex: number;
   readonly members: readonly CollectionMemberModel[];
-  readonly source: GeneratedSourceReferenceModel;
+  readonly source: SourceReferenceModel;
   readonly contract: LinkedSymbol;
 }
 
@@ -81,7 +75,7 @@ interface ProviderBase {
   readonly id: string;
   readonly origin: ProviderOriginModel;
   readonly exportName: string;
-  readonly declarationSource: GeneratedSourceReferenceModel;
+  readonly declarationSource: SourceReferenceModel;
   readonly provides: readonly LinkedSymbol[];
   readonly scope: BeanScopeModel;
   readonly primary: boolean;
@@ -90,6 +84,9 @@ interface ProviderBase {
   // 错误：应用侧候选裁决只认 starter 的 defaultBean（resolve-providers 的两处 filter），放过去
   // 就是个静默无效的注解。因此从 meta 物化的 starter provider 与框架合成 bean 恒为 false。
   readonly fallback: boolean;
+  // 可达性根（#369）：starter bean 无需求方也物化入图，编译到 meta 的 `role: "root"`。
+  // 与 fallback 同理，只在库模式下有意义；应用侧本地 draft 一律入图。
+  readonly eager: boolean;
   // @Order(n) 只服务集合成员排序（ADR 0006 W6）；无标记即 undefined，排在全部有序成员之后。
   readonly order?: number;
   readonly qualifiers: readonly QualifierModel[];
@@ -183,6 +180,6 @@ export function reportUnsupportedType(
   );
 }
 
-export function sourceReference(span: SourceSpan): GeneratedSourceReferenceModel {
+export function sourceReference(span: SourceSpan): SourceReferenceModel {
   return { file: span.fileId, start: { ...span.start }, end: { ...span.end } };
 }
