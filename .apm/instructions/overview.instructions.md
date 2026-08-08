@@ -41,24 +41,16 @@ pnpm run build --filter=<pkg>
 - 提交前先对相关 package 运行 `check:write` 自动修复，再确保 `check` / `typecheck` / `test` / `build` 全部通过；不必每次改动都验证全仓库。
 - 提交信息必须符合 conventional 规范，scope不得为空，否则 commit-msg hook 会拒绝。
 - 涉及 Issue、分支、提交或 PR 时，遵循 `CONTRIBUTING.md` 的 Issue 前置、标题格式、分支命名和 PR 关联规则。
-- 产出文件变更（修改/新增/删除）前运行 `git rev-parse --git-dir --git-common-dir` 判断工作区：
-  - 两者指向不同路径：当前已是 Git/Codex/Claude 管理的 worktree，直接使用，禁止嵌套创建。
-  - 两者指向相同路径：当前是主工作区。只读任务直接进行；独立编码任务不得 checkout、switch 或 stash，应在
-    `~/.coding-worktrees/<仓库目录名>/<分支名>` 下新建 worktree（分支名保留斜杠，路径与分支一一对应，例如
-    `fix/dev-watch-cross-drive` → `~/.coding-worktrees/reforce/fix/dev-watch-cross-drive`）。目录名不得以 `.git`
-    开头（曾用的 `~/.git-worktrees` 即因此弃用）：tsgo 判断模块能否用包名命名时要向上找 `node_modules`，它跳过 git
-    目录用的是前缀匹配，`.git*` 全被跳过，于是每个 `rslib.config.ts` 都报 `TS2883` 要求显式类型标注——主 工作区与 CI
-    都不复现，只有按本约定建 worktree 的人会撞上（Issue #99）。必须在仓库根 **之外**：
-    `apm compile --clean` 的孤儿扫描是 `<仓库根>.rglob("AGENTS.md")` 加一份硬编码 skip 列表，不读 `.gitignore`
-    也无配置项，worktree 只要在仓库根里面，就会被它把 **被 git 跟踪**的 `AGENTS.md` 判成 orphan 删掉 （Issue #47、#52，上游
-    microsoft/apm#2436）。
-  - 主工作区一律新建 worktree，没有"这次算延续未提交工作、可以原地干"这类自行判定。唯一例外是 owner 明确要求在当前工作区干：owner
-    主动说，或你问了、owner 答应了——判定权必须在 owner 手上，因为这个条件由你评估、又恰好对你省事。代价也不对等：多建一个用不上的
-    worktree 只花一次 `pnpm install`，少建一个就是多摊互不相关的改动缠在同一棵树上、测试红了分不清是谁弄的。
-  - 指定 PR、分支或 commit 时以指定引用为基线；全新任务默认基于 `main`。
-  - 新建 worktree 后、向其中派发独立 agent 前，先在该目录运行 `pnpm install`；根 `prepare` 会执行
-    `apm install && apm compile`，生成
-    `AGENTS.md` 及运行时配置。不要把未初始化 worktree 直接交给独立 agent。
+- 产出文件变更（修改/新增/删除）前跑 `git rev-parse --git-dir --git-common-dir`：两者不同 = 已在 worktree，直接用，
+  禁止嵌套新建；两者相同 = 主工作区，按下面几条办。
+  - 只读任务直接做；独立编码任务不得 checkout、switch 或 stash，一律在 `~/.coding-worktrees/<仓库目录名>/<分支名>`
+    新建 worktree（分支名保留斜杠，路径与分支一一对应）。这个路径是硬约束：放进仓库根内会被 `apm compile --clean` 当
+    orphan 删掉被 git 跟踪的 `AGENTS.md`（#47、#52），目录名以 `.git` 开头会让 tsgo 对每个 `rslib.config.ts` 报
+    `TS2883`（#99）——两者主工作区与 CI 都不复现。
+  - "这次算延续未提交工作、可以原地干"不成立：判定权在 owner 手上，唯一例外是 owner 主动说、或你问了 owner 答应了。
+  - 基线：指定了 PR、分支或 commit 就以它为准，否则基于 `main`。
+  - 新 worktree 派发独立 agent 前先在该目录 `pnpm install`（根 `prepare` 会跑 `apm install && apm compile`，生成
+    `AGENTS.md` 及运行时配置），不要把未初始化 worktree 直接交给独立 agent。
 - 全仓库使用 TS7 (tsgo)：
   - 类型安全第一
   - 能使用类型推导的，优先利用类型推导，而非到处声明类型
@@ -116,8 +108,8 @@ pnpm run build --filter=<pkg>
 
 - 权威职责：Issue/RFC 顶楼记录需求与决策；Project 只管状态和排期；Wiki 提供索引与稳定说明；代码和测试代表当前实现。冲突以最新明确的
   Issue/RFC 决议为准，并报告实现偏差；外部版本和 API 仍按事实纪律核实。
-- 架构决策的权威记录放在 RFC issue 顶楼（打 `type: adr` 标签），并登记 Wiki ADR 索引；仓库内只保留理解和维护代码所必需的约束说明与
-  Issue 链接，不复制整份 ADR。
+- 架构决策在此之上还要打 `type: adr` 标签并登记 Wiki ADR 索引；仓库内只保留理解和维护代码所必需的约束说明与 Issue 链接，
+  不复制整份 ADR。
 
 ## 测试纪律
 
