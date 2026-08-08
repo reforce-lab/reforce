@@ -26,7 +26,9 @@ function applicationTsconfig(files: readonly string[]): string {
       moduleResolution: "Bundler",
       strict: true,
     },
-    files: [...files, ".reforce/generated/qualifiers.d.ts"],
+    // 两条生成物都要点名（#350）：判据是「.d.ts 与 .ts 两半都收下」，只收 qualifiers 的
+    // include 覆盖不住 beans.ts，而后者才是 emission 缺陷现形的地方。
+    files: [...files, ".reforce/generated/qualifiers.d.ts", ".reforce/generated/beans.ts"],
   })}\n`;
 }
 
