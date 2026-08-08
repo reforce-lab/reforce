@@ -116,6 +116,35 @@ export function diagnostic(input: DiagnosticInput): CompilerDiagnostic {
   });
 }
 
+// 「构造一条带位置的诊断并入账」的位置参数版：分析层大量诊断都是这个形状，各文件此前
+// 各抄一份（web-routes / web-slots / method-interception 三份，其中只有 web-slots 那份带
+// suggestions 并返回 undefined 以便写 `return report(...)`）。这里收成一份取超集。
+export function report(
+  diagnostics: CompilerDiagnostic[],
+  code: CompilerDiagnosticCode,
+  message: string,
+  span: SourceSpan,
+  // exactOptionalPropertyTypes 下三个键都写成 `| undefined`（#367）：调用点大量是
+  // `{ help: maybeUndefined }`，收窄成 `?: string` 会逼它们各写一次条件展开。
+  options: {
+    readonly help?: string | undefined;
+    readonly related?: CompilerDiagnostic["related"] | undefined;
+    readonly suggestions?: CompilerDiagnostic["suggestions"] | undefined;
+  } = {},
+): undefined {
+  diagnostics.push(
+    diagnostic({
+      code,
+      message,
+      sourceSpan: span,
+      help: options.help,
+      related: options.related,
+      suggestions: options.suggestions,
+    }),
+  );
+  return undefined;
+}
+
 export function orderDiagnostics(
   diagnostics: readonly CompilerDiagnostic[],
 ): readonly CompilerDiagnostic[] {
