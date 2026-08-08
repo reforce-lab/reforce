@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { finished, pipeline } from "node:stream/promises";
 import { Injectable, type OnContextClose } from "@reforce/core";
 import type {
   WebApplication,
@@ -82,6 +82,20 @@ async function writeResponse(response: ServerResponse, result: Response): Promis
   response.writeHead(result.status, headers);
   if (result.body === null) {
     response.end();
+    return;
+  }
+  // content-length 是 WebEngineAdapter 契约的缓冲/流式判据（adapter.ts）：带它即「整体已在内存中、
+  // 可安全缓冲」。此前这里无条件走流，也就是每一条已经完整躺在内存里的 JSON 响应都要建一个
+  // web ReadableStream 的 reader、包一个 Readable、装两侧的 end-of-stream 监听、再逐块 pump。
+  // 实测 13.2µs/请求，而直写 buffer 是 4.7µs——单请求预算约 45µs，这是热路径上最大的单项（#339）。
+  //
+  // 收尾用 finished 而不是 `end(buffer, callback)`：后者实测快 650ns，且在客户端中途断开时回调
+  // 同样触发（Node 26.5.1 实测），但那是实现行为——文档只承诺「stream finished 时调用」。
+  // finished 明确承诺 end / error / premature close 三种情况都 settle。赌错的代价是每个被中断的
+  // 请求泄漏一个永不 settle 的 promise，静默且无界，不值得为 1.4% 去换。
+  if (result.headers.get("content-length") !== null) {
+    response.end(Buffer.from(await result.arrayBuffer()));
+    await finished(response);
     return;
   }
   await pipeline(Readable.fromWeb(result.body), response);
