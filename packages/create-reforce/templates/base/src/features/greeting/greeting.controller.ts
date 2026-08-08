@@ -6,6 +6,7 @@ import {
   Post,
   type Query,
   ResponseStatus,
+  Throws,
   Use,
 } from "@reforce/web";
 import type {
@@ -14,6 +15,7 @@ import type {
   GreetingQuery,
   GreetingView,
 } from "@/features/greeting/greeting.dto";
+import { GreetingAlreadyExists } from "@/features/greeting/greeting.exception";
 import type { GreetingService } from "@/features/greeting/greeting.service";
 import { ApiKeyMiddleware } from "@/infrastructure/web/api-key.middleware";
 import { type Paginated, paginate, type PaginationQuery } from "@/shared/pagination/pagination.dto";
@@ -48,9 +50,14 @@ export class GreetingController {
   // 自己的 (phase, order) 决定。
   //
   // @ResponseStatus 改掉成功状态码：创建资源按惯例回 201，缺省是 200。
+  //
+  // @Throws 把「这条路由会怎么失败」写进契约：GreetingAlreadyExists 撞名时回 409。它只是
+  // 声明——service 抛出后由框架直接翻成 problem+json（见 greeting.exception.ts），这里声明的
+  // 意义是让 routes.json 与 `reforce openapi` 导出的文档把 409 列成这条路由的响应之一。
   @Use(ApiKeyMiddleware)
   @Post()
   @ResponseStatus(201)
+  @Throws(GreetingAlreadyExists)
   create(body: Body<CreateGreetingBody>): GreetingView {
     return this.greetings.create(body.name, body.message);
   }

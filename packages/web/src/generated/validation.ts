@@ -289,8 +289,8 @@ function validateErrorHandler(value: unknown, path: string): void {
 export function validateGeneratedRouteTable(value: unknown): GeneratedRouteTable {
   const table = requireObject(value, "routeTable");
   requireExactKeys(table, ["schemaVersion", "routes", "errorHandlers"], "routeTable");
-  if (Reflect.get(table, "schemaVersion") !== 3) {
-    fail("routeTable.schemaVersion must be 3.");
+  if (Reflect.get(table, "schemaVersion") !== 4) {
+    fail("routeTable.schemaVersion must be 4.");
   }
   const routes = requireArray(Reflect.get(table, "routes"), "routeTable.routes");
   const shapes = new Map<string, string>();

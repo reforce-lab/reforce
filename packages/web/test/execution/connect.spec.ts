@@ -12,7 +12,7 @@ import { connectWebApplication } from "@/execution/connect";
 // 启动、close 先排空引擎再关容器、启动失败回收。真实容器与真实引擎分别由 web/it 与
 // @reforce/web-node 的 IT 覆盖。
 
-const emptyTable = { schemaVersion: 3, routes: [], errorHandlers: [] };
+const emptyTable = { schemaVersion: 4, routes: [], errorHandlers: [] };
 
 class FakeContext implements ApplicationContext {
   readonly events: string[] = [];
