@@ -4,13 +4,17 @@ import type {
   BeanDefinition,
   RequestScopeSeed,
 } from "@reforce/core";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { fromStandardRequest } from "@/execution/incoming-request";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId, WebRequestFields } from "@/execution/request-fields";
 import type { RouteResponse } from "@/execution/route-response";
-import { createWebApplication, type RequestLogger } from "@/execution/web-application";
+import {
+  type CreateWebApplicationOptions,
+  createWebApplication,
+  type RequestLogger,
+} from "@/execution/web-application";
 import type { GeneratedRoute, GeneratedRouteTable } from "@/generated/route-table";
 import type { RouteMiddleware } from "@/routing/middleware";
 import { readRouteBody, readRouteJson } from "../support/route-response";
@@ -1051,5 +1055,92 @@ describe("createWebApplication request id", () => {
     );
 
     expect(seen).toBe("seeded");
+  });
+});
+
+// 每请求固定开销（#380）：这一组断言的是「没有消费方就一次都不做」，不是跑分。
+describe("createWebApplication fixed per-request cost", () => {
+  class Probe {
+    ok(): Response {
+      return new Response("ok");
+    }
+  }
+
+  function preparedProbe(options: {
+    readonly logger?: RequestLogger;
+    readonly requestSeeds?: CreateWebApplicationOptions["requestSeeds"];
+  }) {
+    const application = createWebApplication({
+      table: tableOf([
+        routeOf({
+          controller: Probe,
+          beanId: "src/probe.ts#Probe",
+          invoke: (instance) => Reflect.apply(Probe.prototype.ok, instance, []),
+        }),
+      ]),
+      context: contextOf([[Probe, new Probe()]]),
+      ...options,
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+    return route;
+  }
+
+  const silentLogger: RequestLogger = {
+    isEnabled: () => false,
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+  };
+
+  // handlerMs 是请求日志的字段，没有 logger 就没有读者；此前两次取时是无条件的。
+  test("takes no timestamp at all when no logger is wired", async () => {
+    const now = vi.spyOn(performance, "now");
+    const route = preparedProbe({});
+
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
+
+    expect(now).not.toHaveBeenCalled();
+    now.mockRestore();
+  });
+
+  test("takes the start timestamp when a logger is wired", async () => {
+    const now = vi.spyOn(performance, "now");
+    const route = preparedProbe({ logger: silentLogger });
+
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
+
+    expect(now).toHaveBeenCalled();
+    now.mockRestore();
+  });
+
+  // `requestSeeds?.(context) ?? []` 此前每请求造一个新的空数组。
+  test("reuses one shared empty seed array when no seeder is wired", async () => {
+    const seen: (readonly unknown[])[] = [];
+    const application = createWebApplication({
+      table: tableOf([routeOf({})]),
+      context: {
+        ...contextOf([[ProbeController, new ProbeController()]]),
+        async runInRequestScope<R>(
+          seeds: readonly RequestScopeSeed[],
+          callback: () => R,
+        ): Promise<Awaited<R>> {
+          seen.push(seeds);
+          return await callback();
+        },
+      },
+    });
+    const route = application.routes[0];
+    if (route === undefined) {
+      throw new Error("Expected one prepared route");
+    }
+
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
   });
 });

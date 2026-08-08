@@ -4,6 +4,7 @@ import { RequestContextState } from "@/execution/request-context";
 import { ResponseHeaders } from "@/execution/response-headers";
 import { absorbResponse, type RouteOutcome, respond } from "@/execution/route-response";
 import { createSlotExecutor } from "@/execution/slot-execution";
+import { metaLookup } from "@/routing/route-marker";
 import type { HttpMethod } from "@/routing/vocabulary";
 
 // 引擎适配器一致性套件（#234）：WebEngineAdapter 的行为契约（见 adapter.ts）在每个引擎上都必须成立。
@@ -115,7 +116,7 @@ async function requestBody(request: Request, params: Readonly<Record<string, str
     method: "POST",
     path: "/echo-body",
     params,
-    meta: {},
+    meta: metaLookup({}),
   });
   const [body] = await createSlotExecutor([{ slot: "body", schema: passthroughBodySchema }])(
     context,

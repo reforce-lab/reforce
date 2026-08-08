@@ -1,6 +1,6 @@
 import type { IncomingRequest } from "@/execution/incoming-request";
 import { ResponseHeaders } from "@/execution/response-headers";
-import { metaLookup, type RouteMarker } from "@/routing/route-marker";
+import type { MetaLookup, RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 
 // handler 契约面向 Web 标准（ADR 0006 W3）：request/url 就是标准 Request/URL，不发明自有
@@ -29,7 +29,9 @@ interface RequestContextInputs {
   readonly method: HttpMethod;
   readonly path: string;
   readonly params: Readonly<Record<string, string>>;
-  readonly meta: Readonly<Record<string, RouteMetaValue>>;
+  // 已经算好的 meta 读取闭包，不是原始 meta 表（#380）：prepareRoute 启动期算一次传下来，
+  // 每请求少造一个闭包。
+  readonly meta: MetaLookup;
 }
 
 export class RequestContextState implements RequestContext {
@@ -40,7 +42,7 @@ export class RequestContextState implements RequestContext {
   // set 是无条件成本，而绝大多数路由的用户代码根本不碰响应头。要标准对象的人调 standard()。
   readonly responseHeaders: ResponseHeaders = new ResponseHeaders();
   private readonly incoming: IncomingRequest;
-  private readonly lookupMeta: ReturnType<typeof metaLookup>;
+  private readonly lookupMeta: MetaLookup;
   private urlSnapshot: URL | undefined;
   private querySnapshot: Readonly<Record<string, string>> | undefined;
   private capturedFailure: unknown;
@@ -50,7 +52,7 @@ export class RequestContextState implements RequestContext {
     this.method = inputs.method;
     this.path = inputs.path;
     this.params = inputs.params;
-    this.lookupMeta = metaLookup(inputs.meta);
+    this.lookupMeta = inputs.meta;
   }
 
   // 惰性（#341）：标准 Request 只在真有人读时才造，缓存归 IncomingRequest 的实现——同一请求

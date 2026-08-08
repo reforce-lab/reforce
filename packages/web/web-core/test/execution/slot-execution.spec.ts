@@ -4,6 +4,7 @@ import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { createSlotExecutor } from "@/execution/slot-execution";
 import type { GeneratedRouteSlot } from "@/generated/route-table";
+import { metaLookup } from "@/routing/route-marker";
 import { failingSchema, schemaOf } from "../support/schemas";
 
 function contextOf(inputs: {
@@ -29,7 +30,7 @@ function contextOf(inputs: {
     method: inputs.body === undefined ? "GET" : "POST",
     path: "/users/:id",
     params: inputs.params ?? {},
-    meta: {},
+    meta: metaLookup({}),
   });
 }
 

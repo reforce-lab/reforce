@@ -1,4 +1,4 @@
-import type { ApplicationContext } from "@reforce/core";
+import type { ApplicationContext, RequestScopeSeed } from "@reforce/core";
 import type { PreparedRoute, RequestSeeder, WebApplication } from "@/adapter";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-dispatch";
@@ -27,6 +27,10 @@ import { metaLookup } from "@/routing/route-marker";
 // 但**会留在生成的 d.ts 里**——那样每个消费 @reforce/web-core 的项目 typecheck 时都得解析得到
 // @reforce/logging，等于把一条硬依赖藏在类型层。不写日志的应用不该为它多装一个包。
 type LogFields = Readonly<Record<string, unknown>> | undefined;
+
+// 没装 seeder 的应用此前每请求造一个空数组（`?? []`，#380）。冻结是为了让这个共享实例
+// 不可能被下游写坏。
+const emptySeeds: readonly RequestScopeSeed[] = Object.freeze([]);
 
 /** 500 兜底要的最小形状（RFC 0011 C1，#250）：error-dispatch 只用得到这一个方法。 */
 export interface ErrorLogger {
@@ -72,14 +76,19 @@ function logRequest(input: {
   readonly path: string;
   readonly requestId: string;
   readonly response: RouteResponse;
-  readonly startedAt: number;
+  /**
+   * 请求开始那一刻的 performance.now()，**没装 logger 时是 undefined**（#380）：这两次取时
+   * 只有请求日志消费，没有消费方就一次都不该取。它与 logger 由同一个条件产生，但类型系统
+   * 表达不了这条耦合，所以下面各查一次。
+   */
+  readonly startedAt: number | undefined;
   /** handler 抛出的错误（B2，#250）；被 dispatchError 换成响应后它就是唯一的线索。 */
   readonly error?: unknown;
 }): void {
   const level = levelForStatus(input.response.status);
   // 不变量 8：字段对象在调用之前就构造好了，所以判定必须在这里做，不能指望 logger 内部短路。
   // 级别判定同样必须在字段构造**之前**——它决定要不要构造。
-  if (input.logger?.isEnabled(level) !== true) {
+  if (input.startedAt === undefined || input.logger?.isEnabled(level) !== true) {
     return;
   }
   input.logger[level](
@@ -215,6 +224,8 @@ function prepareRoute(
     middleware: requireMiddlewareInstance(context.get(entry.bean), entry.beanId),
   }));
   const executeSlots = createSlotExecutor(route.slots);
+  // 启动期算一次，PreparedRoute.meta 与每请求的 RequestContextState 共用同一个闭包（#380）。
+  const lookupMeta = metaLookup(route.meta);
 
   const core: RouteRunner = async (requestContext) => {
     try {
@@ -231,7 +242,7 @@ function prepareRoute(
   return {
     method: route.method,
     path: route.path,
-    meta: metaLookup(route.meta),
+    meta: lookupMeta,
     async handle(request, params) {
       // request id(#303):回显合法客户端值,否则生成——请求进 handle 的第一件事,
       // 后面的 seeder、请求 bean、每条应用日志与响应头共享同一个值。
@@ -241,7 +252,7 @@ function prepareRoute(
         method: route.method,
         path: route.path,
         params,
-        meta: route.meta,
+        meta: lookupMeta,
       });
       // 请求字段先入场再开作用域（RFC 0011 L4，#242）：ALS 只向内传播，所以请求 bean 的构造
       // 与整条中间件链都在它里面——这一段里任何一条应用日志都自带 method 与 path。
@@ -251,21 +262,22 @@ function prepareRoute(
           // seeds 在字段作用域内部计算(#303 行为中立挪移):seeder 因此读得到 currentRequestId。
           // 交出去的就是 requestContext 本身（#341）：seeder 要标准 Request 就读
           // `context.request`，不读就一次都不物化。
-          const seeds = requestSeeds?.(requestContext) ?? [];
+          const seeds = requestSeeds?.(requestContext) ?? emptySeeds;
           // 日志落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
           // 请求态字段。挪到外面就只剩静态字段了。
           return await context.runInRequestScope(seeds, async () => {
-            const startedAt = performance.now();
             // 两条出口都要量到：正常返回与 dispatchError 返回都是「这个请求结束了」。外层 catch
             // 保证 handle 永不 reject，所以「结束」处一定有一个 Response。
-            const response = await (async () => {
-              try {
-                return await chain(requestContext);
-              } catch (error) {
-                requestContext.recordFailure(error);
-                return await dispatchError(error, requestContext);
-              }
-            })();
+            const startedAt = logger === undefined ? undefined : performance.now();
+            // 此前这里包着一个 async IIFE，只为在 try/catch 之后还能读到 response（#380）：
+            // 每请求白付一个 async frame。改成先声明后赋值，两条分支都必赋值。
+            let response: RouteResponse;
+            try {
+              response = await chain(requestContext);
+            } catch (error) {
+              requestContext.recordFailure(error);
+              response = await dispatchError(error, requestContext);
+            }
             // 统一缝盖章(#303):编码响应/直返 Response/400/500/中间件抛错的外层兜底,全部
             // 出口都经过这里。
             // 无条件 set——不变量是「客户端可见 id ≡ 日志 id」,覆盖用户手写头。#340 之后

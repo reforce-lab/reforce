@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { fromStandardRequest, type IncomingRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
+import { metaLookup } from "@/routing/route-marker";
 
 // IncomingRequest（#341）：引擎交给核心的每请求入口。核心热路径上只用 method / url() /
 // header() 三样，标准 Request 只在用户读 context.request 时才造。
@@ -36,7 +37,7 @@ function contextOf(incoming: IncomingRequest): RequestContextState {
     method: "GET",
     path: "/users/:id",
     params: { id: "1" },
-    meta: {},
+    meta: metaLookup({}),
   });
 }
 
