@@ -3,6 +3,10 @@ import type { SourceSpan } from "@/parser/source-location";
 
 export const resolvedApplicationProjectBrand: unique symbol = Symbol("ResolvedApplicationProject");
 
+// 诊断的可选字段一律写成 `?: T | undefined`（#367）：对诊断而言「键不存在」与「键在、值是
+// undefined」是同一件事——determinism 的 stableStructuralKey 走 Object.keys，两者若分开，同一
+// 条诊断会因为构造路径不同而错开去重键、在输出里出现两遍。所以这里不收窄成 `?: T`：那样会
+// 逼 `diagnostic()` 改成条件展开，把「键集恒定」这条今天在起作用的性质换掉。
 export interface CompilerDiagnostic {
   readonly kind: "compiler";
   readonly code: CompilerDiagnosticCode;
@@ -11,31 +15,37 @@ export interface CompilerDiagnostic {
   // 返回，而 status 只看有没有 error。
   readonly severity: "error" | "warning";
   readonly message: string;
-  readonly sourceSpan?: SourceSpan;
+  readonly sourceSpan?: SourceSpan | undefined;
   readonly related: readonly {
     readonly message: string;
-    readonly sourceSpan?: SourceSpan;
+    readonly sourceSpan?: SourceSpan | undefined;
   }[];
-  readonly help?: string;
+  readonly help?: string | undefined;
   // 机器可读的修复建议（RFC 0011 D4，#242）。只定字段、只渲染，不做应用器：改写用户源码是
   // 另一个主题。结构必须是纯 plain 值——determinism 的 stableStructuralKey 不处理 Date/Map/Set，
   // 遇到会退化成 {}，让两条不同的建议算出同一个 key。
-  readonly suggestions?: readonly {
-    readonly message: string;
-    readonly span: SourceSpan;
-    readonly replacement: string;
-    readonly applicability: "machine-applicable" | "maybe-incorrect" | "has-placeholders";
-  }[];
-  readonly cause?: {
-    readonly name: string;
-    readonly message: string;
-    readonly code?: string;
-  };
+  readonly suggestions?:
+    | readonly {
+        readonly message: string;
+        readonly span: SourceSpan;
+        readonly replacement: string;
+        readonly applicability: "machine-applicable" | "maybe-incorrect" | "has-placeholders";
+      }[]
+    | undefined;
+  readonly cause?:
+    | {
+        readonly name: string;
+        readonly message: string;
+        readonly code?: string | undefined;
+      }
+    | undefined;
 }
 
 export interface ResolveProjectRequest {
   readonly projectDirectory: string;
-  readonly tsconfigPath?: string;
+  // 与诊断同理（#367）：调用方普遍持有一个 `string | undefined` 的 tsconfig 选项，「不传」与
+  // 「传 undefined」在这里是同一件事。
+  readonly tsconfigPath?: string | undefined;
 }
 
 export interface ResolvedApplicationProject {

@@ -290,10 +290,12 @@ function validatePrimaryCandidates(
 
 // 一条待解析边的需求上下文：应用侧边带注入点 span；starter 边继承把它拉进图的那条链
 // （MISSING_BEAN 的双侧定位与需求链都从这里来，ADR 0004 决策 13）。
+// 可选字段写成 `?: T | undefined`（#367）：这里的「没有位置」「没有消费方」与「字段不在对象
+// 上」是同一件事，两种写法都从调用方自然产生，收窄成 `?: T` 只会逼每个构造点写条件展开。
 interface DemandContext {
-  readonly span?: SourceSpan;
+  readonly span?: SourceSpan | undefined;
   readonly chain: readonly string[];
-  readonly consumer?: StarterBeanModel;
+  readonly consumer?: StarterBeanModel | undefined;
 }
 
 function demandRelated(demand: DemandContext): readonly DiagnosticRelatedInformation[] {

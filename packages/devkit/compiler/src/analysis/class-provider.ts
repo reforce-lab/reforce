@@ -241,9 +241,9 @@ interface ClassDecoratorSelection {
   readonly fallback: boolean;
   readonly requestScoped: boolean;
   readonly qualifierDecorators: readonly DecoratorUse[];
-  readonly explicitQualifier?: string;
-  readonly order?: number;
-  readonly role?: BeanRole;
+  readonly explicitQualifier?: string | undefined;
+  readonly order?: number | undefined;
+  readonly role?: BeanRole | undefined;
 }
 
 function validateMarkerDecorators(

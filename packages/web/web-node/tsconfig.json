@@ -1,6 +1,10 @@
 {
   "extends": "@reforce/tooling-tsconfig/base.json",
   "compilerOptions": {
+    // 本包已收口（#367）：`{ a?: T }` 与 `{ a: T | undefined }` 分开，缺省与显式 undefined
+    // 不再互相赋值。这一行覆盖 tsconfig.node.json / test / it 全部四份——它们都是本文件的
+    // 传递后代，无一重新声明该项。
+    "exactOptionalPropertyTypes": true,
     "rootDir": "./src",
     "paths": {
       "@/*": ["./src/*"]

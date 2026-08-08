@@ -24,7 +24,7 @@ export interface ExternalSymbolAttribution {
   readonly version: string;
   readonly packageRoot: string;
   readonly coordinate: string;
-  readonly metaSubpath?: string;
+  readonly metaSubpath?: string | undefined;
 }
 
 export interface LinkedSymbol {
@@ -45,6 +45,6 @@ export interface LinkedType {
   // Current<T> 句柄（ADR 0006 W7，#142 / #151）：singleton 跨 scope 访问请求态的唯一通道，
   // 与 lazy 同为包装标记，二者互斥（嵌套包装在分析层点名拒绝）。
   readonly current: boolean;
-  readonly qualifierMember?: string;
+  readonly qualifierMember?: string | undefined;
   readonly span: SourceSpan;
 }
