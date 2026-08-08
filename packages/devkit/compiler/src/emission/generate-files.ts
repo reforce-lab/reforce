@@ -17,8 +17,8 @@ import {
 } from "@/analysis/model";
 import type { WebModel } from "@/analysis/web-model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
-import { generateWeavingFile } from "@/emission/generate-weaving-file";
-import { generateWebFiles, webRuntimeModuleSpecifier } from "@/emission/generate-web-files";
+import { webRuntimeModuleSpecifier } from "@/emission/generate-web-files";
+import { refineGeneratedFiles } from "@/emission/refine-emitters";
 import { compactJson, inlineJson, json, runtimeSpecifier } from "@/emission/render";
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
@@ -912,7 +912,8 @@ export function generateFiles(
         providers.length,
       ),
     },
-    ...generateWebFiles(project, web),
-    generateWeavingFile(weaving),
+    // refine pass 的产出走配对表（#344 定案 5）：加一个 refine pass 而不给它配 emitter，
+    // refine-emitters 的 `satisfies Record<RefinePassName, …>` 当场红。
+    ...refineGeneratedFiles({ project, web, weaving }),
   ]);
 }

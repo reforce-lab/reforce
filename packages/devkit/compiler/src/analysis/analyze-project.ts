@@ -17,11 +17,10 @@ import {
   runRefinePass,
 } from "@/analysis/pass";
 import { createPassChannels } from "@/analysis/pass-channels";
-import { analysisPasses, interceptionPass } from "@/analysis/pass-registry";
+import { analysisPasses, interceptionPass, webRoutesPass } from "@/analysis/pass-registry";
 import { resolveProviders } from "@/analysis/resolve-providers";
 import { validateScopeRules } from "@/analysis/scope-rules";
 import type { WebModel } from "@/analysis/web-model";
-import { analyzeWebRoutes } from "@/analysis/web-routes";
 import type { CompilerDiagnostic } from "@/api";
 import { diagnostic, hasErrorDiagnostic, orderDiagnostics } from "@/diagnostics";
 import type { ProjectLinker } from "@/linking/project-linker";
@@ -180,20 +179,13 @@ export function analyzeProject(
     .toSorted((left, right) => compareUtf16CodeUnits(left.id, right.id));
   // 跨作用域裸边与请求内环（ADR 0006 W7）要看已解析的双侧 scope，必须排在 resolveProviders 之后。
   validateScopeRules(allProviders, diagnostics);
-  // 路由提取要在 provider 全集就位后进行：controller/中间件/错误处理器的 bean 身份与
-  // scope 校验都以最终 provider 表为准（ADR 0006 W3/W4，#152）。
-  const web = analyzeWebRoutes(
-    sources,
-    linker,
-    allProviders,
-    diagnostics,
-    channels.engineBeans,
-    typeQuery,
-  );
-  // 织入分析同样要求完整 provider 表（ADR 0008 AM1，#202），且必须先于 createExecutionPlans：
-  // 它把每个被织 bean 的拦截器作为构造依赖边追加进 provider.dependencies，构造排序、
-  // cycle-proxy 改写与 request 计划全部沿既有机制生效。拦截器被强制为 singleton，追加边
-  // 不会引入新的跨作用域形态，validateScopeRules 先跑不受影响。
+  // refine 相位（#344 定案 1）：吃已排序的完整 provider 表、读通道，产领域 model。两个成员
+  // 各自为什么非得排在这里，写在 pass-registry 的定义上；此处只保证它们拿到的是 provider
+  // 全集，且排在 createExecutionPlans 之前——织入会往 provider.dependencies 上追加边。
+  //
+  // 逐个具名取回而不是遍历注册表：两个 model 类型不同，循环只能返回 unknown（见 pass.ts 的
+  // runRefinePass）。它们之间无通道关系，这两行的先后不可观测。
+  const web = runRefinePass(webRoutesPass, passContext, allProviders, channels);
   const weaving = runRefinePass(interceptionPass, passContext, allProviders, channels);
   diagnostics.push(...linker.diagnostics);
 

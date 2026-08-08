@@ -18,7 +18,9 @@ import {
   transactionInterceptorSymbol,
   frameworkOriginId as transactionOriginId,
 } from "@/analysis/transaction-weaving";
+import type { WebModel } from "@/analysis/web-model";
 import { webEngineAdapterName, webPackageName } from "@/analysis/web-model";
+import { analyzeWebRoutes } from "@/analysis/web-routes";
 
 // pass 注册表（#344 定案 4）：`as const` 数组字面量，**执行序即下标序**。
 //
@@ -167,9 +169,13 @@ const loggingPass: ContributePass = {
 // method-interception.ts 里的一句跨文件硬编码（`providerById.has(transactionInterceptorBeanId)`
 // 再就地拼绑定），现在两侧各自声明通道，`channelOrderProblems` 静态核实读在写之后。
 //
+// 它必须先于 createExecutionPlans：每个被织 bean 的拦截器作为构造依赖边追加进
+// provider.dependencies，构造排序、cycle-proxy 改写与 request 计划全部沿既有机制生效。
+//
 // refine 追加依赖边只许 singleton → singleton（pass.ts 的 RefinePass 注释）：validateScopeRules
-// 在本相位之前就跑完了，这里追加的边不再受它检查。拦截器被强制为 singleton，因此成立。
-const interceptionPass: RefinePass<WeavingModel> = {
+// 在本相位之前就跑完了，这里追加的边不再受它检查。拦截器被强制为 singleton，追加边因此不会
+// 引入新的跨作用域形态，先跑的 validateScopeRules 不受影响。
+const interceptionPass = {
   name: "method-interception",
   phase: "refine",
   reads: ["interceptorBindings"],
@@ -183,16 +189,52 @@ const interceptionPass: RefinePass<WeavingModel> = {
       out.interceptorBindings,
     );
   },
-};
+} as const satisfies RefinePass<WeavingModel>;
+
+// 路由提取（ADR 0006 W3/W4，#152）：web 领域的第二个 pass。controller / 中间件 / 错误处理器的
+// bean 身份与 scope 校验都以最终 provider 表为准，所以它只能排在 resolveProviders 之后——与同
+// 领域的 web-engine 中间隔着那个核心步，这正是定案 1「一个领域可以注册多个 pass」的由来。
+//
+// 它是 engineBeans 的唯一读者，写者是 discover 相位的 web-engine：一条跨相位的域内通道，
+// 顺序由 channelOrderProblems 静态核实，不靠「注册表里 web-engine 在前面」这个巧合。
+const webRoutesPass = {
+  name: "web-routes",
+  phase: "refine",
+  reads: ["engineBeans"],
+  writes: [],
+  run(context, providers, out) {
+    return analyzeWebRoutes(
+      context.sources,
+      context.linker,
+      providers,
+      context.diagnostics,
+      out.engineBeans,
+      context.typeQuery,
+    );
+  },
+} as const satisfies RefinePass<WebModel>;
 
 export const analysisPasses = [
   configPass,
   webEnginePass,
   transactionPass,
   loggingPass,
+  webRoutesPass,
   interceptionPass,
 ] as const satisfies PassRegistry;
 
 // refine 的 model 逐个具名取回（pass.ts 的 runRefinePass 说明了为什么不是循环），所以注册表
 // 之外还要把 pass 本身导出给 analyzeProject。
-export { interceptionPass };
+export { interceptionPass, webRoutesPass };
+
+/**
+ * 注册在案的 refine pass 名字（定案 5）。
+ *
+ * 两个 pass 用 `as const satisfies` 而不是类型标注声明，就是为了让 name 保持字面量类型，这个
+ * 联合才有内容——emission 侧的配对表 `satisfies Record<RefinePassName, …>` 因此是穷举的：
+ * 加一个 refine pass 而不给它配 emitter，typecheck 当场红。
+ */
+export type RefinePassName = Extract<
+  (typeof analysisPasses)[number],
+  { readonly phase: "refine" }
+>["name"];
