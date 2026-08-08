@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { ResponseSerializationError } from "@/errors";
+import { ResponseHeaders } from "@/execution/response-headers";
 import { serializeResponse } from "@/execution/serialization";
 import type { GeneratedRouteResponse } from "@/generated/route-table";
 import { readRouteBody, readRouteJson } from "../support/route-response";
 
 // 头是调用方传进来的那一个实例（#340 决议 2：响应头单一通道），每个用例各起一个新的。
-const headers = (): Headers => new Headers();
+// 载体而不是标准 Headers（#373）：框架内部的响应头通道就是它，标准对象按需物化。
+const headers = (): ResponseHeaders => new ResponseHeaders();
 
 // 响应三变体的分派契约(RFC 0012 S3,#275):table = 编码器 + 状态码;free-form = 原样序列化;
 // passthrough = Response 逃生口 / void 空体。

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { isObject } from "radashi";
@@ -18,8 +19,6 @@ import type { RouteResponse } from "@/execution/route-response";
 // - metadata 的值位：字符串走 htmlEscape、对象走 @poppinss/dumper（键值均转义），安全；
 // - 内置 request.headers 口子会把 header 名展开成 rows 的 key——header 名攻击者可控，
 //   等于把可控字符串送进不转义槽位，因此 headers 绝不走内置口子，见 maskedHeaders。
-
-const encoder = new TextEncoder();
 
 // 凭证头打码（#279 防线 4）：值遮蔽、留键名与长度——排查「带没带 Authorization、长度对不对」
 // 够用，而页面截图/复制不再泄凭证。Headers 迭代产出小写键名，集合按小写匹配。
@@ -123,11 +122,11 @@ export async function renderDevErrorPage(input: RenderDevErrorPageInput): Promis
     cspNonce: nonce,
     request: { url: context.url.href, method: context.method },
   });
-  const bytes = encoder.encode(html);
-  // 头写进 context 那一个 Headers（#340 决议 2），与 jsonResponse / problemResponse 同规则。
+  // 头写进 context 那一个 Headers（#340 决议 2），与 jsonResponse / problemResponse 同规则；
+  // body 交文字不交字节（#373），同样是同一条规则。
   const headers = context.responseHeaders;
   headers.set("content-type", "text/html; charset=utf-8");
-  headers.set("content-length", String(bytes.byteLength));
+  headers.set("content-length", String(Buffer.byteLength(html)));
   // nonce 放行 youch 自带的内联 style/script，其余全关。已知代价：模板里复制按钮的
   // inline onclick 会被浏览器拦，安全边界优先于这颗按钮。
   headers.set(
@@ -138,5 +137,5 @@ export async function renderDevErrorPage(input: RenderDevErrorPageInput): Promis
   // 错误页随代码热更而变，任何缓存都是误导；Vary 对齐 wantsHtml 按 Accept 分叉的事实。
   headers.set("cache-control", "no-store");
   headers.set("vary", "accept");
-  return { status: problem.status, headers, body: bytes };
+  return { status: problem.status, headers, body: html };
 }

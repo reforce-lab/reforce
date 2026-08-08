@@ -60,18 +60,29 @@ describe("RequestContextState route meta", () => {
 // —— 响应头出口(RFC 0012 S2,#274) ——
 
 describe("RequestContextState response headers", () => {
-  test("exposes one mutable Headers instance shared across reads", () => {
+  test("exposes one mutable carrier shared across reads", () => {
     const context = stateOf({});
 
     context.responseHeaders.set("x-request-id", "abc");
 
     expect(context.responseHeaders.get("x-request-id")).toBe("abc");
-    expect(context.responseHeaders).toBeInstanceOf(Headers);
   });
 
   test("starts empty for every new request context", () => {
     const context = stateOf({});
 
-    expect([...context.responseHeaders.keys()]).toEqual([]);
+    expect([...context.responseHeaders.standard().keys()]).toEqual([]);
+  });
+
+  // RFC 0012 S2 的「handler 的 Headers 参数与中间件共用同一个实例」在 #373 之后仍然成立：
+  // 物化之后载体把每个方法都转发给那一个 Headers，任一时刻只有一个真相。
+  test("keeps one truth after materializing: later writes land in the same Headers", () => {
+    const context = stateOf({});
+    const standard = context.responseHeaders.standard();
+
+    context.responseHeaders.set("x-request-id", "abc");
+
+    expect(standard.get("x-request-id")).toBe("abc");
+    expect(context.responseHeaders.standard()).toBe(standard);
   });
 });

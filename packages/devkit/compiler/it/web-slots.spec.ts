@@ -267,7 +267,9 @@ describe("slot writing forms", () => {
     expect(routesModule).toContain("slots[0] as bigint");
     expect(routesModule).toContain("slots[1] as number | undefined");
     expect(routesModule).toContain("slots[2] as string | undefined");
-    expect(routesModule).toContain("context, context.request, context.responseHeaders)");
+    // 裸 Headers 槽位物化成标准对象（#373）：用户声明的是 `Headers`，拿到的就得是
+    // `Headers`；框架内部的响应头通道是轻量载体，只有声明了这个槽位的路由才付这笔钱。
+    expect(routesModule).toContain("context, context.request, context.responseHeaders.standard())");
     // 第四档投影在 invoke 处展开:解码产物按整契约,实参按键取。
     expect(routesModule).toContain('["name"]');
     expect(routesModule).toContain('["id"]');

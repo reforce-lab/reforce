@@ -123,7 +123,8 @@ async function writeResponse(response: ServerResponse, result: RouteResponse): P
   });
   const setCookies = result.headers.getSetCookie();
   if (setCookies.length > 0) {
-    headers["set-cookie"] = setCookies;
+    // 复制一份：载体交出的是只读视图，而 writeHead 的头表要可写数组。只在真有 cookie 时发生。
+    headers["set-cookie"] = [...setCookies];
   }
   response.writeHead(result.status, headers);
   const { body } = result;

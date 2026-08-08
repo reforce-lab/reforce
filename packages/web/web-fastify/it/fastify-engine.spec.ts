@@ -1,7 +1,12 @@
 import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, connect } from "node:net";
 import { Writable } from "node:stream";
-import { absorbResponse, defineRouteMarker, type RouteOutcome } from "@reforce/web-core";
+import {
+  absorbResponse,
+  defineRouteMarker,
+  ResponseHeaders,
+  type RouteOutcome,
+} from "@reforce/web-core";
 import type { PreparedRoute, WebApplication } from "@reforce/web-core/adapter";
 import type { FastifyInstance } from "fastify";
 import { describe, expect, test } from "vitest";
@@ -38,7 +43,7 @@ function route(
       // 测试桩把内部货币的入口对象物化回标准 Request——用例写的是 handler 视角的断言，
       // 引擎侧的惰性由 it/lazy-request.spec.ts 单独盯。
       const outcome = await handle(request.standard(), params);
-      return outcome instanceof Response ? absorbResponse(outcome, new Headers()) : outcome;
+      return outcome instanceof Response ? absorbResponse(outcome, new ResponseHeaders()) : outcome;
     },
     meta: (marker) => Reflect.get(meta, marker.key) as never,
   };
@@ -522,5 +527,68 @@ describe("the listen hostname", () => {
     const address = await boundAddress("0.0.0.0");
 
     expect(address.address).toBe("0.0.0.0");
+  });
+});
+
+// Host 头是安全面（#226）：请求目标由请求方完全控制，authority 只能来自 Host。#373 把
+// 「校验」与「构造 URL」拆开并给校验加了一格缓存，判定因此从一条直线变成了带状态的东西——
+// 这两条走真实 socket 打穿整个引擎，钉住拆分后 400 仍然在进 handle 之前发生。
+// 必须用裸 socket：fetch/undici 不让你发一个畸形的 Host。
+function rawRequest(
+  base: string,
+  requestLine: string,
+  headers: readonly string[],
+): Promise<string> {
+  const target = new URL(base);
+  return new Promise((resolve, reject) => {
+    const socket = connect(Number(target.port), target.hostname, () => {
+      socket.write(`${requestLine}\r\n${headers.join("\r\n")}\r\nConnection: close\r\n\r\n`);
+    });
+    let received = "";
+    socket.setTimeout(5_000, () => socket.destroy(new Error("raw request timed out")));
+    socket.on("data", (chunk) => {
+      received += chunk.toString();
+    });
+    socket.on("error", reject);
+    socket.on("close", () => resolve(received.split("\r\n")[0] ?? ""));
+  });
+}
+
+describe("Host header acceptance", () => {
+  test("a malformed Host header yields 400", async () => {
+    await withEngine(
+      [route("GET", "/items", () => Promise.resolve(new Response("get")))],
+      async (base) => {
+        const status = await rawRequest(base, "GET /items HTTP/1.1", ["Host: a b"]);
+
+        expect(status).toContain("400");
+      },
+    );
+  });
+
+  // new URL("http://user@evil.com") 本身不抛，凭据要单独挡——同一类缺陷的第二个入口。
+  test("a Host header carrying userinfo yields 400", async () => {
+    await withEngine(
+      [route("GET", "/items", () => Promise.resolve(new Response("get")))],
+      async (base) => {
+        const status = await rawRequest(base, "GET /items HTTP/1.1", ["Host: user@evil.com"]);
+
+        expect(status).toContain("400");
+      },
+    );
+  });
+
+  // 缓存的失效风险打到真实引擎上：一个正常请求把好 Host 存进那一格之后，坏 Host 仍须被拒。
+  test("still rejects a malformed Host right after serving a legitimate one", async () => {
+    await withEngine(
+      [route("GET", "/items", () => Promise.resolve(new Response("get")))],
+      async (base) => {
+        expect((await fetch(`${base}/items`)).status).toBe(200);
+
+        const status = await rawRequest(base, "GET /items HTTP/1.1", ["Host: a b"]);
+
+        expect(status).toContain("400");
+      },
+    );
   });
 });

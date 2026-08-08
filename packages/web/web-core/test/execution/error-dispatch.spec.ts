@@ -307,7 +307,9 @@ describe("dev error page negotiation keeps the JSON path", () => {
 
     expect(negotiated.status).toBe(plain.status);
     expect(await readRouteBody(negotiated)).toBe(await readRouteBody(plain));
-    expect([...negotiated.headers.entries()]).toEqual([...plain.headers.entries()]);
+    expect([...negotiated.headers.standard().entries()]).toEqual([
+      ...plain.headers.standard().entries(),
+    ]);
   });
 
   test("with the flag a non-html Accept keeps the JSON path", async () => {

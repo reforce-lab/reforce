@@ -1,4 +1,5 @@
 import type { IncomingRequest } from "@/execution/incoming-request";
+import { ResponseHeaders } from "@/execution/response-headers";
 import { metaLookup, type RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 
@@ -19,7 +20,7 @@ export interface RequestContext {
   // 响应头出口(RFC 0012 S2,#274):handler 的 `Headers` 裸标注参数与中间件共用这一个原生
   // Headers 实例;core runner 在拿到最终响应后统一 merge——只合并编码产出的响应,
   // 不碰 handler 直接返回的 Response(逃生口)与错误响应。
-  readonly responseHeaders: Headers;
+  readonly responseHeaders: ResponseHeaders;
   meta<T extends RouteMetaValue>(marker: RouteMarker<T>): T | undefined;
 }
 
@@ -35,8 +36,9 @@ export class RequestContextState implements RequestContext {
   readonly method: HttpMethod;
   readonly path: string;
   readonly params: Readonly<Record<string, string>>;
-  // 显式标注:不标注时推导类型指向 undici-types 的 Headers,d.ts 生成报 TS2883 不可移植。
-  readonly responseHeaders: Headers = new Headers();
+  // 载体而不是标准 Headers（#373）：框架自己每请求要写三条头，标准 Headers 的构造与三次
+  // set 是无条件成本，而绝大多数路由的用户代码根本不碰响应头。要标准对象的人调 standard()。
+  readonly responseHeaders: ResponseHeaders = new ResponseHeaders();
   private readonly incoming: IncomingRequest;
   private readonly lookupMeta: ReturnType<typeof metaLookup>;
   private urlSnapshot: URL | undefined;

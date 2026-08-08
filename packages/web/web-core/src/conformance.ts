@@ -1,6 +1,7 @@
 import type { PreparedRoute, WebApplication } from "@/adapter";
 import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
+import { ResponseHeaders } from "@/execution/response-headers";
 import { absorbResponse, type RouteOutcome, respond } from "@/execution/route-response";
 import { createSlotExecutor } from "@/execution/slot-execution";
 import type { HttpMethod } from "@/routing/vocabulary";
@@ -71,7 +72,7 @@ function route(
       // 用例的 handler 按标准 Request 写（它们扮演的就是用户 handler），所以这里物化一次。
       // 真实路由只在有人读 context.request 时才付这笔钱，harness 无条件付是它自己的选择。
       const outcome = await handle(incoming.standard(), params);
-      return outcome instanceof Response ? absorbResponse(outcome, new Headers()) : outcome;
+      return outcome instanceof Response ? absorbResponse(outcome, new ResponseHeaders()) : outcome;
     },
     meta: () => undefined,
   };
@@ -176,7 +177,8 @@ const incomingProbe: PreparedRoute = {
       // 缓存是硬约束而不是优化：两次读 context.request 若拿到两个 Request，body 会被重复消费。
       cached: first === second,
     });
-    const headers = new Headers({ "content-type": "application/json" });
+    const headers = new ResponseHeaders();
+    headers.set("content-type", "application/json");
     return Promise.resolve(respond(headers, 200, body));
   },
   meta: () => undefined,
@@ -236,7 +238,8 @@ function fixtures(): ConformanceFixtures {
       // 流式分支——引擎的原生直写分支反而一条用例都没有了。判据是 body 的形态，构造方式必须
       // 与被测的分支对齐。
       route("GET", "/buffered", () => {
-        const headers = new Headers({ "content-type": "text/plain; charset=utf-8" });
+        const headers = new ResponseHeaders();
+        headers.set("content-type", "text/plain; charset=utf-8");
         return Promise.resolve(respond(headers, 200, new TextEncoder().encode("buffered")));
       }),
       // 首块立刻可读、其余卡在 gate 上：缓冲式引擎会让客户端等到 gate 释放才收到任何字节
@@ -258,6 +261,15 @@ function fixtures(): ConformanceFixtures {
         );
       }),
       route("GET", "/flood", () => Promise.resolve(new Response(countingStream(flood, 10_000)))),
+      // 引擎不得改写框架给的 content-type（#373）。这条盯的是一个真实踩过的坑：fastify 对
+      // **字符串** payload 会自作主张补 `; charset=utf-8`（对 Buffer 不补），于是 body 形态一换，
+      // 同一份核心代码在三个引擎上出站的 content-type 就走散了。charset 必须**不写**——写了
+      // 就正好绕开 fastify 的判据，这条用例也就白写了。
+      route("GET", "/verbatim-content-type", () => {
+        const headers = new ResponseHeaders();
+        headers.set("content-type", "application/json");
+        return Promise.resolve(respond(headers, 200, '{"ok":true}'));
+      }),
       incomingProbe,
     ],
   };
@@ -388,6 +400,15 @@ export function adapterConformanceCases(
         const response = await fetch(`${base}/echo-headers`, { headers });
 
         assertEqual(await response.json(), { multi: "one, two" }, "x-multi");
+      }),
+    ),
+
+    conformanceCase("the engine delivers the content-type it was given, verbatim", () =>
+      withServer(async (base) => {
+        const response = await fetch(`${base}/verbatim-content-type`);
+        await response.text();
+
+        assertEqual(response.headers.get("content-type"), "application/json", "content-type");
       }),
     ),
 

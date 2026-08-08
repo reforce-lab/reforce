@@ -15,7 +15,7 @@ import {
   type FastifyRouteCustomizer,
   reservedRouteOptionKeys,
 } from "@/bridges";
-import { FastifyIncomingRequest, requestUrl } from "@/request";
+import { acceptHost, FastifyIncomingRequest, requestUrl } from "@/request";
 import type { WebFastifyServeSettings } from "@/settings";
 
 // fastify 引擎适配器（#238）：reforce 的路由处理函数就是一个普通的 fastify handler，走 fastify 正常的
@@ -44,7 +44,14 @@ function bodyOf(result: RouteResponse): Buffer | string | Readable | null {
     return null;
   }
   if (typeof body === "string") {
-    return body;
+    // 字符串转 Buffer 而不是原样交给 fastify（#373）：fastify 对**字符串** payload 会往
+    // content-type 上自作主张补 `; charset=utf-8`，对 Buffer 不补（实测四种组合）。原样交出去
+    // 的话，同一份核心代码在 fastify 上出站 `application/json; charset=utf-8`、在 node/hono 上
+    // 出站 `application/json`——「换引擎零改动」当场破掉。
+    //
+    // 这不是把 #373 的收益还回去：`Buffer.from(text)` 是 42 纳秒，而 #373 拿掉的
+    // `TextEncoder.encode` 是 825 纳秒且与内容长度无关。
+    return Buffer.from(body, "utf8");
   }
   if (body instanceof Uint8Array) {
     // Buffer.from(ArrayBuffer) 是**视图**不是拷贝，共享底层内存。
@@ -254,13 +261,15 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
         method: route.method,
         url: route.path,
         handler: async (request, reply) => {
-          const url = requestUrl(request.raw);
-          if (url === undefined) {
+          // 只校验 Host、不构造 URL（#373）：畸形/带凭据仍然在进 handle 之前出 400（#226），
+          // 但 URL 本身留给 IncomingRequest 惰性构造——fastify 的路由匹配不需要它。
+          const host = acceptHost(request.raw);
+          if (host === undefined) {
             return await reply.code(400).send();
           }
           // PreparedRoute.handle 契约保证永不 reject（@reforce/web-core/adapter），无需兜底
           const result = await route.handle(
-            new FastifyIncomingRequest(request.raw, url, request.body),
+            new FastifyIncomingRequest(request.raw, host, request.body),
             request.params as Readonly<Record<string, string>>,
           );
           return await transfer(reply, result);

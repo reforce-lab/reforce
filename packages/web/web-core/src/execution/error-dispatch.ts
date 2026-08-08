@@ -1,8 +1,10 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { STATUS_CODES } from "node:http";
 import { RequestValidationError, ResponseSerializationError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId } from "@/execution/request-fields";
+import type { ResponseHeaders } from "@/execution/response-headers";
 import { absorbResponse, type RouteResponse } from "@/execution/route-response";
 import { jsonResponse } from "@/execution/serialization";
 import type { ErrorLogger } from "@/execution/web-application";
@@ -18,8 +20,6 @@ import type { RouteErrorHandler } from "@/routing/middleware";
 // 兜底闭集（ADR 0013 决议 7，#294）：HttpError → 它自己的 status + code + detail；校验失败
 // → 400 + 脱敏 issues；其余 → 500 + errorId。三者都是 RFC 9457 problem+json。
 
-const encoder = new TextEncoder();
-
 // RFC 9457（https://www.rfc-editor.org/rfc/rfc9457.html）：五个标准成员 type/title/status/
 // detail/instance，外加任意扩展成员，客户端必须忽略不认识的扩展。Spring 6 / ASP.NET Core /
 // Zalando / Quarkiverse / Micronaut 都已收敛于此。
@@ -28,7 +28,7 @@ const encoder = new TextEncoder();
 // 指向一个不存在的 URL 等于射箭后画靶。RFC 规定 type 为 about:blank 时 title 就是该状态码的
 // HTTP 原因短语，所以 title 取 node:http 的 STATUS_CODES 而不是自建映射：defineHttpError 允许
 // 任意状态码，自建表必然覆盖不全。
-function problemResponse(problem: ProblemDescription, headers: Headers): RouteResponse {
+function problemResponse(problem: ProblemDescription, headers: ResponseHeaders): RouteResponse {
   const body = {
     type: "about:blank",
     title: STATUS_CODES[problem.status] ?? "Error",
@@ -37,10 +37,11 @@ function problemResponse(problem: ProblemDescription, headers: Headers): RouteRe
   };
   // 长度取字节数，文案可以带非 ASCII。头写进 context 那一个 Headers（#340 决议 2）——
   // 错误响应此前刻意不合并 handler 写的头，现在与所有出口同规则：写在 context 上的一定出站。
-  const bytes = encoder.encode(JSON.stringify(body));
+  // body 交文字不交字节（#373）：与 jsonResponse 同一条规则，错误路径不另开一套。
+  const rendered = JSON.stringify(body);
   headers.set("content-type", "application/problem+json");
-  headers.set("content-length", String(bytes.byteLength));
-  return { status: problem.status, headers, body: bytes };
+  headers.set("content-length", String(Buffer.byteLength(rendered)));
+  return { status: problem.status, headers, body: rendered };
 }
 
 /** 兜底三分支的判定结果：status + RFC 9457 扩展成员。 */
@@ -154,7 +155,7 @@ function encodedHandlerResponse(
   entry: ErrorDispatchEntry,
   status: number,
   result: unknown,
-  headers: Headers,
+  headers: ResponseHeaders,
 ): RouteResponse {
   return jsonResponse(status, entry.encode === undefined ? result : entry.encode(result), headers);
 }
