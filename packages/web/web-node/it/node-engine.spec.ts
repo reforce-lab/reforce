@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import { type AddressInfo, connect } from "node:net";
+import { absorbResponse, type RouteOutcome } from "@reforce/web-core";
 import type { PreparedRoute, WebApplication } from "@reforce/web-core/adapter";
 import { describe, expect, test } from "vitest";
 import { WebEngine, type WebNodeServeSettings } from "@/index";
@@ -14,12 +15,26 @@ function application(routes: readonly PreparedRoute[]): WebApplication {
 
 // 引擎的职责边界是"把请求交给 handle"，PreparedRoute 的其余字段在这一层没有被测语义，
 // 集中给缺省值，避免每条用例重复写。
+// 用例的 handler 写成返回标准 Response 是有意的——它们扮演的正是用户 handler 走逃生口那条路。
+// 真实管道里那个 Response 会被序列化层吸收成内部货币（#340），所以这里也吸收一次，否则测的
+// 就不是引擎真正会收到的东西。
 function route(
   method: PreparedRoute["method"],
   path: string,
-  handle: PreparedRoute["handle"],
+  handle: (
+    request: Request,
+    params: Readonly<Record<string, string>>,
+  ) => RouteOutcome | Promise<RouteOutcome>,
 ): PreparedRoute {
-  return { method, path, handle, meta: () => undefined };
+  return {
+    method,
+    path,
+    handle: async (request, params) => {
+      const outcome = await handle(request, params);
+      return outcome instanceof Response ? absorbResponse(outcome, new Headers()) : outcome;
+    },
+    meta: () => undefined,
+  };
 }
 
 async function withEngine(

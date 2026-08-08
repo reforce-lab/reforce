@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import type { RouteResponse } from "@reforce/web-core";
 import type { WebApplication } from "@reforce/web-core/adapter";
 import { adapterConformanceCases } from "@reforce/web-core/conformance";
 import { describe, expect, test } from "vitest";
@@ -62,15 +63,39 @@ function toRequest(request: IncomingMessage, url: URL): Request {
   return new Request(url, init);
 }
 
-// 整体缓冲后一次性写出：无背压，流式响应的首块也不会提前到达；set-cookie 并成单值
-async function writeBuffered(response: ServerResponse, result: Response): Promise<void> {
-  const body = result.body === null ? undefined : Buffer.from(await result.arrayBuffer());
+// 整体缓冲后一次性写出：无背压，流式响应的首块也不会提前到达；set-cookie 并成单值。
+// 这是**故意写坏的**适配器，用来证明 conformance 套件抓得住这两种违规——所以它这里
+// 无条件把流读干，正是契约禁止的做法。
+async function writeBuffered(response: ServerResponse, result: RouteResponse): Promise<void> {
+  const body = await drainBody(result.body);
   const out: Record<string, string> = {};
   result.headers.forEach((value, name) => {
     out[name] = value;
   });
   response.writeHead(result.status, out);
   response.end(body);
+}
+
+async function drainBody(body: RouteResponse["body"]): Promise<Buffer | undefined> {
+  if (body === null) {
+    return undefined;
+  }
+  if (typeof body === "string") {
+    return Buffer.from(body);
+  }
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body);
+  }
+  const chunks: Uint8Array[] = [];
+  const reader = body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 function badAdapterServer(application: WebApplication): Server {

@@ -130,7 +130,16 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
           app.on(route.method, route.path, middleware);
         }
       }
-      const handler = (context: Context) => route.handle(context.req.raw, context.req.param());
+      // hono 的 handler 契约要求返回标准 `Response`，所以三个引擎里只有这里必须把内部货币
+      // 转回去（#340）。这一步在 hono 上恰好是廉价的：`@hono/node-server` 在 `serve()` 时把
+      // `global.Response` 换成了自家轻量实现（`overrideGlobalObjects` 缺省 true），body 是
+      // 字节/字符串时它只是存起来，不建 ReadableStream，写出走 `responseViaCache` →
+      // `outgoing.end(body)`。反过来说，正是因为 hono 已经这么干了，同一份核心代码在它上面
+      // 才比 fastify 快三分之一——本 issue 要做的就是把那份便宜挪进框架自己。
+      const handler = async (context: Context) => {
+        const result = await route.handle(context.req.raw, context.req.param());
+        return new Response(result.body, { status: result.status, headers: result.headers });
+      };
       app.on(route.method, route.path, handler);
     }
     return app;

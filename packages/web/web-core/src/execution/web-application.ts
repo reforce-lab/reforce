@@ -5,6 +5,7 @@ import { createErrorDispatcher, type ErrorDispatcher } from "@/execution/error-d
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { requestIdHeader, resolveRequestId } from "@/execution/request-id";
+import { type RouteResponse, toRouteResponse } from "@/execution/route-response";
 import { serializeResponse } from "@/execution/serialization";
 import { createSlotExecutor } from "@/execution/slot-execution";
 import type { GeneratedRoute } from "@/generated/route-table";
@@ -70,7 +71,7 @@ function logRequest(input: {
   readonly method: string;
   readonly path: string;
   readonly requestId: string;
-  readonly response: Response;
+  readonly response: RouteResponse;
   readonly startedAt: number;
   /** handler 抛出的错误（B2，#250）；被 dispatchError 换成响应后它就是唯一的线索。 */
   readonly error?: unknown;
@@ -131,7 +132,7 @@ function createNotFoundLogger(
   };
 }
 
-type RouteRunner = (context: RequestContextState) => Promise<Response>;
+type RouteRunner = (context: RequestContextState) => Promise<RouteResponse>;
 
 function requireMiddlewareInstance(instance: object, beanId: string): RouteMiddleware {
   if (typeof Reflect.get(instance, "handle") !== "function") {
@@ -169,13 +170,13 @@ function composeChain(
   core: RouteRunner,
 ): RouteRunner {
   return (context) => {
-    const dispatch = async (index: number): Promise<Response> => {
+    const dispatch = async (index: number): Promise<RouteResponse> => {
       const link = links[index];
       if (link === undefined) {
         return await core(context);
       }
       let entered = false;
-      const next = async (): Promise<Response> => {
+      const next = async (): Promise<RouteResponse> => {
         if (entered) {
           throw new MiddlewareReenteredError({
             beanId: link.beanId,
@@ -186,28 +187,19 @@ function composeChain(
         entered = true;
         return await dispatch(index + 1);
       };
-      return await link.middleware.handle(context, next);
+      // 中间件的返回值可以是内部货币，也可以是它自己造的标准 Response（逃生口与 handler
+      // 同规则，#340 决议 1）；两者在这里收敛成同一种东西。
+      return toRouteResponse(await link.middleware.handle(context, next), context);
     };
     return dispatch(0);
   };
 }
 
-// 响应头合并范围(RFC 0012 S2,#274 推断口径;S3 定案维持,#275 拍板 3):只合并编码/序列化
-// 产出的响应;handler 直接返回的 Response(逃生口)与 400/500 错误响应不碰——前者是用户
-// 全权掌控的出口,后者由错误分派统一负责,handler 半路写下的头不该跟着错误出线。错误处理器
-// 的编码响应同样排除在外:处理器要写头就直返 Response。失败路径切新 Headers(B3)记为
-// 升级路径,不在本切片。
-function mergeResponseHeaders(response: Response, headers: Headers): void {
-  for (const [name, value] of headers) {
-    // Headers 迭代对 set-cookie 逐条产出、其余同名键并成逗号串;set-cookie 必须逐条 append
-    // (逗号串会被浏览器当一条 cookie),其余用 set 让 handler 声明的头覆盖序列化默认值。
-    if (name === "set-cookie") {
-      response.headers.append(name, value);
-    } else {
-      response.headers.set(name, value);
-    }
-  }
-}
+// 响应头不再需要「合并」(#340 决议 2):序列化器、错误分派、dev 错误页与 handler/中间件写的
+// 都是 `RequestContext.responseHeaders` 那**一个** Headers 实例,因此没有两份头要对齐,
+// mergeResponseHeaders 连同它那条「只合并编码产出的响应、不碰逃生口与错误响应」的例外规则
+// (RFC 0012 S3 / #275 拍板 3)一并删除。语义收敛为一条无例外的规则:写在 context 上的响应头
+// 一定出站。
 
 function prepareRoute(
   route: GeneratedRoute,
@@ -228,11 +220,7 @@ function prepareRoute(
     try {
       const slots = await executeSlots(requestContext);
       const result = await route.invoke(controller, requestContext, slots);
-      const response = serializeResponse(result, route.response);
-      if (!(result instanceof Response)) {
-        mergeResponseHeaders(response, requestContext.responseHeaders);
-      }
-      return response;
+      return serializeResponse(result, route.response, requestContext.responseHeaders);
     } catch (error) {
       requestContext.recordFailure(error);
       return await dispatchError(error, requestContext);
@@ -284,13 +272,12 @@ function prepareRoute(
               }
             })();
             // 统一缝盖章(#303):编码响应/直返 Response/400/500/中间件抛错的外层兜底,全部
-            // 出口都经过这里。无条件 set——不变量是「客户端可见 id ≡ 日志 id」,覆盖用户手写头。
-            try {
-              response.headers.set(requestIdHeader, requestId);
-            } catch {
-              // fetch 代理 Response 的 immutable headers 守卫会抛;handle 永不 reject 的契约
-              // 优先,盖不上就按原样送出。
-            }
+            // 出口都经过这里。
+            // 无条件 set——不变量是「客户端可见 id ≡ 日志 id」,覆盖用户手写头。#340 之后
+            // 这里操作的恒是框架自己那个 Headers（逃生口的头是被**拷贝**进来的，不是借用
+            // 用户那个实例），所以不再有 fetch 代理 Response 的 immutable headers 会抛的
+            // 情况，那道 try/catch 已成死代码，删除。
+            response.headers.set(requestIdHeader, requestId);
             // 日志失败绝不能把请求带下去：`handle` 永不 reject 是适配器契约的一部分（#226），而
             // 这里的 logger 是用户的——pino 的 serializer、LogFieldSource.fields()、isEnabled 都
             // 可能抛。真抛了就丢这一条，已经做好的响应照常送出。

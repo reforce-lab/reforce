@@ -3,6 +3,7 @@ import { STATUS_CODES } from "node:http";
 import { RequestValidationError, ResponseSerializationError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId } from "@/execution/request-fields";
+import { absorbResponse, type RouteResponse } from "@/execution/route-response";
 import { jsonResponse } from "@/execution/serialization";
 import type { ErrorLogger } from "@/execution/web-application";
 import { HttpError } from "@/http-errors";
@@ -27,23 +28,19 @@ const encoder = new TextEncoder();
 // 指向一个不存在的 URL 等于射箭后画靶。RFC 规定 type 为 about:blank 时 title 就是该状态码的
 // HTTP 原因短语，所以 title 取 node:http 的 STATUS_CODES 而不是自建映射：defineHttpError 允许
 // 任意状态码，自建表必然覆盖不全。
-function problemResponse(problem: ProblemDescription): Response {
+function problemResponse(problem: ProblemDescription, headers: Headers): RouteResponse {
   const body = {
     type: "about:blank",
     title: STATUS_CODES[problem.status] ?? "Error",
     status: problem.status,
     ...problem.members,
   };
-  // content-length 同 serialization.ts 的 jsonResponse：适配器据它选 Buffer / 流路径
-  // （见 adapter.ts 的契约块）。长度取字节数，文案可以带非 ASCII。
+  // 长度取字节数，文案可以带非 ASCII。头写进 context 那一个 Headers（#340 决议 2）——
+  // 错误响应此前刻意不合并 handler 写的头，现在与所有出口同规则：写在 context 上的一定出站。
   const bytes = encoder.encode(JSON.stringify(body));
-  return new Response(bytes, {
-    status: problem.status,
-    headers: {
-      "content-type": "application/problem+json",
-      "content-length": String(bytes.byteLength),
-    },
-  });
+  headers.set("content-type", "application/problem+json");
+  headers.set("content-length", String(bytes.byteLength));
+  return { status: problem.status, headers, body: bytes };
 }
 
 /** 兜底三分支的判定结果：status + RFC 9457 扩展成员。 */
@@ -121,7 +118,7 @@ async function fallbackResponse(
   error: unknown,
   context: RequestContext,
   logger: ErrorLogger | undefined,
-): Promise<Response> {
+): Promise<RouteResponse> {
   const problem = describeProblem(error, logger);
   // dev 错误页两层门（#279）。外层 NODE_ENV 判断的字面量必须内联在 if 里，禁止提成模块级
   // 常量：CLI 生产构建把 process.env.NODE_ENV 折叠成 "production" 后，整块变成死代码物理
@@ -139,10 +136,10 @@ async function fallbackResponse(
       }
     }
   }
-  return problemResponse(problem);
+  return problemResponse(problem, context.responseHeaders);
 }
 
-export type ErrorDispatcher = (error: unknown, context: RequestContext) => Promise<Response>;
+export type ErrorDispatcher = (error: unknown, context: RequestContext) => Promise<RouteResponse>;
 
 // v3 表的分派条目(#275):accepts/status/encode 从 GeneratedRouteErrorHandler 原样带入,
 // handler 是容器解析出的 bean 实例。
@@ -157,8 +154,9 @@ function encodedHandlerResponse(
   entry: ErrorDispatchEntry,
   status: number,
   result: unknown,
-): Response {
-  return jsonResponse(status, entry.encode === undefined ? result : entry.encode(result));
+  headers: Headers,
+): RouteResponse {
+  return jsonResponse(status, entry.encode === undefined ? result : entry.encode(result), headers);
 }
 
 export function createErrorDispatcher(
@@ -174,10 +172,11 @@ export function createErrorDispatcher(
       try {
         const result = await entry.handler.handle(current, context);
         if (result instanceof Response) {
-          return result;
+          // 逃生口：吸收而不重新包装——读 status/headers，body 连引用搬走、绝不消费。
+          return absorbResponse(result, context.responseHeaders);
         }
         if (entry.status !== undefined) {
-          return encodedHandlerResponse(entry, entry.status, result);
+          return encodedHandlerResponse(entry, entry.status, result, context.responseHeaders);
         }
         // match-all/passthrough 处理器返回了非 Response 值:没有声明的状态码与形状,无法
         // 编码出线——换成 ResponseSerializationError 继续升级(#275)。

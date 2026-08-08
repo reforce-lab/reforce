@@ -1,10 +1,20 @@
 import type { RequestContext } from "@/execution/request-context";
+import type { RouteOutcome, RouteResponse } from "@/execution/route-response";
 import type { WebPhase } from "@/routing/vocabulary";
 
 // 中间件只有一个概念（ADR 0006 W4）：洋葱模型的 bean。await next() 前后两相覆盖
 // interceptor 语义，不调 next() 直接返回响应即 guard 短路；依赖注入走普通构造注入。
+//
+// **签名在 #340 改过**：`next()` 交出的是内部货币 `RouteResponse`（读 `.status`、改
+// `.headers` 与此前逐字相同），而返回类型带上 `| Response`，让中间件的逃生口与 handler 的
+// 逃生口是同一件事、经同一个 seam 吸收。断掉的是把 `next()` 结果当标准 `Response` 用的写法
+// （`.json()` / `.text()` / `instanceof Response`）——那些语义本就不该在洋葱层出现，响应体
+// 在这一层可能还是一条没读的流。要显式造响应用 `respond(context.responseHeaders, ...)`。
 export interface RouteMiddleware {
-  handle(context: RequestContext, next: () => Promise<Response>): Response | Promise<Response>;
+  handle(
+    context: RequestContext,
+    next: () => Promise<RouteResponse>,
+  ): RouteOutcome | Promise<RouteOutcome>;
 }
 
 // 字段形态的 handle 类型。用途是给零标注写法一条路：TS 只在上下文类型位置（类字段 +
@@ -13,8 +23,8 @@ export interface RouteMiddleware {
 // web-application.ts 用 Reflect.get(instance, "handle") 判定，属性同样命中。
 export type MiddlewareHandle = (
   context: RequestContext,
-  next: () => Promise<Response>,
-) => Response | Promise<Response>;
+  next: () => Promise<RouteResponse>,
+) => RouteOutcome | Promise<RouteOutcome>;
 
 export type ErrorHandlerHandle<E = unknown, R = unknown> = (
   error: E,
