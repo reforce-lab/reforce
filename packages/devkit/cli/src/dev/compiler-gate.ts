@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { CompilerDiagnostic, GeneratedFile } from "@reforce/compiler";
+import { type CompilerDiagnostic, diagnostic, type GeneratedFile } from "@reforce/compiler";
 import { compareUtf16CodeUnits, isPathContained } from "@reforce/primitives";
 import type { Compiler, CompilerWatchInputs, ResolvedProject } from "@/compiler-types";
 
@@ -66,15 +66,15 @@ function mergeWatchInputs(
   };
 }
 
+// 经 @reforce/compiler 的构造口而不是手搓字面量（#367）：诊断形状是去重键的输入，手搓少写一个
+// 键就会与同内容的编译器诊断错开键、在输出里出现两遍。此前这里就少了 sourceSpan / suggestions
+// / cause 三个键，只是靠 message 全仓唯一才一直没撞上。
 function changedProjectDiagnostic(): CompilerDiagnostic {
-  return {
-    kind: "compiler",
+  return diagnostic({
     code: "PROJECT_CONFIG_CHANGED",
-    severity: "error",
     message: "The resolved application project changed while development watch was active.",
-    related: [],
     help: "Stop the current development command and resolve the intended application again.",
-  };
+  });
 }
 
 export class DevCompilerGate {

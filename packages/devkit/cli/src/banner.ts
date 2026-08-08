@@ -1,5 +1,5 @@
 import type { Writable } from "node:stream";
-import { style } from "@reforce/runtime/terminal";
+import { style } from "@reforce/primitives/terminal";
 
 // 启动 banner（RFC 0011 D2，#242）：**一行**，不做 ASCII 画。
 //

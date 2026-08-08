@@ -259,6 +259,7 @@ function analyzeConfigClass(
         scope: "singleton",
         primary: false,
         fallback: false,
+        eager: false,
         qualifiers: [],
         dependencies: [],
         prefix,

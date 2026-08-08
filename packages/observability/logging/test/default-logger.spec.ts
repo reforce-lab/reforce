@@ -1,6 +1,6 @@
+import type { LogFieldSource, LogRecord, LogThreshold } from "@reforce/logging-contracts";
 import { describe, expect, test } from "vitest";
 import { loggerConformanceCases } from "@/conformance";
-import type { LogFieldSource, LogRecord, LogThreshold } from "@/contracts";
 import { DefaultLoggerFactory } from "@/default-logger";
 import { LoggerLevels } from "@/levels";
 

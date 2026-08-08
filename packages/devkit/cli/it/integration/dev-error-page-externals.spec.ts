@@ -51,7 +51,7 @@ async function buildWebProject(): Promise<TemporaryProject> {
         experimentalDecorators: false,
         emitDecoratorMetadata: false,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
     src: {
       "application.ts": `import { Injectable } from "@reforce/core";

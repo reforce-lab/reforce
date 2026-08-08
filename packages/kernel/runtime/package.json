@@ -21,18 +21,6 @@
       "types": "./dist/reporter.d.ts",
       "default": "./dist/reporter.js"
     },
-    "./render-mode": {
-      "types": "./dist/render-mode.d.ts",
-      "default": "./dist/render-mode.js"
-    },
-    "./terminal": {
-      "types": "./dist/terminal.d.ts",
-      "default": "./dist/terminal.js"
-    },
-    "./stack-frames": {
-      "types": "./dist/stack-frames.d.ts",
-      "default": "./dist/stack-frames.js"
-    },
     "./diagnostic-render": {
       "types": "./dist/diagnostic-render.d.ts",
       "default": "./dist/diagnostic-render.js"
@@ -78,6 +66,7 @@
   },
   "dependencies": {
     "@reforce/core": "workspace:*",
+    "@reforce/primitives": "workspace:*",
     "@swc/helpers": "catalog:",
     "radashi": "^12.9.1"
   },

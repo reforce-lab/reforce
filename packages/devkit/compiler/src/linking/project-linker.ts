@@ -45,7 +45,7 @@ export interface ProjectLinker {
   readonly starterLinkage: StarterLinkage;
   // defineApplication 所在的应用模块（顶层至多一次由注册读取保证）；未注册任何 starter 时
   // 缺省。web 接线的 webRequestSeeder 约定以它为查找作用域（ADR 0006 W2 的 #153 修订）。
-  readonly applicationModule?: ParsedSource;
+  readonly applicationModule?: ParsedSource | undefined;
   collectWatchInputs(): CompilerWatchInputs;
   resolveEntity(source: ParsedSource, entity: EntityName): LinkedSymbol | undefined;
   resolveType(source: ParsedSource, type: TypeNode): LinkedType | undefined;
@@ -97,8 +97,12 @@ export async function createProjectLinker(
   // 与 @reforce/core 特例，装载后同一实例自动看见外部记录。
   const binder = createExportBinder({ diagnostics, resolveModule });
 
+  // fileId 索引只覆盖应用源码集；外部闭包的记录按物理路径入账（external-modules 的
+  // records.set(physicalPath)，而外部 ParsedSource.absolutePath 就是那个已 moduleKey 过的
+  // 路径）。extends 上溯要在基类自己的模块作用域里解析它的构造器参数类型（#350），基类可能
+  // 只存在于 node_modules 的 .d.ts 里，所以这里必须能按外部 source 找回记录。
   function recordFor(source: ParsedSource): ModuleRecord {
-    const record = recordsByFileId.get(source.fileId);
+    const record = recordsByFileId.get(source.fileId) ?? records.get(source.absolutePath);
     if (record === undefined) {
       throw new Error(`Missing linker module ${source.fileId}`);
     }

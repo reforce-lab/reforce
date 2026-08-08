@@ -6,14 +6,14 @@ import {
   renderModeNames,
   resolveRenderMode,
   verboseEnvironmentVariable,
-} from "@reforce/runtime/render-mode";
+} from "@reforce/primitives/render-mode";
+import { isInteractive } from "@reforce/primitives/terminal";
 import {
   type CliCommandName,
   createFailureEvent,
   PlainTextReporter,
   type Reporter,
 } from "@reforce/runtime/reporter";
-import { isInteractive } from "@reforce/runtime/terminal";
 import { Command, CommanderError, Option } from "commander";
 import { renderBanner } from "@/banner";
 import {
@@ -41,6 +41,10 @@ interface DiagnosticOptions {
 
 interface CompileProjectOptions extends ProjectOptions, DiagnosticOptions {
   readonly tsconfig?: string;
+}
+
+interface LibOptions extends CompileProjectOptions {
+  readonly check?: boolean;
 }
 
 interface OpenapiOptions extends ProjectOptions {
@@ -243,8 +247,14 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
   });
 
   configureCompileOptions(
-    program.command("lib").description("compile a starter library's reforce meta"),
-  ).action(async (commandOptions: CompileProjectOptions) => {
+    program
+      .command("lib")
+      .description("compile a starter library's reforce meta")
+      .option(
+        "--check",
+        "compare the generated meta against the one on disk instead of writing it",
+      ),
+  ).action(async (commandOptions: LibOptions) => {
     selectedCommand = "lib";
     const { runLibCommand } = await import("@/commands/lib");
     result = await runLibCommand({
@@ -253,8 +263,23 @@ export async function runCli(options: RunCliOptions = {}): Promise<0 | 1> {
       ...(commandOptions.tsconfig === undefined ? {} : { tsconfigPath: commandOptions.tsconfig }),
       reporter: currentReporter(),
       diagnosticPolicy: diagnosticPolicyOf(commandOptions),
+      checkOnly: commandOptions.check === true,
     });
   });
+
+  // meta 是唯一不碰应用、也不碰编译器的命令组：它读的是**别人要装的那个包**，所以既没有
+  // --project 边界也没有 tsconfig。同一份判定另有一个不装框架的入口：npx reforce-meta-check。
+  program
+    .command("meta")
+    .description("inspect a starter package's reforce meta")
+    .command("check")
+    .description("validate a starter package's reforce-meta.json against the published contract")
+    .argument("[directory]", "the starter package directory", ".")
+    .action(async (packageDirectory: string) => {
+      selectedCommand = "meta";
+      const { runMetaCheckCommand } = await import("@/commands/meta");
+      result = await runMetaCheckCommand({ cwd, packageDirectory, reporter: currentReporter() });
+    });
 
   configureProjectOption(
     program

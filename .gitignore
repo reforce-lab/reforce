@@ -18,17 +18,6 @@ dist/
 /packages/*/*/reforce.js
 /packages/*/*/reforce.d.ts
 
-# @reforce/logging 的 meta 是手写源文件不是构建产物（RFC 0011 勘误，#242），由
-# it/reforce-meta.spec.ts 回读自检兜底。
-#
-# 原因是**依赖环**，不是生成器表达不了：@Fallback() 之后 reforce lib 已经能产出 defaultBean
-# （#343）。但接上生成器要 devDepend @reforce/bundler-plugin，于是
-# logging → bundler-plugin → compiler →（devDep）config → logging 成环，turbo 直接拒绝构建。
-# logging-pino 能自产是因为没人依赖它；logging 躺在编译器自己的依赖链下面。
-#
-# 真正的解法是按角色拆包（引导期设施沉到底层、starter 留在上层，见 #347），不是给生成器补能力。
-!/packages/observability/logging/reforce-meta.json
-
 # turbo
 .turbo/
 

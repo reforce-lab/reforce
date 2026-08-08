@@ -1,6 +1,6 @@
 import { Writable } from "node:stream";
+import type { LogRecord } from "@reforce/logging-contracts";
 import { describe, expect, test } from "vitest";
-import type { LogRecord } from "@/contracts";
 import { createHumanRenderer } from "@/render-human";
 
 // human 档（RFC 0011 D2，#242）：级别词 + 对齐的 logger 名 + 消息 + key=value 字段 +

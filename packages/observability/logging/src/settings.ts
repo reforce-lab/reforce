@@ -1,4 +1,5 @@
-import type { Logger, LogThreshold } from "@/contracts";
+import { Fallback, Injectable } from "@reforce/core";
+import type { Logger, LogThreshold } from "@reforce/logging-contracts";
 import { nearestName } from "@/did-you-mean";
 
 // 显式级别配置（RFC 0011 L5 勘误，#242）：级别的真相是应用里的一个普通 bean，不是环境变量。
@@ -28,7 +29,13 @@ export interface LoggingSettings {
 /**
  * starter 自带的全默认实现（defaultBean）：让「零配置可用」与「本地 bean 覆盖」用现有的
  * 候选裁决机制同时成立——应用写一个自己的 LoggingSettings bean，这个就自动让位。
+ *
+ * 装饰器是它进 meta 的唯一来源（#347）：本包的 meta 此前是手写的，这两个 bean 只存在于那份
+ * JSON 里，源码上一个标记都没有。拆包消掉依赖环之后 `reforce lib` 接得上了，@Fallback()
+ * （#343）正是 defaultBean 的源码写法。
  */
+@Injectable()
+@Fallback()
 export class DefaultLoggingSettings implements LoggingSettings {}
 
 export interface UnknownLoggerLevelKey {

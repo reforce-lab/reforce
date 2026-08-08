@@ -10,7 +10,7 @@ import {
   sourceSuffixPattern,
 } from "@/project/config-file-discovery";
 import { type ConfigGraphObservation, collectConfigGraph } from "@/project/config-graph";
-import { generatedDeclarationsAreIncluded } from "@/project/config-pattern-coverage";
+import { generatedOutputIsIncluded } from "@/project/config-pattern-coverage";
 import { generatedDeclarationsFile, generatedDirectoryFragment } from "@/project/generated-paths";
 import { createProjectSnapshot, type ProjectSnapshotEntry } from "@/project/project-snapshot";
 import type { RawConfig } from "@/project/tsconfig-jsonc";
@@ -176,7 +176,7 @@ async function validateApplicationSources(
   return undefined;
 }
 
-// requireGeneratedDeclarations：应用项目必须把 .reforce/generated 声明纳入 tsconfig；库模式
+// requireGeneratedDeclarations：应用项目必须把 .reforce/generated 产物纳入 tsconfig；库模式
 // （ADR 0004 决策 1，#147）不产生成目录，跳过该闸门，其余项目校验两种模式共用。
 export async function inspectProjectConfigCandidate(
   candidate: string,
@@ -233,15 +233,15 @@ export async function inspectProjectConfigCandidate(
 
   if (
     requireGeneratedDeclarations &&
-    !generatedDeclarationsAreIncluded(loaded.parsed.config, canonicalConfig)
+    !generatedOutputIsIncluded(loaded.parsed.config, canonicalConfig)
   ) {
     return {
       status: "failure",
       diagnostics: [
         diagnostic({
           code: "GENERATED_DECLARATIONS_NOT_INCLUDED",
-          message: "The application tsconfig does not include .reforce/generated declarations.",
-          help: "Add .reforce/generated/**/*.d.ts to the leaf tsconfig include set.",
+          message: "The application tsconfig does not include the .reforce/generated output.",
+          help: "Add .reforce/generated/**/*.ts to the leaf tsconfig include set.",
         }),
       ],
       watchInputs: failureWatchInputs([generatedDeclarationsFile(projectRoot)]),

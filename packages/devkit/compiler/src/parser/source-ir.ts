@@ -1,6 +1,9 @@
 import type { SourceSpan } from "@/parser/source-location";
 import type { SuppressionComment } from "@/parser/suppressions";
 
+// Source IR 的可选字段一律写成 `?: T | undefined`（#367）：降级器（lower-source）从 SWC AST
+// 逐字段取值，取不到时自然就是 undefined，而「名字不存在」与「名字是 undefined」对 IR 消费方
+// 是同一件事。收窄成 `?: T` 只会逼降级器在每个构造点写条件展开，换不来任何被防住的错误。
 export type SourceKind = "ts" | "tsx" | "mts" | "cts" | "d.ts" | "d.mts" | "d.cts";
 
 export type EntityName =
@@ -256,10 +259,10 @@ export type ExportDeclaration =
 export interface InterfaceDeclaration {
   readonly kind: "interface";
   readonly topLevel: boolean;
-  readonly name?: string;
+  readonly name?: string | undefined;
   // 声明名标识符的位置(#274):投影形态槽位(Param<Contract, "key">)要在契约声明的名字位
   // 查整契约类型,span(关键字位)对 checker 查询恒答 error type。
-  readonly nameSpan?: SourceSpan;
+  readonly nameSpan?: SourceSpan | undefined;
   readonly export: DeclarationExport;
   readonly generic: boolean;
   readonly extends: readonly TypeNode[];
@@ -320,8 +323,8 @@ export type ClassMethodName =
 export interface MethodParameter {
   readonly kind: "method-parameter";
   readonly index: number;
-  readonly name?: string;
-  readonly nameSpan?: SourceSpan;
+  readonly name?: string | undefined;
+  readonly nameSpan?: SourceSpan | undefined;
   readonly typeAnnotation?: TypeNode;
   readonly optional: boolean;
   readonly rest: boolean;
@@ -339,7 +342,7 @@ export interface ClassMethodDeclaration {
   readonly optional: boolean;
   readonly implementation: boolean;
   readonly parameters: readonly MethodParameter[];
-  readonly returnType?: TypeNode;
+  readonly returnType?: TypeNode | undefined;
   // 方法级装饰器服务路由提取（ADR 0006 W3，#152）：@Get/@Post、@Use 与路由 marker 都落在
   // handler 方法上，分析层经链接核实来源后消费。
   readonly decorators: readonly DecoratorUse[];
@@ -371,7 +374,7 @@ export type ClassHeritage =
 
 export interface ClassFieldDeclaration {
   readonly kind: "class-field";
-  readonly name?: string;
+  readonly name?: string | undefined;
   readonly static: boolean;
   readonly span: SourceSpan;
 }
@@ -380,7 +383,7 @@ export interface ClassDeclaration {
   readonly kind: "class";
   readonly topLevel: boolean;
   readonly abstract: boolean;
-  readonly name?: string;
+  readonly name?: string | undefined;
   readonly export: DeclarationExport;
   readonly generic: boolean;
   readonly decorators: readonly DecoratorUse[];
@@ -408,7 +411,7 @@ export interface FunctionDescriptor {
   readonly kind: "arrow" | "function";
   readonly async: boolean;
   readonly parameterCount: number;
-  readonly returnType?: TypeNode;
+  readonly returnType?: TypeNode | undefined;
   readonly body: FunctionBodyDescriptor;
   readonly span: SourceSpan;
 }
@@ -461,7 +464,7 @@ export interface DefineBeanDeclaration {
   readonly kind: "define-bean";
   readonly topLevel: boolean;
   readonly declarationKind: "const" | "let" | "var";
-  readonly name?: string;
+  readonly name?: string | undefined;
   readonly export: DeclarationExport;
   readonly callee: EntityName;
   readonly typeArguments: readonly TypeNode[];
@@ -524,7 +527,7 @@ export interface DefineApplicationDeclaration {
   // 这一层就被丢掉，于是 build 成功、starter 一个都没注册、应用起来不监听任何端口，全程
   // 零诊断（Issue #261）。收进来才轮得到链接层去点名。
   readonly discarded: boolean;
-  readonly name?: string;
+  readonly name?: string | undefined;
   readonly export: DeclarationExport;
   readonly callee: EntityName;
   readonly options: DefineApplicationOptions;
@@ -554,7 +557,7 @@ export interface ValueDeclaration {
   readonly kind: "value-declaration";
   readonly topLevel: boolean;
   readonly declarationKind: "const" | "let" | "var";
-  readonly name?: string;
+  readonly name?: string | undefined;
   readonly export: DeclarationExport;
   readonly initializer?: ValueInitializer;
   readonly span: SourceSpan;
@@ -581,15 +584,15 @@ export interface UnsupportedNamedDeclaration {
   readonly kind: "unsupported-named-declaration";
   readonly declarationKind: UnsupportedNamedDeclarationKind;
   readonly topLevel: boolean;
-  readonly name?: string;
+  readonly name?: string | undefined;
   // 同 InterfaceDeclaration.nameSpan(#274):type-alias 作投影契约时在名字位查类型。
-  readonly nameSpan?: SourceSpan;
+  readonly nameSpan?: SourceSpan | undefined;
   readonly export: DeclarationExport;
   readonly generic: boolean;
   // 仅非泛型 type-alias 填（RFC 0012 S2，#274）：schema 追溯要跟"type X = z.infer<typeof s>"
   // 的别名右侧找 typeof。别名依旧不可注入、不改变链接语义——迁出 unsupportedDeclarations 会
   // 复发 #109 的导出可见性误诊断，所以只做附加字段。泛型别名追溯不到，维持无 rhs 的降级。
-  readonly rhs?: TypeNode;
+  readonly rhs?: TypeNode | undefined;
   readonly span: SourceSpan;
 }
 

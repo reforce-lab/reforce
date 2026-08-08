@@ -1,0 +1,20 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      // IT 的临时工程里 symlink 了真的 @reforce/logging（linkLoggingPackage），编译器要按它的
+      // dist 解析 LoggerFactory——所以那份 dist 必须先在。
+      //
+      // 这条边此前是**偶然**成立的：compiler devDepend @reforce/config，而 config 那时依赖
+      // logging，`^build` 顺带把它建了。#347 把 config 改成依赖 logging-contracts 之后，
+      // 「logging 有没有先建好」变成了 turbo 的调度巧合——ubuntu 恰好赢，macOS 与 Windows 输，
+      // 表现是一串 MODULE_RESOLUTION_FAILED。
+      //
+      // 修法是**任务级**依赖而不是把 logging 加进 devDependencies：`^build` 含 devDeps，
+      // 而 logging 自己 devDepend bundler-plugin → compiler，加进去当场成环。
+      // compiler#test → logging#build 不成环，因为环那一头是 compiler#build。
+      "dependsOn": ["$TURBO_EXTENDS$", "@reforce/logging#build", "@reforce/logging-contracts#build"]
+    }
+  }
+}

@@ -1,5 +1,5 @@
+import type { LogFields, Logger, LogLevel } from "@reforce/logging-contracts";
 import { describe, expect, test } from "vitest";
-import type { LogFields, Logger, LogLevel } from "@/contracts";
 import { bindLoggerLevels } from "@/level-binding";
 import { LoggerLevels } from "@/levels";
 

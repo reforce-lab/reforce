@@ -24,6 +24,7 @@
     "@reforce/core": "workspace:*",
     "@reforce/primitives": "workspace:*",
     "@reforce/runtime": "workspace:*",
+    "@reforce/starter-meta": "workspace:*",
     "@reforce/transaction": "workspace:*",
     "@reforce/web-core": "workspace:*",
     "@rsbuild/core": "^2.1.9",

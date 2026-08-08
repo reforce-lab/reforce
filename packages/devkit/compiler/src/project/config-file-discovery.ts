@@ -30,7 +30,7 @@ function normalizePatterns(patterns: readonly string[] | undefined): readonly st
 // Deliberately broader than tsc: `dot: true` makes `**/*` reach `.reforce/generated`, which tsc's
 // wildcard segments never do. The two answers only differ on dot directories, and the difference
 // is confined to watchInputs.fileDependencies — `isApplicationSource` drops generated files from
-// the compilation input, and `generatedDeclarationsAreIncluded` answers the "will the user's tsc
+// the compilation input, and `generatedOutputIsIncluded` answers the "will the user's tsc
 // see the qualifiers" question on its own with true tsc semantics (Issue #60). Watching a
 // generated file we also list under missingDependencies is harmless; missing it would not be.
 export async function discoverConfiguredFiles(

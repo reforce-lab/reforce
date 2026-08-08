@@ -15,11 +15,14 @@ const webRoot = join(workspaceRoot, "packages", "web", "web-core");
 const webNodeRoot = join(workspaceRoot, "packages", "web", "web-node");
 const webHonoRoot = join(workspaceRoot, "packages", "web", "web-hono");
 const webFastifyRoot = join(workspaceRoot, "packages", "web", "web-fastify");
-// @reforce/logging 是 @reforce/config 的运行时依赖（RFC 0011 L8，#250：绑定期的警告走引导
-// 缓冲），@reforce/runtime 又是 logging 的——两者都必须随 config 一起落进 fixture，否则
-// config 的 dist 在用户项目里 import 不到。
+// @reforce/logging-contracts 是 @reforce/config 的运行时依赖（RFC 0011 L8，#250：绑定期的警告
+// 走引导缓冲；契约与引导期设施按角色沉到底层见 #347），@reforce/logging 是 starter 本体，
+// @reforce/primitives 是它的终端原语。三个都必须随 config 一起落进 fixture，否则 config 与
+// logging 的 dist 在用户项目里 import 不到。
 const loggingRoot = join(workspaceRoot, "packages", "observability", "logging");
+const loggingContractsRoot = join(workspaceRoot, "packages", "kernel", "logging-contracts");
 const runtimeRoot = join(workspaceRoot, "packages", "kernel", "runtime");
+const primitivesRoot = join(workspaceRoot, "packages", "kernel", "primitives");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -72,7 +75,9 @@ export async function installApplicationPackages(
   const webTarget = join(scopeRoot, "web-core");
   const webNodeTarget = join(scopeRoot, "web-node");
   const loggingTarget = join(scopeRoot, "logging");
+  const loggingContractsTarget = join(scopeRoot, "logging-contracts");
   const runtimeTarget = join(scopeRoot, "runtime");
+  const primitivesTarget = join(scopeRoot, "primitives");
   if (contextDistribution === "workspace") {
     await Promise.all([
       link(coreRoot, coreTarget),
@@ -80,7 +85,9 @@ export async function installApplicationPackages(
       link(webRoot, webTarget),
       link(webNodeRoot, webNodeTarget),
       link(loggingRoot, loggingTarget),
+      link(loggingContractsRoot, loggingContractsTarget),
       link(runtimeRoot, runtimeTarget),
+      link(primitivesRoot, primitivesTarget),
       ...extraEngines.map((name) => {
         const root = extraEngineRoots[name];
         if (root === undefined) {
@@ -97,7 +104,9 @@ export async function installApplicationPackages(
     mkdir(webTarget),
     mkdir(webNodeTarget),
     mkdir(loggingTarget),
+    mkdir(loggingContractsTarget),
     mkdir(runtimeTarget),
+    mkdir(primitivesTarget),
   ]);
   await Promise.all([
     cp(join(coreRoot, "package.json"), join(coreTarget, "package.json")),
@@ -106,10 +115,26 @@ export async function installApplicationPackages(
     cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
     cp(join(webRoot, "package.json"), join(webTarget, "package.json")),
     cp(join(webRoot, "dist"), join(webTarget, "dist"), { recursive: true }),
+    // web-core 一个 bean 都没有，但它的 meta 是引擎包契约坐标的落点：web-node 的 provides 写的
+    // 是 `@reforce/web-core#WebEngineAdapter`，链接期要靠这份户口表把它解析回 dist（#369）。
+    cp(join(webRoot, "reforce-meta.json"), join(webTarget, "reforce-meta.json")),
     cp(join(loggingRoot, "package.json"), join(loggingTarget, "package.json")),
     cp(join(loggingRoot, "dist"), join(loggingTarget, "dist"), { recursive: true }),
     // @reforce/logging 升格 starter 后（RFC 0011 勘误，#242）分发面同样带 meta。
     cp(join(loggingRoot, "reforce-meta.json"), join(loggingTarget, "reforce-meta.json")),
+    cp(join(loggingContractsRoot, "package.json"), join(loggingContractsTarget, "package.json")),
+    cp(join(loggingContractsRoot, "dist"), join(loggingContractsTarget, "dist"), {
+      recursive: true,
+    }),
+    // 契约包自己也发 meta（#369/#347）：logging 的 meta 把 LoggerFactory 记成
+    // `@reforce/logging-contracts#LoggerFactory`，链接期要按 starterDeps 拉起这份户口表才
+    // 解析得到它。少拷它的表现是 STARTER_META_NOT_FOUND 加一串 MISSING_BEAN。
+    cp(
+      join(loggingContractsRoot, "reforce-meta.json"),
+      join(loggingContractsTarget, "reforce-meta.json"),
+    ),
+    cp(join(primitivesRoot, "package.json"), join(primitivesTarget, "package.json")),
+    cp(join(primitivesRoot, "dist"), join(primitivesTarget, "dist"), { recursive: true }),
     cp(join(runtimeRoot, "package.json"), join(runtimeTarget, "package.json")),
     cp(join(runtimeRoot, "dist"), join(runtimeTarget, "dist"), { recursive: true }),
     cp(join(webNodeRoot, "package.json"), join(webNodeTarget, "package.json")),

@@ -1,4 +1,5 @@
 import { compareUtf16CodeUnits } from "@reforce/primitives";
+import type { LinkedSymbol } from "@/linking/model";
 
 // 方法级织入的分析模型（ADR 0008 AM1，#202）：weaving.json 与 $Woven emission 消费同一份
 // 形状。阶段闭集与 @reforce/core 的运行时词汇同一份字面量联合（两侧封闭，扩展必须同步），
@@ -17,6 +18,17 @@ export type InterceptPhaseModel = (typeof interceptPhaseOrder)[number];
 
 export function interceptPhaseRank(phase: InterceptPhaseModel): number {
   return interceptPhaseOrder.indexOf(phase);
+}
+
+// marker → 拦截器的一条绑定。住在 model 而不是 method-interception：contribute 相位的 pass
+// 经 interceptorBindings 通道往织入链里加绑定（#344 定案 2），通道定义与消费方都要认它，
+// 而通道不能反过来 import 消费方所在的文件。
+export interface InterceptorBinding {
+  readonly beanId: string;
+  readonly phase: InterceptPhaseModel;
+  readonly order: number;
+  readonly markerKey: string;
+  readonly contract: LinkedSymbol;
 }
 
 // 与 RouteMetaValueModel 同构但不复用（#202 定案 2：Rule of Three 第二次出现保持重复）。

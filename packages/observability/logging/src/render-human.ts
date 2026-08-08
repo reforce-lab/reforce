@@ -1,7 +1,13 @@
 import type { Writable } from "node:stream";
-import { foldStackFrames } from "@reforce/runtime/stack-frames";
-import { padEnd, padStart, style, type TextStyle, truncateStart } from "@reforce/runtime/terminal";
-import type { LogLevel, LogRecord } from "@/contracts";
+import type { LogLevel, LogRecord } from "@reforce/logging-contracts";
+import { foldStackFrames } from "@reforce/primitives/stack-frames";
+import {
+  padEnd,
+  padStart,
+  style,
+  type TextStyle,
+  truncateStart,
+} from "@reforce/primitives/terminal";
 
 // 应用日志的 human 档（RFC 0011 D1/D2，#242）：dev TTY 下给人扫一眼的对齐行，管道与生产
 // 照旧 JSON——同一份事件两种渲染，字段不因模式增减（不变量 3）。

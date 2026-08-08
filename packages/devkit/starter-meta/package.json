@@ -1,0 +1,43 @@
+{
+  "name": "@reforce/starter-meta",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The reforce-meta.json contract: types, parser, JSON Schema and a standalone checker.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema.json": "./schema.json"
+  },
+  "bin": {
+    "reforce-meta-check": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schema.json"
+  ],
+  "scripts": {
+    "build": "rslib build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "test": "vitest run",
+    "check": "biome check .",
+    "check:write": "biome check --write ."
+  },
+  "dependencies": {
+    "@reforce/primitives": "workspace:*",
+    "@swc/helpers": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
+    "@rslib/core": "catalog:",
+    "@types/node": "catalog:",
+    "fast-check": "^4.9.0",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

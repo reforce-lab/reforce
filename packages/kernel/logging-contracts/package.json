@@ -1,0 +1,44 @@
+{
+  "name": "@reforce/logging-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The logging contracts and the bootstrap-time facilities that exist before any container does.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    },
+    "./reforce-meta": "./reforce-meta.json"
+  },
+  "files": [
+    "dist",
+    "reforce-meta.json"
+  ],
+  "scripts": {
+    "build": "rslib build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p it/tsconfig.json",
+    "test": "vitest run",
+    "check": "biome check .",
+    "check:write": "biome check --write .",
+    "meta": "node ../../devkit/cli/dist/reforce.js lib --project . --tsconfig tsconfig.json"
+  },
+  "dependencies": {
+    "@swc/helpers": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-testing": "workspace:*",
+    "@reforce/tooling-tsconfig": "workspace:*",
+    "@reforce/tooling-vitest": "workspace:*",
+    "@rslib/core": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

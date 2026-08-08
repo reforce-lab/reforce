@@ -19,13 +19,16 @@
     "./generated-runtime": {
       "types": "./dist/generated-runtime.d.ts",
       "default": "./dist/generated-runtime.js"
-    }
+    },
+    "./reforce-meta": "./reforce-meta.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "reforce-meta.json"
   ],
   "scripts": {
     "build": "rslib build",
+    "meta": "node ../../devkit/cli/dist/reforce.js lib --project . --tsconfig tsconfig.json",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
     "test": "vitest run",
     "check": "biome check .",

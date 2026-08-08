@@ -17,8 +17,8 @@ import {
 } from "@/analysis/model";
 import type { WebModel } from "@/analysis/web-model";
 import type { GeneratedFile, ResolvedApplicationProject } from "@/api";
-import { generateWeavingFile } from "@/emission/generate-weaving-file";
-import { generateWebFiles, webRuntimeModuleSpecifier } from "@/emission/generate-web-files";
+import { webRuntimeModuleSpecifier } from "@/emission/generate-web-files";
+import { refineGeneratedFiles } from "@/emission/refine-emitters";
 import { compactJson, inlineJson, json, runtimeSpecifier } from "@/emission/render";
 import type { LinkedSymbol } from "@/linking/model";
 import { generatedDirectoryPath } from "@/project/generated-paths";
@@ -706,7 +706,12 @@ function contextStartLines(logging: LoggingExports, beanCount: number): readonly
 // 于是 job / CLI / worker 这类应用一条运行期框架输出都拿不到。
 function frameworkLoggingLines(): readonly string[] {
   return [
-    "let frameworkLoggingValue;",
+    // 显式标注而不是靠推导：生成物现在进用户的编译单元（#350），`let x;` 在 noImplicitAny 下
+    // 是 TS7034/TS7005。类型只用本文件已经 import 的两个 bean target 表达，bootstrap 因此仍然
+    // 不必认识 @reforce/runtime 的 FrameworkLogging——那道缝依旧是结构性的。
+    "let frameworkLoggingValue:",
+    "  | { logger: InstanceType<typeof contextLogger>; factory: InstanceType<typeof loggerFactory> }",
+    "  | undefined;",
     "",
     // 生成的 bootstrap 是唯一同时拿得到框架 logger 与 LoggerFactory 的地方，而它不认识
     // @reforce/runtime。导出取值函数而不是常量——模块求值时容器还不存在。
@@ -912,7 +917,8 @@ export function generateFiles(
         providers.length,
       ),
     },
-    ...generateWebFiles(project, web),
-    generateWeavingFile(weaving),
+    // refine pass 的产出走配对表（#344 定案 5）：加一个 refine pass 而不给它配 emitter，
+    // refine-emitters 的 `satisfies Record<RefinePassName, …>` 当场红。
+    ...refineGeneratedFiles({ project, web, weaving }),
   ]);
 }

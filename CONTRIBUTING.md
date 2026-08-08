@@ -91,9 +91,11 @@ Compiler 内置唯一的 Yuku parser。Parser-to-IR 测试只断言 Source IR、
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", ".reforce/generated/**/*.d.ts"]
+  "include": ["src", ".reforce/generated/**/*.ts"]
 }
 ```
+
+`include` 必须收下整个 `.reforce/generated`，两半都要：`.d.ts` 让 qualifier 之类的生成类型可见，生成的 `.ts`（`beans.ts` 等）进类型检查后，emit 出来的构造调用与织入链才有人核实——只收 `**/*.d.ts` 时，实参个数对不上这类 emission 缺陷一路静默到运行期（#350）。`resolveProject` 用 `GENERATED_DECLARATIONS_NOT_INCLUDED` 前置拦截。
 
 ```ts
 import { Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";

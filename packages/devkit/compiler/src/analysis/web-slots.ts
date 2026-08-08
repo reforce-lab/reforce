@@ -14,7 +14,7 @@ import type {
   WebExportRefModel,
 } from "@/analysis/web-model";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic } from "@/diagnostics";
+import { report } from "@/diagnostics";
 import type {
   ClassMethodDeclaration,
   EntityName,
@@ -334,30 +334,6 @@ export function resolveRouteSlots<TType, TSymbol>(
     return undefined;
   }
   return { slots: accumulator.slots, response };
-}
-
-function report(
-  diagnostics: CompilerDiagnostic[],
-  code: CompilerDiagnostic["code"],
-  message: string,
-  span: SourceSpan,
-  options: {
-    readonly help?: string;
-    readonly related?: CompilerDiagnostic["related"];
-    readonly suggestions?: CompilerDiagnostic["suggestions"];
-  } = {},
-): undefined {
-  diagnostics.push(
-    diagnostic({
-      code,
-      message,
-      sourceSpan: span,
-      help: options.help,
-      related: options.related,
-      suggestions: options.suggestions,
-    }),
-  );
-  return undefined;
 }
 
 function isBareSlot(slot: RouteSlotModel): slot is BareRouteSlotModel {
@@ -773,7 +749,7 @@ function expandContract<TType, TSymbol>(
   allowUndefinedRoot: boolean,
   // 推导模式(S3,#275)把诊断引流进局部数组:失败即静默降级 free-form,不见诸公开诊断。
   sink?: CompilerDiagnostic[],
-): { readonly table?: ContractTable; readonly optional: boolean } {
+): { readonly table?: ContractTable | undefined; readonly optional: boolean } {
   const query = context.query;
   if (query === undefined) {
     // requireType 已在取类型时守门;这里不可达,防御返回失败。
@@ -1216,7 +1192,7 @@ function resolveSchemaResponse<TType, TSymbol>(
   schema: ResponseSchemaDirectiveModel,
 ): StatuslessResponse | undefined {
   const { context } = inputs;
-  const invalid = (detail: string, help?: string): undefined =>
+  const invalid = (detail: string, help?: string | undefined): undefined =>
     report(
       context.diagnostics,
       "INVALID_RESPONSE_SCHEMA",
