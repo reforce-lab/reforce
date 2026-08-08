@@ -22,7 +22,8 @@ export interface DiagnosticArticle {
 export const unwrittenArticleIssueUrl = "https://github.com/reforce-lab/reforce/issues/297";
 
 // 覆盖依赖图、路由与日志/抑制三条最常撞墙的路径。其余码走「暂无长文」。
-const articles: Readonly<Record<string, DiagnosticArticle>> = {
+// 导出与 argumentArticles / transactionArticles 同款，供 codes.spec 做结构断言（#314）。
+export const compilerArticles: Readonly<Record<string, DiagnosticArticle>> = {
   MISSING_BEAN: {
     summary: "A dependency has no provider anywhere in the resolved graph.",
     article: [
@@ -31,16 +32,21 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
       "",
       "The three usual causes, in the order worth checking:",
       "",
-      "  1. The provider exists but is not reachable. The compiler only sees classes exported",
-      "     (transitively) from the application entry. A file nobody re-exports is invisible, even",
-      "     when it sits next to one that is not.",
-      "  2. The provider exists and is reachable but carries no @Injectable, so it was never a",
-      "     provider to begin with.",
+      "  1. The provider's file is outside the compiled source set. The compiler scans every file",
+      "     the leaf tsconfig includes — a provider never needs to be imported or re-exported by",
+      "     another file — so check the tsconfig include patterns, not your import chains.",
+      "  2. The provider's file is in the source set but the class carries no @Injectable, so it",
+      "     was never a provider to begin with.",
       "  3. The dependency is on an interface no class declares it implements. Contracts are matched",
       "     structurally by declaration, not by shape.",
       "",
       "A starter can also be the answer: a dependency on a contract a starter owns needs that",
       "starter installed and registered, otherwise nothing in the graph provides it.",
+      "",
+      "One export rule does exist, but it belongs to libraries: `reforce lib` registers only the",
+      "beans a package exposes through its exports subpaths, and reports LIBRARY_EXPORT_MISMATCH",
+      "at library build time when a bean class is missing from them. Application sources carry no",
+      "such requirement.",
     ],
   },
   AMBIGUOUS_BEAN: {
@@ -157,16 +163,16 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
   BEAN_ID_COLLISION: {
     summary: "Two providers resolved to the same Bean id.",
     article: [
-      "A Bean id is 'origin#exportName'. Two providers sharing one id would make the manifest, the",
-      "explain output and every diagnostic ambiguous about which one they mean.",
+      "A Bean id is 'origin#exportName' — for application code the origin is the project-relative",
+      "source path, so the full id reads 'src/user/service.ts#UserService'. The manifest, the",
+      "explain output and every diagnostic use the id to name exactly one provider, and ids are",
+      "compared case-insensitively so a project built on a case-sensitive filesystem cannot mean",
+      "something different on a case-insensitive one.",
       "",
-      "Within one application this means two exported classes with the same name reached the entry",
-      "through different files. Rename one export — the file name is not part of the id, so moving",
-      "files does not help.",
-      "",
-      "Across packages it means one starter is installed twice at incompatible versions and both",
-      "copies registered. `reforce explain <bean id>` prints the introduction chain for each copy,",
-      "which shows who pulled in which version.",
+      "Source paths that differ only by letter case are already rejected earlier, as",
+      "SOURCE_FILE_ID_COLLISION. What is left for this report is two provider exports whose ids",
+      "fold to the same string — in practice, two exports in one file whose names differ only by",
+      "letter case. Rename one export (or move one provider) so the ids differ beyond case.",
     ],
   },
   SPLIT_CONTRACT_BINDING: {
@@ -520,7 +526,7 @@ const articles: Readonly<Record<string, DiagnosticArticle>> = {
 // 按读者场景分的三张表（见文件头）。码在全仓唯一（code-registry.spec 断言），所以扫描顺序
 // 不参与决策，只是把三次查表写成一处。
 const articleTables: readonly Readonly<Record<string, DiagnosticArticle>>[] = [
-  articles,
+  compilerArticles,
   argumentArticles,
   transactionArticles,
 ];
