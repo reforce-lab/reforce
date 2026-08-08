@@ -127,6 +127,19 @@ jobs:
         if: env.RUN_VERIFY == 'true'
         run: pnpm run test
 
+      # Issue #386：Windows 上偶发全绿后空转到 timeout-minutes 上限，job 超时清理时报出的孤儿
+      # 只有 pid/image name（如 "node"），认不出是哪条命令行。这一步紧跟在 Test 之后、用
+      # if: always() 而不是等 job 超时，抢在 runner 最终 orphan 清理之前把当时还活着的 node.exe
+      # 连 ParentProcessId 和 CommandLine 一起打出来，复现时才能直接点名，不必再靠推断。
+      - name: Snapshot Windows node processes (diagnostic for #386)
+        if: always() && env.RUN_VERIFY == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-CimInstance Win32_Process |
+            Where-Object { $_.Name -eq 'node.exe' } |
+            Select-Object ProcessId, ParentProcessId, CommandLine |
+            Format-List
+
       - name: Build
         if: env.RUN_VERIFY == 'true'
         run: pnpm run build
