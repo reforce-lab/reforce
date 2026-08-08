@@ -146,8 +146,9 @@ export function collectRouteMarkers(
 }
 
 // marker 值 = JSON 字面量树（ADR 0006 W3 待打磨项定案）：静态可提取是硬边界，任何引用、
-// 模板或计算形态原位点名拒绝。
-function metaValueOf(
+// 模板或计算形态原位点名拒绝。导出是给单测用的模块入口——它是本模块「值那一半」的全部，
+// 不依赖 linker，能脱开真编译器逐形态钉住（#363）。
+export function metaValueOf(
   value: DecoratorArgumentValue,
   diagnostics: CompilerDiagnostic[],
 ): RouteMetaValueModel | undefined {

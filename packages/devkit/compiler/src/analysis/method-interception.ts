@@ -20,7 +20,7 @@ import {
   validateTransactionalValue,
 } from "@/analysis/transaction-weaving";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic, report } from "@/diagnostics";
+import { report } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
 import type { ProjectLinker } from "@/linking/project-linker";
 import type {

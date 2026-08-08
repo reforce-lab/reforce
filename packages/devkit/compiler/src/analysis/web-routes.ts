@@ -64,6 +64,7 @@ import type { TypeQuery } from "@/typescript/type-query";
 // 具体每一件事的实现已经按单向分层拆到同目录的 web-* 里（#363）：class-target ← decorators
 // ← {route-markers, route-path} ← {error-handlers ← throws, middleware} ← bean-registry ←
 // 本文件。本文件只留遍历顺序与接线，不再重复任何一层的判定。
+
 // 引擎与播种接线（ADR 0006 W2 的 #153 修订，约定见 web-model.ts）：引擎排序按 beanId 决定
 // 性决胜；webRequestSeeder 在 defineApplication 模块作用域内解析，未导出是硬错——生成的
 // bootstrap 必须能 import 它，类型契约（RequestSeeder）由生成代码上的 tsc 背书（typed-edge）。
@@ -152,34 +153,21 @@ export function analyzeWebRoutes(
     diagnostics,
   );
 
+  const context: WebAnalysisContext = {
+    linker,
+    typeQuery,
+    fileIdOf,
+    providerById,
+    middlewareById: registry.middlewareById,
+    globalMiddleware,
+    markers,
+    throwsContext,
+    middlewareThrows,
+    diagnostics,
+  };
   const candidates: RouteCandidate[] = [];
   for (const scan of scans) {
-    const controllerDecorator = singleCalledDecorator(
-      "Controller",
-      scan.web.get("Controller") ?? [],
-      "INVALID_ROUTE_DECLARATION",
-      diagnostics,
-    );
-    const isController = (scan.web.get("Controller")?.length ?? 0) > 0;
-    const isOtherRole =
-      (scan.web.get("Middleware")?.length ?? 0) > 0 ||
-      (scan.web.get("ErrorHandler")?.length ?? 0) > 0;
-    collectControllerRoutes({
-      scan,
-      controllerDecorator: isController ? controllerDecorator : undefined,
-      allowRoutes: isController && !isOtherRole,
-      linker,
-      typeQuery,
-      fileIdOf,
-      providerById,
-      middlewareById: registry.middlewareById,
-      globalMiddleware,
-      markers,
-      throwsContext,
-      middlewareThrows,
-      candidates,
-      diagnostics,
-    });
+    collectControllerRoutes(context, scan, candidates);
   }
 
   const routes = reportRouteConflicts(candidates, diagnostics).toSorted((left, right) => {
@@ -196,10 +184,10 @@ export function analyzeWebRoutes(
   };
 }
 
-interface ControllerRouteInputs {
-  readonly scan: ClassRoleScan;
-  readonly controllerDecorator: DecoratorUse | undefined;
-  readonly allowRoutes: boolean;
+// 一次 analyzeWebRoutes 内恒定的那部分（#363）：linker、名录、诊断桶这十项每个 controller、
+// 每个 handler、每条路由都要用，此前和 per-scan 的三项（scan / controllerDecorator /
+// allowRoutes）与出参 candidates 混在同一个 inputs 里逐层传，看不出哪些随遍历变化。
+interface WebAnalysisContext {
   readonly linker: ProjectLinker;
   readonly typeQuery: TypeQuery | undefined;
   readonly fileIdOf: (declarationPath: string) => string | undefined;
@@ -209,8 +197,18 @@ interface ControllerRouteInputs {
   readonly markers: ReadonlyMap<string, RouteMarkerDeclarationInfo>;
   readonly throwsContext: ThrowsResolutionContext;
   readonly middlewareThrows: ReadonlyMap<string, readonly RouteThrownErrorModel[]>;
-  readonly candidates: RouteCandidate[];
   readonly diagnostics: CompilerDiagnostic[];
+}
+
+// 单个 controller 类内恒定的那部分：allowRoutes 决定这个类的方法算不算路由，claim 与
+// basePath 是每条路由都要挂上去的两个值，use 是类级 @Use 解析出来的中间件。
+interface ControllerContext {
+  readonly scan: ClassRoleScan;
+  readonly name: string;
+  readonly allowRoutes: boolean;
+  readonly claim: WebBeanClaim | undefined;
+  readonly basePath: string | undefined;
+  readonly use: readonly MiddlewareInfo[];
 }
 
 function controllerBasePath(
@@ -257,32 +255,57 @@ function reportMisplacedMethodDecorators(
   }
 }
 
-function collectControllerRoutes(inputs: ControllerRouteInputs): void {
-  const { scan, diagnostics } = inputs;
-  const controllerName = scan.declaration.name ?? "an anonymous class";
-  const claim = inputs.allowRoutes
-    ? claimWebBean(scan.source, scan.declaration, "controller", inputs.providerById, diagnostics)
-    : undefined;
-  const basePath = inputs.allowRoutes
-    ? controllerBasePath(inputs.controllerDecorator, diagnostics)
-    : undefined;
-  const controllerUse = useTargetsOf(
-    scan.source,
-    scan.web.get("Use") ?? [],
-    inputs.middlewareById,
-    inputs.linker,
+// controllerDecorator 与 allowRoutes 就地从 scan.web 现算：诊断顺序不变——非 controller 类
+// 的 "Controller" 装饰器数组是空的，singleCalledDecorator 对空数组静默返回。
+function controllerContextOf(context: WebAnalysisContext, scan: ClassRoleScan): ControllerContext {
+  const { diagnostics } = context;
+  const controllerDecorator = singleCalledDecorator(
+    "Controller",
+    scan.web.get("Controller") ?? [],
+    "INVALID_ROUTE_DECLARATION",
     diagnostics,
   );
-  if (!inputs.allowRoutes && (scan.web.get("Use")?.length ?? 0) > 0) {
-    report(
+  const isController = (scan.web.get("Controller")?.length ?? 0) > 0;
+  const isOtherRole =
+    (scan.web.get("Middleware")?.length ?? 0) > 0 ||
+    (scan.web.get("ErrorHandler")?.length ?? 0) > 0;
+  const allowRoutes = isController && !isOtherRole;
+  return {
+    scan,
+    name: scan.declaration.name ?? "an anonymous class",
+    allowRoutes,
+    claim: allowRoutes
+      ? claimWebBean(scan.source, scan.declaration, "controller", context.providerById, diagnostics)
+      : undefined,
+    basePath: allowRoutes
+      ? controllerBasePath(isController ? controllerDecorator : undefined, diagnostics)
+      : undefined,
+    use: useTargetsOf(
+      scan.source,
+      scan.web.get("Use") ?? [],
+      context.middlewareById,
+      context.linker,
       diagnostics,
+    ),
+  };
+}
+
+function collectControllerRoutes(
+  context: WebAnalysisContext,
+  scan: ClassRoleScan,
+  candidates: RouteCandidate[],
+): void {
+  const controller = controllerContextOf(context, scan);
+  if (!controller.allowRoutes && (scan.web.get("Use")?.length ?? 0) > 0) {
+    report(
+      context.diagnostics,
       "INVALID_ROUTE_DECLARATION",
-      `Use on ${controllerName} needs a @Controller class: only controllers mount route middleware.`,
+      `Use on ${controller.name} needs a @Controller class: only controllers mount route middleware.`,
       scan.declaration.span,
     );
   }
   for (const method of scan.declaration.methods) {
-    collectMethodRoutes(inputs, method, controllerName, claim, basePath, controllerUse);
+    collectMethodRoutes(context, controller, method, candidates);
   }
 }
 
@@ -291,7 +314,7 @@ function collectControllerRoutes(inputs: ControllerRouteInputs): void {
 function routeResponseDirectivesOf(
   source: ParsedSource,
   methodWeb: ReadonlyMap<string, readonly DecoratorUse[]>,
-  inputs: ControllerRouteInputs,
+  context: WebAnalysisContext,
   diagnostics: CompilerDiagnostic[],
 ):
   | {
@@ -304,7 +327,7 @@ function routeResponseDirectivesOf(
   const methodThrows = resolveThrowsDecorators(
     source,
     methodWeb.get("Throws") ?? [],
-    inputs.throwsContext,
+    context.throwsContext,
   );
   if (parsedStatus.failed || parsedSchema.failed || methodThrows.failed) {
     return undefined;
@@ -361,15 +384,14 @@ function reportLegacySchemaArguments(
 }
 
 function collectMethodRoutes(
-  inputs: ControllerRouteInputs,
+  context: WebAnalysisContext,
+  controller: ControllerContext,
   method: ClassMethodDeclaration,
-  controllerName: string,
-  claim: WebBeanClaim | undefined,
-  basePath: string | undefined,
-  controllerUse: readonly MiddlewareInfo[],
+  candidates: RouteCandidate[],
 ): void {
-  const { scan, diagnostics } = inputs;
-  const methodWeb = webDecoratorsOf(scan.source, method.decorators, inputs.linker);
+  const { scan, name: controllerName, claim, basePath } = controller;
+  const { diagnostics } = context;
+  const methodWeb = webDecoratorsOf(scan.source, method.decorators, context.linker);
   const routeDecorators = [...methodWeb.entries()].filter(([name]) =>
     routeDecoratorNames.has(name),
   );
@@ -378,7 +400,7 @@ function collectMethodRoutes(
     reportOrphanMethodDirectives(methodWeb, method, diagnostics);
     return;
   }
-  if (!inputs.allowRoutes) {
+  if (!controller.allowRoutes) {
     report(
       diagnostics,
       "INVALID_ROUTE_DECLARATION",
@@ -397,7 +419,7 @@ function collectMethodRoutes(
   if (handlerName === undefined) {
     return;
   }
-  const directives = routeResponseDirectivesOf(scan.source, methodWeb, inputs, diagnostics);
+  const directives = routeResponseDirectivesOf(scan.source, methodWeb, context, diagnostics);
   if (directives === undefined) {
     return;
   }
@@ -407,9 +429,9 @@ function collectMethodRoutes(
     context: createSlotResolutionContext({
       source: scan.source,
       method,
-      linker: inputs.linker,
-      query: inputs.typeQuery,
-      fileIdOf: inputs.fileIdOf,
+      linker: context.linker,
+      query: context.typeQuery,
+      fileIdOf: context.fileIdOf,
       diagnostics,
     }),
     responseDirectives: directives.response,
@@ -420,29 +442,35 @@ function collectMethodRoutes(
   const routeUse = useTargetsOf(
     scan.source,
     methodWeb.get("Use") ?? [],
-    inputs.middlewareById,
-    inputs.linker,
+    context.middlewareById,
+    context.linker,
     diagnostics,
   );
-  const middleware = flattenedChain(inputs.globalMiddleware, controllerUse, routeUse);
+  const middleware = flattenedChain(context.globalMiddleware, controller.use, routeUse);
   const throws = unionThrows([
     directives.throws,
-    ...middleware.map((entry) => inputs.middlewareThrows.get(entry.beanId) ?? []),
+    ...middleware.map((entry) => context.middlewareThrows.get(entry.beanId) ?? []),
   ]);
-  pushRouteCandidates(inputs, {
+  pushRouteCandidates(
+    scan.source,
     routeDecorators,
-    basePath,
-    claim,
-    handlerName,
-    contract,
-    throws,
-    middleware,
-    meta: routeMetaOf(scan.source, method, inputs.markers, inputs.linker, diagnostics),
-  });
+    {
+      basePath,
+      claim,
+      handlerName,
+      contract,
+      throws,
+      middleware,
+      meta: routeMetaOf(scan.source, method, context.markers, context.linker, diagnostics),
+    },
+    candidates,
+    diagnostics,
+  );
 }
 
-interface RouteCandidateInputs {
-  readonly routeDecorators: readonly (readonly [string, readonly DecoratorUse[]])[];
+// 一条路由要挂上去的、per-method 已经定好的那份值。routeDecorators 不在里面：一个方法可以
+// 带多个路由装饰器，它是遍历的对象而不是路由自己的属性。
+interface RouteDraft {
   readonly basePath: string;
   readonly claim: WebBeanClaim;
   readonly handlerName: string;
@@ -453,109 +481,92 @@ interface RouteCandidateInputs {
 }
 
 function pushRouteCandidates(
-  inputs: ControllerRouteInputs,
-  candidateInputs: RouteCandidateInputs,
+  source: ParsedSource,
+  routeDecorators: readonly (readonly [string, readonly DecoratorUse[]])[],
+  draft: RouteDraft,
+  candidates: RouteCandidate[],
+  diagnostics: CompilerDiagnostic[],
 ): void {
-  for (const [decoratorName, decorators] of candidateInputs.routeDecorators) {
+  for (const [decoratorName, decorators] of routeDecorators) {
     for (const decorator of decorators) {
-      const route = routeOf({
-        source: inputs.scan.source,
-        decoratorName,
-        decorator,
-        basePath: candidateInputs.basePath,
-        claim: candidateInputs.claim,
-        handlerName: candidateInputs.handlerName,
-        contract: candidateInputs.contract,
-        throws: candidateInputs.throws,
-        middleware: candidateInputs.middleware,
-        meta: candidateInputs.meta,
-        linker: inputs.linker,
-        diagnostics: inputs.diagnostics,
-      });
+      const route = routeOf(source, decoratorName, decorator, draft, diagnostics);
       if (route !== undefined) {
-        inputs.candidates.push(route);
+        candidates.push(route);
       }
     }
   }
 }
 
-interface RouteOfInputs {
-  readonly source: ParsedSource;
-  readonly decoratorName: string;
-  readonly decorator: DecoratorUse;
-  readonly basePath: string;
-  readonly claim: WebBeanClaim;
-  readonly handlerName: string;
-  readonly contract: RouteContractModel;
-  readonly throws: readonly RouteThrownErrorModel[];
-  readonly middleware: readonly RouteMiddlewareModel[];
-  readonly meta: ReadonlyMap<string, RouteMetaValueModel>;
-  readonly linker: ProjectLinker;
-  readonly diagnostics: CompilerDiagnostic[];
-}
-
-function routeSubPathOf(inputs: RouteOfInputs): string | undefined {
-  const pathArgument = inputs.decorator.arguments.at(0);
+function routeSubPathOf(
+  decoratorName: string,
+  decorator: DecoratorUse,
+  diagnostics: CompilerDiagnostic[],
+): string | undefined {
+  const pathArgument = decorator.arguments.at(0);
   if (pathArgument === undefined) {
     return "";
   }
   if (pathArgument.kind !== "string-literal") {
     report(
-      inputs.diagnostics,
+      diagnostics,
       "INVALID_ROUTE_DECLARATION",
-      `${inputs.decoratorName} path must be a string literal.`,
+      `${decoratorName} path must be a string literal.`,
       pathArgument.span,
     );
     return undefined;
   }
-  return normalizedPrefix(pathArgument.value, pathArgument.span, inputs.diagnostics);
+  return normalizedPrefix(pathArgument.value, pathArgument.span, diagnostics);
 }
 
-function routeOf(inputs: RouteOfInputs): RouteCandidate | undefined {
-  const { decorator, diagnostics } = inputs;
+function routeOf(
+  source: ParsedSource,
+  decoratorName: string,
+  decorator: DecoratorUse,
+  draft: RouteDraft,
+  diagnostics: CompilerDiagnostic[],
+): RouteCandidate | undefined {
   if (!decorator.called || decorator.arguments.length > 1) {
     report(
       diagnostics,
       "INVALID_ROUTE_DECLARATION",
-      `${inputs.decoratorName} must be called with an optional path literal.`,
+      `${decoratorName} must be called with an optional path literal.`,
       decorator.span,
     );
     return undefined;
   }
-  const subPath = routeSubPathOf(inputs);
+  const subPath = routeSubPathOf(decoratorName, decorator, diagnostics);
   if (subPath === undefined) {
     return undefined;
   }
-  const pathInfo = routePathOf(inputs.basePath, subPath, decorator.span, diagnostics);
+  const pathInfo = routePathOf(draft.basePath, subPath, decorator.span, diagnostics);
   if (pathInfo === undefined) {
     return undefined;
   }
   // 硬错 6(#274)按路由复裁:同方法多路由装饰器时各自的路径参数集不同,槽位解析本身
   // per-method 只跑一次。
   if (
-    !reportUnknownPathParameters(inputs.contract, pathInfo.path, pathInfo.parameters, diagnostics)
+    !reportUnknownPathParameters(draft.contract, pathInfo.path, pathInfo.parameters, diagnostics)
   ) {
     return undefined;
   }
   // 名字表驱动：routeDecoratorNames 已经证明成员资格，索引推不回值联合
   // // justified: 见上一行
-  const method =
-    routeMethodByDecorator[inputs.decoratorName as keyof typeof routeMethodByDecorator];
+  const method = routeMethodByDecorator[decoratorName as keyof typeof routeMethodByDecorator];
   return {
     route: {
       method,
       path: pathInfo.path,
-      controller: inputs.claim.ref,
-      controllerId: inputs.claim.beanId,
-      handler: inputs.handlerName,
-      middleware: inputs.middleware,
-      meta: inputs.meta,
-      contract: inputs.contract,
-      throws: inputs.throws,
+      controller: draft.claim.ref,
+      controllerId: draft.claim.beanId,
+      handler: draft.handlerName,
+      middleware: draft.middleware,
+      meta: draft.meta,
+      contract: draft.contract,
+      throws: draft.throws,
       source: sourceReference(decorator.span),
     },
     shapeKey: pathInfo.shapeKey,
     span: decorator.span,
-    fileId: inputs.source.fileId,
+    fileId: source.fileId,
   };
 }

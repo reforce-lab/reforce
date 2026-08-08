@@ -14,7 +14,7 @@ import type {
   WebExportRefModel,
 } from "@/analysis/web-model";
 import type { CompilerDiagnostic } from "@/api";
-import { diagnostic, report } from "@/diagnostics";
+import { report } from "@/diagnostics";
 import type {
   ClassMethodDeclaration,
   EntityName,
