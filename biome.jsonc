@@ -48,9 +48,28 @@
           "level": "error",
           "options": { "maxAllowedComplexity": 15 }
         }
+      },
+      "suspicious": {
+        // 吞错必须写理由：空 catch/空块一律拒绝，含理由注释的块被该规则放行，
+        // 于是「每个吞错点写清为什么」从口头纪律变成机器拦截（#314）。
+        "noEmptyBlockStatements": "error"
       }
     }
   },
+  "overrides": [
+    {
+      // 测试/bench 里大量 `() => {}` 是合法的 noop 替身，不是吞错；空块拦截只对生产代码
+      // （src/**）执行，测试目录整体豁免（#314）。
+      "includes": ["**/test/**", "**/it/**", "**/bench/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noEmptyBlockStatements": "off"
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "actions": {
       "source": {

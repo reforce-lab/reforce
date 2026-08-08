@@ -143,6 +143,23 @@ export class DevCommandController {
 
 // busy 只决定 phase 与 message；PROJECT_BUSY 这个码由 createFailureEvent 从 ProjectBusyError
 // 自身读出（ADR 0013 决议 4，#280）。
+// 主失败后的兜底清理。controller 已就绪时走完整 shutdown（关 watch、关子进程、flush），
+// 否则 reporter 里还压着刚上报的主失败，至少要把它刷出去。两条路径的失败都必须进
+// shutdownFailures——它是尾部 SHUTDOWN_FAILED 汇报的唯一依据，在这里吞错会让 shutdown
+// 故障（尤其是 shutdownOnce 里无处上报的 flush 失败）彻底静默（#314）。
+export async function shutdownAfterPrimaryFailure(input: {
+  readonly controller: DevCommandController | undefined;
+  readonly reporter: Reporter;
+  readonly shutdownFailures: unknown[];
+}): Promise<void> {
+  const { controller, reporter, shutdownFailures } = input;
+  if (controller) {
+    await captureFailure(() => controller.shutdown(), shutdownFailures);
+  } else {
+    await captureFailure(() => reporter.flush(), shutdownFailures);
+  }
+}
+
 function reportCommandFailure(reporter: Reporter, error: unknown): void {
   const busy = error instanceof ProjectBusyError;
   reporter.report(
@@ -222,6 +239,9 @@ export async function runDevCommand(
           await controller?.shutdown(signal);
           resolveCompletion(code);
         } catch {
+          // shutdown 各阶段的失败已由 runShutdownStage 逐条上报过，这里不重复收集；此 catch
+          // 只保证 completion 一定被 resolve 成失败退出码，否则 dev 命令会永远挂在
+          // await completion 上（#314）。
           resolveCompletion(1);
         }
       })();
@@ -301,13 +321,11 @@ export async function runDevCommand(
   } catch (error) {
     primaryFailures.push(error);
     reportCommandFailure(options.reporter, error);
-    if (controller) {
-      try {
-        await controller.shutdown();
-      } catch {}
-    } else {
-      await captureFailure(() => options.reporter.flush(), shutdownFailures);
-    }
+    await shutdownAfterPrimaryFailure({
+      controller,
+      reporter: options.reporter,
+      shutdownFailures,
+    });
     exitCode = 1;
   }
 
