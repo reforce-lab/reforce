@@ -127,16 +127,31 @@ describe("incremental snapshots", () => {
 describe.runIf(process.platform === "linux")("process lifecycle", () => {
   test("the session spawns lazily and close terminates the child idempotently", async () => {
     harness = await createCheckerHarness({ "contracts.ts": contractsSource });
-    const before = tsgoChildProcessIds().length;
+    // pid 差集而非全局计数(#324):harness cleanup 的 close 不等子进程退出,前序用例的 tsgo
+    // 在本用例窗口内迟退会让计数下穿快照值,严格相等的 waitFor 永不满足。差集只看本用例
+    // spawn 的那一个子进程,对无关子进程的并发退出免疫。
+    const known = new Set(tsgoChildProcessIds());
     const lease = harness.lease();
-    expect(tsgoChildProcessIds().length).toBe(before);
+    expect(tsgoChildProcessIds().filter((processId) => !known.has(processId))).toEqual([]);
 
     lease.query.getTypesAtPositions(harness.filePath("src/contracts.ts"), [0]);
-    expect(tsgoChildProcessIds().length).toBe(before + 1);
+    const spawned = tsgoChildProcessIds().filter((processId) => !known.has(processId));
+    expect(spawned).toHaveLength(1);
+    const childId = spawned[0];
+    if (childId === undefined) {
+      throw new Error("expected a tsgo child");
+    }
 
     harness.session.close();
     harness.session.close();
-    await waitFor(() => tsgoChildProcessIds().length === before);
+    await waitFor(() => {
+      try {
+        process.kill(childId, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    });
 
     expect(() =>
       lease.query.getTypesAtPositions(harness?.filePath("src/contracts.ts") ?? "", [0]),
