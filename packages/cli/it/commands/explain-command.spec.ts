@@ -398,33 +398,36 @@ test("explains a diagnostic code without reading any generated artifact", async 
   expect(events.filter((event) => event.kind === "failure")).toEqual([]);
 });
 
-// 决议 5（#296）：判据是码表而不是正则，因此「已知码但没长文」能点名它属于哪个域。
-test("answers that a known code has no long-form article yet", async () => {
+// 决议 5 收口（#297）：不再存在「已知但无长文」的码——那个状态由 codes.spec 的全量覆盖断言
+// 保证为空，这里改为断言此前处于该状态的探针码如今落在长文分支。原探针 TYPE_LINK_FAILED
+// （compiler 域）与 REQUEST_CONTEXT_MISSING（core 域）保留，仍然覆盖「跨包码表被识别」。
+test("explains a formerly article-less compiler code", async () => {
   const project = await createExplainProject({ sources: starterApplicationSources });
 
-  const { exitCode, events } = await explain(project, "TYPE_LINK_FAILED");
+  const { exitCode, lines } = await explain(project, "TYPE_LINK_FAILED");
 
-  expect(exitCode).toBe(1);
-  expect(events[0]).toMatchObject({ kind: "failure", code: "CLI_USAGE_ERROR" });
-  expect(events[0]).toHaveProperty(
-    "message",
-    expect.stringContaining("TYPE_LINK_FAILED is a known compiler error code"),
-  );
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("TYPE_LINK_FAILED · ");
 });
 
-// 此前这些码全都落到「没有 bean 叫这个名字，已知的 bean 有 …」——把合法查询呈现成打错名字。
-// 探针从 TRANSACTION_TIMEOUT 换成 REQUEST_CONTEXT_MISSING：前者在 #297 补上长文后不再走这个
-// 出口，这条断言要的是「已知但无长文」这个状态本身，任何仍处于该状态的码都成立。
 test("recognizes a code from another package's table", async () => {
   const project = await createExplainProject({ sources: starterApplicationSources });
 
-  const { exitCode, events } = await explain(project, "REQUEST_CONTEXT_MISSING");
+  const { exitCode, lines } = await explain(project, "REQUEST_CONTEXT_MISSING");
 
-  expect(exitCode).toBe(1);
-  expect(events[0]).toHaveProperty(
-    "message",
-    expect.stringContaining("REQUEST_CONTEXT_MISSING is a known core error code"),
-  );
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("REQUEST_CONTEXT_MISSING · ");
+});
+
+// CLI 失败码住在 @reforce/runtime 的表里（cliFailureCodes），是五张长文表里最后接入的一张；
+// 真实 CLI 里必须同样落在长文分支。
+test("explains a CLI failure code", async () => {
+  const project = await createExplainProject({ sources: starterApplicationSources });
+
+  const { exitCode, lines } = await explain(project, "PROJECT_BUSY");
+
+  expect(exitCode).toBe(0);
+  expect(lines[0]).toContain("PROJECT_BUSY · ");
 });
 
 // #297 第一批：事务护栏七码。真实 CLI 里这条查询必须落在长文分支，而不是「暂无长文」出口。
