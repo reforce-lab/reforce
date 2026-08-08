@@ -1,3 +1,4 @@
+import type { InterceptorBinding } from "@/analysis/interception-model";
 import type { FrameworkLoggerRequest } from "@/analysis/logger-synthesis";
 import type { StarterBeanModel } from "@/linking/starter-linking";
 import type { ClassDeclaration } from "@/parser/source-ir";
@@ -15,18 +16,6 @@ import type { ClassDeclaration } from "@/parser/source-ir";
 export interface ResolutionOverrides {
   readonly redirects: Map<string, string>;
   levelsBeanId?: string;
-}
-
-/**
- * 织入链要认的拦截器 bean（contribute 写，refine 读）。
- *
- * 收敛前这条是跨文件硬编码：`method-interception.ts` 直接 `providerById.has(...)` 事务拦截器
- * 的 bean id，也就是 transaction 域向 refine 的一次隐式贡献。
- */
-export interface InterceptorBinding {
-  readonly beanId: string;
-  /** 贡献它的 pass 名字，用于诊断措辞与消费前的稳定排序。 */
-  readonly origin: string;
 }
 
 export interface PassChannels {
@@ -50,9 +39,26 @@ export interface PassChannels {
   readonly frameworkLoggers: FrameworkLoggerRequest[];
   /** logging 的解析期覆盖（contribute 写 → `resolveProviders` 读）。下游只 `get`，禁止迭代。 */
   readonly resolutionOverrides: ResolutionOverrides;
-  /** 织入链要认的拦截器（contribute 写 → refine 读）。 */
+  /**
+   * 织入链要认的拦截器绑定（contribute 写 → refine 读）。收敛前这条是跨文件硬编码：
+   * `method-interception.ts` 直接 `providerById.has(transactionInterceptorBeanId)` 再就地
+   * 拼一条绑定，也就是 transaction 域向 refine 的一次隐式贡献。
+   */
   readonly interceptorBindings: InterceptorBinding[];
 }
+
+/**
+ * 消费前必须由读者自己排序的通道（定案 4 断言 B）。
+ *
+ * 一条通道只要有两个以上写者，注册表下标序就成了它的写入序；下游若按写入序消费，那个顺序
+ * 就变成了事实上的契约——`frameworkLoggers` 的 `applyFrameworkDemands` 正是写入序 first-wins，
+ * 而「web 排在 transaction 前面」在收敛前纯属注册顺序的巧合。
+ *
+ * `test/analysis/pass-registry.spec.ts` 断言：注册表里每条多写通道都登记在这里。
+ */
+export const orderInsensitiveChannels: ReadonlySet<keyof PassChannels> = new Set([
+  "frameworkLoggers",
+]);
 
 export function createPassChannels(): PassChannels {
   return {

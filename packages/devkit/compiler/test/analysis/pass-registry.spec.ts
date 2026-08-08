@@ -9,7 +9,11 @@ import {
   runContributePasses,
   runDiscoverPasses,
 } from "@/analysis/pass";
-import { createPassChannels } from "@/analysis/pass-channels";
+import {
+  createPassChannels,
+  orderInsensitiveChannels,
+  type PassChannels,
+} from "@/analysis/pass-channels";
 import { analysisPasses } from "@/analysis/pass-registry";
 import type { CompilerDiagnostic } from "@/api";
 import type { ProjectLinker } from "@/linking/project-linker";
@@ -106,13 +110,24 @@ describe("断言 A · 注册表序与通道拓扑一致", () => {
 });
 
 describe("断言 B · 通道的消费方自己定序", () => {
-  test("frameworkLoggers 的写者一旦多于一个，消费方就必须自己排序", () => {
-    // 这条通道是设计上唯一的多写者（web 与 transaction 各写一条），写入序 first-wins
-    // （applyFrameworkDemands）。写者还只有 0-1 个时这条恒真；等第二个写者进来，它就变成
-    // 「消费前按 name 排序」那段代码的存在理由。
-    const writers = analysisPasses.filter((pass) => pass.writes.includes("frameworkLoggers"));
+  test("注册表里每条多写通道都登记为消费前排序", () => {
+    // 一条通道有两个以上写者，注册表下标序就成了它的写入序；下游按写入序消费的话，那个顺序
+    // 就变成事实上的契约。登记的意思是「读者自己排序」，这条断言保证没人漏登记。
+    const writerCount = new Map<keyof PassChannels, number>();
+    for (const pass of analysisPasses) {
+      for (const channel of pass.writes) {
+        writerCount.set(channel, (writerCount.get(channel) ?? 0) + 1);
+      }
+    }
+    const unregistered = [...writerCount.entries()]
+      .filter(([channel, count]) => count > 1 && !orderInsensitiveChannels.has(channel))
+      .map(([channel]) => channel);
 
-    expect(writers.map((pass) => pass.name)).toEqual([]);
+    expect(unregistered).toEqual([]);
+  });
+
+  test("frameworkLoggers 恒在登记表里：它按设计就是多写单读的那条", () => {
+    expect(orderInsensitiveChannels.has("frameworkLoggers")).toBe(true);
   });
 
   test("只 has / get 的两条通道不把写入序暴露给下游", () => {
