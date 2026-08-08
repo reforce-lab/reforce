@@ -1,16 +1,16 @@
 import type { Writable } from "node:stream";
 import { isReforceError } from "@reforce/core";
-import { isObject } from "radashi";
-import { renderDiagnostic } from "@/diagnostic-render";
-import type { CliFailureCode } from "@/error-codes";
 import {
   type RenderAudience,
   type RenderMode,
   resolveRenderMode,
   resolveVerbose,
-} from "@/render-mode";
-import { foldStackFrames, stackOf } from "@/stack-frames";
-import { isInteractive, style } from "@/terminal";
+} from "@reforce/primitives/render-mode";
+import { foldStackFrames, stackOf } from "@reforce/primitives/stack-frames";
+import { isInteractive, style } from "@reforce/primitives/terminal";
+import { isObject } from "radashi";
+import { renderDiagnostic } from "@/diagnostic-render";
+import type { CliFailureCode } from "@/error-codes";
 
 export type CliCommandName = "cli" | "dev" | "build" | "start" | "lib" | "explain" | "openapi";
 

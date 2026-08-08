@@ -1,12 +1,19 @@
-import type { LogFieldSource, LogFields, Logger, LoggerFactory, LogLevel } from "@/contracts";
+import { Fallback, Injectable } from "@reforce/core";
+import type {
+  LogFieldSource,
+  LogFields,
+  Logger,
+  LoggerFactory,
+  LogLevel,
+} from "@reforce/logging-contracts";
 import { DefaultLoggerFactory } from "@/default-logger";
 import type { LoggerLevels } from "@/levels";
 import type { LoggingSettings } from "@/settings";
 
+export { drainBootstrapLogs, replayBootstrapLogs } from "@reforce/logging-contracts";
 // 生成的 bootstrap 的消费面（RFC 0011 L7/D2，#250）：容器 start 之后重放引导期缓冲、
 // 绑定构造失败时把缓冲吐到 stderr、以及发出启动摘要。
 export { beanTimingSections, contextStartupSections, emitBeanTimings } from "@/bean-timings";
-export { drainBootstrapLogs, replayBootstrapLogs } from "@/bootstrap-registry";
 export { LoggerLevels, type LoggerLevelsSnapshot } from "@/levels";
 export { emitStartupSummary } from "@/startup-summary";
 
@@ -14,7 +21,9 @@ export { emitStartupSummary } from "@/startup-summary";
 // 参数位序排布，而 DefaultLoggerFactory 收 options 对象——这个包装类就是那层位序适配。它是
 // 公开导出（index 再导出），测试里 `overrides.replace(DefaultLoggingFactory, …)` 以它为锚点，
 // 与 pino 的 PinoLoggerFactory 同形。同步写、无 sink 可排空，所以不带 lifecycle。
-export class DefaultLoggingFactory extends DefaultLoggerFactory {
+@Injectable()
+@Fallback()
+export class DefaultLoggingFactory extends DefaultLoggerFactory implements LoggerFactory {
   constructor(
     settings: LoggingSettings,
     levels: LoggerLevels,

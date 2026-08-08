@@ -1,6 +1,6 @@
+import type { LogFields, LogLevel } from "@reforce/logging-contracts";
 import { describe, expect, test } from "vitest";
 import { type BeanTimingRecord, beanTimingSections, emitBeanTimings } from "@/bean-timings";
-import type { LogFields, LogLevel } from "@/contracts";
 
 function timing(id: string, ms: number): BeanTimingRecord {
   return { id, phase: "construct", ms };

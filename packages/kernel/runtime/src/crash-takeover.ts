@@ -1,6 +1,6 @@
-import { resolveVerbose } from "@/render-mode";
+import { resolveVerbose } from "@reforce/primitives/render-mode";
+import { foldStackFrames, stackOf } from "@reforce/primitives/stack-frames";
 import { type CliCommandName, createFailureEvent, type Reporter } from "@/reporter";
-import { foldStackFrames, stackOf } from "@/stack-frames";
 import { withTimeout } from "@/with-timeout";
 
 // 崩溃接管（RFC 0011 C2，#250）。装了 uncaughtException handler 就等于接管了 Node 的默认
@@ -12,8 +12,9 @@ import { withTimeout } from "@/with-timeout";
 // handler 全被摘掉，而崩溃恰恰可能发生在那之后；它的 requestShutdown 只在 "running" 态动作，
 // 引导期崩溃交给它等于把崩溃吞掉。两条都是「静默」，正是不变量 9 要禁的。
 
-// 消费侧自己声明的最小形状：@reforce/logging 反过来依赖 @reforce/runtime，import 它（哪怕
-// 只是 type-only，那也会留在生成的 d.ts 里）就是一个包循环。
+// 消费侧自己声明的最小形状（同 shutdown-controller 的 ShutdownLogger）：契约拆包之后
+// （#347）import @reforce/logging-contracts 已经不成环，留着结构形状是因为崩溃路径只用得上
+// fatal 这一个方法。
 type LogFields = Readonly<Record<string, unknown>> | undefined;
 
 export interface FatalLogger {

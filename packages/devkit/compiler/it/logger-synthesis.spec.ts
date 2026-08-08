@@ -403,7 +403,7 @@ describe("synthesised logger beans", () => {
           runtimeExport: { module: "@acme/fancy-logging", export: "FancyLoggerFactory" },
           provides: [
             "@acme/fancy-logging#FancyLoggerFactory",
-            "@reforce/logging:dist/contracts.d.ts#LoggerFactory",
+            "@reforce/logging-contracts:dist/contracts.d.ts#LoggerFactory",
           ],
           dependencies: [],
           source: starterMetaSpan("src/factory.ts"),

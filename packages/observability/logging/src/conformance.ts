@@ -4,7 +4,7 @@ import {
   type LogRecord,
   type LogThreshold,
   logLevelNames,
-} from "@/contracts";
+} from "@reforce/logging-contracts";
 
 // LoggerFactory 一致性套件（RFC 0011 L3，#242）：门面的行为契约在每个绑定上都必须成立。
 // 每条都对应一个真实的实现差异，不是凭空罗列——各家日志库在级别语义、保留字段和「关闭时

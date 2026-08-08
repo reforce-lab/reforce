@@ -1,5 +1,5 @@
-import { bootstrapLogger } from "@/bootstrap-registry";
-import type { Logger, LogThreshold } from "@/contracts";
+import type { Logger, LogThreshold } from "@reforce/logging-contracts";
+import { bootstrapLogger } from "@reforce/logging-contracts";
 import type { LoggerLevels } from "@/levels";
 import { type LoggingSettings, reportUnknownLoggerLevels } from "@/settings";
 

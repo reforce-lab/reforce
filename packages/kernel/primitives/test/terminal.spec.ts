@@ -1,5 +1,4 @@
 import { Writable } from "node:stream";
-import { normalizeTerminalOutput } from "@reforce/tooling-testing";
 import { describe, expect, test } from "vitest";
 import { columnsOf, isInteractive, style, truncateStart } from "@/terminal";
 
@@ -54,10 +53,20 @@ describe("right-aligned truncation", () => {
   });
 });
 
+// 就地剥 ANSI 而不是用 @reforce/tooling-testing 的 normalizeTerminalOutput（#347）：把它加进
+// primitives 的 devDependencies 会成 turbo 环——`^build` 含 devDeps，而 tooling-testing 自己
+// 依赖 primitives。一处断言不值得为它把最底层包的依赖图弄脏。
+const escapeCharacter = String.fromCharCode(0x1b);
+const ansiSequence = new RegExp(`${escapeCharacter}\\[[0-9;]*m`, "gu");
+
+function stripAnsi(value: string): string {
+  return value.replaceAll(ansiSequence, "");
+}
+
 describe("styling", () => {
   // 不断言「非 TTY 一律无色」：FORCE_COLOR 会压过流的 TTY 判定（Node 26 实测，CI 上常被设成
   // 1/3），那是用户显式要色，属正确行为。这里只钉住不变量——上色只加包裹，不动文本本身。
   test("keeps the text intact whatever the colour decision is", () => {
-    expect(normalizeTerminalOutput(style(["bold", "red"], "error", sink()))).toBe("error");
+    expect(stripAnsi(style(["bold", "red"], "error", sink()))).toBe("error");
   });
 });

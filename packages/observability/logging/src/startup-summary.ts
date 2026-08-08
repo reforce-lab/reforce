@@ -1,6 +1,12 @@
 import type { Writable } from "node:stream";
-import { columnsOf, isInteractive, padEnd, style, truncateStart } from "@reforce/runtime/terminal";
-import type { LogLevel } from "@/contracts";
+import type { LogLevel } from "@reforce/logging-contracts";
+import {
+  columnsOf,
+  isInteractive,
+  padEnd,
+  style,
+  truncateStart,
+} from "@reforce/primitives/terminal";
 
 // 启动摘要（RFC 0011 D2，#242）：把「这个应用装配成了什么」压成几行，而不是逐条 bean 刷屏。
 //

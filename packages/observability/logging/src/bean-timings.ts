@@ -1,4 +1,4 @@
-import type { LogFields, LogLevel } from "@/contracts";
+import type { LogFields, LogLevel } from "@reforce/logging-contracts";
 import type { StartupSummarySection } from "@/startup-summary";
 
 // 启动台账的折叠规则与展开出口（RFC 0011 C6，#250）。

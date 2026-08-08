@@ -1,24 +1,17 @@
 {
-  "name": "@reforce/primitives",
+  "name": "@reforce/logging-contracts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "The logging contracts and the bootstrap-time facilities that exist before any container does.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./terminal": {
-      "types": "./dist/terminal.d.ts",
-      "default": "./dist/terminal.js"
-    },
-    "./stack-frames": {
-      "types": "./dist/stack-frames.d.ts",
-      "default": "./dist/stack-frames.js"
-    },
-    "./render-mode": {
-      "types": "./dist/render-mode.d.ts",
-      "default": "./dist/render-mode.js"
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
     }
   },
   "files": [
@@ -26,7 +19,7 @@
   ],
   "scripts": {
     "build": "rslib build",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p it/tsconfig.json",
     "test": "vitest run",
     "check": "biome check .",
     "check:write": "biome check --write ."
@@ -37,11 +30,11 @@
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@reforce/tooling-rslib": "workspace:*",
+    "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",
     "@reforce/tooling-vitest": "workspace:*",
     "@rslib/core": "catalog:",
     "@types/node": "catalog:",
-    "fast-check": "^4.9.0",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

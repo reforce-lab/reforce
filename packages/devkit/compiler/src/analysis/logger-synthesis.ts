@@ -43,6 +43,18 @@ import type { ParsedSource } from "@/project/source-files";
 // 标记机制（RFC 点名的那条风险）排在第三位——前两条都过不去。
 
 export const loggingPackageName = "@reforce/logging";
+
+/**
+ * Logger / LoggerFactory 的声明包（#347）。
+ *
+ * 它与 `loggingPackageName` **必须分开**：契约按角色沉到了引导层（@reforce/config 在容器不
+ * 存在时就要 bootstrapLogger），而合成 bean 的 id、origin 与 runtimeExport 仍指 starter 包
+ * ——那三样是产物字节的一部分，跟着契约搬会让全网 manifest 与 e2e 快照无谓地改一遍。
+ *
+ * 判据是「符号在哪声明」：@reforce/logging 把契约再导出一遍不改变归属，用户侧
+ * `import { Logger } from "@reforce/logging"` 因此照旧解析到这里的包。
+ */
+export const loggingContractsPackageName = "@reforce/logging-contracts";
 export const loggerContractName = "Logger";
 export const loggerFactoryContractName = "LoggerFactory";
 export const loggerLevelsContractName = "LoggerLevels";
@@ -71,16 +83,16 @@ export function loggerBeanId(name: string): string {
   return `${loggerBeanIdPrefix}(${name})`;
 }
 
-function isLoggingContract(symbol: LinkedSymbol, name: string): boolean {
-  return symbol.external?.packageName === loggingPackageName && symbol.name === name;
+function isLoggingContract(symbol: LinkedSymbol, packageName: string, name: string): boolean {
+  return symbol.external?.packageName === packageName && symbol.name === name;
 }
 
 export function isLoggerContract(symbol: LinkedSymbol): boolean {
-  return isLoggingContract(symbol, loggerContractName);
+  return isLoggingContract(symbol, loggingContractsPackageName, loggerContractName);
 }
 
 export function isLoggerFactoryContract(symbol: LinkedSymbol): boolean {
-  return isLoggingContract(symbol, loggerFactoryContractName);
+  return isLoggingContract(symbol, loggingContractsPackageName, loggerFactoryContractName);
 }
 
 // LoggerLevels 与 Logger 同属那条解析特例：合成的 bean 刻意 provides 为空，边由**符号身份**
@@ -90,8 +102,11 @@ export function isLoggerFactoryContract(symbol: LinkedSymbol): boolean {
 // 按包名 + 名字认而不是按 key 认，是因为绑定可能来自 starter（pino 的 meta 边从 starter 包根
 // 解析）也可能来自应用源集（用户自写的 LoggerFactory），两条路径给出的 key 属于不同锚点，
 // 而它们指的是同一个契约。
+// LoggerLevels 留在 starter 包，不随契约下沉：它的 bean 由编译器合成、runtimeExport 指
+// `@reforce/logging/generated-runtime`，构造实参是编译期算好的名单——那是 starter 层的事实，
+// 不是引导层的契约（#347）。
 export function isLoggerLevelsContract(symbol: LinkedSymbol): boolean {
-  return isLoggingContract(symbol, loggerLevelsContractName);
+  return isLoggingContract(symbol, loggingPackageName, loggerLevelsContractName);
 }
 
 // 优先取图里真实存在的那个 LoggerFactory 契约符号——绑定 bean（starter 的 PinoLoggerFactory、

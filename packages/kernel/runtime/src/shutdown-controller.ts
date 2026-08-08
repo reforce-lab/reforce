@@ -32,9 +32,9 @@ export interface ShutdownResult {
 // StartupSummaryLogger）。@reforce/logging 的 Logger 结构性满足它，生成的 bootstrap 把那个
 // 实例交进来。
 //
-// 这里不写 `import type { Logger } from "@reforce/logging"` 的理由比 web 那边更硬：
-// @reforce/logging 自己依赖 @reforce/runtime（startup-summary 用 runtime/terminal），反向
-// import 直接成环——哪怕只是 type-only，它也会留在生成的 d.ts 里。
+// 契约拆包之后（#347）import `@reforce/logging-contracts` 已经不成环了，所以这条现在是
+// **选择**而不是约束：关停路径只用得上 info 这一个方法，收窄到它让「这条路用日志用到哪一步」
+// 在类型上就看得见，也不必为一个方法把 runtime 的依赖图接上 observability。
 export interface ShutdownLogger {
   info(fields: Readonly<Record<string, unknown>> | undefined, message: string): void;
 }

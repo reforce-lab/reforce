@@ -28,18 +28,20 @@
   ],
   "scripts": {
     "build": "rslib build",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json && tsc -p it/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p test/tsconfig.json",
     "test": "vitest run",
     "check": "biome check .",
     "check:write": "biome check --write ."
   },
   "dependencies": {
     "@reforce/core": "workspace:*",
-    "@reforce/runtime": "workspace:*",
+    "@reforce/logging-contracts": "workspace:*",
+    "@reforce/primitives": "workspace:*",
     "@swc/helpers": "catalog:"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
+    "@reforce/bundler-plugin": "workspace:*",
     "@reforce/tooling-rslib": "workspace:*",
     "@reforce/tooling-testing": "workspace:*",
     "@reforce/tooling-tsconfig": "workspace:*",

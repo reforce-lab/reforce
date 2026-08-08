@@ -1,5 +1,5 @@
+import type { LogFields, Logger, LogLevel } from "@reforce/logging-contracts";
 import { describe, expect, test } from "vitest";
-import type { LogFields, Logger, LogLevel } from "@/contracts";
 import { reportUnknownLoggerLevels, unknownLoggerLevelKeys } from "@/settings";
 
 // 显式级别配置的第二道防线（RFC 0011 L5 勘误）：级别词拼错由 tsc 拦（封闭 union），这里

@@ -6,14 +6,14 @@ import {
   renderModeNames,
   resolveRenderMode,
   verboseEnvironmentVariable,
-} from "@reforce/runtime/render-mode";
+} from "@reforce/primitives/render-mode";
+import { isInteractive } from "@reforce/primitives/terminal";
 import {
   type CliCommandName,
   createFailureEvent,
   PlainTextReporter,
   type Reporter,
 } from "@reforce/runtime/reporter";
-import { isInteractive } from "@reforce/runtime/terminal";
 import { Command, CommanderError, Option } from "commander";
 import { renderBanner } from "@/banner";
 import {
