@@ -14,6 +14,18 @@ import { join } from "node:path";
 export async function listPackageDirectories(packagesRoot: string): Promise<readonly string[]> {
   const directories: string[] = [];
   for (const group of await listSubdirectories(packagesRoot)) {
+    // 一级目录带 package.json，说明它是个放错层的包，不是分组。不先判这一下就会往它里面钻，
+    // 把 src/ 之类当成「没有 package.json 的包目录」，然后建议你把真实源码目录删掉——正好是
+    // 这个函数（#299）要消灭的那种误导。放错层的包 pnpm 也不会当 workspace 成员
+    // （glob 是 packages/*/*），所以点名之后跳过，不混进发布契约的覆盖集里。
+    if (await hasManifest(join(packagesRoot, group))) {
+      console.warn(
+        `Skipping packages/${group}: it carries a package.json, so it is a package sitting where ` +
+          `a group directory belongs. Packages live at packages/<group>/<package>; move it under ` +
+          `one, otherwise pnpm will not treat it as a workspace member either.`,
+      );
+      continue;
+    }
     for (const name of await listSubdirectories(join(packagesRoot, group))) {
       const directory = `${group}/${name}`;
       if (await hasManifest(join(packagesRoot, directory))) {

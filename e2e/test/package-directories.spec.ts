@@ -32,6 +32,21 @@ async function createPackagesRoot(): Promise<string> {
   return join(created.projectRoot, "packages");
 }
 
+// 放错层的包：packages/legacy/ 自己带 package.json，却和分组目录并排站。
+async function createMisplacedPackageRoot(): Promise<string> {
+  const created = await createTemporaryProject({
+    packages: {
+      kernel: { core: { "package.json": JSON.stringify({ name: "@reforce/core" }) } },
+      legacy: {
+        "package.json": JSON.stringify({ name: "@reforce/legacy" }),
+        src: { "index.ts": "export {};\n" },
+      },
+    },
+  });
+  project = created;
+  return join(created.projectRoot, "packages");
+}
+
 describe("listPackageDirectories", () => {
   test("enumerates directories that carry a package.json", async () => {
     const packagesRoot = await createPackagesRoot();
@@ -77,6 +92,25 @@ describe("listPackageDirectories", () => {
     const directories = await listPackageDirectories(packagesRoot);
 
     expect(directories).not.toContain("kernel/notes.md");
+  });
+
+  test("does not descend into a package that sits at the group level", async () => {
+    const packagesRoot = await createMisplacedPackageRoot();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const directories = await listPackageDirectories(packagesRoot);
+
+    expect(directories).toEqual(["kernel/core"]);
+  });
+
+  test("names a package that sits at the group level", async () => {
+    const packagesRoot = await createMisplacedPackageRoot();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await listPackageDirectories(packagesRoot);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("packages/legacy");
   });
 
   test("stays quiet when every directory is a package", async () => {
