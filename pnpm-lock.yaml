@@ -265,6 +265,9 @@ importers:
       '@reforce/runtime':
         specifier: workspace:*
         version: link:../../kernel/runtime
+      '@reforce/starter-meta':
+        specifier: workspace:*
+        version: link:../starter-meta
       '@reforce/transaction':
         specifier: workspace:*
         version: link:../../data/transaction
@@ -326,6 +329,9 @@ importers:
       '@reforce/primitives':
         specifier: workspace:*
         version: link:../../kernel/primitives
+      '@reforce/starter-meta':
+        specifier: workspace:*
+        version: link:../starter-meta
       '@swc/helpers':
         specifier: 'catalog:'
         version: 0.5.23
@@ -436,6 +442,43 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@26.1.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.1)(yaml@2.9.0))
+
+  packages/devkit/starter-meta:
+    dependencies:
+      '@reforce/primitives':
+        specifier: workspace:*
+        version: link:../../kernel/primitives
+      '@swc/helpers':
+        specifier: 'catalog:'
+        version: 0.5.23
+    devDependencies:
+      '@biomejs/biome':
+        specifier: 'catalog:'
+        version: 2.5.7
+      '@reforce/tooling-rslib':
+        specifier: workspace:*
+        version: link:../../../tooling/rslib
+      '@reforce/tooling-tsconfig':
+        specifier: workspace:*
+        version: link:../../../tooling/tsconfig
+      '@reforce/tooling-vitest':
+        specifier: workspace:*
+        version: link:../../../tooling/vitest
+      '@rslib/core':
+        specifier: 'catalog:'
+        version: 0.23.2(typescript@7.0.2)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
@@ -799,6 +842,9 @@ importers:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.7
+      '@reforce/cli':
+        specifier: workspace:*
+        version: link:../../devkit/cli
       '@reforce/tooling-rslib':
         specifier: workspace:*
         version: link:../../../tooling/rslib

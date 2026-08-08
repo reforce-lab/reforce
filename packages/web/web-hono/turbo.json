@@ -3,7 +3,9 @@
   "extends": ["//"],
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
+      // 本包的 build 会读 @reforce/web-core 的户口表把契约坐标归一成 `包名#导出名`（#369），
+      // 所以 web-core 的 meta 必须先在——它不在 `^build` 里，那条边只到 web-core 的 dist。
+      "dependsOn": ["^build", "@reforce/web-core#meta"],
       "outputs": ["dist/**", "reforce-meta.json"]
     }
   }

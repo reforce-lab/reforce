@@ -1,18 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
-import stableStringify from "json-stable-stringify";
-import type { GeneratedSourceReferenceModel, ProviderDraft } from "@/analysis/model";
-import type { CompilerDiagnostic, LibraryGeneratedFile } from "@/api";
-import { diagnostic, hasErrorDiagnostic } from "@/diagnostics";
-import type { LibrarySurface, LibrarySurfaceSymbol } from "@/library/dist-surface";
-import { subpathSpecifier } from "@/linking/external-modules";
-import type { ExternalSymbolAttribution, LinkedSymbol } from "@/linking/model";
 import {
   parseContractCoordinate,
   parseStarterMeta,
   type StarterMeta,
   starterMetaSubpath,
-} from "@/linking/starter-meta";
+} from "@reforce/starter-meta";
+import stableStringify from "json-stable-stringify";
+import type { ProviderDraft, SourceReferenceModel } from "@/analysis/model";
+import type { CompilerDiagnostic, LibraryGeneratedFile } from "@/api";
+import { diagnostic, hasErrorDiagnostic } from "@/diagnostics";
+import type { LibrarySurface, LibrarySurfaceSymbol } from "@/library/dist-surface";
+import { subpathSpecifier } from "@/linking/external-modules";
+import type { ExternalSymbolAttribution, LinkedSymbol } from "@/linking/model";
 import type { SourceSpan } from "@/parser/source-location";
 
 // meta 发射（ADR 0004 决策 1/2/6/15，#120/#147）：schema 由应用侧唯一准入
@@ -44,7 +44,7 @@ interface MetaBeanDraft {
   readonly dependencies: readonly MetaDependencyDraft[];
   readonly defaultBean?: true;
   readonly lifecycle?: { readonly start?: "onContextStart"; readonly close?: "onContextClose" };
-  readonly source: GeneratedSourceReferenceModel;
+  readonly source: SourceReferenceModel;
 }
 
 function unsupportedEdgeKind(pending: ProviderDraft["pendingDependencies"][number]): string {
@@ -64,6 +64,32 @@ function providerSpan(draft: ProviderDraft): SourceSpan | undefined {
     start: draft.provider.declarationSource.start,
     end: draft.provider.declarationSource.end,
   };
+}
+
+// requires 只登记「读者忽略它就会错配」的能力（#369）：collection 缺席等于单边，旧编译器读到
+// 会把集合边静默注成单边。真的用到了才写——没有集合边的 starter 不该因此对读者提出要求，
+// 那只会把自己的兼容下限白白抬高。
+function requiredCapabilities(beans: readonly MetaBeanDraft[]): {
+  readonly requires?: readonly string[];
+} {
+  const usesCollection = beans.some((bean) =>
+    bean.dependencies.some((dependency) => dependency.collection === true),
+  );
+  return usesCollection ? { requires: ["collection"] } : {};
+}
+
+// 自产回读失败是编译器 bug，不是用户错误——所以抛异常而不是发诊断，而这里只负责把三种失败
+// 状态翻成一句人话。
+function roundTripFailureReason(
+  result: Exclude<ReturnType<typeof parseStarterMeta>, { readonly status: "success" }>,
+): string {
+  if (result.status === "invalid") {
+    return result.reason;
+  }
+  if (result.status === "unsupported-capability") {
+    return `unsupported capability ${result.required.join(", ")}`;
+  }
+  return "unsupported schemaVersion";
 }
 
 export async function buildLibraryMeta(
@@ -299,9 +325,10 @@ export async function buildLibraryMeta(
       runtimeExport,
       provides,
       dependencies: [...dependencies],
-      // 缺省即 false，所以只有 true 才写键（与 lifecycle 同法）：读取侧
-      // starter-meta.ts 把缺席归一为 false，多写一个 `defaultBean: false` 只是噪音。
+      // 缺省即 false，所以只有 true 才写键（与 lifecycle 同法）：读取侧把缺席归一为 false，
+      // 多写一个 `defaultBean: false` 只是噪音。role 同理，缺省即 "demand"。
       ...(provider.fallback ? { defaultBean: true as const } : {}),
+      ...(provider.eager ? { role: "root" as const } : {}),
       ...(lifecycle === undefined ? {} : { lifecycle }),
       source: provider.declarationSource,
     };
@@ -332,6 +359,7 @@ export async function buildLibraryMeta(
 
   const meta = {
     schemaVersion: 1,
+    ...requiredCapabilities(beans),
     starterDeps: [...starterDeps].sort(compareUtf16CodeUnits),
     symbols: surface.symbols.map((symbol) => ({
       id: symbol.id,
@@ -344,10 +372,13 @@ export async function buildLibraryMeta(
   if (metaJson === undefined) {
     throw new Error("Library meta is not serializable");
   }
-  const roundTrip = parseStarterMeta(JSON.parse(metaJson), packageName);
+  // 自产回读走 strict（#369）：消费侧忽略未知键，而这一侧读者与写者同版本——冒出未知键说明
+  // 生成器与 schema 漂了（#343 就是那样漏掉 defaultBean 的），正是这道自检要抓的。
+  const roundTrip = parseStarterMeta(JSON.parse(metaJson), packageName, { strict: true });
   if (roundTrip.status !== "success") {
-    const reason = roundTrip.status === "invalid" ? roundTrip.reason : "unsupported schemaVersion";
-    throw new Error(`reforce lib produced meta that fails the consumer schema gate: ${reason}`);
+    throw new Error(
+      `reforce lib produced meta that fails the consumer schema gate: ${roundTripFailureReason(roundTrip)}`,
+    );
   }
   return [{ path: "reforce-meta.json", content: `${metaJson}\n` }];
 }

@@ -1,5 +1,6 @@
 import { isBuiltin } from "node:module";
 import { compareUtf16CodeUnits } from "@reforce/primitives";
+import { parseContractCoordinate } from "@reforce/starter-meta";
 import type { LRUCache } from "lru-cache";
 import type { CompilerDiagnostic, ResolvedApplicationProject } from "@/api";
 import { diagnostic } from "@/diagnostics";
@@ -13,7 +14,6 @@ import { createExternalModuleStore } from "@/linking/external-modules";
 import type { LinkedSymbol } from "@/linking/model";
 import { createModuleResolver, type ModuleRecord, moduleKey } from "@/linking/module-resolver";
 import { createPackageLocator, type PackageLocator } from "@/linking/package-locator";
-import { parseContractCoordinate } from "@/linking/starter-meta";
 import type { SourceFileIr } from "@/parser/source-ir";
 
 // 库模式的 dist 公开面（ADR 0004 决策 7/15，#120/#147）：对作者已构建的 dist d.ts 建与应用侧

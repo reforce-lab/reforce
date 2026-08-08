@@ -1,0 +1,12 @@
+{
+  "extends": "@reforce/tooling-tsconfig/base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "exactOptionalPropertyTypes": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

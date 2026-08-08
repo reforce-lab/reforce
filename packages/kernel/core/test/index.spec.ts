@@ -11,6 +11,7 @@ test("the root entry exposes only the public programming model", () => {
     "BeanDisposalError",
     "BeanLifecycleError",
     "ConfigBindingError",
+    "Eager",
     "EarlyBeanAccessError",
     "Fallback",
     "Injectable",

@@ -1,3 +1,4 @@
+import { metaShapes } from "@reforce/starter-meta";
 import {
   createTemporaryProject,
   type ProjectTree,
@@ -1027,5 +1028,76 @@ describe("library compile closed loop", () => {
     const beansTs = fromProduced.files.find((file) => file.path === "beans.ts")?.content ?? "";
     expect(beansTs).toContain("import type { Cache as");
     expect(beansTs).toContain('from "@acme/starter-redis"');
+  });
+});
+
+// ———— 「格式可选键 ⊆ 生成器可产出键」守卫（#343 移交，#369 落地）————
+//
+// #343 的成因正是 schema 认 8 个字段而 `reforce lib` 只产 6 个：defaultBean 与 role 读得懂、
+// 没人写得出，静默漂了很久。这条守卫拿真 `reforce lib` 产出的字节比对键名清单——不是比对两份
+// 手写常量，所以生成器少产一个键当场就红。
+
+const everyOptionalKeySource = [
+  'import { Eager, Fallback, Injectable, type OnContextClose, type OnContextStart } from "@reforce/core";',
+  'import type { Cache } from "./contracts";',
+  "",
+  // defaultBean ← @Fallback()；lifecycle.start / lifecycle.close ← 两个生命周期接口。
+  "@Injectable()",
+  "@Fallback()",
+  "export class MemoryCache implements Cache, OnContextStart, OnContextClose {",
+  "  onContextStart(): void {}",
+  "",
+  "  onContextClose(): void {}",
+  "",
+  "  get(key: string): string {",
+  "    return key;",
+  "  }",
+  "}",
+  "",
+  // dependencies[].collection ← readonly T[] 构造参数；role ← @Eager()。
+  "@Injectable()",
+  "@Eager()",
+  "export class CacheRegistry {",
+  "  constructor(readonly caches: readonly Cache[]) {}",
+  "}",
+  "",
+].join("\n");
+
+function collectKeys(value: unknown): readonly string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectKeys);
+  }
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, nested]) => [key, ...collectKeys(nested)]);
+}
+
+describe("meta schema 与生成器的漂移守卫", () => {
+  test("每个格式可选键都有一条源码写法能让 reforce lib 产出它", async () => {
+    const result = expectLibrarySuccess(
+      await compileLibrary(
+        authorTree({
+          sources: {
+            ...defaultSources,
+            "cache.ts": everyOptionalKeySource,
+            "index.ts": `${indexSource}export { CacheRegistry, MemoryCache } from "./cache";\n`,
+          },
+          dist: {
+            ...defaultDist,
+            "cache.d.ts": everyOptionalKeySource,
+            "cache.js": "export {};\n",
+            "index.d.ts": `${String(defaultDist["index.d.ts"])}export { CacheRegistry, MemoryCache } from "./cache.js";\n`,
+            "index.js": `${String(defaultDist["index.js"])}export { CacheRegistry, MemoryCache } from "./cache.js";\n`,
+          },
+        }),
+      ),
+    );
+    const metaFile = result.files.find((file) => file.path === "reforce-meta.json");
+    const produced = new Set(collectKeys(JSON.parse(metaFile?.content ?? "{}")));
+
+    const optional = Object.values(metaShapes).flatMap((shape) => [...shape.optional]);
+
+    expect(optional.filter((key) => !produced.has(key))).toEqual([]);
   });
 });

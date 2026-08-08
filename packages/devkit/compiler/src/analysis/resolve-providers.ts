@@ -386,6 +386,9 @@ function materializeStarter(
     // @Fallback()」，而 starter 是从 meta 物化来的、没有源码可读。它的让位资格在
     // StarterBeanModel.defaultBean 上，物化之前 selectStarterCandidate 就已经用掉了。
     fallback: false,
+    // 从 meta 物化出来的 starter provider：eager 就是它 meta 里的 role（#369）。它已经进图了，
+    // 这里带着只是为了让 provider 表逐字段忠实于 meta。
+    eager: bean.root,
     qualifiers: [],
     dependencies: [],
     startHook: bean.lifecycle.start,

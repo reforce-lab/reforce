@@ -23,6 +23,7 @@
   "dependencies": {
     "@dagrejs/graphlib": "^4.0.1",
     "@reforce/primitives": "workspace:*",
+    "@reforce/starter-meta": "workspace:*",
     "@swc/helpers": "catalog:",
     "enhanced-resolve": "^5.24.5",
     "estree-util-is-identifier-name": "^3.0.0",
