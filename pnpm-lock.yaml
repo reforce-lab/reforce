@@ -88,9 +88,15 @@ importers:
       '@reforce/logging':
         specifier: workspace:*
         version: link:../packages/observability/logging
+      '@reforce/logging-contracts':
+        specifier: workspace:*
+        version: link:../packages/kernel/logging-contracts
       '@reforce/logging-pino':
         specifier: workspace:*
         version: link:../packages/observability/logging-pino
+      '@reforce/primitives':
+        specifier: workspace:*
+        version: link:../packages/kernel/primitives
       '@reforce/testing':
         specifier: workspace:*
         version: link:../packages/kernel/testing
