@@ -44,7 +44,14 @@ function bodyOf(result: RouteResponse): Buffer | string | Readable | null {
     return null;
   }
   if (typeof body === "string") {
-    return body;
+    // 字符串转 Buffer 而不是原样交给 fastify（#373）：fastify 对**字符串** payload 会往
+    // content-type 上自作主张补 `; charset=utf-8`，对 Buffer 不补（实测四种组合）。原样交出去
+    // 的话，同一份核心代码在 fastify 上出站 `application/json; charset=utf-8`、在 node/hono 上
+    // 出站 `application/json`——「换引擎零改动」当场破掉。
+    //
+    // 这不是把 #373 的收益还回去：`Buffer.from(text)` 是 42 纳秒，而 #373 拿掉的
+    // `TextEncoder.encode` 是 825 纳秒且与内容长度无关。
+    return Buffer.from(body, "utf8");
   }
   if (body instanceof Uint8Array) {
     // Buffer.from(ArrayBuffer) 是**视图**不是拷贝，共享底层内存。

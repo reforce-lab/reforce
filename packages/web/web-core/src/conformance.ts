@@ -261,6 +261,15 @@ function fixtures(): ConformanceFixtures {
         );
       }),
       route("GET", "/flood", () => Promise.resolve(new Response(countingStream(flood, 10_000)))),
+      // 引擎不得改写框架给的 content-type（#373）。这条盯的是一个真实踩过的坑：fastify 对
+      // **字符串** payload 会自作主张补 `; charset=utf-8`（对 Buffer 不补），于是 body 形态一换，
+      // 同一份核心代码在三个引擎上出站的 content-type 就走散了。charset 必须**不写**——写了
+      // 就正好绕开 fastify 的判据，这条用例也就白写了。
+      route("GET", "/verbatim-content-type", () => {
+        const headers = new ResponseHeaders();
+        headers.set("content-type", "application/json");
+        return Promise.resolve(respond(headers, 200, '{"ok":true}'));
+      }),
       incomingProbe,
     ],
   };
@@ -391,6 +400,15 @@ export function adapterConformanceCases(
         const response = await fetch(`${base}/echo-headers`, { headers });
 
         assertEqual(await response.json(), { multi: "one, two" }, "x-multi");
+      }),
+    ),
+
+    conformanceCase("the engine delivers the content-type it was given, verbatim", () =>
+      withServer(async (base) => {
+        const response = await fetch(`${base}/verbatim-content-type`);
+        await response.text();
+
+        assertEqual(response.headers.get("content-type"), "application/json", "content-type");
       }),
     ),
 
