@@ -724,7 +724,7 @@ function resolveThrownArgument(
   argument: DecoratorArgumentValue,
   context: ThrowsResolutionContext,
 ): RouteThrownErrorModel | undefined {
-  const invalid = (): undefined =>
+  const invalid = (): undefined => {
     report(
       context.diagnostics,
       "INVALID_ERROR_HANDLER_SIGNATURE",
@@ -732,6 +732,8 @@ function resolveThrownArgument(
       argument.span,
       { help: errorHandlerSignatureHelp },
     );
+    return undefined;
+  };
   if (argument.kind !== "identifier-reference") {
     return invalid();
   }
