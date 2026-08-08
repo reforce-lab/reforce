@@ -4,22 +4,9 @@ import type { RequestSeeder } from "@reforce/web";
 import { web } from "@reforce/web-node";
 import { HttpExchange, httpExchange } from "@/http-exchange";
 
-export * from "@/config-probe";
-export * from "@/crash-probe";
-export * from "@/greeting";
-export * from "@/http-exchange";
-export * from "@/lifecycle";
-export * from "@/logging-probe";
-export * from "@/providers";
-export * from "@/server-config";
-export * from "@/web-config";
-export * from "@/web-controllers";
-export * from "@/web-errors";
-export * from "@/web-markers";
-export * from "@/web-middleware";
-export * from "@/web-schemas";
-export * from "@/worker-lifecycle";
-
+// 入口不 re-export 任何应用模块（#314）：编译器按 leaf tsconfig include 扫描全部源文件，
+// provider 无需从入口可达。本 fixture 走 e2e 全链路，是该行为的活体证明——不要往回加
+// `export *`。
 // 根请求 bean 播种（ADR 0006 W7 / #153 接线约定）：defineApplication 模块导出的
 // webRequestSeeder 由生成的 bootstrap 交给 connectWebApplication，内容按 #152 契约
 // 恒为 标准 Request + 路由匹配结果。
