@@ -36,13 +36,12 @@ reforce/
 ├── e2e/                   # @reforce/e2e —— 只消费 dist 的完整用户链路
 │   └── fixtures/
 │       └── application/   # 由 E2E workspace 管理的唯一完整应用模板
-├── packages/
-│   ├── cli/               # @reforce/cli —— 命令行工具
-│   ├── compiler/          # @reforce/compiler —— 内置 Yuku parser、项目解析、链接、分析与生成
-│   ├── core/              # @reforce/core —— IoC 容器 / ApplicationContext
-│   ├── primitives/        # @reforce/primitives —— 跨包共享的排序与路径原语
-│   ├── testing/           # @reforce/testing —— 框架测试支持
-│   └── web/               # @reforce/web —— Web 抽象
+├── packages/              # 一级目录是包分组，包一律在第二级
+│   ├── kernel/            # 容器与进程基座：core / primitives / runtime / config / testing
+│   ├── observability/     # logging / logging-pino
+│   ├── web/               # web 抽象与三个引擎适配：web-core / web-node / web-hono / web-fastify
+│   ├── data/              # transaction / transaction-testing
+│   └── devkit/            # 编译期与脚手架：compiler / bundler-plugin / cli / create-reforce
 ├── tooling/
 │   ├── testing/           # @reforce/tooling-testing —— 跨平台进程与临时项目工具
 │   └── tsconfig/          # @reforce/tooling-tsconfig —— workspace tsconfig 的共享基线
@@ -65,7 +64,7 @@ pnpm run typecheck
 pnpm run test
 pnpm run build
 pnpm run test:e2e
-node packages/cli/dist/reforce.js --help
+node packages/devkit/cli/dist/reforce.js --help
 ```
 
 每个 Rslib workspace 的根 `tsconfig.json` 只管理 `src`，`tsconfig.node.json` 管理源码与 Rslib/tooling 配置；两者都继承 `@reforce/tooling-tsconfig/base.json` 的 `noEmit: true`，不使用 project references。Rslib 自动读取源码配置并负责生成 Node.js 可执行的服务端 ESM 和 d.ts；两者都是 bundleless，`dist/` 与 `src/` 1:1 对应。package 内指向自身 `src` 的 import 统一写成 `@/...`，跨 package 使用 `@reforce/*`；只有 Compiler 写入应用 production output 的相对 module specifier 使用 `.js`。类私有成员使用 TypeScript `private` / `private readonly`，不使用 ES `#field` / `#method` 语法。

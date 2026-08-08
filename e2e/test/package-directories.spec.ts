@@ -15,13 +15,32 @@ afterEach(async () => {
   project = undefined;
 });
 
-// 混合目录树：正常包、改名后遗留的孤儿目录（只剩 dist/，没有 package.json）、以及一个散落文件。
+// 混合目录树：正常包、改名后遗留的孤儿目录（只剩 dist/，没有 package.json）、以及分组层与
+// 包分组内各一个散落文件。包一律在第二级，所以 packages/ 的一级目录全是分组名。
 async function createPackagesRoot(): Promise<string> {
   const created = await createTemporaryProject({
     packages: {
       "README.md": "not a package directory\n",
-      context: { dist: { "index.js": "export {};\n" } },
-      core: { "package.json": JSON.stringify({ name: "@reforce/core" }) },
+      kernel: {
+        "notes.md": "not a package directory either\n",
+        context: { dist: { "index.js": "export {};\n" } },
+        core: { "package.json": JSON.stringify({ name: "@reforce/core" }) },
+      },
+    },
+  });
+  project = created;
+  return join(created.projectRoot, "packages");
+}
+
+// 放错层的包：packages/legacy/ 自己带 package.json，却和分组目录并排站。
+async function createMisplacedPackageRoot(): Promise<string> {
+  const created = await createTemporaryProject({
+    packages: {
+      kernel: { core: { "package.json": JSON.stringify({ name: "@reforce/core" }) } },
+      legacy: {
+        "package.json": JSON.stringify({ name: "@reforce/legacy" }),
+        src: { "index.ts": "export {};\n" },
+      },
     },
   });
   project = created;
@@ -35,7 +54,7 @@ describe("listPackageDirectories", () => {
 
     const directories = await listPackageDirectories(packagesRoot);
 
-    expect(directories).toContain("core");
+    expect(directories).toContain("kernel/core");
   });
 
   test("skips a directory without package.json instead of throwing", async () => {
@@ -44,7 +63,7 @@ describe("listPackageDirectories", () => {
 
     const directories = await listPackageDirectories(packagesRoot);
 
-    expect(directories).not.toContain("context");
+    expect(directories).not.toContain("kernel/context");
   });
 
   test("names the skipped directory on the console", async () => {
@@ -57,7 +76,7 @@ describe("listPackageDirectories", () => {
     expect(String(warn.mock.calls[0]?.[0])).toContain("context");
   });
 
-  test("ignores plain files sitting next to the package directories", async () => {
+  test("ignores plain files sitting next to the group directories", async () => {
     const packagesRoot = await createPackagesRoot();
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -66,9 +85,39 @@ describe("listPackageDirectories", () => {
     expect(directories).not.toContain("README.md");
   });
 
+  test("ignores plain files sitting inside a group directory", async () => {
+    const packagesRoot = await createPackagesRoot();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const directories = await listPackageDirectories(packagesRoot);
+
+    expect(directories).not.toContain("kernel/notes.md");
+  });
+
+  test("does not descend into a package that sits at the group level", async () => {
+    const packagesRoot = await createMisplacedPackageRoot();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const directories = await listPackageDirectories(packagesRoot);
+
+    expect(directories).toEqual(["kernel/core"]);
+  });
+
+  test("names a package that sits at the group level", async () => {
+    const packagesRoot = await createMisplacedPackageRoot();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await listPackageDirectories(packagesRoot);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("packages/legacy");
+  });
+
   test("stays quiet when every directory is a package", async () => {
     const created = await createTemporaryProject({
-      packages: { core: { "package.json": JSON.stringify({ name: "@reforce/core" }) } },
+      packages: {
+        kernel: { core: { "package.json": JSON.stringify({ name: "@reforce/core" }) } },
+      },
     });
     project = created;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

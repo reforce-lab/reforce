@@ -12,7 +12,7 @@ import {
   ResponseSchema,
   ResponseStatus,
   Throws,
-} from "@reforce/web";
+} from "@reforce/web-core";
 import type { RequestAudit } from "@/http-exchange";
 import { OrderRejectedError, QuotaExceededError } from "@/web-errors";
 import { Roles } from "@/web-markers";

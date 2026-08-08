@@ -22,12 +22,12 @@ import { installApplicationPackages } from "../support/application-packages";
 //   2. src/web-config.ts  —— config class 闭合哪个引擎的 settings 契约（ADR 0005 通道）
 // 本 spec 就是把这两处做文本替换，其余文件一字不动。业务代码要是被迫改一行，这条断言就没了。
 //
-// 引擎无关的**协议**行为由 @reforce/web/conformance 在各引擎包里覆盖（假路由、真服务器）；
+// 引擎无关的**协议**行为由 @reforce/web-core/conformance 在各引擎包里覆盖（假路由、真服务器）；
 // 这里覆盖的是它到不了的那一半：真实编译产物、DI 图、洋葱链、codec、错误处理器、优雅关闭。
 
 const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
-const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
+const cliEntry = join(workspaceRoot, "packages", "devkit", "cli", "dist", "reforce.js");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
 const commandTimeout = 180_000;
 const nodeExecutable = await resolveNodeExecutable();

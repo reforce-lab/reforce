@@ -1,0 +1,98 @@
+import { describe, expect, test } from "vitest";
+import { ENGINES } from "@/engines";
+import { createPackageJson, type ProjectSpec, renderPackageJson } from "@/project/package-json";
+
+function specOf(overrides: Partial<ProjectSpec> = {}): ProjectSpec {
+  return { name: "my-api", engine: "hono", lint: true, ...overrides };
+}
+
+describe("createPackageJson", () => {
+  test.each(["hono", "fastify", "node"] as const)("engine %s 只带进自己的适配器包", (engine) => {
+    const dependencies = createPackageJson(specOf({ engine })).dependencies as Record<
+      string,
+      string
+    >;
+    // 按 ENGINES 认适配器，不按 `@reforce/web-` 前缀：基础包 @reforce/web-core 也在这个
+    // 前缀下，前缀筛出来的集合已经不等于「适配器集合」了。
+    const adapterPackageNames = new Set(Object.values(ENGINES).map((it) => it.packageName));
+    const adapters = Object.keys(dependencies).filter((name) => adapterPackageNames.has(name));
+
+    expect(adapters).toEqual([ENGINES[engine].packageName]);
+  });
+
+  test("引擎的第三方依赖不重复声明——它们是适配器包自己的 dependencies", () => {
+    const dependencies = createPackageJson(specOf({ engine: "hono" })).dependencies as Record<
+      string,
+      string
+    >;
+
+    expect(dependencies).not.toHaveProperty("hono");
+    expect(dependencies).not.toHaveProperty("@hono/node-server");
+  });
+
+  // 启动摘要与访问日志由 logging starter 条件发射（#271），依赖缺席即整体静默。
+  test("默认依赖带 @reforce/logging", () => {
+    const dependencies = createPackageJson(specOf()).dependencies as Record<string, string>;
+
+    expect(dependencies).toHaveProperty("@reforce/logging");
+  });
+
+  test("lint 打开时带 biome 依赖", () => {
+    const spec = specOf({ lint: true });
+    const devDependencies = createPackageJson(spec).devDependencies as Record<string, string>;
+
+    expect(devDependencies).toHaveProperty("@biomejs/biome");
+  });
+
+  test("lint 关闭时不带 biome 依赖", () => {
+    const spec = specOf({ lint: false });
+    const devDependencies = createPackageJson(spec).devDependencies as Record<string, string>;
+
+    expect(devDependencies).not.toHaveProperty("@biomejs/biome");
+  });
+
+  test("lint 打开时带 check 脚本", () => {
+    const scripts = createPackageJson(specOf({ lint: true })).scripts as Record<string, string>;
+
+    expect(scripts).toMatchObject({
+      check: "biome check .",
+      "check:write": "biome check --write .",
+    });
+  });
+
+  test("lint 关闭时不带 check 脚本", () => {
+    const scripts = createPackageJson(specOf({ lint: false })).scripts as Record<string, string>;
+
+    expect(scripts).not.toHaveProperty("check");
+  });
+
+  test("三条运行命令与引擎无关，恒定存在", () => {
+    const scripts = createPackageJson(specOf({ engine: "node" })).scripts as Record<string, string>;
+
+    expect(scripts).toMatchObject({
+      dev: "reforce dev",
+      build: "reforce build",
+      start: "reforce start",
+    });
+  });
+
+  test("应用默认 private，挡住手滑的 npm publish", () => {
+    expect(createPackageJson(specOf())).toHaveProperty("private", true);
+  });
+
+  test("依赖按字母序排列，diff 才稳定", () => {
+    const dependencies = createPackageJson(specOf()).dependencies as Record<string, string>;
+    const keys = Object.keys(dependencies);
+
+    expect(keys).toEqual([...keys].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+describe("renderPackageJson", () => {
+  test("产出以换行收尾的合法 JSON", () => {
+    const rendered = renderPackageJson(specOf());
+
+    expect(rendered.endsWith("\n")).toBe(true);
+    expect(() => JSON.parse(rendered)).not.toThrow();
+  });
+});

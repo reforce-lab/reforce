@@ -15,13 +15,13 @@ const e2eRoot = fileURLToPath(new URL("..", import.meta.url));
 const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 const workerSupportRoot = join(e2eRoot, "support", "worker");
 const applicationFixture = join(e2eRoot, "fixtures", "application");
-const cliEntry = join(workspaceRoot, "packages", "cli", "dist", "reforce.js");
-const coreRoot = join(workspaceRoot, "packages", "core");
-const configRoot = join(workspaceRoot, "packages", "config");
-const webRoot = join(workspaceRoot, "packages", "web");
-const webNodeRoot = join(workspaceRoot, "packages", "web-node");
-const loggingRoot = join(workspaceRoot, "packages", "logging");
-const runtimeRoot = join(workspaceRoot, "packages", "runtime");
+const cliEntry = join(workspaceRoot, "packages", "devkit", "cli", "dist", "reforce.js");
+const coreRoot = join(workspaceRoot, "packages", "kernel", "core");
+const configRoot = join(workspaceRoot, "packages", "kernel", "config");
+const webRoot = join(workspaceRoot, "packages", "web", "web-core");
+const webNodeRoot = join(workspaceRoot, "packages", "web", "web-node");
+const loggingRoot = join(workspaceRoot, "packages", "observability", "logging");
+const runtimeRoot = join(workspaceRoot, "packages", "kernel", "runtime");
 const toolingTsconfigRoot = join(workspaceRoot, "tooling", "tsconfig");
 const nodeTypesRoot = fileURLToPath(new URL(".", import.meta.resolve("@types/node/package.json")));
 const radashiRoot = fileURLToPath(new URL("..", import.meta.resolve("radashi")));
@@ -95,7 +95,11 @@ beforeAll(async () => {
     ),
     // fixture 应用现在是 web 应用（#153）：web 核心与 Node 引擎 starter 同样以符号链接落地，
     // 每个 Worker 里 bootstrap 会真的起 node:http 服务（端口 0），close 时排空停机。
-    symlink(webRoot, join(scopeRoot, "web"), process.platform === "win32" ? "junction" : "dir"),
+    symlink(
+      webRoot,
+      join(scopeRoot, "web-core"),
+      process.platform === "win32" ? "junction" : "dir",
+    ),
     symlink(
       webNodeRoot,
       join(scopeRoot, "web-node"),
