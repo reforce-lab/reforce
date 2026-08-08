@@ -478,3 +478,38 @@ describe("fastify's own logging stays the user's decision", () => {
     );
   });
 });
+
+// 缺省监听面（#323）：不配 hostname 时只绑本机回环。fastify 自己的缺省本来就是 localhost，
+// 这两条用例钉的是"缺省从此由 @reforce/web 一处决定"——host 现在总是显式传进 listen，别人
+// 把缺省改了也不会顺着漂过来；同一份配置在 node/hono 上的行为与这里一致。
+describe("the listen hostname", () => {
+  const loopback = new Set(["127.0.0.1", "::1"]);
+
+  async function boundAddress(hostname?: string): Promise<AddressInfo> {
+    const engine = new WebEngine(
+      { port: 0, ...(hostname === undefined ? {} : { hostname }) },
+      [],
+      [],
+    );
+    const handle = await engine.start({ routes: [ping] });
+    try {
+      const app = Reflect.get(engine, "app") as FastifyInstance;
+      return (app.server as Server).address() as AddressInfo;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  test("binds a loopback address when the application configured none", async () => {
+    const address = await boundAddress();
+
+    expect(loopback.has(address.address)).toBe(true);
+  });
+
+  // 反向用例，同时钉住上一条不是空转：显式配置一律照办，收紧的是缺省而不是用户的决定权。
+  test("binds the wildcard address the application configured", async () => {
+    const address = await boundAddress("0.0.0.0");
+
+    expect(address.address).toBe("0.0.0.0");
+  });
+});

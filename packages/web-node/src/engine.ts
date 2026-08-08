@@ -3,7 +3,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Injectable, type OnContextClose } from "@reforce/core";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@reforce/web/adapter";
-import { webEngineAddress } from "@reforce/web/adapter";
+import { webEngineAddress, webEngineHostname } from "@reforce/web/adapter";
 import { createRouter } from "@/router";
 import type { WebNodeServeSettings } from "@/settings";
 
@@ -106,13 +106,12 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       void this.serve(dispatch, notFound, request, response).catch(() => response.destroy());
     });
     this.server = server;
+    // 主机名必须显式传给 listen（#323）：省略时 node 绑全接口，与 fastify 的缺省相反，同一份
+    // 应用换引擎就换了暴露面。缺省值归 webEngineHostname 一处决定。
+    const hostname = webEngineHostname(this.settings.hostname);
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
-      if (this.settings.hostname === undefined) {
-        server.listen(this.settings.port, resolve);
-      } else {
-        server.listen(this.settings.port, this.settings.hostname, resolve);
-      }
+      server.listen(this.settings.port, hostname, resolve);
     });
     const address = server.address();
     if (address === null || typeof address === "string") {
@@ -122,10 +121,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     // 三个不同前缀、绕过日志门面、也喂不进启动摘要。谁来说、说成什么样归框架统一决定。
     return {
       close: () => this.close(),
-      address: webEngineAddress({
-        ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
-        port: address.port,
-      }),
+      address: webEngineAddress({ hostname, port: address.port }),
     };
   }
 

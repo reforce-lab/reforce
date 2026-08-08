@@ -53,7 +53,9 @@ function rawRequest(
 ): Promise<string> {
   const port = Number(new URL(base).port);
   return new Promise((resolve, reject) => {
-    const socket = connect(port, "127.0.0.1", () => {
+    // 走 base 里的主机名而不是写死 127.0.0.1：服务缺省绑 localhost（#323），而 localhost 解析
+    // 成 IPv4 还是 IPv6 回环由各平台的 hosts/解析器决定，写死一边会在另一边被拒。
+    const socket = connect(port, new URL(base).hostname, () => {
       socket.write(`${requestLine}\r\n${headers.join("\r\n")}\r\nConnection: close\r\n\r\n`);
     });
     let received = "";
@@ -83,6 +85,35 @@ async function withoutUnhandledRejections(run: () => Promise<void>): Promise<voi
     process.off("unhandledRejection", capture);
   }
 }
+
+// 缺省监听面（#323）：不配 hostname 时只绑本机回环。此前 node 省略 host 参数吃 node 的缺省，
+// 绑的是全接口——同网段任何人访问一条出错路由就能看到 dev 错误页里的堆栈与源码，而同一份
+// 配置换到 fastify 上又只绑 localhost。断言看的是 server.address()，即内核实际绑上的地址。
+describe("the listen hostname", () => {
+  const loopback = new Set(["127.0.0.1", "::1"]);
+  const ping = route("GET", "/ping", () => Promise.resolve(new Response("pong")));
+
+  function boundAddress(engine: WebEngine): AddressInfo {
+    return (Reflect.get(engine, "server") as Server).address() as AddressInfo;
+  }
+
+  test("binds a loopback address when the application configured none", async () => {
+    await withEngine([ping], async (_base, engine) => {
+      expect(loopback.has(boundAddress(engine).address)).toBe(true);
+    });
+  });
+
+  // 反向用例，同时钉住上一条不是空转：显式配置一律照办，收紧的是缺省而不是用户的决定权。
+  test("binds the wildcard address the application configured", async () => {
+    await withEngine(
+      [ping],
+      async (_base, engine) => {
+        expect(boundAddress(engine).address).toBe("0.0.0.0");
+      },
+      { hostname: "0.0.0.0" },
+    );
+  });
+});
 
 describe("WebEngine over a real node:http server", () => {
   test("a parameterized route receives the extracted path params", async () => {

@@ -12,5 +12,10 @@ import { z } from "zod";
 //
 // 嫌它啰嗦？README 的「配置的逃生舱」一节有更短的写法（代价是没有 .env 分层）。
 export class WebServerConfig
-  extends ConfigProperties("webServer", z.object({ port: z.coerce.number().default(3000) }))
+  extends ConfigProperties(
+    "webServer",
+    // hostname 不给 default：缺省由引擎决定，三个引擎一律 localhost，只有本机连得上。
+    // 容器里或者手机戳局域网接口时配 WEB_SERVER_HOSTNAME=0.0.0.0 才对外开。
+    z.object({ port: z.coerce.number().default(3000), hostname: z.string().optional() }),
+  )
   implements WebFastifyServeSettings {}

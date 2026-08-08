@@ -7,7 +7,7 @@ import type {
   WebApplicationHandle,
   WebEngineAdapter,
 } from "@reforce/web/adapter";
-import { webEngineAddress } from "@reforce/web/adapter";
+import { webEngineAddress, webEngineHostname } from "@reforce/web/adapter";
 import Fastify, { type FastifyInstance, type FastifyReply, type RouteOptions } from "fastify";
 import {
   type FastifyConfigurer,
@@ -136,10 +136,10 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     });
     await this.configure(app, application);
     this.app = app;
-    await app.listen({
-      port: this.settings.port,
-      ...(this.settings.hostname === undefined ? {} : { host: this.settings.hostname }),
-    });
+    // 主机名必须显式传给 listen（#323）：省略时 fastify 缺省绑 localhost，而 node/hono 省略时
+    // 绑全接口，同一份应用换引擎就换了暴露面。缺省值归 webEngineHostname 一处决定。
+    const hostname = webEngineHostname(this.settings.hostname);
+    await app.listen({ port: this.settings.port, host: hostname });
     const address = (app.server as Server).address();
     if (address === null || typeof address === "string") {
       throw new Error("The Fastify web engine must listen on a TCP address.");
@@ -148,10 +148,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
     // 三个不同前缀、绕过日志门面、也喂不进启动摘要。谁来说、说成什么样归框架统一决定。
     return {
       close: () => this.close(),
-      address: webEngineAddress({
-        ...(this.settings.hostname === undefined ? {} : { hostname: this.settings.hostname }),
-        port: address.port,
-      }),
+      address: webEngineAddress({ hostname, port: address.port }),
     };
   }
 
