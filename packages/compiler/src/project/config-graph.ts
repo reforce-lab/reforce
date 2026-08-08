@@ -24,7 +24,9 @@ async function resolveExtendedConfig(
   for (const candidate of candidates) {
     try {
       return { path: await realpath(candidate), missingPaths: [] };
-    } catch {}
+    } catch {
+      // 候选路径不存在或不可达就试下一个；全部落空时整组候选记入 missingPaths。
+    }
   }
   try {
     const requireFromConfig = createRequire(path.join(containingDirectory, "package.json"));
