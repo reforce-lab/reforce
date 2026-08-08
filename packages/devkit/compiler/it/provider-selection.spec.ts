@@ -1,27 +1,17 @@
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
-import { addQualifiedSelectionProbe, createPositiveApplication } from "./support/project";
+import {
+  addQualifiedSelectionProbe,
+  applicationTsconfig,
+  createPositiveApplication,
+} from "./support/project";
 
 type CompileSuccess = Extract<CompileResult, { readonly status: "success" }>;
 type GeneratedFilePath = GeneratedFile["path"];
 
 const temporaryProjects: TemporaryProject[] = [];
 let validSelection: CompileSuccess;
-
-function applicationTsconfig(): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-      experimentalDecorators: false,
-      emitDecoratorMetadata: false,
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
-  })}\n`;
-}
 
 async function compileProject(project: TemporaryProject): Promise<CompileResult> {
   const compiler = createCompiler();
@@ -34,7 +24,9 @@ async function compileProject(project: TemporaryProject): Promise<CompileResult>
 
 async function compileSource(source: string): Promise<CompileResult> {
   const project = await createTemporaryProject({
-    "tsconfig.json": applicationTsconfig(),
+    "tsconfig.json": applicationTsconfig({
+      compilerOptions: { experimentalDecorators: false, emitDecoratorMetadata: false },
+    }),
     src: { "application.ts": source },
   });
   temporaryProjects.push(project);

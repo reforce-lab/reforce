@@ -4,7 +4,7 @@ import type { ProjectTree } from "@reforce/tooling-testing";
 import { createTemporaryProject, type TemporaryProject } from "@reforce/tooling-testing";
 import { afterAll, describe, expect, test } from "vitest";
 import { type CompileResult, createCompiler, type GeneratedFile } from "@/index";
-import { type CompileSuccess, linkWebPackage } from "./support/project";
+import { applicationTsconfig, type CompileSuccess, linkWebPackage } from "./support/project";
 
 // 槽位契约的 compile 级 IT(RFC 0012 S2,#274):四种写法(裸标注/单键/契约/投影)与可选单键
 // 的生成物断言、六类硬错的 failureCodes、schema typeof 追溯的别名/内联/包裹/降级形态
@@ -21,22 +21,9 @@ afterAll(async () => {
   await Promise.all(temporaryProjects.splice(0).map((project) => project.cleanup()));
 });
 
-function applicationTsconfig(): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-      paths: { "@/*": ["./src/*"] },
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
-  })}\n`;
-}
-
 async function preparedProject(sources: Record<string, string>): Promise<TemporaryProject> {
   const project = await createTemporaryProject({
-    "tsconfig.json": applicationTsconfig(),
+    "tsconfig.json": applicationTsconfig({ compilerOptions: { paths: { "@/*": ["./src/*"] } } }),
     src: sources,
   });
   temporaryProjects.push(project);

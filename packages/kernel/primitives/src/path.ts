@@ -13,6 +13,25 @@ export function toPortablePath(nativePath: string, separator: string = sep): str
   return nativePath.split(separator).join("/");
 }
 
+// 拿路径当 Map key 时用这个，不要直接用原串：tsgo 返回正斜杠规范名，Node 的 path.join 在 Windows 上
+// 给反斜杠，精确比对会把项目文件整批误判成「不在 program」；Windows 文件系统大小写不敏感，盘符大小写
+// 也必须一并折叠。查询发往 server 时仍用 tsgo 侧的规范名，key 只用于本地比对。
+//
+// 两个形态各自注入，不合成一个 platform 参数：分隔符与大小写敏感性是两条独立的文件系统属性，
+// 参数缺省即当前平台（Issue #381）。
+export interface CanonicalPathKeyOptions {
+  readonly separator?: string;
+  readonly caseInsensitive?: boolean;
+}
+
+export function toCanonicalPathKey(
+  nativePath: string,
+  { separator = sep, caseInsensitive = process.platform === "win32" }: CanonicalPathKeyOptions = {},
+): string {
+  const portable = toPortablePath(nativePath, separator);
+  return caseInsensitive ? portable.toLowerCase() : portable;
+}
+
 // 从磁盘读回、或由 bundler stats 报上来的相对路径，在参与 join / 写进 manifest 之前必须先过这一关。
 // 拒绝的每一项都是「join 之后会跑出目标目录」或「同一份源码在不同平台得到不同 hash」的入口：绝对
 // 路径与盘符前缀会让 join 直接跳到别处，反斜杠在 POSIX 上是合法文件名字符、到 Windows 上却变成分隔符，

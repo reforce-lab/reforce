@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, test } from "vitest";
 import { createCompiler } from "@/index";
 import {
+  applicationTsconfig,
   type CompilerProjectName,
   createCompilerProject,
   createPositiveApplication,
@@ -21,25 +22,9 @@ const projects: TemporaryProject[] = [];
 afterEach(async () => {
   await Promise.all(projects.splice(0).map((project) => project.cleanup()));
 });
-function applicationConfig(
-  include: readonly string[] = ["src", ".reforce/generated/**/*.ts"],
-): string {
-  return `${JSON.stringify(
-    {
-      compilerOptions: {
-        module: "ESNext",
-        moduleResolution: "Bundler",
-        target: "ESNext",
-      },
-      include,
-    },
-    undefined,
-    2,
-  )}\n`;
-}
 
-// `files` 形式的 tsconfig 与 applicationConfig 的 `include` 形式走不同的覆盖判定分支，
-// 两个用例只差 files 列表本身。
+// 故意不走 support/project 的 applicationTsconfig：那个构造器会自动补上两半生成物，而这里三条用例
+// 要的正是**违反**覆盖判据的 tsconfig。files 形式与 include 形式走不同的覆盖判定分支。
 function filesConfig(files: readonly string[]): string {
   return `${JSON.stringify({
     compilerOptions: {
@@ -55,7 +40,7 @@ async function temporaryApplication(
   files: Record<string, string> = { "application.ts": "export {};\n" },
 ): Promise<TemporaryProject> {
   const project = await createTemporaryProject({
-    "tsconfig.json": applicationConfig(),
+    "tsconfig.json": applicationTsconfig(),
     src: files,
   });
   projects.push(project);
@@ -85,11 +70,11 @@ async function createApplications(): Promise<TemporaryProject> {
   await writeProjectTree(temporary.projectRoot, {
     "app-a": {
       src: { "application.ts": "export class ApplicationA {}\n" },
-      "tsconfig.json": applicationConfig(),
+      "tsconfig.json": applicationTsconfig(),
     },
     "app-b": {
       src: { "application.ts": "export class ApplicationB {}\n" },
-      "tsconfig.json": applicationConfig(),
+      "tsconfig.json": applicationTsconfig(),
     },
   } satisfies ProjectTree);
   return temporary;
@@ -217,7 +202,7 @@ describe("project resolution", () => {
     await compiler.resolveProject({ projectDirectory: application.projectRoot });
 
     // Act
-    await writeFile(path.join(application.projectRoot, "tsconfig.app.json"), applicationConfig());
+    await writeFile(path.join(application.projectRoot, "tsconfig.app.json"), applicationTsconfig());
     const result = await compiler.resolveProject({
       projectDirectory: application.projectRoot,
     });
@@ -261,7 +246,7 @@ describe("project resolution", () => {
     });
 
     // Act
-    await writeFile(configPath, applicationConfig());
+    await writeFile(configPath, applicationTsconfig());
     const result = await compiler.resolveProject({
       projectDirectory: application.projectRoot,
       tsconfigPath: configPath,
@@ -338,10 +323,25 @@ describe("project resolution", () => {
     expect(result.status).toBe("success");
   });
 
+  test("accepts the shared fixture's files-shaped config", async () => {
+    // 这条守的是 fixture 本身：applicationTsconfig 的 files 分支此前只有 windows-project-paths
+    // 一个调用者，而它整例 skipIf 掉了，于是判据收紧时 fixture 没跟上要等 Windows CI 才现形（#381）。
+    const application = await createTemporaryProject({
+      src: { "application.ts": "export {};\n" },
+      "tsconfig.json": applicationTsconfig({ files: ["src/application.ts"] }),
+    });
+    projects.push(application);
+    const compiler = createCompiler();
+
+    const result = await compiler.resolveProject({ projectDirectory: application.projectRoot });
+
+    expect(result.status).toBe("success");
+  });
+
   test("does not treat an unrelated internal output include as the generated output", async () => {
     const application = await createTemporaryProject({
       src: { "application.ts": "export {};\n" },
-      "tsconfig.json": applicationConfig(["src", ".reforce/internal"]),
+      "tsconfig.json": applicationTsconfig({ include: ["src", ".reforce/internal"] }),
     });
     projects.push(application);
     const compiler = createCompiler();
@@ -458,11 +458,9 @@ describe("project resolution", () => {
       apps: {
         api: {
           src: { "application.ts": "export class ApplicationService {}\n" },
-          "tsconfig.json": applicationConfig([
-            "src",
-            "../../shared.ts",
-            ".reforce/generated/**/*.ts",
-          ]),
+          "tsconfig.json": applicationTsconfig({
+            include: ["src", "../../shared.ts", ".reforce/generated/**/*.ts"],
+          }),
         },
       },
       "shared.ts": "export interface SharedContract {}\n",

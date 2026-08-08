@@ -1,16 +1,23 @@
 import type { ProjectTree } from "@reforce/tooling-testing";
+import { applicationTsconfig } from "./tsconfig";
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, undefined, 2)}\n`;
 }
+
+// 本仓库应用只用标准 decorators，旧 decorators 与 runtime metadata 必须显式关掉；
+// applicationTsconfig 的基座不带这两项，需要的树自己叠。
+const decoratorOptions = {
+  experimentalDecorators: false,
+  emitDecoratorMetadata: false,
+} as const;
 
 const compilerOptions = {
   target: "ESNext",
   module: "ESNext",
   moduleResolution: "Bundler",
   strict: true,
-  experimentalDecorators: false,
-  emitDecoratorMetadata: false,
+  ...decoratorOptions,
 };
 
 export const positiveApplicationTree = {
@@ -19,12 +26,8 @@ export const positiveApplicationTree = {
     private: true,
     type: "module",
   }),
-  "tsconfig.json": json({
-    compilerOptions: {
-      ...compilerOptions,
-      paths: { "@/*": ["./src/*"] },
-    },
-    include: ["src", ".reforce/generated/**/*.ts"],
+  "tsconfig.json": applicationTsconfig({
+    compilerOptions: { ...decoratorOptions, paths: { "@/*": ["./src/*"] } },
   }),
   src: {
     "application.ts": ['export * from "@/greeting";', 'export * from "@/providers";', ""].join(
@@ -62,13 +65,6 @@ export const positiveApplicationTree = {
   },
 } satisfies ProjectTree;
 
-function applicationConfig(): string {
-  return json({
-    compilerOptions,
-    include: ["src", ".reforce/generated/**/*.ts"],
-  });
-}
-
 const ambiguousLeafConfig = {
   "tsconfig.app.json": json({
     compilerOptions: {
@@ -90,7 +86,7 @@ const ambiguousLeafConfig = {
 } satisfies ProjectTree;
 
 const computedLifecycleMethodRejected = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Injectable, type OnContextStart } from "@reforce/core";',
@@ -143,7 +139,7 @@ const deterministicCycleGeneration = {
 } satisfies ProjectTree;
 
 const duplicateGeneratedQualifierMember = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Injectable } from "@reforce/core";',
@@ -160,7 +156,7 @@ const duplicateGeneratedQualifierMember = {
 } satisfies ProjectTree;
 
 const generatedRuntimeContract = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { defineBean, Injectable, type Lazy, type OnContextClose, type OnContextStart } from "@reforce/core";',
@@ -194,7 +190,7 @@ const generatedRuntimeContract = {
 } satisfies ProjectTree;
 
 const invalidLifecycleReturnRejected = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Injectable, type OnContextStart } from "@reforce/core";',
@@ -208,7 +204,7 @@ const invalidLifecycleReturnRejected = {
 } satisfies ProjectTree;
 
 const legacyParameterDecoratorRejected = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Injectable, Qualifier } from "@reforce/core";',
@@ -225,7 +221,7 @@ const legacyParameterDecoratorRejected = {
 // @Fallback() 在应用里是硬错误（#343）：它归一为 starter meta 的 defaultBean，应用侧候选裁决
 // 没有这个概念。不拦就是个静默无效的注解。
 const applicationFallbackRejected = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Fallback, Injectable } from "@reforce/core";',
@@ -319,7 +315,7 @@ const monorepoApplicationSelection = {
 } satisfies ProjectTree;
 
 const namespaceExportContract = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Injectable } from "@reforce/core";',
@@ -334,7 +330,7 @@ const namespaceExportContract = {
 } satisfies ProjectTree;
 
 const nonInlineFactoryDisposerRejected = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { defineBean } from "@reforce/core";',
@@ -350,7 +346,7 @@ const nonInlineFactoryDisposerRejected = {
 } satisfies ProjectTree;
 
 const reservedQualifierRejected = {
-  "tsconfig.json": applicationConfig(),
+  "tsconfig.json": applicationTsconfig({ compilerOptions: decoratorOptions }),
   src: {
     "application.ts": [
       'import { Injectable, Qualifier } from "@reforce/core";',

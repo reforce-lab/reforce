@@ -14,6 +14,7 @@ import {
 } from "./project-trees";
 
 export type { CompilerProjectName } from "./project-trees";
+export { type ApplicationTsconfigOptions, applicationTsconfig } from "./tsconfig";
 
 export type Compiler = ReturnType<typeof createCompiler>;
 export type CompileSuccess = Extract<CompileResult, { readonly status: "success" }>;
@@ -129,20 +130,6 @@ export async function addQualifiedSelectionProbe(projectRoot: string): Promise<v
       "",
     ].join("\n"),
   );
-}
-
-export function applicationTsconfig(
-  include: readonly string[] = ["src", ".reforce/generated/**/*.ts"],
-): string {
-  return `${JSON.stringify({
-    compilerOptions: {
-      target: "ESNext",
-      module: "ESNext",
-      moduleResolution: "Bundler",
-      strict: true,
-    },
-    include,
-  })}\n`;
 }
 
 export async function createCompilerProject(name: CompilerProjectName): Promise<TemporaryProject> {

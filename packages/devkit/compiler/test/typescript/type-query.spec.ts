@@ -1,3 +1,4 @@
+import type { CanonicalPathKeyOptions } from "@reforce/primitives";
 import { describe, expect, test } from "vitest";
 import { StaleCheckerHandleError } from "@/typescript/checker-errors";
 import { createTypeQuery, type TypeQuery } from "@/typescript/type-query";
@@ -15,6 +16,7 @@ interface QueryOverrides {
   readonly generation?: number;
   readonly isRetired?: () => boolean;
   readonly onTransportFailure?: (error: unknown) => never;
+  readonly pathKey?: CanonicalPathKeyOptions;
 }
 
 function queryOf(overrides: QueryOverrides = {}): TypeQuery {
@@ -28,6 +30,7 @@ function queryOf(overrides: QueryOverrides = {}): TypeQuery {
       ((error) => {
         throw error;
       }),
+    pathKey: overrides.pathKey ?? {},
   });
 }
 
@@ -112,7 +115,8 @@ describe("position queries", () => {
 
   test("Windows-style separators still match the program and the canonical name reaches tsgo", () => {
     // Windows CI 实测回归:path.join 的反斜杠拼写对不上 tsgo 的正斜杠规范名,整批查询
-    // 被误判"不在 program"。
+    // 被误判"不在 program"。win32 形态显式注入,这条断言因此在三平台都执行(Issue #381)——
+    // 此前它靠"POSIX 上也无条件折反斜杠"这个错误行为才在 Linux 上凑巧为绿。
     const type = fakeType({ flags: TypeFlags.String });
     let queriedFile: string | undefined;
     const query = queryOf({
@@ -123,6 +127,7 @@ describe("position queries", () => {
         },
       },
       program: { getSourceFileNames: () => ["C:/app/src/main.ts"] },
+      pathKey: { separator: "\\", caseInsensitive: true },
     });
 
     const answers = query.getTypesAtPositions("C:\\app\\src\\main.ts", [0]);
