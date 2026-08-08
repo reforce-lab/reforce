@@ -39,7 +39,7 @@ function validRoute(): GeneratedRoute {
 }
 
 function tableWith(overrides: Record<string, unknown>): unknown {
-  return { schemaVersion: 3, routes: [], errorHandlers: [], ...overrides };
+  return { schemaVersion: 4, routes: [], errorHandlers: [], ...overrides };
 }
 
 describe("validateGeneratedRouteTable", () => {
@@ -52,7 +52,7 @@ describe("validateGeneratedRouteTable", () => {
     expect(validateGeneratedRouteTable(table) === table).toBe(true);
   });
 
-  // 版本门是硬门(#264 决策 11):1/2 是旧表的版本,旧生成物必须在启动时被拒绝,
+  // 版本门是硬门(#264 决策 11):1/2/3 是旧表的版本,旧生成物必须在启动时被拒绝,
   // 而不是带着已删除的字段静默跑进槽位执行链。
   test("rejects the retired schema versions and any unknown version", () => {
     expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 1 }))).toThrow(
@@ -61,7 +61,10 @@ describe("validateGeneratedRouteTable", () => {
     expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 2 }))).toThrow(
       InvalidRouteTableError,
     );
-    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 4 }))).toThrow(
+    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 3 }))).toThrow(
+      InvalidRouteTableError,
+    );
+    expect(() => validateGeneratedRouteTable(tableWith({ schemaVersion: 5 }))).toThrow(
       InvalidRouteTableError,
     );
   });

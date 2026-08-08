@@ -1,4 +1,4 @@
-import { symlink } from "node:fs/promises";
+import { readFile, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -60,6 +60,46 @@ describe("create-reforce 模板", () => {
         { timeout: commandTimeout },
       );
       expect(build.exitCode, `${build.stdout}\n${build.stderr}`).toBe(0);
+
+      // 真 zod 链路的两条 #310 断言,吃 build 落盘的 routes.json:
+      // - .default() 的键线上可缺省(manifest 表取 ~standard.types.input 合并可缺省性);
+      // - @Throws(defineHttpError 的 const) 落成无 handler 的 problem 条目。
+      interface RoutesProbe {
+        readonly routes: readonly {
+          readonly method: string;
+          readonly path: string;
+          readonly contract: {
+            readonly slots: readonly {
+              readonly slot: string;
+              readonly table?: {
+                readonly root: { readonly fields?: readonly Record<string, unknown>[] };
+              };
+            }[];
+            readonly response: { readonly errors?: readonly Record<string, unknown>[] };
+          };
+        }[];
+      }
+      // 结构由断言逐处验证,cast 只为省去逐层手写窄化。
+      const manifest = JSON.parse(
+        await readFile(join(applicationRoot, ".reforce", "generated", "routes.json"), "utf8"),
+      ) as RoutesProbe;
+      const show = manifest.routes.find(
+        (route) => route.method === "GET" && route.path === "/greetings/:name",
+      );
+      const timesField = show?.contract.slots
+        .find((slot) => slot.slot === "query")
+        ?.table?.root.fields?.find((field) => field.name === "times");
+      expect(timesField).toMatchObject({ name: "times", optional: true });
+      const create = manifest.routes.find(
+        (route) => route.method === "POST" && route.path === "/greetings",
+      );
+      expect(create?.contract.response.errors).toEqual([
+        {
+          error: "GreetingAlreadyExists",
+          status: 409,
+          body: { kind: "problem", code: "GREETING_ALREADY_EXISTS" },
+        },
+      ]);
     },
     commandTimeout * 2,
   );

@@ -67,7 +67,7 @@ function tableOf(
   routes: readonly GeneratedRoute[],
   errorHandlers: GeneratedRouteTable["errorHandlers"] = [],
 ): GeneratedRouteTable {
-  return { schemaVersion: 3, routes, errorHandlers };
+  return { schemaVersion: 4, routes, errorHandlers };
 }
 
 function recordingMiddleware(log: string[], label: string): new () => RouteMiddleware {

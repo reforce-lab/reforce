@@ -1420,6 +1420,14 @@ describe.sequential("built Reforce CLI", () => {
         expect(Object.keys(checkout?.responses ?? {})).toEqual(
           expect.arrayContaining(["200", "409", "429"]),
         );
+        // defineHttpError + @Throws(#310):无处理器,状态码来自 defineHttpError 实参,
+        // problem+json 的 code 钉成 const。
+        const conflict = document.paths["/boom/conflict"]?.get;
+        expect(conflict?.responses["409"]?.content).toMatchObject({
+          "application/problem+json": {
+            schema: { properties: { code: { const: "GREETING_ALREADY_EXISTS" } } },
+          },
+        });
         // free-form 降级:文档如实标 open object,不猜形状。
         const loose = document.paths["/orders/loose"]?.get;
         expect(loose?.responses["200"]?.content).toMatchObject({

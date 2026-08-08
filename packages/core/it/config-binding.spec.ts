@@ -7,7 +7,12 @@ import {
   type GeneratedConfigBindingOutcome,
   type GeneratedConfigRegistration,
 } from "@/generated-runtime";
-import { ApplicationStartError, ConfigBindingError, type ConfigBindingIssue } from "@/index";
+import {
+  ApplicationStartError,
+  ConfigBindingError,
+  type ConfigBindingIssue,
+  InvalidGeneratedDefinitionError,
+} from "@/index";
 import { testDefinition, testSource } from "../test/support/test-definition";
 
 class ServerConfig {
@@ -197,6 +202,32 @@ describe("config binding phase", () => {
     expect(bindingError.message).toContain("METRICS_ENDPOINT");
     expect(bindingError.message).toContain(".env.production");
     expect(constructed).toBe(0);
+    await context.close();
+  });
+
+  test("rejects a malformed bind outcome as an invalid generated definition", async () => {
+    const definition = testDefinition([], {
+      configs: [serverConfigRegistration()],
+      configBinding: bindingOf(() =>
+        Promise.resolve({
+          status: "failed",
+          issues: [],
+          detail: "smuggled",
+          // 信任边界测试（#314）：binding 实现在 core 之外，违约返回值只能越过类型系统构造。
+        } as unknown as GeneratedConfigBindingOutcome),
+      ),
+    });
+    const context = createApplicationContext(definition);
+
+    const startError = await context.start().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    expect(startError).toBeInstanceOf(ApplicationStartError);
+    expect((startError as ApplicationStartError).cause).toBeInstanceOf(
+      InvalidGeneratedDefinitionError,
+    );
     await context.close();
   });
 

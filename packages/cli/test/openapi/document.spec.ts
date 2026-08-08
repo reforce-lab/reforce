@@ -260,6 +260,87 @@ describe("openApiDocumentOf responses", () => {
     expect(responses["429"]?.description).toBe("Declared by @Throws: QuotaExceededError.");
   });
 
+  // defineHttpError 条目(#310):problem 变体走 application/problem+json,code 字面量钉 const;
+  // 无 status 的条目(defineHttpError 实参非字面量)没有可写的响应行,与 passthrough 同口径。
+  test("a handlerless problem entry renders problem+json with a pinned code", () => {
+    const document = openApiDocumentOf(
+      manifestOf([
+        routeOf({
+          contract: {
+            slots: [],
+            response: {
+              kind: "passthrough",
+              errors: [
+                {
+                  error: "PaymentRequiredError",
+                  status: 402,
+                  body: { kind: "problem", code: "PAYMENT_REQUIRED_X" },
+                },
+                { error: "TeapotDynamicError", body: { kind: "problem" } },
+              ],
+            },
+          },
+        }),
+      ]),
+    );
+
+    const operation = operationAt(document, "/probe", "get");
+    const responses = operation.responses as Record<string, Record<string, unknown>>;
+    expect(responses["402"]).toEqual({
+      description: "Declared by @Throws: PaymentRequiredError.",
+      content: {
+        "application/problem+json": {
+          schema: {
+            type: "object",
+            properties: {
+              type: { type: "string" },
+              title: { type: "string" },
+              status: { type: "integer" },
+              detail: { type: "string" },
+              code: { type: "string", const: "PAYMENT_REQUIRED_X" },
+            },
+            required: ["type", "title", "status", "detail", "code"],
+          },
+        },
+      },
+    });
+    expect(Object.keys(responses)).not.toContain("418");
+  });
+
+  test("problem and handler bodies on the same status keep separate media types", () => {
+    const document = openApiDocumentOf(
+      manifestOf([
+        routeOf({
+          contract: {
+            slots: [],
+            response: {
+              kind: "passthrough",
+              errors: [
+                {
+                  error: "ConflictError",
+                  handler: "src/errors.ts#Conflict",
+                  status: 409,
+                  body: { kind: "free-form" },
+                },
+                { error: "DuplicateError", status: 409, body: { kind: "problem", code: "DUP" } },
+              ],
+            },
+          },
+        }),
+      ]),
+    );
+
+    const operation = operationAt(document, "/probe", "get");
+    const responses = operation.responses as Record<string, Record<string, unknown>>;
+    expect(responses["409"]).toMatchObject({
+      description: "Declared by @Throws: ConflictError, DuplicateError.",
+      content: {
+        "application/json": { schema: { type: "object" } },
+        "application/problem+json": { schema: { properties: { code: { const: "DUP" } } } },
+      },
+    });
+  });
+
   test("a route with a data slot gains the shared auto-400 validation response", () => {
     const document = openApiDocumentOf(
       manifestOf([
