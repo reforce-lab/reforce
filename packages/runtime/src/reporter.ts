@@ -204,7 +204,9 @@ export async function reportShutdownFailure(input: {
   );
   try {
     await input.reporter.flush();
-  } catch {}
+  } catch {
+    // 这里已经在汇报 shutdown 失败：flush 再失败就没有其他通道可以汇报了，只能吞掉。
+  }
 }
 
 export interface PlainTextReporterOptions {

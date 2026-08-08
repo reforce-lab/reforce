@@ -151,11 +151,12 @@ async function reportCliFailure(
       cause: error,
     }),
   );
-  // Already on the failure-reporting path: if flushing that report also fails, no other channel
-  // remains to report through, so the flush error is swallowed.
   try {
     await reporter.flush();
-  } catch {}
+  } catch {
+    // Already on the failure-reporting path: if flushing that report also fails, no other channel
+    // remains to report through, so the flush error is swallowed.
+  }
   return 1;
 }
 

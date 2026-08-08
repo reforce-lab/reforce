@@ -42,7 +42,9 @@ function register(routes: readonly PreparedRoute[], maxParamLength: number): Reg
   const byMarker: MarkerTable = new WeakMap();
   const methods = new Map<string, HttpMethod>();
   for (const route of routes) {
-    const marker = () => {};
+    const marker = () => {
+      // find-my-way 要求注册一个 handler；这里只借用函数的对象身份当 byMarker 的键，本体永不调用。
+    };
     byMarker.set(marker, route);
     router.on(route.method, route.path, marker);
     methods.set(route.method, route.method);
