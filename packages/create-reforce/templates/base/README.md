@@ -27,7 +27,7 @@ src/
   features/                             业务：一个模块一个目录，模块自己的一切都在里面
     greeting/
       greeting.controller.ts              路由：路径、方法，契约都在参数和返回类型的标注上
-      greeting.service.ts                 业务规则 + 它需要的端口（GreetingStore 接口）
+      greeting.service.ts                 业务规则
       greeting.dto.ts                     进出的形状：请求 schema + 响应 interface
       greeting.exception.ts               只有这个模块会抛的业务异常（一行一个）
     health/
@@ -37,7 +37,7 @@ src/
       request.fields.ts                    请求期间的日志自动带上 method、path、requestId
       api-key.middleware.ts                写接口的准入检查（admission）
     persistence/                           存储这一面
-      in-memory-greeting.store.ts          换数据库时只改这里
+      in-memory-greeting.store.ts          存储实现
   shared/                               跨模块的公共词汇
     pagination/
       pagination.dto.ts                    请求形状、响应外壳、切片函数
@@ -74,17 +74,19 @@ src/
 那是耦合，挪进 shared 只是把它藏起来，A 改字段照样打到 B。正确做法是让 B 走 A 的 service
 拿数据。判据是「这是谁都可能用的通用概念，还是某个模块的形状恰好被别人用了」。
 
-`infrastructure/` 和 `features/` 的分界是「换掉它要不要改业务代码」：`GreetingService` 依赖的是
-自己声明的 `GreetingStore` 接口，把内存实现换成 PostgreSQL 只需要新写一个
-`implements GreetingStore` 的类，`features/` 一行都不用动。
+`infrastructure/` 放和外部世界接壤的适配件。这里只有 `InMemoryGreetingStore` 一个实现，
+`GreetingService` 直接依赖它的具体类型，没有额外接口——只有一种实现时，接口是没有对应收益
+的抽象成本。真要换成 PostgreSQL 时，新写一个类，把 `GreetingService` 构造参数的类型换过去
+就行，`features/` 其余代码不用动。
 
 `.reforce/` 和 `dist/` 都是产物，已经在 `.gitignore` 里。
 
 ## 模板里已经演示了什么
 
-**依赖注入**：写进构造参数，容器按类型匹配。声明接口也行（`GreetingService` 就是这么拿到
-`GreetingStore` 的）。同一个类型有多个实现时用 `@Primary` 或 `@Qualifier` 挑一个。新建一个类
-打上 `@Injectable()` 就完事——编译期扫描整个 `src/`，不用登记，也不用从入口导出。
+**依赖注入**：写进构造参数，容器按类型匹配——具体类直接注入就行（`GreetingController` 拿到
+`GreetingService`、`GreetingService` 拿到 `InMemoryGreetingStore` 都是这么接的）。要用接口也行，
+同一个类型有多个实现时用 `@Primary` 或 `@Qualifier` 挑一个。新建一个类打上 `@Injectable()`
+就完事——编译期扫描整个 `src/`，不用登记，也不用从入口导出。
 
 **请求校验**：handler 参数的类型标注就是输入契约。`Body<CreateGreetingBody>` 表示「请求体按
 这个契约校验后整体给我」，`Param<GreetingParams, "name">` 是投影写法——校验仍按整个契约跑，
