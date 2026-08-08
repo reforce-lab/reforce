@@ -41,12 +41,17 @@ test("start rejects an artifact while dist transaction metadata remains", async 
 
   expect(exitCode).toBe(1);
   expect(output.events).toHaveLength(1);
-  expect(output.events[0]).toMatchObject({ kind: "failure", code: "ARTIFACT_INVALID" });
+  expect(output.events[0]).toMatchObject({
+    kind: "failure",
+    code: "ARTIFACT_INVALID",
+    message: expect.stringContaining("stale-token"),
+  });
 });
 
 test("start rejects transaction output even when its token has an invalid shape", async () => {
   const project = await createTemporaryProject({
     "dist.backup-invalid.token": {},
+    "dist.staging-invalid.token": {},
     dist: { "main.mjs": "export {};\n" },
   });
   projects.push(project);
@@ -54,7 +59,12 @@ test("start rejects transaction output even when its token has an invalid shape"
 
   expect(exitCode).toBe(1);
   expect(output.events).toHaveLength(1);
-  expect(output.events[0]).toMatchObject({ kind: "failure", code: "ARTIFACT_INVALID" });
+  // 文案必须列出全部残留且顺序确定，不随平台 readdir 顺序漂移（Issue #314）。
+  expect(output.events[0]).toMatchObject({
+    kind: "failure",
+    code: "ARTIFACT_INVALID",
+    message: expect.stringContaining("dist.backup-invalid.token, dist.staging-invalid.token"),
+  });
 });
 
 test("start rejects symbolic links anywhere in the production artifact", async () => {
