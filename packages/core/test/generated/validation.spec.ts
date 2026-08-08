@@ -4,7 +4,10 @@ import type {
   GeneratedConfigBinding,
   GeneratedDependency,
 } from "@/generated/contracts";
-import { snapshotApplicationDefinition } from "@/generated/validation";
+import {
+  snapshotApplicationDefinition,
+  validateConfigBindingOutcome,
+} from "@/generated/validation";
 import { classBean, configBean, createApplicationContext } from "@/generated-runtime";
 import { defineBean, InvalidGeneratedDefinitionError } from "@/index";
 import {
@@ -823,5 +826,48 @@ describe("generated definition snapshots", () => {
     const snapshot = snapshotApplicationDefinition(testDefinition([registration]));
 
     expect(Object.isFrozen(snapshot.registrations[0])).toBe(true);
+  });
+});
+
+describe("config binding outcome validation", () => {
+  function expectInvalidOutcome(value: unknown, fragment: string): void {
+    const validate = () => validateConfigBindingOutcome(value);
+    expect(validate).toThrow(InvalidGeneratedDefinitionError);
+    expect(validate).toThrow(fragment);
+  }
+
+  test("accepts a bound outcome carrying a Map of instances", () => {
+    const outcome: unknown = { status: "bound", instances: new Map<string, object>() };
+
+    expect(() => validateConfigBindingOutcome(outcome)).not.toThrow();
+  });
+
+  test("accepts a failed outcome carrying an issues array", () => {
+    const outcome: unknown = { status: "failed", issues: [] };
+
+    expect(() => validateConfigBindingOutcome(outcome)).not.toThrow();
+  });
+
+  test("rejects a non-object outcome", () => {
+    expectInvalidOutcome(null, "must be an object");
+    expectInvalidOutcome("bound", "must be an object");
+  });
+
+  test("rejects an unrecognized status", () => {
+    expectInvalidOutcome({ status: "pending" }, "status");
+    expectInvalidOutcome({}, "status");
+  });
+
+  test("rejects a failed outcome whose issues is not an array", () => {
+    expectInvalidOutcome({ status: "failed", issues: "none" }, "issues must be an array");
+  });
+
+  test("rejects a bound outcome whose instances is not Map-like", () => {
+    expectInvalidOutcome({ status: "bound", instances: {} }, "instances");
+  });
+
+  test("rejects an outcome carrying an unknown field", () => {
+    expectInvalidOutcome({ status: "bound", instances: new Map(), extra: 1 }, "unknown field");
+    expectInvalidOutcome({ status: "failed", issues: [], extra: 1 }, "unknown field");
   });
 });
