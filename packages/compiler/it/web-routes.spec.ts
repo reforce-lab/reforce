@@ -213,7 +213,7 @@ describe("route table generation", () => {
     const result = await compileSourcesOrThrow(sources, { linkWeb: true });
 
     expect(routeManifestOf(result)).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       routes: [
         {
           method: "POST",
@@ -330,9 +330,9 @@ describe("route table generation", () => {
       ].join("\n"),
     });
 
-    expect(routeManifestOf(result)).toEqual({ schemaVersion: 3, routes: [], errorHandlers: [] });
+    expect(routeManifestOf(result)).toEqual({ schemaVersion: 4, routes: [], errorHandlers: [] });
     expect(generatedContent(result, "routes.ts")).toBe(
-      "export const routeTable = {\n  schemaVersion: 3,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
+      "export const routeTable = {\n  schemaVersion: 4,\n  routes: [],\n  errorHandlers: [],\n} as const;\n",
     );
   });
 });
@@ -1340,7 +1340,7 @@ describe("web engine wiring", () => {
 
     expect(generatedContent(result, "bootstrap.ts")).toContain("connectWebApplication");
     expect(JSON.parse(generatedContent(result, "routes.json"))).toEqual({
-      schemaVersion: 3,
+      schemaVersion: 4,
       routes: [],
       errorHandlers: [],
     });

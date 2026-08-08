@@ -88,9 +88,10 @@ export interface GeneratedRouteErrorHandler {
 }
 
 export interface GeneratedRouteTable {
-  // 3 = 响应侧收口(RFC 0012 S3,#275):route.encode 并入 response 三变体、errorHandlers
-  // 携带 accepts/status/encode。版本门跟着破坏性表变更走(#264 决策 11)。
-  readonly schemaVersion: 3;
+  // 4 = @Throws 认 defineHttpError + schema 槽线上侧表(#310):routes.json 的 errors 增无
+  // handler 的 problem 变体、schema 槽 table 合并输入侧可缺省;本表(routes.ts)形状未变,
+  // 版本门两份生成物同轴走(#264 决策 11)。3 = 响应侧收口(RFC 0012 S3,#275)。
+  readonly schemaVersion: 4;
   readonly routes: readonly GeneratedRoute[];
   // 全局错误处理器，数组顺序即分派顺序（(order, beanId) 决胜后写死）。
   readonly errorHandlers: readonly GeneratedRouteErrorHandler[];

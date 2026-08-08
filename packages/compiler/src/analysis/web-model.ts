@@ -56,6 +56,10 @@ export interface StringRouteSlotModel {
   readonly form: "single" | "optional-single" | "contract";
   readonly key?: string;
   readonly table: ContractTable;
+  // schema 槽的线上侧字段表(#310):table 是 handler 侧(schema 输出),而请求线上侧的可缺省
+  // 性以 ~standard.types.input 为准(如 zod default 的键请求可不带)。根字段 optional 合并
+  // 输入侧后落 routes.json;typed-edge(routes.ts)仍用 table。两侧一致时缺省。
+  readonly wireTable?: ContractTable;
   readonly contractSource: ContractSourceModel;
   readonly span: SourceSpan;
 }
@@ -65,6 +69,8 @@ export interface BodyRouteSlotModel {
   readonly kind: "body";
   readonly key?: string;
   readonly table: ContractTable;
+  // 同 StringRouteSlotModel.wireTable(#310)。
+  readonly wireTable?: ContractTable;
   readonly contractSource: ContractSourceModel;
   readonly span: SourceSpan;
 }
@@ -97,14 +103,27 @@ export interface RouteContractModel {
   readonly response: ResponseContractModel;
 }
 
-// @Throws 声明的线上错误(#275):路由方法与挂载中间件类的并集,已按类键去重、errorName 排序。
-// 状态码与 body 形状从 handlerBeanId 指向的类型化处理器读出(manifest 装配时展开)。
-export interface RouteThrownErrorModel {
-  readonly errorName: string;
-  // `${声明文件 fileId}#${类名}`:去重与决定性排序的类身份键。
-  readonly key: string;
-  readonly handlerBeanId: string;
-}
+// @Throws 声明的线上错误(#275/#310):路由方法与挂载中间件类的并集,已按类键去重、errorName
+// 排序。两个变体:
+// - handler = 应用错误类,状态码与 body 形状从 handlerBeanId 指向的类型化处理器读出
+//   (manifest 装配时展开);
+// - http-error = defineHttpError 造的 const,无处理器——运行时由框架兜底闭集直接翻译成
+//   problem+json(status/code 取 defineHttpError 实参的静态字面量,非字面量时缺省)。
+export type RouteThrownErrorModel =
+  | {
+      readonly kind: "handler";
+      readonly errorName: string;
+      // `${声明文件 fileId}#${类名}`:去重与决定性排序的身份键(http-error 变体同构,取 const 名)。
+      readonly key: string;
+      readonly handlerBeanId: string;
+    }
+  | {
+      readonly kind: "http-error";
+      readonly errorName: string;
+      readonly key: string;
+      readonly status?: number;
+      readonly code?: string;
+    };
 
 export interface RouteModel {
   readonly method: HttpMethodModel;

@@ -43,7 +43,7 @@ const userTable: ManifestContractTable = {
 
 function manifestJson(): unknown {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     routes: [
       {
         method: "GET",
@@ -184,7 +184,7 @@ describe("parseRouteManifestBytes", () => {
       definitions: userTable.definitions,
     };
     const bytes = encoded({
-      schemaVersion: 3,
+      schemaVersion: 4,
       routes: [
         {
           method: "GET",
@@ -206,9 +206,9 @@ describe("parseRouteManifestBytes", () => {
     expect(parsed?.routes[0]?.contract.response.table).toEqual(table);
   });
 
-  // 1/2 是旧表的版本:旧生成物不得被静默解释成 v3 表。
+  // 1/2/3 是旧表的版本:旧生成物不得被静默解释成 v4 表。
   test("a wrong schema version is rejected", () => {
-    for (const schemaVersion of [1, 2, 4]) {
+    for (const schemaVersion of [1, 2, 3, 5]) {
       expect(
         parseRouteManifestBytes(encoded({ schemaVersion, routes: [], errorHandlers: [] })),
       ).toBeUndefined();
@@ -217,7 +217,7 @@ describe("parseRouteManifestBytes", () => {
 
   test("a malformed route entry rejects the whole manifest", () => {
     const bytes = encoded({
-      schemaVersion: 3,
+      schemaVersion: 4,
       routes: [{ method: "GET" }],
       errorHandlers: [],
     });
@@ -228,7 +228,7 @@ describe("parseRouteManifestBytes", () => {
   // 「有表但读不出」不得静默降级成「本就无表」:openapi 会把这样的路由当 bare 槽漏掉参数。
   test("a slot with a malformed table rejects the whole manifest", () => {
     const bytes = encoded({
-      schemaVersion: 3,
+      schemaVersion: 4,
       routes: [
         {
           method: "GET",
@@ -257,7 +257,7 @@ describe("parseRouteManifestBytes", () => {
 
   test("a thrown error with a malformed body rejects the whole manifest", () => {
     const bytes = encoded({
-      schemaVersion: 3,
+      schemaVersion: 4,
       routes: [
         {
           method: "GET",
@@ -288,9 +288,97 @@ describe("parseRouteManifestBytes", () => {
     expect(parseRouteManifestBytes(bytes)).toBeUndefined();
   });
 
+  // defineHttpError 造的异常(#310):无处理器,body 是 problem 变体,code 可缺席(非字面量)。
+  test("a handlerless thrown error with a problem body parses", () => {
+    const errors = [
+      { error: "PaymentRequiredError", status: 402, body: { kind: "problem", code: "PAY" } },
+      { error: "TeapotDynamicError", body: { kind: "problem" } },
+    ];
+    const bytes = encoded({
+      schemaVersion: 4,
+      routes: [
+        {
+          method: "GET",
+          path: "/pay",
+          controller: { beanId: "src/pay.ts#PayController", handler: "pay" },
+          middleware: [],
+          meta: {},
+          contract: {
+            slots: [],
+            response: { kind: "free-form", status: 200, errors },
+          },
+        },
+      ],
+      errorHandlers: [],
+    });
+
+    expect(parseRouteManifestBytes(bytes)?.routes[0]?.contract.response.errors).toEqual(errors);
+  });
+
+  // handler ⇔ body 变体的耦合(#310):两个键由编译器成对发射,混搭只能来自损坏,整份拒收。
+  test("a handler and problem-body mismatch rejects the whole manifest", () => {
+    const mismatches = [
+      // handler 缺席但 body 不是 problem 变体。
+      { error: "X", body: { kind: "free-form" } },
+      // handler 缺席且无 body。
+      { error: "X", status: 409 },
+      // handler 在场却带 problem body。
+      { error: "X", handler: "src/errors.ts#Boom", body: { kind: "problem", code: "C" } },
+      // problem body 的 code 非字符串。
+      { error: "X", body: { kind: "problem", code: 42 } },
+    ];
+    for (const thrown of mismatches) {
+      const bytes = encoded({
+        schemaVersion: 4,
+        routes: [
+          {
+            method: "GET",
+            path: "/pay",
+            controller: { beanId: "src/pay.ts#PayController", handler: "pay" },
+            middleware: [],
+            meta: {},
+            contract: {
+              slots: [],
+              response: { kind: "free-form", status: 200, errors: [thrown] },
+            },
+          },
+        ],
+        errorHandlers: [],
+      });
+
+      expect(parseRouteManifestBytes(bytes), JSON.stringify(thrown)).toBeUndefined();
+    }
+  });
+
+  test("a thrown error with a non-string handler rejects the whole manifest", () => {
+    const bytes = encoded({
+      schemaVersion: 4,
+      routes: [
+        {
+          method: "GET",
+          path: "/pay",
+          controller: { beanId: "src/pay.ts#PayController", handler: "pay" },
+          middleware: [],
+          meta: {},
+          contract: {
+            slots: [],
+            response: {
+              kind: "free-form",
+              status: 200,
+              errors: [{ error: "BoomError", handler: 42 }],
+            },
+          },
+        },
+      ],
+      errorHandlers: [],
+    });
+
+    expect(parseRouteManifestBytes(bytes)).toBeUndefined();
+  });
+
   test("an empty manifest parses to empty collections", () => {
     const parsed = parseRouteManifestBytes(
-      encoded({ schemaVersion: 3, routes: [], errorHandlers: [] }),
+      encoded({ schemaVersion: 4, routes: [], errorHandlers: [] }),
     );
 
     expect(parsed).toEqual({ routes: [], errorHandlers: [] } satisfies RouteManifest);
