@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reforce.dev/schema/reforce-meta.v1.json",
   "title": "reforce-meta.json",
   "description": "A reforce starter's published bean graph. This schema is a deliberately loose approximation meant for editor completion: cross-field rules (provides must contain the bean's own id, runtimeExport.module must stay inside the package, coordinates must resolve) are not expressible here. parseStarterMeta from @reforce/starter-meta is the admission gate; schema.json only helps you type.",
   "type": "object",
