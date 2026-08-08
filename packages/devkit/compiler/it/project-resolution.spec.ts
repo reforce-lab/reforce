@@ -22,7 +22,7 @@ afterEach(async () => {
   await Promise.all(projects.splice(0).map((project) => project.cleanup()));
 });
 function applicationConfig(
-  include: readonly string[] = ["src", ".reforce/generated/**/*.d.ts"],
+  include: readonly string[] = ["src", ".reforce/generated/**/*.ts"],
 ): string {
   return `${JSON.stringify(
     {
@@ -131,7 +131,7 @@ describe("project resolution", () => {
           moduleResolution: "Bundler",
           target: "ESNext",
         },
-        include: ["src", ".reforce/generated/**/*.d.ts"],
+        include: ["src", ".reforce/generated/**/*.ts"],
       })}\n`,
       "tsconfig.shared.json": "{\n",
       src: { "application.ts": "export {};\n" },
@@ -165,7 +165,7 @@ describe("project resolution", () => {
           moduleResolution: "Bundler",
           target: "ESNext",
         },
-        include: ["src", ".reforce/generated/**/*.d.ts"],
+        include: ["src", ".reforce/generated/**/*.ts"],
       })}\n`,
       src: { "application.ts": "export {};\n" },
     });
@@ -287,7 +287,7 @@ describe("project resolution", () => {
     }
   });
 
-  test("rejects a files-only config that omits generated declarations", async () => {
+  test("rejects a files-only config that omits the generated output", async () => {
     const application = await createTemporaryProject({
       src: { "application.ts": "export {};\n" },
       "tsconfig.json": filesConfig(["src/application.ts"]),
@@ -303,7 +303,9 @@ describe("project resolution", () => {
     }
   });
 
-  test("accepts a files-only config that names the generated declaration", async () => {
+  test("rejects a config that names only the generated declarations", async () => {
+    // 生成的 .ts 也必须进用户的编译单元（#350）：只收 .d.ts 时 beans.ts 里 emit 的
+    // `new Target(...)` 不进类型检查，实参个数对不上也不会有人报错。
     const application = await createTemporaryProject({
       src: { "application.ts": "export {};\n" },
       "tsconfig.json": filesConfig(["src/application.ts", ".reforce/generated/qualifiers.d.ts"]),
@@ -313,10 +315,30 @@ describe("project resolution", () => {
 
     const result = await compiler.resolveProject({ projectDirectory: application.projectRoot });
 
+    expect(result.status).toBe("failure");
+    if (result.status === "failure") {
+      expect(result.diagnostics[0].code).toBe("GENERATED_DECLARATIONS_NOT_INCLUDED");
+    }
+  });
+
+  test("accepts a files-only config that names both generated halves", async () => {
+    const application = await createTemporaryProject({
+      src: { "application.ts": "export {};\n" },
+      "tsconfig.json": filesConfig([
+        "src/application.ts",
+        ".reforce/generated/qualifiers.d.ts",
+        ".reforce/generated/beans.ts",
+      ]),
+    });
+    projects.push(application);
+    const compiler = createCompiler();
+
+    const result = await compiler.resolveProject({ projectDirectory: application.projectRoot });
+
     expect(result.status).toBe("success");
   });
 
-  test("does not treat an unrelated internal output include as generated declarations", async () => {
+  test("does not treat an unrelated internal output include as the generated output", async () => {
     const application = await createTemporaryProject({
       src: { "application.ts": "export {};\n" },
       "tsconfig.json": applicationConfig(["src", ".reforce/internal"]),
@@ -439,7 +461,7 @@ describe("project resolution", () => {
           "tsconfig.json": applicationConfig([
             "src",
             "../../shared.ts",
-            ".reforce/generated/**/*.d.ts",
+            ".reforce/generated/**/*.ts",
           ]),
         },
       },

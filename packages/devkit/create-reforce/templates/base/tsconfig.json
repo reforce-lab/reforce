@@ -22,6 +22,7 @@
       "@/*": ["./src/*"]
     }
   },
-  // .reforce/generated 是编译期产物，里面的 .d.ts 让 qualifier 之类的生成类型可见。
-  "include": ["src", ".reforce/generated/**/*.d.ts"]
+  // .reforce/generated 是编译期产物：.d.ts 让 qualifier 之类的生成类型可见，生成的 .ts
+  // （beans.ts 等）进类型检查，emit 出来的构造调用与织入链才有人核实（#350）。
+  "include": ["src", ".reforce/generated/**/*.ts"]
 }

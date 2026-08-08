@@ -39,7 +39,7 @@ function applicationTree(packageName: string, packageTree?: ProjectTree): Projec
         moduleResolution: "Bundler",
         strict: true,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
     ...(packageTree === undefined ? {} : { node_modules: { [packageName]: packageTree } }),
     src: { "application.ts": applicationSource(packageName) },
@@ -821,7 +821,7 @@ describe("project linking", () => {
           customConditions: ["reforce-test"],
           strict: true,
         },
-        include: ["src", ".reforce/generated/**/*.d.ts"],
+        include: ["src", ".reforce/generated/**/*.ts"],
       })}\n`,
     };
 

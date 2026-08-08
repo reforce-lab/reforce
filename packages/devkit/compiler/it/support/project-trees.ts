@@ -24,7 +24,7 @@ export const positiveApplicationTree = {
       ...compilerOptions,
       paths: { "@/*": ["./src/*"] },
     },
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   }),
   src: {
     "application.ts": ['export * from "@/greeting";', 'export * from "@/providers";', ""].join(
@@ -65,7 +65,7 @@ export const positiveApplicationTree = {
 function applicationConfig(): string {
   return json({
     compilerOptions,
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   });
 }
 
@@ -76,7 +76,7 @@ const ambiguousLeafConfig = {
       module: "ESNext",
       moduleResolution: "Bundler",
     },
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   }),
   "tsconfig.worker.json": json({
     compilerOptions: {
@@ -84,7 +84,7 @@ const ambiguousLeafConfig = {
       module: "ESNext",
       moduleResolution: "Bundler",
     },
-    include: ["src", ".reforce/generated/**/*.d.ts"],
+    include: ["src", ".reforce/generated/**/*.ts"],
   }),
   src: { "application.ts": 'export const application = "ambiguous";\n' },
 } satisfies ProjectTree;
@@ -112,7 +112,7 @@ const deterministicCycleGeneration = {
       moduleResolution: "Bundler",
     },
     files: ["src/zeta.ts", "src/alpha.ts"],
-    include: [".reforce/generated/**/*.d.ts"],
+    include: [".reforce/generated/**/*.ts"],
   }),
   src: {
     "alpha.ts": [
@@ -249,7 +249,7 @@ const monorepoApplicationSelection = {
     admin: {
       "tsconfig.json": json({
         extends: "../../tsconfig.shared.json",
-        include: ["src", ".reforce/generated/**/*.d.ts"],
+        include: ["src", ".reforce/generated/**/*.ts"],
       }),
       src: {
         "application.ts": [
@@ -267,7 +267,7 @@ const monorepoApplicationSelection = {
           baseUrl: ".",
           paths: { "@shared/path": ["../../packages/shared/src/path-contract.ts"] },
         },
-        include: ["src", ".reforce/generated/**/*.d.ts"],
+        include: ["src", ".reforce/generated/**/*.ts"],
       }),
       src: {
         "application.ts": [

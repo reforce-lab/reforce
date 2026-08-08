@@ -125,7 +125,7 @@ export async function addQualifiedSelectionProbe(projectRoot: string): Promise<v
 }
 
 export function applicationTsconfig(
-  include: readonly string[] = ["src", ".reforce/generated/**/*.d.ts"],
+  include: readonly string[] = ["src", ".reforce/generated/**/*.ts"],
 ): string {
   return `${JSON.stringify({
     compilerOptions: {

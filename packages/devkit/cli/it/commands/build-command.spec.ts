@@ -29,7 +29,7 @@ async function createApplication(transactionKind: "generated" | "dist"): Promise
         experimentalDecorators: false,
         emitDecoratorMetadata: false,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
   });
   projects.push(project);
@@ -139,7 +139,7 @@ async function createWarningApplication(): Promise<TemporaryProject> {
         experimentalDecorators: false,
         emitDecoratorMetadata: false,
       },
-      include: ["src", ".reforce/generated/**/*.d.ts"],
+      include: ["src", ".reforce/generated/**/*.ts"],
     })}\n`,
   });
   projects.push(project);

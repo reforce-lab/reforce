@@ -20,6 +20,7 @@ function createLocalSymbol(
     name,
     moduleSpecifier: source.fileId,
     source,
+    declaringSource: source,
     declaration,
     generic: declaration.generic,
   });
