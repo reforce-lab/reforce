@@ -13,7 +13,7 @@ export interface StubProperty {
   readonly name: string;
   readonly optional?: boolean;
   // undefined = 类型不可用(对应真 checker 的 error type 哨兵)。
-  readonly type?: StubType;
+  readonly type?: StubType | undefined;
 }
 
 export type StubType =
@@ -22,11 +22,11 @@ export type StubType =
   | { readonly kind: "template" }
   | { readonly kind: "tuple" }
   | { kind: "array"; element: StubType }
-  | { kind: "union"; members: StubType[]; named?: QueryNamedDeclaration }
+  | { kind: "union"; members: StubType[]; named?: QueryNamedDeclaration | undefined }
   | {
       kind: "object";
       properties: StubProperty[];
-      named?: QueryNamedDeclaration;
+      named?: QueryNamedDeclaration | undefined;
       defaultLib?: boolean;
       isClass?: boolean;
       indexSignature?: boolean;

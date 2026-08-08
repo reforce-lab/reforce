@@ -11,11 +11,11 @@ interface DiagnosticInput {
   readonly code: CompilerDiagnosticCode;
   // 缺省仍是 error：绝大多数诊断意味着图不完整，把 severity 写成必填只会让 59 个构造点各抄
   // 一遍同一个值（RFC 0011 OM2，#242）。
-  readonly severity?: CompilerDiagnostic["severity"];
+  readonly severity?: CompilerDiagnostic["severity"] | undefined;
   readonly message: string;
-  readonly sourceSpan?: SourceSpan;
-  readonly related?: readonly DiagnosticRelatedInformation[];
-  readonly help?: string;
+  readonly sourceSpan?: SourceSpan | undefined;
+  readonly related?: readonly DiagnosticRelatedInformation[] | undefined;
+  readonly help?: string | undefined;
   readonly suggestions?: CompilerDiagnostic["suggestions"];
   readonly cause?: unknown;
 }

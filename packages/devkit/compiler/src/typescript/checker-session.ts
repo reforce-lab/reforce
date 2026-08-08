@@ -145,7 +145,12 @@ export function createCheckerSession(options: CheckerSessionOptions = {}): Check
 
   function ensureApi(): UnstableApiPort {
     if (api === undefined) {
-      api = spawnApi({ cwd: options.cwd ?? process.cwd(), collectTiming: options.collectTiming });
+      // APIOptions 是 tsgo 的第三方类型，它把 collectTiming 声明成严格可选，所以缺省时这个键
+      // 必须整个不写，而不是写成 undefined（#367）。
+      api = spawnApi({
+        cwd: options.cwd ?? process.cwd(),
+        ...(options.collectTiming === undefined ? {} : { collectTiming: options.collectTiming }),
+      });
       process.on("exit", exitHandler);
     }
     return api;
