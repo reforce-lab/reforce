@@ -2,12 +2,13 @@
 // - /health：最小路由（静态路径、零 schema、仍走 作用域+全局中间件链）→ 框架税下限；
 // - /users/:id：典型链路（三层洋葱 + marker 准入 + 参数 codec + 编码序列化）→ 基准 ③。
 // 方法学：同机同 Node、两个目标都是独立子进程、逐个串行压测（互不抢核）；autocannon 发压、
-// 先预热再计时（#338 换尺子，理由见 bench/load.ts）；被测进程的 stderr 落文件，发压进程在
-// 计时期间不碰它；结果打印为 markdown 表。复跑：`pnpm --dir e2e run bench:http`。
+// 先预热再计时（#338 换尺子，理由见 bench/load.ts）；被测进程的输出丢弃、发压进程全程不碰
+// （#371，见 startTarget）；结果打印为 markdown 表。复跑：`pnpm --dir e2e run bench:http`。
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -41,52 +42,88 @@ interface StartedTarget {
   readonly baseUrl: string;
 }
 
-async function waitForListen(
-  child: ChildProcess,
-  logPath: string,
-  pattern: RegExp,
-): Promise<string> {
+// 端口由父进程先占后放，再经环境变量交给子进程；就绪判据是"这个端口能连上"。
+//
+// 换掉原来的"从日志文件里正则出监听地址"（#371）：那条路强制被测进程的 stderr 必须落到一个
+// 父进程读得到的文件，而默认 logger 写的就是 stderr（default-logger.ts:39），于是压测期间
+// 每条请求日志都被同步写进真实文件。实测同一个二进制，落 tmpfs 文件 41.36µs/请求、
+// 落 /dev/null 20.55µs，而不打请求日志的目标两者无差（17.39 / 17.63）——也就是说测出来的
+// "框架税"里有 20.8µs 是我们把 JSON 灌进文件系统的钱，且它随系统脏页状态在轮次间漂移
+// （同一份代码两次整轮压测测到 21.85 与 40.93，各自轮内极差只有 ±1.2% / ±4.0%）。
+// 对照组每请求根本不打日志，这笔钱只有我们付，横向比较因此不成立。
+async function reservePort(): Promise<number> {
+  const probe = createServer();
+  const port = await new Promise<number>((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("failed to reserve a TCP port"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
+async function waitForPort(port: number, child: ChildProcess): Promise<void> {
   const deadline = Date.now() + 30_000;
   for (;;) {
-    // 文件可能还没被创建或还是空的，读失败按「还没就绪」处理，交给下面的超时兜底。
-    const log = await readFile(logPath, "utf8").catch(() => "");
-    const match = log.match(pattern);
-    if (match?.[1] !== undefined) {
-      return match[1];
+    if (child.exitCode !== null) {
+      throw new Error(`target exited with code ${child.exitCode} before listening`);
     }
-    if (child.exitCode !== null || Date.now() >= deadline) {
-      throw new Error(`target did not start listening:\n${log}`);
+    if (Date.now() >= deadline) {
+      throw new Error(`target did not start listening on port ${port} within 30s`);
+    }
+    const reachable = await new Promise<boolean>((resolve) => {
+      const socket = connect(port, "127.0.0.1");
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once("error", () => {
+        socket.destroy();
+        resolve(false);
+      });
+    });
+    if (reachable) {
+      return;
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
 }
 
-// 被测进程的 stderr 直接落文件，不经过发压进程（#338）。
+// 被测进程的 stdout/stderr 一律丢弃，发压进程不经手（#338 → #371）。
 //
-// 此前这里是 `stdio: [..., "pipe"]` 加一个**从不摘除**的 data 监听器：压测全程由发压进程
+// 最早这里是 `stdio: [..., "pipe"]` 加一个**从不摘除**的 data 监听器：压测全程由发压进程
 // 逐块 toString() 再往一个 string 上 concat，8 秒 × 2 万 rps ≈ 16 万行访问日志。后果是发压器
-// 和日志消费者成了同一个进程、抢同一个核，而且被测进程的日志成本被记到了发压侧——两边同时
-// 失真，且失真幅度随被测目标的吞吐增长，正好把跑得快的目标罚得最狠。
+// 和日志消费者成了同一个进程、抢同一个核，而且被测进程的日志成本被记到了发压侧。
+// 换成 pipe + 空 drain 不解决（每块仍要一次读 + 一次分配），摘掉监听器更糟（管道写满 64KB
+// 后子进程阻塞在 write 上，等于把被测服务端挂住）。#338 改成落文件解决了这一层，但落盘本身
+// 又成了新的混淆项——见上面 reservePort 的说明。现在两头都不占：直接丢 /dev/null。
 //
-// 换成 pipe + 空 drain 不解决问题（每块仍要一次读 + 一次分配），摘掉监听器更糟（管道写满
-// 64KB 后子进程会阻塞在 write 上，等于把被测服务端挂住）。落文件让发压进程彻底退出这条
-// 路径：它只在启动阶段按路径读一次找监听地址，计时期间完全不碰。
+// 排查启动失败时置 BENCH_KEEP_LOGS=1，输出会落回 logPath。
+const keepLogs = process.env.BENCH_KEEP_LOGS === "1";
+
 async function startTarget(
   command: readonly string[],
   cwd: string,
   logPath: string,
-  pattern: RegExp,
+  port: number,
+  portVariable: string,
 ): Promise<StartedTarget> {
-  const log = openSync(logPath, "w");
+  const sink = openSync(keepLogs ? logPath : "/dev/null", "w");
   const child = spawn(nodeExecutable, [...command], {
     cwd,
-    stdio: ["ignore", "ignore", log],
-    env: { ...process.env },
+    stdio: ["ignore", sink, sink],
+    env: { ...process.env, [portVariable]: String(port) },
   });
   // 子进程已经拿到自己那份 fd，父进程这一份立刻关掉，免得测完还占着。
-  closeSync(log);
-  const url = await waitForListen(child, logPath, pattern);
-  return { child, baseUrl: url.replace(/\/$/, "") };
+  closeSync(sink);
+  await waitForPort(port, child);
+  return { child, baseUrl: `http://127.0.0.1:${port}` };
 }
 
 async function measureTarget(baseUrl: string): Promise<Record<string, LoadResult>> {
@@ -122,7 +159,8 @@ try {
     [join(e2eRoot, "bench", "bare-server.ts")],
     project.projectRoot,
     join(project.projectRoot, "bench-bare.log"),
-    /\[bare\] listening on (http:\/\/[^\s]+)/,
+    await reservePort(),
+    "BARE_SERVER_PORT",
   );
   let bareResults: Record<string, LoadResult>;
   let calibration: GeneratorCalibration;
@@ -144,7 +182,9 @@ try {
     [join(project.projectRoot, "dist", "main.mjs")],
     project.projectRoot,
     join(project.projectRoot, "bench-reforce.log"),
-    /listening on (http:\/\/[^"\s]+)/,
+    await reservePort(),
+    // 夹具的 WebServerConfig 是 ConfigProperties("webServer", …)，端口经环境层进来。
+    "WEB_SERVER_PORT",
   );
   let reforceResults: Record<string, LoadResult>;
   try {

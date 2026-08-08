@@ -37,10 +37,12 @@ const server = createServer((request, response) => {
   response.end();
 });
 
-server.listen(0, () => {
+// 端口由压测父进程先占后放再交下来（#371）：就绪判据从"日志里正则出监听地址"换成"这个端口
+// 能连上"，被测进程的输出因此可以整个丢掉，请求日志的落盘成本不再被算进框架税。
+server.listen(Number(process.env.BARE_SERVER_PORT ?? 0), "127.0.0.1", () => {
   const address = server.address();
   if (address === null || typeof address === "string") {
     throw new Error("The bare baseline must listen on a TCP address.");
   }
-  process.stderr.write(`[bare] listening on http://localhost:${address.port}/\n`);
+  process.stderr.write(`[bare] listening on http://127.0.0.1:${address.port}/\n`);
 });
