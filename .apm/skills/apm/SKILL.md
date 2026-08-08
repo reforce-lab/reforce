@@ -14,12 +14,12 @@ description: 管理本仓库的 AI 上下文资产（instruction / skill / comma
 
 ## 资产类型与位置
 
-| 资产 | 位置 | 触发方式 | 说明 |
-|---|---|---|---|
-| instruction / rule | `.apm/instructions/*.md` | 强制常驻 | frontmatter 的 `applyTo` glob 控制生效范围；`applyTo: "**"` 会全量编进 AGENTS.md，注意控制篇幅 |
-| skill / command | `.apm/skills/<name>/SKILL.md` | frontmatter 决定 | 模型可自动触发 = skill；仅手动触发 = command。两者是同一种资产，不单列 prompt 类型 |
-| MCP | `apm.yml` → `dependencies.mcp` | 运行时挂载 | `apm install` 写入各 runtime 的 MCP 配置 |
-| LSP | `apm.yml` → `dependencies.lsp` | 运行时挂载 | `apm install` 生成 `.lsp.json`（Claude Code）等。当前声明：tsgo（`node_modules/.bin/tsc --lsp --stdio`，即 TS7 原生 LSP） |
+| 资产               | 位置                           | 触发方式         | 说明                                                                                                                      |
+|--------------------|--------------------------------|------------------|---------------------------------------------------------------------------------------------------------------------------|
+| instruction / rule | `.apm/instructions/*.md`       | 强制常驻         | frontmatter 的 `applyTo` glob 控制生效范围；`applyTo: "**"` 会全量编进 AGENTS.md，注意控制篇幅                            |
+| skill / command    | `.apm/skills/<name>/SKILL.md`  | frontmatter 决定 | 模型可自动触发 = skill；仅手动触发 = command。两者是同一种资产，不单列 prompt 类型                                        |
+| MCP                | `apm.yml` → `dependencies.mcp` | 运行时挂载       | `apm install` 写入各 runtime 的 MCP 配置                                                                                  |
+| LSP                | `apm.yml` → `dependencies.lsp` | 运行时挂载       | `apm install` 生成 `.lsp.json`（Claude Code）等。当前声明：tsgo（`node_modules/.bin/tsc --lsp --stdio`，即 TS7 原生 LSP） |
 
 第三方 skill / 包用 `apm install <pkg>` 安装，不手动拷贝。
 
