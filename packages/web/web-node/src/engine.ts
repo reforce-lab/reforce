@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
 import { Injectable, type OnContextClose } from "@reforce/core";
-import type { RouteResponse } from "@reforce/web-core";
+import type { IncomingRequest, RouteResponse } from "@reforce/web-core";
 import type {
   WebApplication,
   WebApplicationHandle,
@@ -26,6 +26,51 @@ function toHeaders(request: IncomingMessage): Headers {
     }
   }
   return headers;
+}
+
+// 每请求入口对象（#341）。此前这里无条件走 toRequest：headersDistinct 全量展开 + 逐条
+// `headers.append()`（每条过一遍 WebIDL 的 ByteString 校验）+ `new Request`，实测约 1.5µs，
+// 而 `GET /health` 一个请求头都不读——这份工作的产出被整个丢弃。
+//
+// 写成类（原型方法）而不是带闭包的对象字面量：后者每请求 3 次分配（对象 + 2 个闭包），
+// 前者 1 次，且调用点保持单态。
+class NodeIncomingRequest implements IncomingRequest {
+  private standardRequest: Request | undefined;
+
+  constructor(
+    private readonly raw: IncomingMessage,
+    readonly method: string,
+    // 引擎为了路由匹配已经解析过这一个 URL，直接交出去，核心不再重复解析（#341）。
+    private readonly target: URL,
+  ) {}
+
+  url(): URL {
+    return this.target;
+  }
+
+  header(name: string): string | null {
+    return headerValue(this.raw, name);
+  }
+
+  standard(): Request {
+    // 必须缓存：同一请求内两次读 context.request 若拿到两个 Request，body 会被重复消费。
+    this.standardRequest ??= toRequest(this.raw, this.method, this.target);
+    return this.standardRequest;
+  }
+}
+
+// node 把头名小写化后存进 `headers`，所以按小写名一次哈希查找就到。toLowerCase 对本来就是
+// 全小写的 ASCII 串走 V8 的快路径、返回原串不分配；先试原名再回退小写反而更慢——头**不存在**
+// 时（`x-request-id` 的常态）两次查找都要做。
+//
+// 数组只在 set-cookie 与少数几个头上出现，按 HTTP 语义并成逗号串；框架自己不从请求侧读
+// set-cookie（IncomingRequest.header 的契约已写明这一例外）。
+function headerValue(raw: IncomingMessage, name: string): string | null {
+  const value = raw.headers[name.toLowerCase()];
+  if (value === undefined) {
+    return null;
+  }
+  return typeof value === "string" ? value : value.join(", ");
 }
 
 function toRequest(request: IncomingMessage, method: string, url: URL): Request {
@@ -174,7 +219,10 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       return;
     }
     // PreparedRoute.handle 契约保证永不 reject（@reforce/web-core/adapter），无需兜底
-    const result = await outcome.route.handle(toRequest(request, method, url), outcome.params);
+    const result = await outcome.route.handle(
+      new NodeIncomingRequest(request, method, url),
+      outcome.params,
+    );
     await writeResponse(response, result);
     // server.close() 只等已登记的连接结束：响应发完后若正在关停，主动断开让 close 能
     // resolve（Node 不会替我们把"关停开始后才变空闲"的 keep-alive 连接关掉）。

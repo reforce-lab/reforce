@@ -1,4 +1,6 @@
 import type { RequestScopeSeed } from "@reforce/core";
+import type { IncomingRequest } from "@/execution/incoming-request";
+import type { RequestContext } from "@/execution/request-context";
 import type { RouteResponse } from "@/execution/route-response";
 import type { RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
@@ -7,14 +9,6 @@ import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 // 在启动时一次性消费 WebApplication（每条 PreparedRoute 已完成校验器/序列化器/链的组装），
 // 把 method+path 灌进引擎原生注册面，热路径只调用 handle——框架抽象在热路径上不存在。
 // 本 milestone 只定义契约与引擎无关执行；真实引擎适配器（@reforce/web-node，node:http）是 #153 与 #207。
-
-export interface RouteMatch {
-  readonly method: HttpMethod;
-  // 路由模式（如 /users/:id）与本次匹配出的原始路径参数。
-  readonly path: string;
-  readonly params: Readonly<Record<string, string>>;
-  readonly meta: Readonly<Record<string, RouteMetaValue>>;
-}
 
 export interface PreparedRoute {
   readonly method: HttpMethod;
@@ -25,7 +19,14 @@ export interface PreparedRoute {
   // 返回的是内部货币 `RouteResponse`（#340），不是标准 `Response`：后者对 Uint8Array 源会
   // 强制建一条 ReadableStream，而引擎拿到之后第一件事就是把它拆回字节。适配器改为按
   // `body` 的实际形态分流即可，见下面的响应契约。
-  handle(request: Request, params: Readonly<Record<string, string>>): Promise<RouteResponse>;
+  //
+  // 收 `IncomingRequest` 而不是标准 `Request`（#341）：后者逼着每个引擎在调用之前把原生请求
+  // 整个翻译一遍（全量 Headers + new Request，实测约 1.5µs），而 `/health` 这类路由一个头都
+  // 不读。`RequestContext.request` 仍然是标准 `Request`（ADR 0006 W3 不变），只是没人读就不造。
+  handle(
+    request: IncomingRequest,
+    params: Readonly<Record<string, string>>,
+  ): Promise<RouteResponse>;
   // 启动期按 marker 读路由元数据（#232），供引擎的 route customizer 决定这条路由要不要额外的引擎
   // 原生能力（限流配置、preHandler、约束…）。与 RouteMatch.meta 分工：这里是"注册前查一次"，
   // 那里是"每请求播种回调拿到的快照"。
@@ -153,4 +154,13 @@ export interface WebEngineAdapter {
 
 // 每请求开启作用域 + 播种根请求 bean 的语义（ADR 0006 W7 / #151 的接线面）：播种目标必须是
 // 应用图里已注册的 request bean，具体根 bean 由应用或 starter 决定，引擎无关核心不指定。
-export type RequestSeeder = (request: Request, match: RouteMatch) => readonly RequestScopeSeed[];
+//
+// 收 `RequestContext` 而不是 `(Request, RouteMatch)` 两个参数（#341）。原来的形状让惰性对
+// **装了 seeder 的应用全部失效**：seeder 每请求必然被调用，第一个实参就逼着物化标准 Request，
+// 实测 full 变体因此一点没快（min 变体同一轮快了 15%）。而绝大多数根请求 bean 只是把这两样
+// 存起来，真正读的是 `context.url` 或某一个头。
+//
+// 顺带删掉 RouteMatch：method / path / params / meta 全在 context 上，它只是同一份事实的
+// 第二个形状，还得每请求现造一个对象字面量。要标准 Request 的 seeder 照读 `context.request`
+// 不误——只是这笔钱从"所有人默认付"变成"读的人才付"。
+export type RequestSeeder = (context: RequestContext) => readonly RequestScopeSeed[];

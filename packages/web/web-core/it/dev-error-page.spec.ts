@@ -2,6 +2,7 @@ import { isObject } from "radashi";
 import { afterEach, describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
 import { createErrorDispatcher } from "@/execution/error-dispatch";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError } from "@/http-errors";
@@ -34,8 +35,7 @@ function htmlContext(
     headers: { accept: "text/html,application/xhtml+xml", ...input.headers },
   });
   return new RequestContextState({
-    request,
-    url: new URL(request.url),
+    incoming: fromStandardRequest(request),
     method: "GET",
     path: "/users/:id",
     params: input.params ?? { id: "42" },

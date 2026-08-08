@@ -1,3 +1,4 @@
+import type { IncomingRequest } from "@/execution/incoming-request";
 import { metaLookup, type RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 
@@ -23,8 +24,7 @@ export interface RequestContext {
 }
 
 interface RequestContextInputs {
-  readonly request: Request;
-  readonly url: URL;
+  readonly incoming: IncomingRequest;
   readonly method: HttpMethod;
   readonly path: string;
   readonly params: Readonly<Record<string, string>>;
@@ -32,24 +32,37 @@ interface RequestContextInputs {
 }
 
 export class RequestContextState implements RequestContext {
-  readonly request: Request;
-  readonly url: URL;
   readonly method: HttpMethod;
   readonly path: string;
   readonly params: Readonly<Record<string, string>>;
   // 显式标注:不标注时推导类型指向 undici-types 的 Headers,d.ts 生成报 TS2883 不可移植。
   readonly responseHeaders: Headers = new Headers();
+  private readonly incoming: IncomingRequest;
   private readonly lookupMeta: ReturnType<typeof metaLookup>;
+  private urlSnapshot: URL | undefined;
   private querySnapshot: Readonly<Record<string, string>> | undefined;
   private capturedFailure: unknown;
 
   constructor(inputs: RequestContextInputs) {
-    this.request = inputs.request;
-    this.url = inputs.url;
+    this.incoming = inputs.incoming;
     this.method = inputs.method;
     this.path = inputs.path;
     this.params = inputs.params;
     this.lookupMeta = metaLookup(inputs.meta);
+  }
+
+  // 惰性（#341）：标准 Request 只在真有人读时才造，缓存归 IncomingRequest 的实现——同一请求
+  // 内必须是同一个实例，否则 body 会被重复消费。
+  get request(): Request {
+    return this.incoming.standard();
+  }
+
+  // URL 解析此前发生两次：引擎为了路由匹配解析一次，核心再 `new URL(request.url)` 解析同一个
+  // 字符串一次。现在引擎把它已经解析好的那一个直接交出来（#341），第二次彻底消失；引擎没有
+  // 现成 URL 时由它自己按需解析并缓存，`/health` 这类没人读 url 的路由一次都不解析。
+  get url(): URL {
+    this.urlSnapshot ??= this.incoming.url();
+    return this.urlSnapshot;
   }
 
   get query(): Readonly<Record<string, string>> {

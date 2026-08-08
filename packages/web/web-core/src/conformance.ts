@@ -1,4 +1,5 @@
 import type { PreparedRoute, WebApplication } from "@/adapter";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { absorbResponse, type RouteOutcome, respond } from "@/execution/route-response";
 import { createSlotExecutor } from "@/execution/slot-execution";
@@ -66,8 +67,10 @@ function route(
   return {
     method,
     path,
-    handle: async (request, params) => {
-      const outcome = await handle(request, params);
+    handle: async (incoming, params) => {
+      // 用例的 handler 按标准 Request 写（它们扮演的就是用户 handler），所以这里物化一次。
+      // 真实路由只在有人读 context.request 时才付这笔钱，harness 无条件付是它自己的选择。
+      const outcome = await handle(incoming.standard(), params);
       return outcome instanceof Response ? absorbResponse(outcome, new Headers()) : outcome;
     },
     meta: () => undefined,
@@ -107,8 +110,7 @@ async function requestBody(request: Request, params: Readonly<Record<string, str
     return formDataToRecord(await request.formData());
   }
   const context = new RequestContextState({
-    request,
-    url: new URL(request.url),
+    incoming: fromStandardRequest(request),
     method: "POST",
     path: "/echo-body",
     params,
@@ -151,6 +153,34 @@ function countingStream(state: { produced: number }, limit: number): ReadableStr
     },
   });
 }
+
+// IncomingRequest 的引擎侧义务（#341）。这条路由**绕开**上面的 route() 帮手：那个帮手第一件
+// 事就是 incoming.standard()，正好把要测的东西抹掉。框架自己在热路径上只用 method / url() /
+// header() 三样（路由日志、请求 id），标准 Request 只在用户读 context.request 时才造——所以
+// 这三样在每个引擎上都必须独立成立，不能靠"反正 standard() 是对的"顺带保证。
+const incomingProbe: PreparedRoute = {
+  method: "GET",
+  path: "/incoming",
+  handle: (incoming) => {
+    const url = incoming.url();
+    const first = incoming.standard();
+    const second = incoming.standard();
+    const body = JSON.stringify({
+      method: incoming.method,
+      pathname: url.pathname,
+      query: url.searchParams.get("q"),
+      lower: incoming.header("x-probe"),
+      mixedCase: incoming.header("X-Probe"),
+      absent: incoming.header("x-not-sent"),
+      multi: incoming.header("x-multi"),
+      // 缓存是硬约束而不是优化：两次读 context.request 若拿到两个 Request，body 会被重复消费。
+      cached: first === second,
+    });
+    const headers = new Headers({ "content-type": "application/json" });
+    return Promise.resolve(respond(headers, 200, body));
+  },
+  meta: () => undefined,
+};
 
 interface ConformanceFixtures {
   readonly application: WebApplication;
@@ -228,9 +258,20 @@ function fixtures(): ConformanceFixtures {
         );
       }),
       route("GET", "/flood", () => Promise.resolve(new Response(countingStream(flood, 10_000)))),
+      incomingProbe,
     ],
   };
   return { application, flood, gate, handlerReached };
+}
+
+// probeIncoming 收的要么是 base（自动补 /incoming），要么是已经拼好 query 的完整 URL。
+async function probeIncoming(target: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  const url = target.includes("/incoming") ? target : `${target}/incoming`;
+  const value: unknown = await (await fetch(url, init)).json();
+  if (typeof value !== "object" || value === null) {
+    fail("the /incoming probe must answer a JSON object");
+  }
+  return { ...value };
 }
 
 export function adapterConformanceCases(
@@ -347,6 +388,51 @@ export function adapterConformanceCases(
         const response = await fetch(`${base}/echo-headers`, { headers });
 
         assertEqual(await response.json(), { multi: "one, two" }, "x-multi");
+      }),
+    ),
+
+    // —— IncomingRequest（#341）——
+
+    conformanceCase("the incoming request answers a header by name, case-insensitively", () =>
+      withServer(async (base) => {
+        const probe = await probeIncoming(base, { headers: { "X-Probe": "seen" } });
+
+        assertEqual(probe.lower, "seen", "lookup by the lowercase name");
+        assertEqual(probe.mixedCase, "seen", "lookup by a mixed-case name");
+        assertEqual(probe.absent, null, "a header that was not sent");
+      }),
+    ),
+
+    // 与 /echo-headers 同一份语义，区别是这里不经过标准 Headers：引擎必须自己把同名多值
+    // 并成逗号串，否则换引擎就换了 handler 看到的值。
+    conformanceCase("the incoming request joins repeated headers with a comma", () =>
+      withServer(async (base) => {
+        const headers = new Headers();
+        headers.append("x-multi", "one");
+        headers.append("x-multi", "two");
+
+        const probe = await probeIncoming(base, { headers });
+
+        assertEqual(probe.multi, "one, two", "x-multi");
+      }),
+    ),
+
+    conformanceCase("the incoming request exposes the parsed request target", () =>
+      withServer(async (base) => {
+        const probe = await probeIncoming(`${base}/incoming?q=42`);
+
+        assertEqual(probe.method, "GET", "method");
+        assertEqual(probe.pathname, "/incoming", "pathname");
+        assertEqual(probe.query, "42", "query parameter");
+      }),
+    ),
+
+    // 缓存不是优化：两次读 context.request 若拿到两个 Request，body 会被重复消费。
+    conformanceCase("the incoming request caches the standard Request it materializes", () =>
+      withServer(async (base) => {
+        const probe = await probeIncoming(base);
+
+        assertEqual(probe.cached, true, "standard() identity across two reads");
       }),
     ),
 

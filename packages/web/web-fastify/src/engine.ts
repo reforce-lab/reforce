@@ -15,7 +15,7 @@ import {
   type FastifyRouteCustomizer,
   reservedRouteOptionKeys,
 } from "@/bridges";
-import { requestUrl, toRequest } from "@/request";
+import { FastifyIncomingRequest, requestUrl } from "@/request";
 import type { WebFastifyServeSettings } from "@/settings";
 
 // fastify 引擎适配器（#238）：reforce 的路由处理函数就是一个普通的 fastify handler，走 fastify 正常的
@@ -260,7 +260,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
           }
           // PreparedRoute.handle 契约保证永不 reject（@reforce/web-core/adapter），无需兜底
           const result = await route.handle(
-            toRequest(request.raw, url, request.body),
+            new FastifyIncomingRequest(request.raw, url, request.body),
             request.params as Readonly<Record<string, string>>,
           );
           return await transfer(reply, result);

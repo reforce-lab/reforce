@@ -6,6 +6,7 @@ import type {
 } from "@reforce/core";
 import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId, WebRequestFields } from "@/execution/request-fields";
 import type { RouteResponse } from "@/execution/route-response";
@@ -124,7 +125,10 @@ describe("createWebApplication onion execution", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(await readRouteBody(response)).toBe("handled");
     expect(log).toEqual(["outer:before", "inner:before", "inner:after", "outer:after"]);
@@ -161,7 +165,10 @@ describe("createWebApplication onion execution", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(403);
     expect(controller.handled).toBeUndefined();
@@ -212,7 +219,10 @@ describe("createWebApplication onion execution", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(500);
     expect(seen).toEqual([500]);
@@ -276,7 +286,7 @@ describe("createWebApplication onion execution", () => {
       throw new Error("Expected one prepared route");
     }
 
-    await route.handle(new Request("https://reforce.test/probe"), {});
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
 
     expect(captured).toBeInstanceOf(MiddlewareReenteredError);
     expect(captured).toMatchObject({
@@ -342,7 +352,7 @@ describe("createWebApplication onion execution", () => {
       throw new Error("Expected one prepared route");
     }
 
-    await route.handle(new Request("https://reforce.test/probe"), {});
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
 
     expect(captured).toMatchObject({ method: "GET", path: "/probe" });
     expect(captured instanceof Error ? captured.message : "").toContain("GET /probe");
@@ -378,7 +388,10 @@ describe("createWebApplication onion execution", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(500);
   });
@@ -441,7 +454,10 @@ describe("createWebApplication route assembly", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), { id: "1" });
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      { id: "1" },
+    );
 
     expect(order).toEqual(["middleware", "decode", "handler"]);
     expect(await readRouteJson(response)).toEqual({ id: "1" });
@@ -468,7 +484,10 @@ describe("createWebApplication route assembly", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await route.handle(new Request("https://reforce.test/probe?page=x"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe?page=x")),
+      {},
+    );
 
     expect(response.status).toBe(400);
     expect(controller.handled).toBeUndefined();
@@ -556,7 +575,10 @@ describe("createWebApplication response encoding", () => {
       },
     });
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(200);
     expect(await readRouteJson(response)).toEqual({ id: "42" });
@@ -566,7 +588,10 @@ describe("createWebApplication response encoding", () => {
   test("a plain return value on a passthrough route becomes a 500", async () => {
     const route = preparedWith({});
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(500);
   });
@@ -575,7 +600,10 @@ describe("createWebApplication response encoding", () => {
   test("a free-form route serializes the raw value with its declared status", async () => {
     const route = preparedWith({ response: { kind: "free-form", status: 200 } });
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(200);
     expect(await readRouteJson(response)).toEqual({ id: "42", secret: "drop me" });
@@ -628,7 +656,10 @@ describe("createWebApplication response header merging", () => {
   test("merges context response headers into an encoded response, set-cookie one per line", async () => {
     const route = preparedFor("plain", (value) => value);
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(200);
     expect(response.headers.get("x-audit-id")).toBe("abc");
@@ -643,7 +674,10 @@ describe("createWebApplication response header merging", () => {
   test("applies the context headers to a handler-returned Response too", async () => {
     const route = preparedFor("raw");
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(await readRouteBody(response)).toBe("raw");
     expect(response.headers.get("x-audit-id")).toBe("abc");
@@ -654,7 +688,10 @@ describe("createWebApplication response header merging", () => {
   test("applies the context headers to an error response too", async () => {
     const route = preparedFor("failing", (value) => value);
 
-    const response = await route.handle(new Request("https://reforce.test/probe"), {});
+    const response = await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(response.status).toBe(500);
     expect(response.headers.get("x-audit-id")).toBe("abc");
@@ -696,9 +733,12 @@ describe("WebRequestFields", () => {
       throw new Error("Expected one prepared route");
     }
 
-    await route.handle(new Request("https://reforce.test/orders/42", { method: "POST" }), {
-      id: "42",
-    });
+    await route.handle(
+      fromStandardRequest(new Request("https://reforce.test/orders/42", { method: "POST" })),
+      {
+        id: "42",
+      },
+    );
 
     // path 是编译期的路由模式而不是 /orders/42：字段要能聚合，具体路径基数无界。
     // requestId 是 #303 的第三元组成员,与响应头同值。
@@ -722,7 +762,7 @@ describe("WebRequestFields", () => {
       throw new Error("Expected one prepared route");
     }
 
-    await route.handle(new Request("https://reforce.test/probe"), {});
+    await route.handle(fromStandardRequest(new Request("https://reforce.test/probe")), {});
 
     expect(source.fields()).toBeUndefined();
   });
@@ -789,13 +829,17 @@ describe("createWebApplication request id", () => {
     const route = preparedOutcome(invokeOf("ok"));
 
     const echoed = await route.handle(
-      new Request("https://reforce.test/probe", { headers: { "x-request-id": "client-1" } }),
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "client-1" } }),
+      ),
       {},
     );
     expect(echoed.headers.get("x-request-id")).toBe("client-1");
 
     const regenerated = await route.handle(
-      new Request("https://reforce.test/probe", { headers: { "x-request-id": "has space" } }),
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "has space" } }),
+      ),
       {},
     );
     expect(regenerated.headers.get("x-request-id")).toMatch(uuidPattern);
@@ -823,9 +867,11 @@ describe("createWebApplication request id", () => {
     for (const overrides of cases) {
       const route = preparedOutcome(overrides);
       const response = await route.handle(
-        new Request("https://reforce.test/probe?page=x", {
-          headers: { "x-request-id": "stamp-me" },
-        }),
+        fromStandardRequest(
+          new Request("https://reforce.test/probe?page=x", {
+            headers: { "x-request-id": "stamp-me" },
+          }),
+        ),
         {},
       );
       expect(response.headers.get("x-request-id")).toBe("stamp-me");
@@ -852,7 +898,9 @@ describe("createWebApplication request id", () => {
     });
 
     const response = await route.handle(
-      new Request("https://reforce.test/probe", { headers: { "x-request-id": "outer-path" } }),
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "outer-path" } }),
+      ),
       {},
     );
 
@@ -886,7 +934,9 @@ describe("createWebApplication request id", () => {
     }
 
     const response = await prepared.handle(
-      new Request("https://reforce.test/probe", { headers: { "x-request-id": "true-id" } }),
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "true-id" } }),
+      ),
       {},
     );
 
@@ -938,7 +988,10 @@ describe("createWebApplication request id", () => {
       throw new Error("Expected one prepared route");
     }
 
-    const response = await prepared.handle(new Request("https://reforce.test/probe"), {});
+    const response = await prepared.handle(
+      fromStandardRequest(new Request("https://reforce.test/probe")),
+      {},
+    );
 
     expect(await readRouteBody(response)).toBe("proxied");
     // 旧实现在这里盖不上章（用户 Response 的 headers.set 抛，被 try/catch 吞掉），断言是
@@ -962,7 +1015,9 @@ describe("createWebApplication request id", () => {
     const route = preparedOutcome(invokeOf("ok"), { logger });
 
     const response = await route.handle(
-      new Request("https://reforce.test/probe", { headers: { "x-request-id": "log-me" } }),
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "log-me" } }),
+      ),
       {},
     );
 
@@ -989,7 +1044,9 @@ describe("createWebApplication request id", () => {
     }
 
     await prepared.handle(
-      new Request("https://reforce.test/probe", { headers: { "x-request-id": "seeded" } }),
+      fromStandardRequest(
+        new Request("https://reforce.test/probe", { headers: { "x-request-id": "seeded" } }),
+      ),
       {},
     );
 

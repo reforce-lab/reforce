@@ -2,6 +2,7 @@ import { isObject } from "radashi";
 import { afterEach, describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
 import { createErrorDispatcher } from "@/execution/error-dispatch";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError, defineHttpError, HttpError } from "@/http-errors";
@@ -9,8 +10,7 @@ import { readRouteBody, readRouteJson } from "../support/route-response";
 
 function requestContext(): RequestContextState {
   return new RequestContextState({
-    request: new Request("https://reforce.test/users"),
-    url: new URL("https://reforce.test/users"),
+    incoming: fromStandardRequest(new Request("https://reforce.test/users")),
     method: "GET",
     path: "/users",
     params: {},
@@ -288,8 +288,7 @@ describe("dev error page negotiation keeps the JSON path", () => {
       ...(input.accept === undefined ? {} : { headers: { accept: input.accept } }),
     });
     return new RequestContextState({
-      request,
-      url: new URL(request.url),
+      incoming: fromStandardRequest(request),
       method: input.method ?? "GET",
       path: "/users",
       params: {},
