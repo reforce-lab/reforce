@@ -130,6 +130,90 @@ describe("production application build", () => {
   });
 });
 
+// —— dev 错误页「生产不含」（#279）——
+// 两道闸：optimization.nodeEnv 钉死让 web 里的 NODE_ENV 守卫折叠成死代码；
+// NormalModuleReplacementPlugin 把 web/dist/execution 上下文里的 ./dev-error-page.js 替换成
+// 空 stub。这里用仿真 @reforce/web dist 布局的项目直接测第二道闸——故意不给动态 import 套
+// NODE_ENV 守卫，让替换成为唯一能把真身挡在产物外的机制。
+
+const devErrorPageApplicationTree = {
+  ".reforce": {
+    generated: {
+      "bootstrap.ts": [
+        'import { dispatch } from "../../web/dist/execution/error-dispatch.js";',
+        "",
+        "export async function bootstrap() {",
+        "  await dispatch();",
+        "  return { close: async () => undefined };",
+        "}",
+        "",
+      ].join("\n"),
+    },
+  },
+  web: {
+    dist: {
+      execution: {
+        "error-dispatch.js": [
+          "export async function dispatch() {",
+          '  return await import("./dev-error-page.js");',
+          "}",
+          "",
+        ].join("\n"),
+        // 哨兵词取渲染器的传递依赖名，不用裸 "youch"——生产产物保留注释，中文注释提到
+        // 渲染器名会误命中。
+        "dev-error-page.js": [
+          'export const sentinel = "@speed-highlight/core youch-core";',
+          "",
+        ].join("\n"),
+      },
+    },
+  },
+  src: { "application.ts": "export {};\n" },
+  "tsconfig.json": `${JSON.stringify({
+    compilerOptions: {
+      target: "ESNext",
+      module: "ESNext",
+      moduleResolution: "Bundler",
+      strict: true,
+      experimentalDecorators: false,
+      emitDecoratorMetadata: false,
+    },
+    include: ["src", ".reforce/generated/**/*.ts"],
+  })}\n`,
+};
+
+describe("production dev error page exclusion", () => {
+  let temporaryProject: TemporaryProject | undefined;
+
+  afterEach(async () => {
+    await temporaryProject?.cleanup();
+  });
+
+  test("replaces the web dev error page module with an empty stub", async () => {
+    temporaryProject = await createTemporaryProject(devErrorPageApplicationTree);
+    const compiler = createCompiler();
+    const resolution = await compiler.resolveProject({
+      projectDirectory: temporaryProject.projectRoot,
+    });
+    if (resolution.status === "failure") {
+      throw new Error(resolution.diagnostics[0].message);
+    }
+    const stagingDirectory = join(temporaryProject.projectRoot, "dist.staging-test");
+    await mkdir(stagingDirectory);
+
+    const files = await buildProductionDist({
+      project: resolution.project,
+      stagingDirectory,
+    });
+
+    const output = (
+      await Promise.all(files.map((file) => readFile(join(stagingDirectory, file), "utf8")))
+    ).join("\n");
+    expect(output).not.toContain("@speed-highlight/core");
+    expect(output).not.toContain("youch-core");
+  }, 60_000);
+});
+
 // —— 栈帧重定位（RFC 0011 D6，#242）——
 // 这条链有五环：nosources-source-map、devtoolModuleFilenameTemplate、两个子进程的
 // --enable-source-maps、stats 的伴生产物声明，以及 rspack 把 SWC 的逐模块 map 串成 bundle map

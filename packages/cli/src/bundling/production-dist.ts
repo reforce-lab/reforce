@@ -165,6 +165,12 @@ export async function buildProductionDist(input: {
     "bootstrap.ts",
   );
   const productionRuntimePath = resolveRuntimeEntryPath("production-runtime");
+  const devErrorPageStubPath = join(
+    input.project.projectRoot,
+    ".reforce",
+    "virtual",
+    "dev-error-page-stub.mjs",
+  );
   const rsbuild = await createRsbuild({
     cwd: input.project.projectRoot,
     callerName: "reforce-cli",
@@ -203,9 +209,26 @@ export async function buildProductionDist(input: {
           // 而 Node 的 --enable-source-maps 按「生成文件所在目录」解析相对 source，于是每条
           // 帧都指向 dist/src/… 这种不存在的路径。写成绝对路径后重定位才落到真实源文件。
           config.output.devtoolModuleFilenameTemplate = "[absolute-resource-path]";
+          config.optimization ??= {};
+          // dev 错误页「生产不含」的第一道闸（#279）：web 里通往 dev-error-page 的动态 import
+          // 藏在 `process.env.NODE_ENV !== "production"` 后面，靠 DefinePlugin 折叠成死代码
+          // 整块消失。今天 mode: "production" 隐式给出同一值，显式钉死是防 mode 与 nodeEnv
+          // 的绑定关系在 rsbuild/rspack 升级中悄悄漂移。
+          config.optimization.nodeEnv = "production";
           config.plugins.push(
             new rspack.experiments.VirtualModulesPlugin({
               [virtualEntryPath]: renderProductionEntry(),
+              [devErrorPageStubPath]: "export {};\n",
+            }),
+            // 第二道闸（#279）：即使第一道的折叠失效，生产产物里的 dev-error-page 也被替换成
+            // 上面的空 stub——「生产不含渲染器」从 DCE 承诺升级为构建配置承诺。上下文限定
+            // @reforce/web 的 dist/execution（workspace 与发布布局的公共尾段），不误伤用户
+            // 自己的同名文件。stub 导出为空：万一真被引用，解构得 undefined、调用即抛，落进
+            // error-dispatch 的降级 catch，仍守住 problem+json。
+            new rspack.NormalModuleReplacementPlugin(/(?:^|[\\/])dev-error-page\.js$/u, (data) => {
+              if (toPortablePath(data.context).endsWith("web/dist/execution")) {
+                data.request = devErrorPageStubPath;
+              }
             }),
             new rspack.NormalModuleReplacementPlugin(
               /^reforce:production-entry$/u,
