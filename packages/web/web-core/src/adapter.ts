@@ -1,4 +1,5 @@
 import type { RequestScopeSeed } from "@reforce/core";
+import type { RouteResponse } from "@/execution/route-response";
 import type { RouteMarker } from "@/routing/route-marker";
 import type { HttpMethod, RouteMetaValue } from "@/routing/vocabulary";
 
@@ -19,8 +20,12 @@ export interface PreparedRoute {
   readonly method: HttpMethod;
   readonly path: string;
   // 引擎适配器的唯一每请求入口：内部依次完成 请求作用域开启（含播种）→ 洋葱链 → 校验 →
-  // handler → 序列化 → 错误处理器兜底。永不 reject——一切错误在边界内换成 Response。
-  handle(request: Request, params: Readonly<Record<string, string>>): Promise<Response>;
+  // handler → 序列化 → 错误处理器兜底。永不 reject——一切错误在边界内换成响应。
+  //
+  // 返回的是内部货币 `RouteResponse`（#340），不是标准 `Response`：后者对 Uint8Array 源会
+  // 强制建一条 ReadableStream，而引擎拿到之后第一件事就是把它拆回字节。适配器改为按
+  // `body` 的实际形态分流即可，见下面的响应契约。
+  handle(request: Request, params: Readonly<Record<string, string>>): Promise<RouteResponse>;
   // 启动期按 marker 读路由元数据（#232），供引擎的 route customizer 决定这条路由要不要额外的引擎
   // 原生能力（限流配置、preHandler、约束…）。与 RouteMatch.meta 分工：这里是"注册前查一次"，
   // 那里是"每请求播种回调拿到的快照"。
@@ -48,17 +53,22 @@ export interface WebApplication {
   readonly logNotFound?: (miss: { readonly method: string; readonly path: string }) => void;
 }
 
-// 响应出站的缓冲/流式判据（#232）：`handle` 返回的 Response 带 `content-length` 即"整体已在内存中、
-// 可安全缓冲"，适配器可以走 Buffer 路径（etag、压缩这类需要完整体的能力因此可用）；不带即
-// 按流式处理，适配器必须走流并保持背压。三条边界一起看才不会把措辞说过头：
+// 响应出站的缓冲/流式判据（#232 → #340 改由类型承载）：判据不再是「有没有 content-length
+// 这个头」，而是 `RouteResponse.body` 的**实际形态**——
 //
-// 1. handler 直接返回的 raw Response 自己带 `content-length` 是合法的，语义同样成立——不得
-//    理解成"带 = 由 reforce 序列化产生"。
-// 2. raw Response 有完整体却不带该头（`new Response("ok")`、`Response.json(x)` 都不自动带）
-//    只损失优化，不损失正确性。
-// 3. 适配器以该头的**存在**为信号，出站长度以实际字节为准，**不得信任 handler 手写的数值**。
+// - `Uint8Array` / `string`：整体已在内存中，适配器必须走引擎原生直写（`res.end(body)` /
+//   `reply.send(body)`），不得再包成流。etag、压缩这类需要完整体的能力因此可用。
+// - `ReadableStream`：真流，适配器必须走桥接并保持背压。
+// - `null`：空体。
 //
-// 另：RFC 9110 规定 204/304 不得带该头，所以契约不是"所有完整体响应都必须带"。
+// 这比看头可靠：头是可以写错的（handler 走逃生口时可以手写一个与实际字节不符的
+// content-length，见 #346），而形态不会。
+//
+// 两条仍然成立的边界：
+// 1. handler 直接返回的 raw Response 是逃生口，框架**吸收**它——读 status/headers，body 连
+//    引用搬走且绝不消费。`new Response("ok")` 的 body 是 undici 造的流，因此仍走流式路径；
+//    要非 JSON 又不想付流的成本，用 `respond()` 显式构造。
+// 2. RFC 9110 规定 204/304 不得带 content-length，所以空体路径不写这个头。
 
 // 引擎实际监听到的地址（RFC 0011 L6/D2，#250）。端口 0（临时端口）时这是唯一的实际端口
 // 出口，所以它必须从引擎流出来，而不是由引擎自己打一行。

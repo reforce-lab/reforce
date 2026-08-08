@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RequestContext } from "@/execution/request-context";
+import { type RouteResponse, respond } from "@/execution/route-response";
 import { ErrorHandler, Middleware, Use } from "@/routing/decorators";
 import type { ErrorHandlerHandle, MiddlewareHandle, RouteErrorHandler } from "@/routing/middleware";
 
@@ -9,7 +10,7 @@ import type { ErrorHandlerHandle, MiddlewareHandle, RouteErrorHandler } from "@/
 // （context/it/public-api.spec.ts 同款做法，Issue #106）。
 
 class Guard {
-  handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+  handle(context: RequestContext, next: () => Promise<RouteResponse>): Promise<RouteResponse> {
     void context;
     return next();
   }
@@ -115,8 +116,11 @@ describe("role decorators stay runtime no-ops while tightening types", () => {
     const guard: RouteErrorHandler | FieldGuard = new FieldGuard();
 
     expect(typeof Reflect.get(guard, "handle")).toBe("function");
-    await expect(
-      new FieldGuard().handle({} as RequestContext, async () => new Response("inner")),
-    ).resolves.toBeInstanceOf(Response);
+    // next() 交出的是内部货币（#340）；这条用例证的是「字段形态的 handle 满足运行时探测的
+    // 洋葱契约」，与响应类型无关，所以喂一条最小的 RouteResponse 即可。
+    const inner = respond(new Headers(), 200, "inner");
+    await expect(new FieldGuard().handle({} as RequestContext, async () => inner)).resolves.toBe(
+      inner,
+    );
   });
 });

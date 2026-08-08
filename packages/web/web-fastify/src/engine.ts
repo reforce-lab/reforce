@@ -1,6 +1,7 @@
 import type { IncomingMessage, Server } from "node:http";
 import { Readable } from "node:stream";
 import { Injectable, type OnContextClose } from "@reforce/core";
+import type { RouteResponse } from "@reforce/web-core";
 import type {
   PreparedRoute,
   WebApplication,
@@ -30,20 +31,29 @@ import type { WebFastifyServeSettings } from "@/settings";
 // 所以走"显式搬运"：状态码、头、set-cookie 逐条搬到 reply 上，body 按 content-length 选
 // Buffer / 流。
 
-function bodyOf(result: Response): Promise<Buffer> | Readable | null {
-  if (result.body === null) {
+// 缓冲/流式判据现在是 body 的**实际形态**（#340），不再是「有没有 content-length 这个头」：
+// 字节/字符串即「整体已在内存中」，直接交给 fastify 原生通道（etag / 压缩这类需要完整体的
+// 能力因此仍可用）；只有真的是流才走桥接并保持背压。
+//
+// 此前这里对缓冲响应做的是 `result.arrayBuffer()`——把序列化器刚包成流的字节再读回来。
+// 而序列化器一开始就不必包：`new Response(bytes)` 对 Uint8Array 源会强制建一条 ReadableStream，
+// 实测这一造一拆占 min-fastify 忙时 CPU 的四分之一（undici 14.9% + web streams 5.8%）。
+function bodyOf(result: RouteResponse): Buffer | string | Readable | null {
+  const { body } = result;
+  if (body === null) {
     return null;
   }
-  // content-length 是 WebEngineAdapter 契约的缓冲/流式判据（见 adapter.ts）：带它即"整体已在
-  // 内存中、可安全缓冲"，走 Buffer 路径让 etag / 压缩这类需要完整体的能力可用；不带即流式，
-  // 必须走流并保持背压。以该头的**存在**为信号，长度以实际字节为准——不信任写进来的数值。
-  if (result.headers.get("content-length") !== null) {
-    return result.arrayBuffer().then((bytes) => Buffer.from(bytes));
+  if (typeof body === "string") {
+    return body;
   }
-  return Readable.fromWeb(result.body);
+  if (body instanceof Uint8Array) {
+    // Buffer.from(ArrayBuffer) 是**视图**不是拷贝，共享底层内存。
+    return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+  }
+  return Readable.fromWeb(body);
 }
 
-async function transfer(reply: FastifyReply, result: Response): Promise<FastifyReply> {
+async function transfer(reply: FastifyReply, result: RouteResponse): Promise<FastifyReply> {
   reply.code(result.status);
   result.headers.forEach((value, name) => {
     // set-cookie 必须逐条出站，Headers 的 forEach 会并成单值，单独走 getSetCookie
@@ -56,7 +66,7 @@ async function transfer(reply: FastifyReply, result: Response): Promise<FastifyR
     reply.header("set-cookie", setCookies);
   }
   const body = bodyOf(result);
-  return reply.send(body === null ? undefined : await body);
+  return reply.send(body === null ? undefined : body);
 }
 
 // 两个上报点共用一份取值（RFC 0011 C7，#250）：契约要求 path 是原始请求目标去掉 query，

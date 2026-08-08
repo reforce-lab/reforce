@@ -1,5 +1,6 @@
 import type { PreparedRoute, WebApplication } from "@/adapter";
 import { RequestContextState } from "@/execution/request-context";
+import { absorbResponse, type RouteOutcome, respond } from "@/execution/route-response";
 import { createSlotExecutor } from "@/execution/slot-execution";
 import type { HttpMethod } from "@/routing/vocabulary";
 
@@ -51,8 +52,26 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
-function route(method: HttpMethod, path: string, handle: PreparedRoute["handle"]): PreparedRoute {
-  return { method, path, handle, meta: () => undefined };
+// 用例的 handler 写成返回标准 Response 是有意的——它们扮演的正是用户 handler 走逃生口那条
+// 路。真实管道里那个 Response 会被 serializeResponse 吸收，所以这里也吸收一次，否则套件
+// 测的就不是引擎真正会收到的东西。
+function route(
+  method: HttpMethod,
+  path: string,
+  handle: (
+    request: Request,
+    params: Readonly<Record<string, string>>,
+  ) => RouteOutcome | Promise<RouteOutcome>,
+): PreparedRoute {
+  return {
+    method,
+    path,
+    handle: async (request, params) => {
+      const outcome = await handle(request, params);
+      return outcome instanceof Response ? absorbResponse(outcome, new Headers()) : outcome;
+    },
+    meta: () => undefined,
+  };
 }
 
 // JSON body 用例走真实的槽位执行链而不是在 handler 里手搓解析：要证的正是"引擎交出来的
@@ -182,11 +201,13 @@ function fixtures(): ConformanceFixtures {
       route("GET", "/echo-headers", (request) =>
         Promise.resolve(Response.json({ multi: request.headers.get("x-multi") })),
       ),
+      // 缓冲路径必须用 `respond()` 造，不能用 `new Response(bytes, ...)`（#340）：后者是逃生口，
+      // undici 会把字节包成 ReadableStream，body 形态因此是「流」，这条用例就会静默改去覆盖
+      // 流式分支——引擎的原生直写分支反而一条用例都没有了。判据是 body 的形态，构造方式必须
+      // 与被测的分支对齐。
       route("GET", "/buffered", () => {
-        const bytes = new TextEncoder().encode("buffered");
-        return Promise.resolve(
-          new Response(bytes, { headers: { "content-length": String(bytes.byteLength) } }),
-        );
+        const headers = new Headers({ "content-type": "text/plain; charset=utf-8" });
+        return Promise.resolve(respond(headers, 200, new TextEncoder().encode("buffered")));
       }),
       // 首块立刻可读、其余卡在 gate 上：缓冲式引擎会让客户端等到 gate 释放才收到任何字节
       route("GET", "/trickle", () => {

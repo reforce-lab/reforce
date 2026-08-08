@@ -2,6 +2,7 @@ import {
   Middleware,
   type RequestContext,
   type RouteMiddleware,
+  type RouteResponse,
   UnauthorizedError,
 } from "@reforce/web-core";
 import type { AppConfig } from "@/config/app.config";
@@ -16,13 +17,17 @@ import type { AppConfig } from "@/config/app.config";
 export class ApiKeyMiddleware implements RouteMiddleware {
   constructor(private readonly config: AppConfig) {}
 
-  async handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+  async handle(
+    context: RequestContext,
+    next: () => Promise<RouteResponse>,
+  ): Promise<RouteResponse> {
     // 没配 API key 就整条放行——模板的便利，不是生产该有的行为。
     if (this.config.apiKey === undefined) {
       return await next();
     }
     if (context.request.headers.get("x-api-key") !== this.config.apiKey) {
-      // 这里也可以直接 return 一个 401 Response——不调 next() 就是短路。抛异常更省事：
+      // 这里也可以直接 return 一条 401（respond(context.responseHeaders, 401, body)）——不调
+      // next() 就是短路。抛异常更省事：
       // UnauthorizedError 自带 401，框架统一渲染成 problem+json，中间件不必自己拼响应。
       throw new UnauthorizedError("缺少或错误的 x-api-key。");
     }

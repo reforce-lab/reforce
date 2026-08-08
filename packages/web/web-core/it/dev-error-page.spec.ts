@@ -5,6 +5,7 @@ import { createErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError } from "@/http-errors";
+import { readRouteBody, readRouteJson } from "../test/support/route-response";
 
 // dev 错误页真渲染（#279）：渲染器要读 youch 的模板资产，属 filesystem 行为，所以在 it/。
 // 协商矩阵里不触发渲染的 JSON 象限在 test/execution/error-dispatch.spec.ts。
@@ -48,7 +49,7 @@ describe("dev error page rendering", () => {
     const dispatch = createErrorDispatcher([]);
 
     const response = await dispatch(new ConflictError("greeting already exists"), htmlContext());
-    const page = await response.text();
+    const page = await readRouteBody(response);
 
     expect(response.status).toBe(409);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -68,7 +69,7 @@ describe("dev error page rendering", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("vary")).toBe("accept");
-    const body = await response.clone().text();
+    const body = await readRouteBody(response);
     expect(response.headers.get("content-length")).toBe(
       String(new TextEncoder().encode(body).length),
     );
@@ -83,7 +84,7 @@ describe("dev error page rendering", () => {
     });
 
     const response = await dispatch(error, htmlContext());
-    const page = await response.text();
+    const page = await readRouteBody(response);
 
     expect(response.status).toBe(400);
     expect(page).toContain("name is required");
@@ -101,7 +102,7 @@ describe("dev error page rendering", () => {
       { method: "GET", path: "/users/:id", requestId: "rid-dev-page" },
       () => dispatch(new Error("boom"), htmlContext()),
     );
-    const page = await response.text();
+    const page = await readRouteBody(response);
 
     expect(response.status).toBe(500);
     const errorId = records[0]?.fields?.errorId;
@@ -119,7 +120,7 @@ describe("dev error page rendering", () => {
     const response = await dispatch(new Error("boom"), htmlContext());
 
     expect(response.status).toBe(418);
-    expect(await response.text()).toBe("mine");
+    expect(await readRouteBody(response)).toBe("mine");
   });
 });
 
@@ -141,7 +142,7 @@ describe("dev error page injection resistance", () => {
         headers: { "x-injected": payload },
       }),
     );
-    const page = await response.text();
+    const page = await readRouteBody(response);
 
     expect(page).not.toContain(payload);
     // 载荷仍要以转义形态在场——「没渲染出来」和「被转义了」是两回事。
@@ -160,7 +161,7 @@ describe("dev error page injection resistance", () => {
       new ConflictError("taken"),
       htmlContext({ headers: { authorization: secret, "x-api-key": apiKey } }),
     );
-    const page = await response.text();
+    const page = await readRouteBody(response);
 
     expect(page).not.toContain(secret);
     expect(page).not.toContain(apiKey);
@@ -185,7 +186,10 @@ describe("dev error page degradation", () => {
 
     expect(response.status).toBe(500);
     expect(response.headers.get("content-type")).toBe("application/problem+json");
-    expect(await response.json()).toMatchObject({ status: 500, errorId: expect.any(String) });
+    expect(await readRouteJson(response)).toMatchObject({
+      status: 500,
+      errorId: expect.any(String),
+    });
   });
 
   test("a thrown string still renders a page instead of crashing", async () => {
@@ -193,7 +197,7 @@ describe("dev error page degradation", () => {
     const dispatch = createErrorDispatcher([]);
 
     const response = await dispatch("plain failure", htmlContext());
-    const page = await response.text();
+    const page = await readRouteBody(response);
 
     expect(response.status).toBe(500);
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
@@ -225,8 +229,8 @@ describe("dev error page isolation", () => {
     );
     const second = await dispatch(new ConflictError("taken"), htmlContext());
 
-    expect(await first.text()).toContain(firstOnly);
-    expect(await second.text()).not.toContain(firstOnly);
+    expect(await readRouteBody(first)).toContain(firstOnly);
+    expect(await readRouteBody(second)).not.toContain(firstOnly);
   });
 });
 
@@ -249,7 +253,7 @@ describe("dev error page status parity", () => {
       const json = await dispatch(item.error, htmlContext({ headers: { accept: "*/*" } }));
       expect(html.status).toBe(item.status);
       expect(json.status).toBe(item.status);
-      expect(isObject(await json.json())).toBe(true);
+      expect(isObject(await readRouteJson(json))).toBe(true);
     }
   });
 });

@@ -6,6 +6,7 @@ import type { ErrorMetadataRow } from "youch/types";
 import type { ProblemDescription } from "@/execution/error-dispatch";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId } from "@/execution/request-fields";
+import type { RouteResponse } from "@/execution/route-response";
 
 // dev 错误页渲染器（#279）：youch 的封装层。本模块只在 dev 链路被加载——生产构建里它被
 // CLI 替换成空 stub（cli/production-dist），错误分派侧还有 NODE_ENV 折叠与旗标两层门。
@@ -88,7 +89,7 @@ export interface RenderDevErrorPageInput {
   readonly problem: ProblemDescription;
 }
 
-export async function renderDevErrorPage(input: RenderDevErrorPageInput): Promise<Response> {
+export async function renderDevErrorPage(input: RenderDevErrorPageInput): Promise<RouteResponse> {
   const { context, problem } = input;
   // 每错误一个新实例（#279 防线 5）：Metadata 是实例态、group() 是合并语义，复用实例会把
   // 上一请求的 headers/params 带进下一页。
@@ -123,20 +124,19 @@ export async function renderDevErrorPage(input: RenderDevErrorPageInput): Promis
     request: { url: context.url.href, method: context.method },
   });
   const bytes = encoder.encode(html);
-  return new Response(bytes, {
-    status: problem.status,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      // content-length：对称 jsonResponse/problemResponse——适配器据它选 Buffer / 流路径
-      // （见 adapter.ts 的契约块）。
-      "content-length": String(bytes.byteLength),
-      // nonce 放行 youch 自带的内联 style/script，其余全关。已知代价：模板里复制按钮的
-      // inline onclick 会被浏览器拦，安全边界优先于这颗按钮。
-      "content-security-policy": `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'`,
-      "x-content-type-options": "nosniff",
-      // 错误页随代码热更而变，任何缓存都是误导；Vary 对齐 wantsHtml 按 Accept 分叉的事实。
-      "cache-control": "no-store",
-      vary: "accept",
-    },
-  });
+  // 头写进 context 那一个 Headers（#340 决议 2），与 jsonResponse / problemResponse 同规则。
+  const headers = context.responseHeaders;
+  headers.set("content-type", "text/html; charset=utf-8");
+  headers.set("content-length", String(bytes.byteLength));
+  // nonce 放行 youch 自带的内联 style/script，其余全关。已知代价：模板里复制按钮的
+  // inline onclick 会被浏览器拦，安全边界优先于这颗按钮。
+  headers.set(
+    "content-security-policy",
+    `default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'`,
+  );
+  headers.set("x-content-type-options", "nosniff");
+  // 错误页随代码热更而变，任何缓存都是误导；Vary 对齐 wantsHtml 按 Accept 分叉的事实。
+  headers.set("cache-control", "no-store");
+  headers.set("vary", "accept");
+  return { status: problem.status, headers, body: bytes };
 }

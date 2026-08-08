@@ -8,9 +8,11 @@ import { describe, expect, test } from "vitest";
 import { InvalidRouteTableError, MiddlewareReenteredError } from "@/errors";
 import type { RequestContext } from "@/execution/request-context";
 import { currentRequestId, WebRequestFields } from "@/execution/request-fields";
+import type { RouteResponse } from "@/execution/route-response";
 import { createWebApplication, type RequestLogger } from "@/execution/web-application";
 import type { GeneratedRoute, GeneratedRouteTable } from "@/generated/route-table";
 import type { RouteMiddleware } from "@/routing/middleware";
+import { readRouteBody, readRouteJson } from "../support/route-response";
 import { schemaOf } from "../support/schemas";
 
 // 单测层把 ApplicationContext 收窄为纯查表替身（跨包运行时属外部边界）；真实 context 的
@@ -72,7 +74,10 @@ function tableOf(
 
 function recordingMiddleware(log: string[], label: string): new () => RouteMiddleware {
   return class {
-    async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+    async handle(
+      _context: RequestContext,
+      next: () => Promise<RouteResponse>,
+    ): Promise<RouteResponse> {
       log.push(`${label}:before`);
       const response = await next();
       log.push(`${label}:after`);
@@ -121,7 +126,7 @@ describe("createWebApplication onion execution", () => {
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
-    expect(await response.text()).toBe("handled");
+    expect(await readRouteBody(response)).toBe("handled");
     expect(log).toEqual(["outer:before", "inner:before", "inner:after", "outer:after"]);
   });
 
@@ -170,7 +175,10 @@ describe("createWebApplication onion execution", () => {
     }
     const seen: number[] = [];
     class Observe {
-      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+      async handle(
+        _context: RequestContext,
+        next: () => Promise<RouteResponse>,
+      ): Promise<RouteResponse> {
         const response = await next();
         seen.push(response.status);
         return response;
@@ -214,14 +222,20 @@ describe("createWebApplication onion execution", () => {
   // 字符串，而那串字符没有任何契约保证。
   test("a middleware that calls next() twice fails with a coded error naming the offending Bean", async () => {
     class DoubleNext {
-      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+      async handle(
+        _context: RequestContext,
+        next: () => Promise<RouteResponse>,
+      ): Promise<RouteResponse> {
         await next();
         return await next();
       }
     }
     let captured: unknown;
     class Capture {
-      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+      async handle(
+        _context: RequestContext,
+        next: () => Promise<RouteResponse>,
+      ): Promise<RouteResponse> {
         try {
           return await next();
         } catch (error) {
@@ -274,14 +288,20 @@ describe("createWebApplication onion execution", () => {
   // 点名的必须是里面那个犯规的，不是外面那个守规矩的——链是嵌套的，弄反了排查方向就反了。
   test("the re-entry failure names the route it happened on", async () => {
     class DoubleNext {
-      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+      async handle(
+        _context: RequestContext,
+        next: () => Promise<RouteResponse>,
+      ): Promise<RouteResponse> {
         await next();
         return await next();
       }
     }
     let captured: unknown;
     class Capture {
-      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+      async handle(
+        _context: RequestContext,
+        next: () => Promise<RouteResponse>,
+      ): Promise<RouteResponse> {
         try {
           return await next();
         } catch (error) {
@@ -368,7 +388,10 @@ describe("createWebApplication route assembly", () => {
   test("decodes slots after middleware and before the handler", async () => {
     const order: string[] = [];
     class Observe {
-      async handle(_context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+      async handle(
+        _context: RequestContext,
+        next: () => Promise<RouteResponse>,
+      ): Promise<RouteResponse> {
         order.push("middleware");
         return await next();
       }
@@ -421,7 +444,7 @@ describe("createWebApplication route assembly", () => {
     const response = await route.handle(new Request("https://reforce.test/probe"), { id: "1" });
 
     expect(order).toEqual(["middleware", "decode", "handler"]);
-    expect(await response.json()).toEqual({ id: "1" });
+    expect(await readRouteJson(response)).toEqual({ id: "1" });
   });
 
   test("a slot decode failure answers 400 without reaching the handler", async () => {
@@ -449,7 +472,7 @@ describe("createWebApplication route assembly", () => {
 
     expect(response.status).toBe(400);
     expect(controller.handled).toBeUndefined();
-    expect(await response.json()).toMatchObject({
+    expect(await readRouteJson(response)).toMatchObject({
       source: "query",
       issues: [{ message: "page must be a number" }],
     });
@@ -536,7 +559,7 @@ describe("createWebApplication response encoding", () => {
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ id: "42" });
+    expect(await readRouteJson(response)).toEqual({ id: "42" });
   });
 
   // passthrough 路由(直返 Response 的声明)返回普通对象:500 语义不变(#275)。
@@ -555,7 +578,7 @@ describe("createWebApplication response encoding", () => {
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ id: "42", secret: "drop me" });
+    expect(await readRouteJson(response)).toEqual({ id: "42", secret: "drop me" });
   });
 });
 
@@ -614,24 +637,29 @@ describe("createWebApplication response header merging", () => {
     expect(response.headers.get("content-type")).toBe("application/json");
   });
 
-  // 逃生口不碰:handler 直接返回的 Response 是用户全权掌控的出口。
-  test("leaves a handler-returned Response without the context headers", async () => {
+  // #340 决议 2 把这条规则反了过来：响应头收成单一通道之后，写在 context 上的头**一定**出站，
+  // 逃生口不再例外。此前的例外（RFC 0012 S3 / #275 拍板 3「不碰 handler 直接返回的 Response」）
+  // 随 mergeResponseHeaders 一起作废——一条无例外的规则胜过一条带例外的。
+  test("applies the context headers to a handler-returned Response too", async () => {
     const route = preparedFor("raw");
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
-    expect(await response.text()).toBe("raw");
-    expect(response.headers.get("x-audit-id")).toBeNull();
+    expect(await readRouteBody(response)).toBe("raw");
+    expect(response.headers.get("x-audit-id")).toBe("abc");
   });
 
-  // 错误响应由错误分派统一负责,handler 半路写下的头不跟着错误出线。
-  test("leaves an error response without the context headers", async () => {
+  // 同上：错误响应此前也在例外之列，现在同样出站。代价明写在这里——handler 在抛错之前写下的
+  // 头会跟着 500 一起出线。这是决议接受的行为变化，不是回归。
+  test("applies the context headers to an error response too", async () => {
     const route = preparedFor("failing", (value) => value);
 
     const response = await route.handle(new Request("https://reforce.test/probe"), {});
 
     expect(response.status).toBe(500);
-    expect(response.headers.get("x-audit-id")).toBeNull();
+    expect(response.headers.get("x-audit-id")).toBe("abc");
+    // 错误分派的 content-type 压过 handler 半路写的序列化默认值。
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
   });
 });
 
@@ -865,12 +893,16 @@ describe("createWebApplication request id", () => {
     expect(response.headers.get("x-request-id")).toBe("true-id");
   });
 
-  test("an immutable-headers Response is sent as-is without rejecting the request", async () => {
+  // 逃生口 Response 的头是被**拷贝**进框架自己那个 Headers 的，不是借用用户那个实例
+  // （#340 的 absorbResponse）。所以「用户给的 Response 头不可变」这件事结构上碰不到盖章
+  // 那一步——此前那道 try/catch 因此成了死代码并被删除。这条用例改为钉住新结构：即便用户
+  // 交出一个 set 会抛的 Response，request id 照样盖得上。
+  test("stamps the request id even when the handler returns immutable headers", async () => {
     class ImmutableReturning {
       immutable(): Response {
         const response = new Response("proxied");
         return new Proxy(response, {
-          get(target, property, receiver) {
+          get(target, property) {
             if (property === "headers") {
               return new Proxy(target.headers, {
                 get(headers, headerProperty) {
@@ -908,8 +940,11 @@ describe("createWebApplication request id", () => {
 
     const response = await prepared.handle(new Request("https://reforce.test/probe"), {});
 
-    expect(await response.text()).toBe("proxied");
-    expect(response.headers.get("x-request-id")).toBeNull();
+    expect(await readRouteBody(response)).toBe("proxied");
+    // 旧实现在这里盖不上章（用户 Response 的 headers.set 抛，被 try/catch 吞掉），断言是
+    // toBeNull()。#340 之后头是拷进框架自己那份的，不变量「客户端可见 id ≡ 日志 id」因此
+    // 在这条路径上也真正成立。
+    expect(response.headers.get("x-request-id")).not.toBeNull();
   });
 
   test("the L6 request record carries the same id the response header shows", async () => {

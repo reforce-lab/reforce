@@ -8,9 +8,11 @@ import {
 } from "@reforce/core/generated-runtime";
 import { describe, expect, test, vi } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
+import type { RouteResponse } from "@/execution/route-response";
 import type { RequestLogger } from "@/execution/web-application";
 import type { GeneratedRouteTable } from "@/generated-runtime";
 import { createWebApplication, defineRouteMarker, type RequestContext } from "@/index";
+import { readRouteBody, readRouteJson } from "../test/support/route-response";
 
 // 跨包全链路（ADR 0006 W1/W4/W7，#152）：真实 @reforce/core 运行时 + 引擎无关执行层 +
 // 契约的最小假适配器，走通"启动时一次性消费路由表 → 每请求开作用域并播种根请求 bean →
@@ -45,7 +47,10 @@ class Greeter {
 class TraceMiddleware {
   readonly seen: string[] = [];
 
-  async handle(context: RequestContext, next: () => Promise<Response>): Promise<Response> {
+  async handle(
+    context: RequestContext,
+    next: () => Promise<RouteResponse>,
+  ): Promise<RouteResponse> {
     this.seen.push(`before:${context.path}`);
     const response = await next();
     this.seen.push(`after:${response.status}`);
@@ -192,7 +197,7 @@ class FakeAdapter implements WebEngineAdapter {
     path: string,
     request: Request,
     params: Readonly<Record<string, string>>,
-  ): Promise<Response> {
+  ): Promise<RouteResponse> {
     const route = this.byKey.get(`${method} ${path}`);
     if (route === undefined) {
       throw new Error(`No route registered for ${method} ${path}`);
@@ -239,7 +244,7 @@ describe("web application over the real context runtime", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ greeting: "hello r-1" });
+    expect(await readRouteJson(response)).toEqual({ greeting: "hello r-1" });
     expect(trace.seen).toEqual(["before:/greet", "after:200"]);
     await context.close();
   });
@@ -260,8 +265,8 @@ describe("web application over the real context runtime", () => {
       {},
     );
 
-    expect(await first.json()).toEqual({ greeting: "hello r-1" });
-    expect(await second.json()).toEqual({ greeting: "hello r-2" });
+    expect(await readRouteJson(first)).toEqual({ greeting: "hello r-1" });
+    expect(await readRouteJson(second)).toEqual({ greeting: "hello r-2" });
     await context.close();
   });
 
@@ -288,7 +293,7 @@ describe("web application over the real context runtime", () => {
     );
 
     expect(response.status).toBe(418);
-    expect(await response.text()).toBe("teapot");
+    expect(await readRouteBody(response)).toBe("teapot");
     await context.close();
   });
 });

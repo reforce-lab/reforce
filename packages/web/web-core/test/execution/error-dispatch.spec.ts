@@ -5,6 +5,7 @@ import { createErrorDispatcher } from "@/execution/error-dispatch";
 import { RequestContextState } from "@/execution/request-context";
 import { runWithRequestFields } from "@/execution/request-fields";
 import { ConflictError, defineHttpError, HttpError } from "@/http-errors";
+import { readRouteBody, readRouteJson } from "../support/route-response";
 
 function requestContext(): RequestContextState {
   return new RequestContextState({
@@ -33,7 +34,7 @@ describe("createErrorDispatcher", () => {
     const response = await dispatch(new Error("boom"), requestContext());
 
     expect(response.status).toBe(418);
-    expect(await response.text()).toBe("first");
+    expect(await readRouteBody(response)).toBe("first");
   });
 
   test("a throwing handler passes the thrown error to the next handler", async () => {
@@ -75,7 +76,7 @@ describe("createErrorDispatcher", () => {
     const response = await dispatch(error, requestContext());
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
+    expect(await readRouteJson(response)).toEqual({
       type: "about:blank",
       title: "Bad Request",
       status: 400,
@@ -95,7 +96,7 @@ describe("createErrorDispatcher", () => {
 
     const response = await dispatch(error, requestContext());
 
-    const body = await response.clone().text();
+    const body = await readRouteBody(response);
     expect(response.headers.get("content-length")).toBe(
       String(new TextEncoder().encode(body).length),
     );
@@ -109,7 +110,7 @@ describe("createErrorDispatcher", () => {
     const response = await dispatch(new Error("boom"), requestContext());
 
     expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({
+    expect(await readRouteJson(response)).toEqual({
       type: "about:blank",
       title: "Internal Server Error",
       status: 500,
@@ -126,7 +127,7 @@ describe("createErrorDispatcher", () => {
     });
 
     const response = await dispatch(new Error("boom"), requestContext());
-    const body: unknown = await response.json();
+    const body: unknown = await readRouteJson(response);
 
     expect(records).toHaveLength(1);
     expect(records[0]?.fields?.errorId).toBe(
@@ -139,7 +140,7 @@ describe("createErrorDispatcher", () => {
     const dispatch = createErrorDispatcher([]);
 
     const response = await dispatch(new Error("boom with a secret"), requestContext());
-    const text = await response.text();
+    const text = await readRouteBody(response);
 
     expect(text).not.toContain("boom with a secret");
     expect(text).not.toContain("at ");
@@ -159,7 +160,7 @@ describe("createErrorDispatcher", () => {
     );
 
     expect(records[0]?.fields).toMatchObject({ requestId: "rid-1", errorId: expect.any(String) });
-    expect(await response.json()).toEqual({
+    expect(await readRouteJson(response)).toEqual({
       type: "about:blank",
       title: "Internal Server Error",
       status: 500,
@@ -186,7 +187,7 @@ describe("createErrorDispatcher", () => {
     const response = await dispatch(new ConflictError("greeting already exists"), requestContext());
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
+    expect(await readRouteJson(response)).toEqual({
       type: "about:blank",
       title: "Conflict",
       status: 409,
@@ -205,7 +206,7 @@ describe("createErrorDispatcher", () => {
 
     const response = await dispatch(new GreetingAlreadyExists(["Lynch"]), requestContext());
 
-    expect(await response.json()).toEqual({
+    expect(await readRouteJson(response)).toEqual({
       type: "about:blank",
       title: "Conflict",
       status: 409,
@@ -221,7 +222,7 @@ describe("createErrorDispatcher", () => {
 
     const response = await dispatch(error, requestContext());
 
-    expect(await response.text()).not.toContain("retry with a different name");
+    expect(await readRouteBody(response)).not.toContain("retry with a different name");
   });
 
   // RFC 9457 要求错误响应用这个媒体类型，客户端据它判断「这是一个问题详情文档」。
@@ -240,7 +241,7 @@ describe("createErrorDispatcher", () => {
 
     const response = await dispatch(new Odd([]), requestContext());
 
-    expect(await response.json()).toMatchObject({ status: 599, title: "Error" });
+    expect(await readRouteJson(response)).toMatchObject({ status: 599, title: "Error" });
   });
 
   // 框架契约被违反不是「改请求就能好」，因此不映射成 4xx。
@@ -306,7 +307,7 @@ describe("dev error page negotiation keeps the JSON path", () => {
     const negotiated = await dispatch(error, negotiatedContext({ accept: "text/html,*/*" }));
 
     expect(negotiated.status).toBe(plain.status);
-    expect(await negotiated.text()).toBe(await plain.text());
+    expect(await readRouteBody(negotiated)).toBe(await readRouteBody(plain));
     expect([...negotiated.headers.entries()]).toEqual([...plain.headers.entries()]);
   });
 
@@ -395,7 +396,7 @@ describe("createErrorDispatcher typed entries", () => {
 
     expect(response.status).toBe(409);
     expect(response.headers.get("content-type")).toBe("application/json");
-    expect(await response.json()).toEqual({ code: "ORDER_REJECTED", orderId: "42" });
+    expect(await readRouteJson(response)).toEqual({ code: "ORDER_REJECTED", orderId: "42" });
   });
 
   test("a status without an encoder serializes the raw return value", async () => {
@@ -409,7 +410,7 @@ describe("createErrorDispatcher typed entries", () => {
     const response = await dispatch(new Error("boom"), requestContext());
 
     expect(response.status).toBe(418);
-    expect(await response.json()).toEqual({ code: "TEAPOT" });
+    expect(await readRouteJson(response)).toEqual({ code: "TEAPOT" });
   });
 
   test("a match-all handler returning a non-Response escalates instead of taking over", async () => {

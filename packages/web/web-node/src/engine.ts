@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
 import { Injectable, type OnContextClose } from "@reforce/core";
+import type { RouteResponse } from "@reforce/web-core";
 import type {
   WebApplication,
   WebApplicationHandle,
@@ -67,7 +68,7 @@ function requestUrl(request: IncomingMessage): URL | undefined {
   return url;
 }
 
-async function writeResponse(response: ServerResponse, result: Response): Promise<void> {
+async function writeResponse(response: ServerResponse, result: RouteResponse): Promise<void> {
   const headers: Record<string, string | string[]> = {};
   result.headers.forEach((value, name) => {
     // set-cookie 必须逐条出站，Headers 的 forEach 会并成单值，单独走 getSetCookie
@@ -80,25 +81,25 @@ async function writeResponse(response: ServerResponse, result: Response): Promis
     headers["set-cookie"] = setCookies;
   }
   response.writeHead(result.status, headers);
-  if (result.body === null) {
+  const { body } = result;
+  if (body === null) {
     response.end();
     return;
   }
-  // content-length 是 WebEngineAdapter 契约的缓冲/流式判据（adapter.ts）：带它即「整体已在内存中、
-  // 可安全缓冲」。此前这里无条件走流，也就是每一条已经完整躺在内存里的 JSON 响应都要建一个
-  // web ReadableStream 的 reader、包一个 Readable、装两侧的 end-of-stream 监听、再逐块 pump。
-  // 实测 13.2µs/请求，而直写 buffer 是 4.7µs——单请求预算约 45µs，这是热路径上最大的单项（#339）。
+  // 缓冲/流式判据现在是 body 的**实际形态**（#340），不再是「有没有 content-length 这个头」。
+  // 形态判定不会像头那样被写错（handler 走逃生口可以手写一个与实际字节不符的长度，见 #346），
+  // 而且 #339 那一步的 `arrayBuffer()` 回读也随之消失——字节本来就在手上，不必先包成流再拆。
   //
-  // 收尾用 finished 而不是 `end(buffer, callback)`：后者实测快 650ns，且在客户端中途断开时回调
+  // 收尾用 finished 而不是 `end(body, callback)`：后者实测快 650ns，且在客户端中途断开时回调
   // 同样触发（Node 26.5.1 实测），但那是实现行为——文档只承诺「stream finished 时调用」。
   // finished 明确承诺 end / error / premature close 三种情况都 settle。赌错的代价是每个被中断的
   // 请求泄漏一个永不 settle 的 promise，静默且无界，不值得为 1.4% 去换。
-  if (result.headers.get("content-length") !== null) {
-    response.end(Buffer.from(await result.arrayBuffer()));
+  if (typeof body === "string" || body instanceof Uint8Array) {
+    response.end(body);
     await finished(response);
     return;
   }
-  await pipeline(Readable.fromWeb(result.body), response);
+  await pipeline(Readable.fromWeb(body), response);
 }
 
 @Injectable()

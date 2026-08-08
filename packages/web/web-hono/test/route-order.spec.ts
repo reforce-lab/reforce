@@ -1,3 +1,4 @@
+import { absorbResponse } from "@reforce/web-core";
 import type { PreparedRoute } from "@reforce/web-core/adapter";
 import { describe, expect, test } from "vitest";
 import { compareRouteSpecificity, orderRoutesForHono } from "@/route-order";
@@ -11,7 +12,7 @@ function route(path: string): PreparedRoute {
   return {
     method: "GET",
     path,
-    handle: () => Promise.resolve(new Response("unreachable")),
+    handle: () => Promise.resolve(absorbResponse(new Response("unreachable"), new Headers())),
     meta: () => undefined,
   };
 }
