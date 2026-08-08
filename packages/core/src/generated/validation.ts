@@ -6,6 +6,7 @@ import type {
   GeneratedClassRegistration,
   GeneratedCollectionDependency,
   GeneratedCollectionMember,
+  GeneratedConfigBindingOutcome,
   GeneratedConfigRegistration,
   GeneratedDependency,
   GeneratedFactoryRegistration,
@@ -611,6 +612,36 @@ function validateConfigBinding(
   }
   const bindingObject = requireObject(binding, "definition.configBinding");
   requireFunction(Reflect.get(bindingObject, "bind"), "definition.configBinding.bind");
+}
+
+// 信任边界（#314）：configBinding 的实现在 core 之外（ADR 0005），定义校验只验到
+// "bind 是函数"，bind 的返回值是整条生成物校验链上唯一未经复检的数据，按不可信输入验形。
+// 校验深度与本文件其余条目一致：验结构与判别字段，不下钻 issues 成员与实例内容。
+export function validateConfigBindingOutcome(
+  value: unknown,
+): asserts value is GeneratedConfigBindingOutcome {
+  const path = "configBinding.bind outcome";
+  const outcome = requireObject(value, path);
+  const status = Reflect.get(outcome, "status");
+  if (status === "failed") {
+    requireExactKeys(outcome, ["status", "issues"], path);
+    requireArray(Reflect.get(outcome, "issues"), `${path}.issues`);
+    return;
+  }
+  if (status === "bound") {
+    requireExactKeys(outcome, ["status", "instances"], path);
+    // isObject 不认 Map（radashi 只认 plain object 与非内建类实例），这里按 Map 接口检查。
+    const instances = Reflect.get(outcome, "instances");
+    if (
+      instances === null ||
+      typeof instances !== "object" ||
+      typeof Reflect.get(instances, "get") !== "function"
+    ) {
+      fail(`${path}.instances must be a Map-like object.`);
+    }
+    return;
+  }
+  return fail(`${path}.status must be "bound" or "failed".`);
 }
 
 function validateApplicationDefinition(value: unknown): void {

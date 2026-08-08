@@ -16,10 +16,8 @@ import {
   InvalidGeneratedDefinitionError,
   UnregisteredBeanTargetError,
 } from "@/errors";
-import type {
-  GeneratedApplicationDefinition,
-  GeneratedConfigBindingOutcome,
-} from "@/generated/contracts";
+import type { GeneratedApplicationDefinition } from "@/generated/contracts";
+import { validateConfigBindingOutcome } from "@/generated/validation";
 import type {
   ApplicationContext,
   BeanClass,
@@ -174,8 +172,9 @@ export class RuntimeApplicationContext implements ApplicationContext {
     if (configs.length === 0 || configBinding === undefined) {
       return;
     }
-    const outcome = await configBinding.bind(configs);
-    this.requireOutcomeShape(outcome);
+    // 信任边界（#314）：binding 实现在 core 之外，返回值按不可信输入验形后才允许分派。
+    const outcome: unknown = await configBinding.bind(configs);
+    validateConfigBindingOutcome(outcome);
     if (outcome.status === "failed") {
       throw new ConfigBindingError({ issues: outcome.issues });
     }
@@ -188,25 +187,6 @@ export class RuntimeApplicationContext implements ApplicationContext {
       }
       this.state.seedConstructed(config.id, instance);
     }
-  }
-
-  private requireOutcomeShape(
-    outcome: GeneratedConfigBindingOutcome,
-  ): asserts outcome is GeneratedConfigBindingOutcome {
-    if (outcome === null || typeof outcome !== "object") {
-      throw new InvalidGeneratedDefinitionError(
-        "configBinding.bind must resolve to an outcome object.",
-      );
-    }
-    if (outcome.status === "failed" && Array.isArray(outcome.issues)) {
-      return;
-    }
-    if (outcome.status === "bound" && typeof outcome.instances?.get === "function") {
-      return;
-    }
-    throw new InvalidGeneratedDefinitionError(
-      "configBinding.bind resolved to an unrecognized outcome shape.",
-    );
   }
 
   private async waitForStartBoundaryAndCleanup(): Promise<void> {
