@@ -73,6 +73,8 @@ pnpm run test:e2e
 
 package exports 只公开 `dist`，仓库测试的跨 package import 由 Turbo 先构建上游依赖后消费产物，不设置仓库专用 export condition。Rsbuild 的 `development` / `production` mode 只控制用户应用行为，两种 mode 都必须消费 Reforce package 的 `dist`。
 
+dev-only 运行时依赖（当前只有 `@reforce/web` 的 `youch`，#279）：只被 dev 链路加载、但按 pnpm 严格布局必须放在 `dependencies` 的包。版本锁 exact，升级前须人工重审其 HTML 模板的转义面；「生产不含」由 CLI 生产构建的 NODE_ENV 折叠 + 空 stub 替换双闸保证，产物哨兵断言用其传递依赖名（如 `@speed-highlight/core`），不用会撞中文注释的裸名。
+
 CI 在 `ubuntu-latest`、`macos-latest`、`windows-latest` 使用 Node.js 26 执行 frozen install、`check` / `typecheck` / `test` / `build`、真实 CLI/child/HMR/lease/transaction recovery 和 production artifact smoke。`check:write` 只用于提交前修复，CI 不重复执行与 `check` 等价的写入再比较。平台相关行为必须由对应 runner 的真实 Node.js 进程证据支持。
 
 Compiler 内置唯一的 Yuku parser。Parser-to-IR 测试只断言 Source IR、span 与 parser diagnostic 的必要字段；完整项目行为由 Compiler 集成测试和生成物执行测试负责，不提交整棵 Source IR 或 generated output 快照。
