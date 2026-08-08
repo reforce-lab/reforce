@@ -1,5 +1,7 @@
 import { lstat, readdir } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
 import { compareUtf16CodeUnits, toPortablePath } from "@reforce/primitives";
 import {
   hotUpdateChunkFilename,
@@ -85,6 +87,25 @@ function statsHash(stats: Rspack.Stats | Rspack.MultiStats): string | undefined 
   return hashes.length === 0 ? undefined : hashes.join(":");
 }
 
+// dev 错误页渲染器的外置解析（#279）：渲染器（youch）运行时按 import.meta.url 的相对路径
+// readFile 自己的 CSS/JS 模板资产，打进 bundle（autoExternal: false）后这些路径必然落空，
+// 所以 dev 构建把它整个外置。构建期从用户项目 resolve @reforce/web、再从 web 的真实位置
+// resolve 渲染器——pnpm 严格布局下它只对 @reforce/web 可见，对用户项目不可见。产物里落成
+// `import … from "file://…"`，运行时从真实 node_modules 加载，资产路径天然正确。
+//
+// 解析不到就不外置（undefined）：没装 @reforce/web 的项目不可能命中渲染路径；万一 web 在而
+// 渲染器缺失，bundle 里的动态 import 失败会被 error-dispatch 的降级 catch 接住，错误响应仍是
+// problem+json（#226 契约）。
+function resolveDevErrorRendererUrl(projectRoot: string): string | undefined {
+  try {
+    const projectRequire = createRequire(join(projectRoot, "package.json"));
+    const webEntryPath = projectRequire.resolve("@reforce/web");
+    return pathToFileURL(createRequire(webEntryPath).resolve("youch")).href;
+  } catch {
+    return undefined;
+  }
+}
+
 function createDevWatchBuild(
   build: DevWatchBuild,
   compiler: Rspack.Compiler | undefined,
@@ -110,6 +131,7 @@ export async function startDevWatchBuild(
   const generatedBootstrapPath = join(projectRoot, ".reforce", "generated", "bootstrap.ts");
   const generatedBeansPath = join(projectRoot, ".reforce", "generated", "beans.ts");
   const devRuntimePath = resolveRuntimeEntryPath("dev-runtime");
+  const devErrorRendererUrl = resolveDevErrorRendererUrl(projectRoot);
   const gatePlugin = new ReforceCompilerGatePlugin(options.gate, [
     generatedBootstrapPath,
     generatedBeansPath,
@@ -147,6 +169,22 @@ export async function startDevWatchBuild(
           // dev 构建必须把它折叠成真值分支才能保留 dev-error-page 链路。显式钉死与
           // production-dist 对称，防 mode 与 nodeEnv 的绑定关系在升级中漂移。
           config.optimization.nodeEnv = "development";
+          if (devErrorRendererUrl !== undefined) {
+            const external = `module ${devErrorRendererUrl}`;
+            const externalizeRenderer: Rspack.ExternalItem = ({ request }, callback) => {
+              if (request === "youch") {
+                // externals type "module"：ESM 产物顶层 import，specifier 即 file:// URL。
+                callback(undefined, external);
+                return;
+              }
+              callback();
+            };
+            const existing = config.externals;
+            config.externals =
+              existing === undefined
+                ? [externalizeRenderer]
+                : [...(Array.isArray(existing) ? existing : [existing]), externalizeRenderer];
+          }
           config.output ??= {};
           config.output.chunkFormat = "module";
           config.output.chunkLoading = "import";
