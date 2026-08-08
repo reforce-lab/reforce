@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { RequestValidationError } from "@/errors";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { createSlotExecutor } from "@/execution/slot-execution";
 import type { GeneratedRouteSlot } from "@/generated/route-table";
@@ -24,8 +25,7 @@ function contextOf(inputs: {
       ? new Request(url, { headers })
       : new Request(url, { method: "POST", body: inputs.body, headers });
   return new RequestContextState({
-    request,
-    url: new URL(url),
+    incoming: fromStandardRequest(request),
     method: inputs.body === undefined ? "GET" : "POST",
     path: "/users/:id",
     params: inputs.params ?? {},

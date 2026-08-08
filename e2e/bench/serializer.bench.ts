@@ -6,7 +6,7 @@
 // 复跑：`pnpm --dir e2e run bench:serializer`。
 
 import type { ApplicationContext, BeanClass, BeanDefinition } from "@reforce/core";
-import { createWebApplication } from "@reforce/web-core";
+import { createWebApplication, fromStandardRequest } from "@reforce/web-core";
 import type { PreparedRoute } from "@reforce/web-core/adapter";
 
 const iterations = 200_000;
@@ -102,7 +102,7 @@ function routeFor(path: string): PreparedRoute {
   return route;
 }
 
-const request = new Request("https://bench.local/");
+const request = fromStandardRequest(new Request("https://bench.local/"));
 
 async function measureRoute(route: PreparedRoute): Promise<number> {
   const started = performance.now();

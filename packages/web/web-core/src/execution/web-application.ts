@@ -237,8 +237,7 @@ function prepareRoute(
       // 后面的 seeder、请求 bean、每条应用日志与响应头共享同一个值。
       const requestId = resolveRequestId(request);
       const requestContext = new RequestContextState({
-        request,
-        url: new URL(request.url),
+        incoming: request,
         method: route.method,
         path: route.path,
         params,
@@ -250,13 +249,9 @@ function prepareRoute(
         { method: route.method, path: route.path, requestId },
         async () => {
           // seeds 在字段作用域内部计算(#303 行为中立挪移):seeder 因此读得到 currentRequestId。
-          const seeds =
-            requestSeeds?.(request, {
-              method: route.method,
-              path: route.path,
-              params,
-              meta: route.meta,
-            }) ?? [];
+          // 交出去的就是 requestContext 本身（#341）：seeder 要标准 Request 就读
+          // `context.request`，不读就一次都不物化。
+          const seeds = requestSeeds?.(requestContext) ?? [];
           // 日志落在作用域**内部**：请求 bean 此刻已就位，LogFieldSource 能读到 trace id 之类的
           // 请求态字段。挪到外面就只剩静态字段了。
           return await context.runInRequestScope(seeds, async () => {

@@ -8,10 +8,10 @@ import { HttpExchange, httpExchange } from "@/http-exchange";
 // provider 无需从入口可达。本 fixture 走 e2e 全链路，是该行为的活体证明——不要往回加
 // `export *`。
 // 根请求 bean 播种（ADR 0006 W7 / #153 接线约定）：defineApplication 模块导出的
-// webRequestSeeder 由生成的 bootstrap 交给 connectWebApplication，内容按 #152 契约
-// 恒为 标准 Request + 路由匹配结果。
-export const webRequestSeeder: RequestSeeder = (request, match) => [
-  { target: httpExchange, instance: new HttpExchange(request, match) },
+// webRequestSeeder 由生成的 bootstrap 交给 connectWebApplication，收到的就是本次请求的
+// RequestContext（#341）。
+export const webRequestSeeder: RequestSeeder = (context) => [
+  { target: httpExchange, instance: new HttpExchange(context) },
 ];
 
 export default defineApplication({ starters: [logging, web] });

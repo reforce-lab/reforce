@@ -1,6 +1,7 @@
-import type { Server } from "node:http";
+import { IncomingMessage, type Server } from "node:http";
 import { serve } from "@hono/node-server";
 import { Injectable, type OnContextClose } from "@reforce/core";
+import { fromStandardRequest, type IncomingRequest } from "@reforce/web-core";
 import type {
   WebApplication,
   WebApplicationHandle,
@@ -28,6 +29,65 @@ import type { WebHonoServeSettings } from "@/settings";
 // **TrieRouter 是钉死的，不是默认值**：RegExpRouter 遇到 `/users/:id` + `/users/self` 直接抛
 // UnsupportedPathError（实测），而 SmartRouter 会在**第一个请求**时才静默回退到 TrieRouter，
 // 启动期看不出来。代价是放弃 hono 的性能招牌，换来启动即确定的行为。
+
+// 每请求入口对象（#341）。hono 的 Request 本来就是惰性的，但**读一个头就前功尽弃**：
+// `@hono/node-server` 的 headers getter 一被碰就 `newHeadersFromIncoming` 把 rawHeaders 全量
+// 建成 Headers（dist/index.mjs 的 headersKey 那一行）。而 resolveRequestId 每请求必读一次
+// `x-request-id`——profile 里 web-hono 的 undici 桶因此仍占 9.4%，热点正是
+// `webidl.converters.HeadersInit` / `append` / `ByteString`。
+//
+// 所以 header() 绕开 hono 的 Request，直接查底层 IncomingMessage；standard() 仍然交回 hono
+// 自己那一个（它已经缓存好，也带着 abort signal 与 body 的各种快路径），不另造。
+class HonoIncomingRequest implements IncomingRequest {
+  readonly method: string;
+  private target: URL | undefined;
+
+  constructor(
+    private readonly standardRequest: Request,
+    private readonly raw: IncomingMessage,
+  ) {
+    // node-server 的 method/url 是存字段的 getter，读它们不碰 headers。
+    this.method = standardRequest.method;
+  }
+
+  // hono 的路由匹配走 honoRequestPath 的字符串切片，没有现成的 URL 可交，只能按需解析——
+  // 但仍然只解析一次，且没人读 context.url 就一次都不解析。
+  url(): URL {
+    this.target ??= new URL(this.standardRequest.url);
+    return this.target;
+  }
+
+  header(name: string): string | null {
+    const value = this.raw.headers[name.toLowerCase()];
+    if (value === undefined) {
+      return null;
+    }
+    return typeof value === "string" ? value : value.join(", ");
+  }
+
+  standard(): Request {
+    return this.standardRequest;
+  }
+}
+
+// `@hono/node-server` 把 `{ incoming, outgoing }` 放在 c.env 上（dist 里的
+// `fetchCallback(req, { incoming, outgoing })`），但 Hono 的默认 Bindings 是空对象，类型上
+// 够不着——这里靠 `in` + `instanceof` 两道真实的运行时检查取到，不写断言。
+//
+// 取不到就退回标准 Request：header() 从此走 headers.get()，惰性白做但行为不变。已知会走这条
+// 的是 HTTP/2——那时 node-server 交的是 `Http2ServerRequest`，它继承 Readable 而不是
+// IncomingMessage。本包目前只用 serve() 的 http1 通道，所以实际不触发；宁可慢一点也不写一个
+// 结构上"看着像"就当成 IncomingMessage 的断言。
+function incomingRequestOf(context: Context): IncomingRequest {
+  const env: unknown = context.env;
+  if (typeof env === "object" && env !== null && "incoming" in env) {
+    const { incoming } = env;
+    if (incoming instanceof IncomingMessage) {
+      return new HonoIncomingRequest(context.req.raw, incoming);
+    }
+  }
+  return fromStandardRequest(context.req.raw);
+}
 
 @Injectable()
 export class WebEngine implements WebEngineAdapter, OnContextClose {
@@ -137,7 +197,7 @@ export class WebEngine implements WebEngineAdapter, OnContextClose {
       // `outgoing.end(body)`。反过来说，正是因为 hono 已经这么干了，同一份核心代码在它上面
       // 才比 fastify 快三分之一——本 issue 要做的就是把那份便宜挪进框架自己。
       const handler = async (context: Context) => {
-        const result = await route.handle(context.req.raw, context.req.param());
+        const result = await route.handle(incomingRequestOf(context), context.req.param());
         return new Response(result.body, { status: result.status, headers: result.headers });
       };
       app.on(route.method, route.path, handler);

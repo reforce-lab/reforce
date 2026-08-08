@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
-import type { RouteResponse } from "@reforce/web-core";
+import { fromStandardRequest, type RouteResponse } from "@reforce/web-core";
 import type { WebApplication } from "@reforce/web-core/adapter";
 import { adapterConformanceCases } from "@reforce/web-core/conformance";
 import { describe, expect, test } from "vitest";
@@ -126,7 +126,7 @@ function badAdapterServer(application: WebApplication): Server {
       }
       await writeBuffered(
         response,
-        await found.route.handle(toRequest(request, url), found.params),
+        await found.route.handle(fromStandardRequest(toRequest(request, url)), found.params),
       );
     })();
   });

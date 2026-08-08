@@ -8,6 +8,7 @@ import {
 } from "@reforce/core/generated-runtime";
 import { describe, expect, test, vi } from "vitest";
 import type { WebApplication, WebApplicationHandle, WebEngineAdapter } from "@/adapter";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import type { RouteResponse } from "@/execution/route-response";
 import type { RequestLogger } from "@/execution/web-application";
 import type { GeneratedRouteTable } from "@/generated-runtime";
@@ -202,7 +203,7 @@ class FakeAdapter implements WebEngineAdapter {
     if (route === undefined) {
       throw new Error(`No route registered for ${method} ${path}`);
     }
-    return route.handle(request, params);
+    return route.handle(fromStandardRequest(request), params);
   }
 }
 
@@ -218,10 +219,10 @@ async function startedApplication(
   const application = createWebApplication({
     table: options.withoutErrorHandlers === true ? { ...table, errorHandlers: [] } : table,
     context,
-    requestSeeds: (request) => [
+    requestSeeds: (context) => [
       {
         target: RequestHolder,
-        instance: new RequestHolder(request.headers.get("x-request-id") ?? "anonymous"),
+        instance: new RequestHolder(context.request.headers.get("x-request-id") ?? "anonymous"),
       },
     ],
     ...(logger === undefined ? {} : { logger }),

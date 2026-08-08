@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { fromStandardRequest, type IncomingRequest } from "@/execution/incoming-request";
 import { requestIdHeader, resolveRequestId } from "@/execution/request-id";
 
 // request id 解析(#303):合法客户端值回显,其余一律重新生成——头值完全由客户端控制,
@@ -6,10 +7,12 @@ import { requestIdHeader, resolveRequestId } from "@/execution/request-id";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-function requestWith(id?: string): Request {
-  return new Request("https://reforce.test/", {
-    headers: id === undefined ? {} : { [requestIdHeader]: id },
-  });
+function requestWith(id?: string): IncomingRequest {
+  return fromStandardRequest(
+    new Request("https://reforce.test/", {
+      headers: id === undefined ? {} : { [requestIdHeader]: id },
+    }),
+  );
 }
 
 describe("resolveRequestId", () => {

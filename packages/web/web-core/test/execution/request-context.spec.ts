@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { fromStandardRequest } from "@/execution/incoming-request";
 import { RequestContextState } from "@/execution/request-context";
 import { defineRouteMarker } from "@/routing/route-marker";
 
@@ -9,8 +10,7 @@ function stateOf(inputs: {
 }): RequestContextState {
   const url = inputs.url ?? "https://reforce.test/users/1";
   return new RequestContextState({
-    request: new Request(url),
-    url: new URL(url),
+    incoming: fromStandardRequest(new Request(url)),
     method: "GET",
     path: "/users/:id",
     params: inputs.params ?? {},
