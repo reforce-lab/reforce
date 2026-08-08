@@ -3,6 +3,7 @@ import { claimRoleBean } from "@/analysis/bean-roles";
 import {
   chainFieldNameFor,
   compareChainEntries,
+  type InterceptorBinding,
   type InterceptorChainEntryModel,
   type InterceptPhaseModel,
   interceptPhaseOrder,
@@ -13,12 +14,7 @@ import {
 } from "@/analysis/interception-model";
 import { markerUseValueOf } from "@/analysis/marker-value";
 import { type ProviderModel, providerId, sourceReference } from "@/analysis/model";
-import {
-  transactionalMarkerKey,
-  transactionInterceptorBeanId,
-  transactionInterceptorSymbol,
-  validateTransactionalValue,
-} from "@/analysis/transaction-weaving";
+import { transactionalMarkerKey, validateTransactionalValue } from "@/analysis/transaction-weaving";
 import type { CompilerDiagnostic } from "@/api";
 import { report } from "@/diagnostics";
 import type { LinkedSymbol } from "@/linking/model";
@@ -363,14 +359,6 @@ function claimWovenBean(
     return undefined;
   }
   return provider;
-}
-
-interface InterceptorBinding {
-  readonly beanId: string;
-  readonly phase: InterceptPhaseModel;
-  readonly order: number;
-  readonly markerKey: string;
-  readonly contract: LinkedSymbol;
 }
 
 function coreDecoratorsNamed(
@@ -939,6 +927,24 @@ function wovenBeanModelOf(
   };
 }
 
+// 贡献进来的绑定只在它的 bean 真进了图时生效：合成 provider 的存在即证明那个能力真的被用到了
+// （事务那条即「有 @Transactional 使用」）。用户经 @Interceptor({ marker: … }) 绑的拦截器与它
+// 同链参与压平。
+function mergeContributedBindings(
+  declared: ReadonlyMap<string, readonly InterceptorBinding[]>,
+  contributed: readonly InterceptorBinding[],
+  providerById: ReadonlyMap<string, ProviderModel>,
+): ReadonlyMap<string, readonly InterceptorBinding[]> {
+  const merged = new Map(declared);
+  for (const binding of contributed) {
+    if (!providerById.has(binding.beanId)) {
+      continue;
+    }
+    merged.set(binding.markerKey, [...(merged.get(binding.markerKey) ?? []), binding]);
+  }
+  return merged;
+}
+
 // 织入分析入口：挂在 analyzeWebRoutes 之后（provider 全集在手）、createExecutionPlans 之前
 // （追加边直接参与构造排序 / cycle-proxy 改写 / request 计划）。拦截器被强制为 singleton，
 // 追加边因此不触 validateScopeRules 的任何规则（singleton/request → singleton 恒合法）。
@@ -947,28 +953,18 @@ export function analyzeMethodInterception(
   linker: ProjectLinker,
   providers: readonly ProviderModel[],
   diagnostics: CompilerDiagnostic[],
+  // contribute 相位贡献的框架绑定（#344 定案 2）。此前这里是一句跨文件硬编码——直接
+  // `providerById.has(transactionInterceptorBeanId)` 再就地拼一条事务绑定，也就是 transaction
+  // 域向本文件的一次隐式贡献。现在贡献方自己声明写 interceptorBindings 通道，本文件只消费。
+  contributed: readonly InterceptorBinding[] = [],
 ): WeavingModel {
   const markers = collectMethodMarkers(sources, linker, diagnostics);
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
-  const bindings = new Map(
+  const bindings = mergeContributedBindings(
     collectInterceptorBindings(sources, linker, markers, providerById, diagnostics),
+    contributed,
+    providerById,
   );
-  // 框架事务拦截器绑定（#204 定案 5/6）：合成 provider 在 analyze-project 里先于
-  // resolveProviders 入表（存在即证明有 @Transactional 使用），这里补上它的绑定——
-  // phase "transaction"、order 0 是 AM1 阶段表为它预留的唯一落位。用户经
-  // @Interceptor({ marker: Transactional }) 绑的拦截器与它同链参与压平。
-  if (providerById.has(transactionInterceptorBeanId)) {
-    bindings.set(transactionalMarkerKey, [
-      ...(bindings.get(transactionalMarkerKey) ?? []),
-      {
-        beanId: transactionInterceptorBeanId,
-        phase: "transaction",
-        order: 0,
-        markerKey: transactionalMarkerKey,
-        contract: transactionInterceptorSymbol,
-      },
-    ]);
-  }
   const scans = scanMarkedClasses(sources, linker, markers, diagnostics);
   reportOverrideDroppedMarkers(sources, linker, scans, providerById, diagnostics);
 
