@@ -1,0 +1,13 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      // 逐条列出上游而不是 `^build`：`^build` 含 devDependencies，而产 meta 要 devDepend
+      // @reforce/cli，那条边会成环（cli → compiler → web-core，最后一条是 compiler 的 IT
+      // 夹具要装真的 web-core）。web-core 是最底层的 web 包，运行时上游只有 core。
+      "dependsOn": ["@reforce/core#build"],
+      "outputs": ["dist/**"]
+    }
+  }
+}

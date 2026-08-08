@@ -215,12 +215,16 @@ export function analyzeProject(
               name: contextFrameworkLoggerName,
               reason: loggingPackageName,
               span: loggerBinding.span,
+              ...(loggerBinding.source === undefined ? {} : { source: loggerBinding.source }),
             },
           ]),
       ...engineBeans.slice(0, 1).map((bean) => ({
         name: webFrameworkLoggerName,
         reason: webPackageName,
         span: spanOfStarterBean(bean),
+        // manifest 里的路径必须与机器无关：span 是项目根相对的（诊断渲染要），metaSource 是
+        // 包内相对的（进产物用）。见 logger-synthesis 的 LoggerDemand.source。
+        source: bean.metaSource,
       })),
       // 事务那条与 web 那条的区别只在消费方式：web 由生成的 bootstrap 直接 get，事务是
       // 拦截器的第 1 个构造参数，所以要带上 consumer 让重定向表接上那条边。

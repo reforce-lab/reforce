@@ -23,6 +23,18 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    // 只有 @reforce/web-core 用它：它一个 bean 都没有，产的是一份纯户口表的 meta，让引擎包的
+    // 契约写成 `@reforce/web-core#WebEngineAdapter` 而不是把 web-core 的 dist 布局抄进契约串
+    // （#369）。其余 starter 在自己的 rslib build 里由 bundler-plugin 顺带产出。
+    //
+    // 它必须是**独立任务**而不是 web-core 的 build 的一部分：走 build 就要 devDepend
+    // bundler-plugin，而 `^build` 含 devDeps，于是
+    // web-core#build → bundler-plugin#build → compiler#build → web-core#build 成环（最后一条
+    // 是 compiler 的 IT 夹具要装真的 web-core）。拆成独立任务后 build 链上不再有这条边。
+    "meta": {
+      "dependsOn": ["build", "@reforce/cli#build"],
+      "outputs": ["reforce-meta.json"]
+    },
     "check": {
       "outputs": []
     },

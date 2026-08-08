@@ -102,6 +102,8 @@ export function isLoggerLevelsContract(symbol: LinkedSymbol): boolean {
 export interface ProvidedLoggerFactory {
   readonly symbol: LinkedSymbol;
   readonly span: SourceSpan;
+  /** 绑定来自 starter 时进 manifest 的那份位置（包内相对）；来自应用源集时缺席，见 LoggerDemand。 */
+  readonly source?: SourceReferenceModel;
 }
 
 export function providedLoggerFactorySymbol(
@@ -117,7 +119,7 @@ export function providedLoggerFactorySymbol(
   for (const bean of linker.starterLinkage.beans) {
     const provided = bean.provides.find(isLoggerFactoryContract);
     if (provided !== undefined) {
-      return { symbol: provided, span: spanOfStarterBean(bean) };
+      return { symbol: provided, span: spanOfStarterBean(bean), source: bean.metaSource };
     }
   }
   return undefined;
@@ -229,6 +231,13 @@ interface LoggerDemand {
   readonly parameterIndex: number;
   readonly loggerName: string;
   readonly span: SourceSpan;
+  /**
+   * 进 manifest 的那份位置。缺席时由 span 换算——用户注入点的 span 本就是项目根相对的。
+   *
+   * starter 那侧必须显式给（#369）：它的 span 为了能被诊断渲染器解析成了**项目根**相对，
+   * 而 manifest 里的路径要与机器无关，starter bean 的答案是**包内**相对的 metaSource。
+   */
+  readonly source?: SourceReferenceModel;
   /** 用户注入点那条 Logger 边的契约符号；框架 logger 没有消费者，缺席。 */
   readonly contract?: LinkedSymbol;
 }
@@ -305,6 +314,8 @@ export interface FrameworkLoggerRequest {
   readonly reason: string;
   /** 把它拉进图里的那处位置：web 是 starter meta 条目，事务是第一处 @Transactional 使用。 */
   readonly span: SourceSpan;
+  /** 进 manifest 的那份位置；缺席即由 span 换算。来自 starter 的请求必须给，见 LoggerDemand。 */
+  readonly source?: SourceReferenceModel;
   /**
    * 有构造参数消费它时给出那条边（RFC 0011 C5，#250）。web 那条框架 logger 由生成的
    * bootstrap 直接 get，不经任何依赖边，所以缺席；事务拦截器则是按构造参数拿的。
@@ -328,7 +339,7 @@ export interface LoggerSynthesis {
 // 级别快照 bean（RFC 0011 L5 勘误，#242）。它没有依赖边，全部内容是编译期算好的封闭名单：
 // 级别的真相在 LoggingSettings bean 里，快照的职责收缩为「编译期看见了哪些名字」——供启动期
 // 对 settings.levels 的键做确定性 did-you-mean。
-function loggerLevelsDraft(names: readonly string[], span: SourceSpan): ProviderDraft {
+function loggerLevelsDraft(names: readonly string[], demand: LoggerDemand): ProviderDraft {
   const snapshot = { names } satisfies LiteralArgumentValue;
   return {
     provider: {
@@ -341,7 +352,7 @@ function loggerLevelsDraft(names: readonly string[], span: SourceSpan): Provider
         sourceText: `${loggerLevelsRuntimeExport.module}#${loggerLevelsRuntimeExport.export}`,
       },
       exportName: loggerLevelsContractName,
-      declarationSource: sourceReference(span),
+      declarationSource: demand.source ?? sourceReference(demand.span),
       // 与 logger bean 同理刻意为空：消费者由 isLoggerLevelsContract 点名，不经 selectProvider。
       provides: [],
       scope: "singleton",
@@ -372,6 +383,7 @@ function applyFrameworkDemands(
       parameterIndex: -1,
       loggerName: request.name,
       span: request.span,
+      ...(request.source === undefined ? {} : { source: request.source }),
     };
     byName.set(request.name, demand);
     if (request.consumer === undefined) {
@@ -453,15 +465,15 @@ export function synthesizeLoggerBeans(input: {
   //
   // span 只能从 beanNames 里取，不能从 names：引导期名字没有 demand，byName.get 返回
   // undefined，快照 bean 会连带整个不被合成，每条 LoggerLevels 边都变成 MISSING_BEAN。
-  const levelsSpan = byName.get(beanNames[0] ?? "")?.span;
+  const levelsDemand = byName.get(beanNames[0] ?? "");
   return {
     drafts: [
       ...beanNames.map((name) => loggerDraft(name, byName.get(name), factorySymbol)),
-      ...(levelsSpan === undefined ? [] : [loggerLevelsDraft(names, levelsSpan)]),
+      ...(levelsDemand === undefined ? [] : [loggerLevelsDraft(names, levelsDemand)]),
     ],
     redirects,
     names,
-    ...(levelsSpan === undefined ? {} : { levelsBeanId: loggerLevelsBeanId }),
+    ...(levelsDemand === undefined ? {} : { levelsBeanId: loggerLevelsBeanId }),
   };
 }
 
@@ -484,7 +496,9 @@ function loggerDraft(
       current: false,
       span: demand.span,
     },
-    sourceSpan: demand.span,
+    // linkedType.span 喂诊断（渲染得出代码框），sourceSpan 进 manifest（必须与机器无关）：
+    // 来自 starter 的需求两者不是同一条路径，见 LoggerDemand.source（#369）。
+    sourceSpan: demand.source === undefined ? demand.span : spanOfSourceReference(demand.source),
   };
   return {
     provider: {
@@ -500,7 +514,7 @@ function loggerDraft(
       // 身份，这是框架 logger 独有的形态，manifest 校验为它单开一条分支。
       exportName: `Logger(${name})`,
       // 「这个 bean 为什么在图里」的答案就是第一处注入它的构造参数。
-      declarationSource: sourceReference(demand.span),
+      declarationSource: demand.source ?? sourceReference(demand.span),
       // 刻意为空：不进候选池。消费者由重定向表点名，见本文件顶部。
       provides: [],
       scope: "singleton",

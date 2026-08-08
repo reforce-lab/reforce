@@ -106,6 +106,9 @@ export async function installApplicationPackages(
     cp(join(configRoot, "dist"), join(configTarget, "dist"), { recursive: true }),
     cp(join(webRoot, "package.json"), join(webTarget, "package.json")),
     cp(join(webRoot, "dist"), join(webTarget, "dist"), { recursive: true }),
+    // web-core 一个 bean 都没有，但它的 meta 是引擎包契约坐标的落点：web-node 的 provides 写的
+    // 是 `@reforce/web-core#WebEngineAdapter`，链接期要靠这份户口表把它解析回 dist（#369）。
+    cp(join(webRoot, "reforce-meta.json"), join(webTarget, "reforce-meta.json")),
     cp(join(loggingRoot, "package.json"), join(loggingTarget, "package.json")),
     cp(join(loggingRoot, "dist"), join(loggingTarget, "dist"), { recursive: true }),
     // @reforce/logging 升格 starter 后（RFC 0011 勘误，#242）分发面同样带 meta。

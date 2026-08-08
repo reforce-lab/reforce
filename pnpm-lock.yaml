@@ -799,6 +799,9 @@ importers:
       '@biomejs/biome':
         specifier: 'catalog:'
         version: 2.5.7
+      '@reforce/cli':
+        specifier: workspace:*
+        version: link:../../devkit/cli
       '@reforce/tooling-rslib':
         specifier: workspace:*
         version: link:../../../tooling/rslib
