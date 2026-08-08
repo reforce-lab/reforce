@@ -209,7 +209,10 @@ export class BoomController {
   }
 
   // 不写任何 @ErrorHandler：HttpError 由 error-dispatch 内置识别，直接成为 409 problem+json。
+  // @Throws 认 defineHttpError 造的 const（#310）：无处理器可绑，声明的意义是把 409 写进
+  // routes.json 与 openapi 的响应集合；const 不导出也行——manifest 不需要 import 它。
   @Get("/conflict")
+  @Throws(GreetingAlreadyExists)
   conflict(): Response {
     throw new GreetingAlreadyExists(["Lynch"]);
   }

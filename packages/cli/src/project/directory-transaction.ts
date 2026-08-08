@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import { mkdir, open, readdir, readFile, realpath, rmdir, unlink } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import type { GeneratedFile } from "@reforce/compiler";
@@ -130,7 +131,9 @@ function backupPrefix(kind: TransactionKind): string {
 export interface IncompleteDistTransaction {
   // journal：`.reforce/transactions/dist` 下还留着事务记录；artifact：项目根还留着 staging/backup 目录。
   readonly reason: "journal" | "artifact";
-  readonly entryName: string;
+  // 全量列出且已排序：staging 与 backup 并存（崩在 commit 中途）正是这个闸门要抓的典型状态，只报
+  // 其中一个会让文案随平台 readdir 顺序漂移，也丢掉一半现场（Issue #314）。
+  readonly entryNames: readonly string[];
 }
 
 // start 命令要在启动前确认 dist 不是半个事务的产物，而判断依据是本模块的磁盘命名（见
@@ -141,19 +144,36 @@ export async function findIncompleteDistTransaction(
 ): Promise<IncompleteDistTransaction | undefined> {
   const journalRoot = transactionRootFor(join(projectRoot, ".reforce"), "dist");
   const journalEntries = await readdirIfExists(journalRoot);
-  const journalEntry = journalEntries[0];
-  if (journalEntry !== undefined) {
-    return { reason: "journal", entryName: journalEntry };
+  if (journalEntries.length > 0) {
+    return { reason: "journal", entryNames: journalEntries };
   }
-  const artifactEntry = (await readdir(projectRoot)).find(
+  // projectRoot 也走 readdirIfExists：本闸门跑在 resolveProductionEntry 的错误归类之前，裸 ENOENT
+  // 会绕过 ARTIFACT_INVALID 直接逃逸；「项目根不存在」交给后续 dist 检查归类（Issue #314）。
+  const artifactEntries = (await readdirIfExists(projectRoot)).filter(
     (entry) => entry.startsWith(stagingPrefix("dist")) || entry.startsWith(backupPrefix("dist")),
   );
-  return artifactEntry === undefined ? undefined : { reason: "artifact", entryName: artifactEntry };
+  return artifactEntries.length === 0
+    ? undefined
+    : { reason: "artifact", entryNames: artifactEntries };
+}
+
+// readdir 的返回顺序因文件系统而异（ext4 哈希序 / APFS / NTFS 各不同）。本模块消费目录列举的
+// 地方全部先排序：恢复的处理顺序、聚合哈希的输入顺序和报告文案都不得随平台漂移（Issue #314）。
+async function readdirSortedNames(directory: string): Promise<readonly string[]> {
+  const names = await readdir(directory);
+  names.sort(compareUtf16CodeUnits);
+  return names;
+}
+
+async function readdirSortedEntries(directory: string): Promise<readonly Dirent[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
+  return entries;
 }
 
 async function readdirIfExists(directory: string): Promise<readonly string[]> {
   try {
-    return await readdir(directory);
+    return await readdirSortedNames(directory);
   } catch (error) {
     if (isMissingPathError(error)) {
       return [];
@@ -242,8 +262,7 @@ function createAggregateHash(entries: readonly TreeEntry[]): string {
 }
 
 async function collectTreeEntries(root: string, directory = root): Promise<readonly TreeEntry[]> {
-  const entries = await readdir(directory, { withFileTypes: true });
-  entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
+  const entries = await readdirSortedEntries(directory);
   const collected: TreeEntry[] = [];
   for (const entry of entries) {
     const absolutePath = join(directory, entry.name);
@@ -656,8 +675,7 @@ export class DirectoryTransactions {
       await this.lease.assertCurrentWriter();
       for (const kind of ["generated", "dist"] as const) {
         const { transactionRoot } = this.layoutFor(kind);
-        const entries = await readdir(transactionRoot, { withFileTypes: true });
-        entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
+        const entries = await readdirSortedEntries(transactionRoot);
         for (const entry of entries) {
           if (!entry.isDirectory()) {
             throw new DirectoryTransactionError(
@@ -680,8 +698,7 @@ export class DirectoryTransactions {
   private async recoverUnjournaledStaging(kind: TransactionKind): Promise<void> {
     const layout = this.layoutFor(kind);
     const prefix = stagingPrefix(kind);
-    const entries = await readdir(layout.activeParent, { withFileTypes: true });
-    entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
+    const entries = await readdirSortedEntries(layout.activeParent);
     for (const entry of entries) {
       if (!entry.name.startsWith(prefix)) {
         continue;
@@ -1209,8 +1226,7 @@ export class DirectoryTransactions {
     kind: TransactionKind,
     transactionToken: string,
   ): Promise<void> {
-    const entries = await readdir(directory, { withFileTypes: true });
-    entries.sort((left, right) => compareUtf16CodeUnits(left.name, right.name));
+    const entries = await readdirSortedEntries(directory);
     for (const entry of entries) {
       const path = join(directory, entry.name);
       if (entry.isSymbolicLink()) {

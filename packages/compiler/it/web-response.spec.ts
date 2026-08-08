@@ -209,10 +209,29 @@ const errorsSource = [
   "}",
 ].join("\n");
 
+// defineHttpError 造的异常(#310):无类声明、无处理器,@Throws 直接绑内置 problem+json 契约。
+const httpErrorsSource = [
+  'import { defineHttpError } from "@reforce/web";',
+  "",
+  "export const PaymentRequiredError = defineHttpError<[name: string]>(",
+  '  "PAYMENT_REQUIRED_X",',
+  '  "payment %s required",',
+  "  402,",
+  ");",
+  "",
+  "// status 不是字面量:静态读不出,manifest 该条目不落 status(文档只收静态可知的事实)。",
+  "const teapotStatus = 418;",
+  'export const TeapotDynamicError = defineHttpError("TEAPOT_DYNAMIC", "teapot", teapotStatus);',
+  "",
+  "// status 字面量出 100-599 合法域:同样不落 status——非法状态码进 openapi 只会砸下游。",
+  'export const WeirdStatusError = defineHttpError("WEIRD_STATUS", "weird", 42.5);',
+].join("\n");
+
 describe("S3 response declarations", () => {
   const sources = {
     "schemas.ts": schemaSource,
     "errors.ts": errorsSource,
+    "http-errors.ts": httpErrorsSource,
     "quota-middleware.ts": [
       controllerImports,
       'import { QuotaExceededError } from "@/errors";',
@@ -227,6 +246,7 @@ describe("S3 response declarations", () => {
     "orders-controller.ts": [
       controllerImports,
       'import { OrderRejectedError, SpecialOrderRejectedError } from "@/errors";',
+      'import { PaymentRequiredError, TeapotDynamicError, WeirdStatusError } from "@/http-errors";',
       'import { QuotaMiddleware } from "@/quota-middleware";',
       'import { orderWireSchema } from "@/schemas";',
       '@Controller("/orders")',
@@ -271,6 +291,15 @@ describe("S3 response declarations", () => {
       '  @Get("/throws-sub")',
       "  @Throws(SpecialOrderRejectedError)",
       "  throwingSub(): void {}",
+      "",
+      "  // defineHttpError 造的异常与类异常混排(#310)。",
+      '  @Get("/throws-http-error")',
+      "  @Throws(PaymentRequiredError, OrderRejectedError)",
+      "  throwingHttp(): void {}",
+      "",
+      '  @Get("/throws-http-dynamic")',
+      "  @Throws(TeapotDynamicError, WeirdStatusError)",
+      "  throwingDynamic(): void {}",
       "}",
     ].join("\n"),
   };
@@ -367,6 +396,35 @@ describe("S3 response declarations", () => {
     ]);
   });
 
+  test("Throws accepts a defineHttpError const and records the built-in problem contract", async () => {
+    const { result } = await compileResponsesOrThrow(sources);
+
+    const throwing = responseOf(result, "GET", "/orders/throws-http-error");
+    expect(throwing.errors).toEqual([
+      {
+        error: "OrderRejectedError",
+        handler: "src/errors.ts#OrderRejectedHandler",
+        status: 409,
+        body: { kind: "table", table: expect.anything() },
+      },
+      {
+        error: "PaymentRequiredError",
+        status: 402,
+        body: { kind: "problem", code: "PAYMENT_REQUIRED_X" },
+      },
+    ]);
+  });
+
+  test("a defineHttpError with a non-literal status keeps the entry but drops the status", async () => {
+    const { result } = await compileResponsesOrThrow(sources);
+
+    const throwing = responseOf(result, "GET", "/orders/throws-http-dynamic");
+    expect(throwing.errors).toEqual([
+      { error: "TeapotDynamicError", body: { kind: "problem", code: "TEAPOT_DYNAMIC" } },
+      { error: "WeirdStatusError", body: { kind: "problem", code: "WEIRD_STATUS" } },
+    ]);
+  });
+
   test("typed error handlers emit accepts imports, status and encoders", async () => {
     const { result } = await compileResponsesOrThrow(sources);
 
@@ -433,6 +491,42 @@ describe("S3 response hard errors", () => {
     });
 
     expect(failureCodes(result)).toEqual(["THROWS_WITHOUT_HANDLER"]);
+  });
+
+  // 限定名不认:按最左标识符解析会把 X.foo 误认成 X,宁可硬错也不落错误声明。
+  test("a qualified reference to a defineHttpError const is INVALID_ERROR_HANDLER_SIGNATURE", async () => {
+    const { result } = await compileResponses({
+      "http-errors.ts": httpErrorsSource,
+      "users-controller.ts": [
+        controllerImports,
+        'import { PaymentRequiredError } from "@/http-errors";',
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/users")',
+        "  @Throws(PaymentRequiredError.foo)",
+        "  list(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(failureCodes(result)).toEqual(["INVALID_ERROR_HANDLER_SIGNATURE"]);
+  });
+
+  test("a const that is not a defineHttpError call is INVALID_ERROR_HANDLER_SIGNATURE", async () => {
+    const { result } = await compileResponses({
+      "users-controller.ts": [
+        controllerImports,
+        "export const notAnError = { status: 402 };",
+        "@Controller()",
+        "export class UsersController {",
+        '  @Get("/users")',
+        "  @Throws(notAnError)",
+        "  list(): void {}",
+        "}",
+      ].join("\n"),
+    });
+
+    expect(failureCodes(result)).toEqual(["INVALID_ERROR_HANDLER_SIGNATURE"]);
   });
 
   test("a data-shaped handler without ResponseStatus is ERROR_HANDLER_MISSING_STATUS", async () => {

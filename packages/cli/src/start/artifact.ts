@@ -25,13 +25,16 @@ async function assertNoIncompleteDistTransaction(projectRoot: string): Promise<v
   if (incomplete === undefined) {
     return;
   }
+  // entryNames 已排序（见 IncompleteDistTransaction），逐条列出让文案带上全部现场且不随平台
+  // readdir 顺序漂移（Issue #314）。
+  const entries = incomplete.entryNames.join(", ");
   if (incomplete.reason === "journal") {
     throw new ArtifactInvalidError(
-      "Production artifact has an incomplete dist transaction; run reforce build to recover it.",
+      `Production artifact has an incomplete dist transaction (${entries}); run reforce build to recover it.`,
     );
   }
   throw new ArtifactInvalidError(
-    `Production artifact has incomplete transaction output: ${incomplete.entryName}`,
+    `Production artifact has incomplete transaction output: ${entries}`,
   );
 }
 

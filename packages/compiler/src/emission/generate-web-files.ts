@@ -146,12 +146,24 @@ function contractManifestOf(
       ...(slot.key === undefined ? {} : { key: slot.key }),
       ...(slot.kind === "body" ? {} : { form: slot.form }),
       source: contractSourceManifestOf(slot.contractSource, generatedDirectory),
-      table: slot.table,
+      // manifest 落线上侧表(#310):schema 槽的输入侧可缺省合并进根字段 optional;
+      // routes.ts 的 typed-edge 仍用 handler 侧的 slot.table。
+      table: slot.wireTable ?? slot.table,
     };
   });
-  // errors = @Throws 并集(路由 ∪ 挂载中间件,分析层已按类键去重、错误名排序):每条携带
-  // 分派赢家处理器的 beanId 与其声明的状态码/形状(passthrough 处理器两者缺席)。
+  // errors = @Throws 并集(路由 ∪ 挂载中间件,分析层已按类键去重、错误名排序):
+  // - handler 变体携带分派赢家处理器的 beanId 与其声明的状态码/形状(passthrough 处理器
+  //   两者缺席);
+  // - http-error 变体(defineHttpError 造的异常,#310)无处理器,运行时兜底闭集直译
+  //   problem+json,status/code 是 defineHttpError 实参的静态字面量(非字面量时缺席)。
   const errors = route.throws.map((thrown) => {
+    if (thrown.kind === "http-error") {
+      return {
+        error: thrown.errorName,
+        ...(thrown.status === undefined ? {} : { status: thrown.status }),
+        body: { kind: "problem", ...(thrown.code === undefined ? {} : { code: thrown.code }) },
+      };
+    }
     const handler = handlersByBeanId.get(thrown.handlerBeanId);
     const body = handler === undefined ? undefined : handlerBodyManifestOf(handler.response);
     const status = handler?.response.status;
@@ -218,7 +230,7 @@ function renderRouteManifest(web: WebModel, generatedDirectory: string): string 
       ...(body === undefined ? {} : { body }),
     };
   });
-  return `${json({ schemaVersion: 3, routes, errorHandlers })}\n`;
+  return `${json({ schemaVersion: 4, routes, errorHandlers })}\n`;
 }
 
 const bareSlotArguments = {
@@ -402,7 +414,7 @@ function renderErrorHandlerEntry(
 function renderRouteModule(web: WebModel, generatedDirectory: string): string {
   if (web.routes.length === 0 && web.errorHandlers.length === 0) {
     // 空表不 import：没有 web 内容的应用不需要安装 @reforce/web 也要能编译与 typecheck。
-    return `export const routeTable = {\n  schemaVersion: 3,\n  routes: [],\n  errorHandlers: [],\n} as const;\n`;
+    return `export const routeTable = {\n  schemaVersion: 4,\n  routes: [],\n  errorHandlers: [],\n} as const;\n`;
   }
   const beanImports = collectImports(
     [
@@ -461,7 +473,7 @@ function renderRouteModule(web: WebModel, generatedDirectory: string): string {
     ...preamble,
     ...moduleDeclarations.flatMap((declaration) => [declaration, ""]),
     "export const routeTable = {",
-    "  schemaVersion: 3,",
+    "  schemaVersion: 4,",
     `  ${routesBlock}`,
     `  ${errorHandlersBlock}`,
     "} as const satisfies GeneratedRouteTable;",

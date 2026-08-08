@@ -1,6 +1,6 @@
 import type { MethodInterceptor, MethodInvocationContext } from "@reforce/core";
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   TransactionIsolationOnJoinError,
   TransactionResourceReusedError,
@@ -676,7 +676,7 @@ describe("runTransactional", () => {
 // C5（RFC 0011，#250）：事务边界此前零日志——排查一笔「明明 commit 了却没落库」的写，
 // 手上一个字都没有。logger 形状由本包声明，@reforce/logging 的 Logger 结构性满足它。
 describe("transaction logging", () => {
-  function capturingLogger(enabled = true) {
+  function capturingLogger(enabled = true, explodeOnMessage?: string) {
     const records: {
       level: string;
       fields: Readonly<Record<string, unknown>> | undefined;
@@ -689,9 +689,22 @@ describe("transaction logging", () => {
         isEnabled: () => enabled,
         debug: (fields: Readonly<Record<string, unknown>> | undefined, message: string) => {
           records.push({ level: "debug", fields, message });
+          if (message === explodeOnMessage) {
+            throw new Error("logger exploded");
+          }
         },
       },
     };
+  }
+
+  // logger 故障隔离用例都要压制 stderr 兜底输出，顺便捕获它供断言。
+  function captureStderr() {
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    return { writes, restore: () => spy.mockRestore() };
   }
 
   test("pairs begin with commit when a new boundary returns", async () => {
@@ -815,25 +828,118 @@ describe("transaction logging", () => {
   });
 
   // 与 web 侧 500 兜底的分歧：那边吞掉日志故障，因为 dispatchError 永不 reject 是契约；
-  // 这边吞掉会让坏 logger 顶替业务错误。
-  test("rethrows the original error when the boundary logger itself throws", async () => {
+  // 这边（失败路径）不能让坏 logger 顶替业务错误——原错照抛。#314 之后 logger 在任何记录上
+  // 爆都不再需要挑记录：成功路径吞掉 + stderr，失败路径原错照抛。
+  test("rethrows the original error when the boundary logger throws on every record", async () => {
+    const { restore } = captureStderr();
     const { manager } = nestedManager();
     const interceptor = new TransactionInterceptor(manager, {
       isEnabled: () => true,
-      // 只在回滚记录上爆：begin/commit 走 debugBoundary，不在被测的故障兜底路径上。
-      debug: (_fields, message) => {
-        if (message === "transaction rollback") {
-          throw new Error("logger exploded");
-        }
+      debug: () => {
+        throw new Error("logger exploded");
       },
     });
     const failure = new Error("boom");
 
-    await expect(
-      boundary(interceptor, undefined, async () => {
-        throw failure;
-      }),
-    ).rejects.toBe(failure);
+    try {
+      await expect(
+        boundary(interceptor, undefined, async () => {
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+    } finally {
+      restore();
+    }
+  });
+
+  // #314：commit 记录在事务已生效之后打出。logger 在这里爆绝不能传给调用方——数据已落库，
+  // 重抛等于伪造失败信号，调用方可能据此重试一笔已生效的写。
+  test("returns the committed result when the logger throws on the commit record", async () => {
+    const { restore } = captureStderr();
+    const { manager, events } = nestedManager();
+    const { logger } = capturingLogger(true, "transaction commit");
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    try {
+      await expect(boundary(interceptor, undefined, async () => "saved")).resolves.toBe("saved");
+      expect(ops(events)).toEqual(["begin", "commit"]);
+    } finally {
+      restore();
+    }
+  });
+
+  // #314 连带缺陷：commit 后 debugBoundary 的异常曾被边界 catch 接住，记成一条与事实相反的
+  // "transaction rollback"（事务实际已提交）。
+  test("fakes no rollback record when the logger throws on the commit record", async () => {
+    const { restore } = captureStderr();
+    const { manager } = nestedManager();
+    const { messages, logger } = capturingLogger(true, "transaction commit");
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    try {
+      await boundary(interceptor, undefined, async () => "saved");
+
+      expect(messages()).not.toContain("transaction rollback");
+    } finally {
+      restore();
+    }
+  });
+
+  // 不变量 9：不许静默。成功路径吞掉的 logger 故障必须在 stderr 留痕。
+  test("reports a swallowed commit-record logger failure to stderr", async () => {
+    const { writes, restore } = captureStderr();
+    const { manager } = nestedManager();
+    const { logger } = capturingLogger(true, "transaction commit");
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    try {
+      await boundary(interceptor, undefined, async () => "saved");
+
+      expect(
+        writes.filter((line) => line.includes("[reforce.transaction] the boundary logger failed:")),
+      ).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
+  // #314 连带缺陷：savepoint release 后 logger 的异常曾传播到外层边界，把整个外层事务回滚，
+  // 而内层数据已释放进外层。
+  test("keeps the outer transaction committing when the logger throws on the release record", async () => {
+    const { restore } = captureStderr();
+    const { manager, events } = nestedManager();
+    const { logger } = capturingLogger(true, "transaction savepoint release");
+    const interceptor = new TransactionInterceptor(manager, logger);
+
+    try {
+      await expect(
+        boundary(interceptor, undefined, async () =>
+          boundary(interceptor, { propagation: "NESTED" }, async () => "inner"),
+        ),
+      ).resolves.toBe("inner");
+      expect(ops(events)).toEqual(["begin", "savepoint", "release", "commit"]);
+    } finally {
+      restore();
+    }
+  });
+
+  // #314：isEnabled 与 debug 一样是用户注入面（@LoggerName("reforce.transaction") 用户赢），
+  // 它爆同样不许外溢。
+  test("isolates a throwing isEnabled from the caller", async () => {
+    const { restore } = captureStderr();
+    const { manager } = nestedManager();
+    const interceptor = new TransactionInterceptor(manager, {
+      isEnabled: () => {
+        throw new Error("isEnabled exploded");
+      },
+      debug: () => undefined,
+    });
+
+    try {
+      await expect(boundary(interceptor, undefined, async () => "saved")).resolves.toBe("saved");
+    } finally {
+      restore();
+    }
   });
 
   test("stays silent when no logger was wired in", async () => {

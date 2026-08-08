@@ -209,42 +209,71 @@ function successResponseOf(
   };
 }
 
-function thrownBodySchema(
+// problem 变体的线上形状(#310):defineHttpError 异常由兜底闭集直译 RFC 9457 problem+json
+// (error-dispatch 的 detail/code 扩展成员恒在场);code 是静态字面量时钉成 const。
+function problemBodySchema(code: string | undefined): OpenApiSchema {
+  return {
+    type: "object",
+    properties: {
+      type: { type: "string" },
+      title: { type: "string" },
+      status: { type: "integer" },
+      detail: { type: "string" },
+      code: code === undefined ? { type: "string" } : { type: "string", const: code },
+    },
+    required: ["type", "title", "status", "detail", "code"],
+  };
+}
+
+interface ThrownBodyContent {
+  readonly mediaType: string;
+  readonly schema: OpenApiSchema;
+}
+
+function thrownBodyContentOf(
   thrown: RouteManifestThrownError,
   nameOf: ReadonlyMap<string, string>,
-): OpenApiSchema | undefined {
+): ThrownBodyContent | undefined {
   if (thrown.body === undefined) {
     return undefined;
   }
-  if (thrown.body.kind === "free-form") {
-    return { type: "object" };
+  if (thrown.body.kind === "problem") {
+    return { mediaType: "application/problem+json", schema: problemBodySchema(thrown.body.code) };
   }
-  return jsonSchemaOf(thrown.body.table.root, nameOf);
+  if (thrown.body.kind === "free-form") {
+    return { mediaType: "application/json", schema: { type: "object" } };
+  }
+  return { mediaType: "application/json", schema: jsonSchemaOf(thrown.body.table.root, nameOf) };
 }
 
-// @Throws 条目按处理器声明的状态码归组;同状态多形状去重后 oneOf。无状态码的条目
-// (passthrough 处理器)没有可写的响应行,略过——文档只收静态可知的事实。
-// 同状态多形状按稳定序列化指纹去重:同一处理器被多个错误命中时只出一份 schema。
-function dedupedBodySchemas(
+// 同状态多形状按 (媒体类型, 稳定序列化指纹) 去重:同一处理器被多个错误命中时只出一份
+// schema;problem 变体与处理器 JSON 各归各的媒体类型,同状态并存时 content 双键。
+function dedupedBodyContents(
   group: readonly RouteManifestThrownError[],
   nameOf: ReadonlyMap<string, string>,
-): readonly OpenApiSchema[] {
-  const schemas: OpenApiSchema[] = [];
+): ReadonlyMap<string, readonly OpenApiSchema[]> {
+  const byMediaType = new Map<string, OpenApiSchema[]>();
   const seen = new Set<string>();
   for (const thrown of group) {
-    const schema = thrownBodySchema(thrown, nameOf);
-    if (schema === undefined) {
+    const content = thrownBodyContentOf(thrown, nameOf);
+    if (content === undefined) {
       continue;
     }
-    const fingerprint = JSON.stringify(schema);
-    if (!seen.has(fingerprint)) {
-      seen.add(fingerprint);
-      schemas.push(schema);
+    const fingerprint = `${content.mediaType} ${JSON.stringify(content.schema)}`;
+    if (seen.has(fingerprint)) {
+      continue;
     }
+    seen.add(fingerprint);
+    const schemas = byMediaType.get(content.mediaType) ?? [];
+    schemas.push(content.schema);
+    byMediaType.set(content.mediaType, schemas);
   }
-  return schemas;
+  return byMediaType;
 }
 
+// @Throws 条目按声明的状态码归组(handler 变体取处理器 @ResponseStatus,problem 变体取
+// defineHttpError 实参)。无状态码的条目(passthrough 处理器、非字面量 status)没有可写的
+// 响应行,略过——文档只收静态可知的事实。
 function thrownResponsesOf(
   route: RouteManifestEntry,
   nameOf: ReadonlyMap<string, string>,
@@ -262,18 +291,16 @@ function thrownResponsesOf(
   const responses = new Map<string, OpenApiSchema>();
   for (const [status, group] of byStatus) {
     const names = group.map((thrown) => thrown.error).join(", ");
-    const schemas = dedupedBodySchemas(group, nameOf);
+    const contents = dedupedBodyContents(group, nameOf);
+    const content = Object.fromEntries(
+      [...contents].map(([mediaType, schemas]) => [
+        mediaType,
+        { schema: schemas.length === 1 ? schemas[0] : { oneOf: schemas } },
+      ]),
+    );
     responses.set(status, {
       description: `Declared by @Throws: ${names}.`,
-      ...(schemas.length === 0
-        ? {}
-        : {
-            content: {
-              "application/json": {
-                schema: schemas.length === 1 ? schemas[0] : { oneOf: schemas },
-              },
-            },
-          }),
+      ...(contents.size === 0 ? {} : { content }),
     });
   }
   return responses;
