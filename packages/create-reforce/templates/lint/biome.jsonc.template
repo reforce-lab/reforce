@@ -18,9 +18,26 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "suspicious": {
+        // 空 catch/空块一律拒绝：吞错必须写清理由，写了理由的块才会被放行
+        "noEmptyBlockStatements": "error"
+      }
     }
   },
+  "overrides": [
+    {
+      // 测试代码里 `() => {}` 常是合法的 noop 替身，不是吞错；空块拦截只对 src/** 生效
+      "includes": ["**/test/**", "**/it/**", "**/bench/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noEmptyBlockStatements": "off"
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "actions": {
       "source": {
