@@ -222,6 +222,22 @@ const legacyParameterDecoratorRejected = {
   },
 } satisfies ProjectTree;
 
+// @Fallback() 在应用里是硬错误（#343）：它归一为 starter meta 的 defaultBean，应用侧候选裁决
+// 没有这个概念。不拦就是个静默无效的注解。
+const applicationFallbackRejected = {
+  "tsconfig.json": applicationConfig(),
+  src: {
+    "application.ts": [
+      'import { Fallback, Injectable } from "@reforce/core";',
+      "export interface ServicePort {}",
+      "@Injectable()",
+      "@Fallback()",
+      "export class Service implements ServicePort {}",
+      "",
+    ].join("\n"),
+  },
+} satisfies ProjectTree;
+
 const monorepoApplicationSelection = {
   "package.json": json({ name: "compiler-monorepo-project", private: true, type: "module" }),
   "tsconfig.json": json({
@@ -354,6 +370,7 @@ export const compilerProjectTrees = {
   "duplicate-generated-qualifier-member": duplicateGeneratedQualifierMember,
   "generated-runtime-contract": generatedRuntimeContract,
   "invalid-lifecycle-return-rejected": invalidLifecycleReturnRejected,
+  "application-fallback-rejected": applicationFallbackRejected,
   "legacy-parameter-decorator-rejected": legacyParameterDecoratorRejected,
   "monorepo-application-selection": monorepoApplicationSelection,
   "namespace-export-contract": namespaceExportContract,

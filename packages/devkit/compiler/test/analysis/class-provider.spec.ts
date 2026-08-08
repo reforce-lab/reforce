@@ -42,6 +42,7 @@ function decorator(name: string, options: DecoratorOptions = {}): DecoratorUse {
 const contextNames = [
   "Injectable",
   "Primary",
+  "Fallback",
   "Qualifier",
   "OnContextStart",
   "OnContextClose",
@@ -332,6 +333,33 @@ describe("class provider analysis", () => {
     const outcome = analyze(declaration);
 
     expect(outcome.codes).toEqual(["INVALID_DECORATOR_USAGE"]);
+  });
+
+  test("rejects Fallback on a class that is not a Bean", () => {
+    const declaration = classDeclaration({ decorators: [decorator("Fallback")] });
+
+    const outcome = analyze(declaration);
+
+    expect(outcome.codes).toEqual(["INVALID_DECORATOR_USAGE"]);
+  });
+
+  // 标记进 provider 模型（#343）：库编译据此写 meta 的 defaultBean，应用编译据此报错。
+  test("records Fallback on the provider it marks", () => {
+    const declaration = classDeclaration({
+      decorators: [decorator("Injectable"), decorator("Fallback")],
+    });
+
+    const outcome = analyze(declaration);
+
+    expect(outcome.draft?.provider.fallback).toBe(true);
+  });
+
+  test("leaves fallback false without the decorator", () => {
+    const declaration = classDeclaration({ decorators: [decorator("Injectable")] });
+
+    const outcome = analyze(declaration);
+
+    expect(outcome.draft?.provider.fallback).toBe(false);
   });
 
   test("rejects Qualifier on a class that is not a Bean", () => {
